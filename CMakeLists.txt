@@ -38,7 +38,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"
+        "${BT2_GENERATED_DIR}/FUN_003382D0_0x3382d0.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032EC60_0x32ec60.cpp")
     target_include_directories(bt2-entry-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
     target_compile_features(bt2-entry-probe PRIVATE cxx_std_20)
     target_compile_options(bt2-entry-probe PRIVATE /W4 /permissive- /utf-8)

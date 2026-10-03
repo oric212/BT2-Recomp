@@ -123,3 +123,7 @@ The pinned Play! `sc_SetupHeap` returns main-thread stack base for size `0xFFFFF
 ### Executed first callee prologue
 
 Generated `FUN_00338520` now executes its stack allocation and saves RA=`0x001001F0` at guest address `0x01FFED50`. Runtime then observes the JAL at `0x00338528` to `FUN_003382D0`, resume `0x00338530`. This establishes execution of the prologue only; no subsystem purpose has been assigned and no deeper target is yet executed.
+
+### Executed nested startup syscall
+
+`FUN_003382D0` builds a stack frame and calls `FUN_0032EC60` at `0x00338304`, with a0=`0x01FFED00` and resume `0x0033830C`. The generated wrapper sets v1=`0x40` and executes syscall at `0x0032EC64`, resume `0x0032EC68`. Pinned PS2SDK `syscallnr.h` identifies selector `0x40` as CreateSema; no subsystem purpose is inferred for the enclosing unknown functions. The syscall has not been implemented or returned yet.

@@ -91,6 +91,10 @@ int main() {
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         PS2Runtime uninitialized;
         reject([&] { uninitialized.handleSyscall(nullptr, &context, 0); });
+        runtime.write32(memory, 0x170, 0x89ABCDEF);
+        require(runtime.read32(memory, 0x170) == 0x89ABCDEF && memory[0x174] == 0xA5);
+        reject([&] { runtime.write32(memory, 1, 0); });
+        reject([&] { runtime.write32(memory, PS2Runtime::ram_size - 2, 0); });
         runtime.write64(memory, 0x180, UINT64_C(0xFEDCBA9876543210));
         require(runtime.read64(memory, 0x180) == UINT64_C(0xFEDCBA9876543210) && memory[0x188] == 0xA5);
         reject([&] { runtime.write64(memory, 3, 0); });

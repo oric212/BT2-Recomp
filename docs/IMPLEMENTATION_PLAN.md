@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: add generated `FUN_003382D0`, the nested target actually reached by execution, to the local prepared-source/build/registration set. Compile and resolve only its required compatibility APIs, execute, and inspect the next blocker. Keep bootstrap behavior distinguished from retail BIOS confirmation. Investigate `0x003B7FA8` only when reached.
+Current next step: implement the reached CreateSema (selector `0x40`) contract from pinned PS2SDK/kernel references, with bounded parameter reads and explicit semaphore state. Re-run generated entry to discover the next actual blocker. Avoid naming the enclosing unknown functions or adding scheduling behavior until evidence requires it.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

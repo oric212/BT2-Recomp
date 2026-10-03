@@ -153,3 +153,13 @@ Next: compile/link the already generated reached callee and implement checked ca
 - MSVC builds, all three CTests and all 14 Python tests passed. Synthetic checks exercise nested indirect calls, tail calls, invalid returns, cleanup after a failed callee, and doubleword memory bounds/alignment. The generated wrapper and independent host still run; CPU startup and zero-store checks remain intact.
 
 Next: compile/link/register the reached nested target and repeat the execution-led loop. Full generated-set integration and game boot remain incomplete.
+
+## 2026-10-03 — Nested generated startup reaches CreateSema
+
+- Linked/registered neutral `FUN_003382D0` and its reached generated syscall wrapper `FUN_0032EC60`. Both compile directly from original ignored output; neither needed a tail-call transformation or manual source changes.
+- Added aligned, bounded 32-bit guest stores. Generated FAST_WRITE32 uses the same checked store API; optional guest-write diagnostic hook has no emulation effect. Tests verify value, adjacent byte preservation, bounds and alignment rejection.
+- Executed the nested prologue and six word stores, including the call delay-slot store. Verified SP=`0x01FFED00`, outer saved RA=`0x001001F0`, nested saved RA=`0x00338530`, and the observed parameter words/pointers without assigning unsupported structure meanings.
+- Three guest calls now execute: entry to `FUN_00338520`, then `FUN_003382D0`, then `FUN_0032EC60`. The wrapper sets selector `0x40`; pinned PS2SDK `__NR_CreateSema` identifies this boundary. Stopped at resume PC `0x0032EC68`, a0=`0x01FFED00`. No semaphore return/state was fabricated, and the enclosing functions retain neutral names.
+- MSVC pipeline/build, three CTests and all 14 Python tooling tests passed. CPU clearing/43,120 quadword plus 15 byte zero stores still verified. Host output remains unchanged. Game data, generated sources and execution reports remain ignored.
+
+Next: implement the observed CreateSema syscall with explicit validated state, then repeat execution to the next blocker. Game boot remains incomplete.

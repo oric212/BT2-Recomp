@@ -153,6 +153,13 @@ public:
         ++quadword_writes;
     }
 
+    void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+        checkMemory(rdram, address, 4);
+        if (address % 4) throw std::runtime_error("Unsupported unaligned word store");
+        std::memcpy(memory_.data() + address, &value, 4);
+        ++word_writes;
+    }
+
     void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword store");
@@ -188,7 +195,7 @@ public:
     std::array<std::uint32_t, 5> thread_arguments{};
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
-    std::uint64_t doubleword_writes = 0;
+    std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
