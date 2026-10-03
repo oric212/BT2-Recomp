@@ -229,7 +229,23 @@ public:
         return value;
     }
 
+    static constexpr std::size_t kernel_snapshot_size = 0x80004;
+    void loadKernelSnapshot(std::span<const std::uint8_t> bytes) {
+        if (bytes.size() != kernel_snapshot_size) throw std::runtime_error("Kernel snapshot must cover physical [0, 0x80004)");
+        kernel_snapshot_.assign(bytes.begin(), bytes.end());
+    }
+
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address) {
+        // Read-only KSEG0 view of locally supplied kernel bytes; no fabricated kernel.
+        if (address >= 0x80000000 && address < 0x80000000 + kernel_snapshot_size) {
+            const auto offset = address - 0x80000000;
+            if (kernel_snapshot_.empty() || memory_.empty() || rdram != memory_.data()
+                || offset % 4 || offset > kernel_snapshot_.size() - 4)
+                throw UnsupportedGuestMemory(address, 4);
+            std::uint32_t value;
+            std::memcpy(&value, kernel_snapshot_.data() + offset, 4);
+            return value;
+        }
         checkMemory(rdram, address, 4);
         if (address % 4) throw std::runtime_error("Unsupported unaligned word read");
         std::uint32_t value;
@@ -264,7 +280,7 @@ private:
             throw UnsupportedGuestMemory(address, count);
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
-    std::vector<std::uint8_t> memory_;
+    std::vector<std::uint8_t> memory_, kernel_snapshot_;
     std::vector<std::uint32_t> call_returns_;
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
 };

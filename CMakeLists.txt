@@ -35,6 +35,13 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_compile_features(bt2-bootstrap-tests PRIVATE cxx_std_20)
     target_compile_options(bt2-bootstrap-tests PRIVATE /W4 /permissive- /utf-8)
     add_test(NAME bootstrap-runtime COMMAND bt2-bootstrap-tests)
+    add_executable(bt2-kernel-handler-tests runtime/kernel_handler_tests.cpp
+        "${BT2_GENERATED_DIR}/FUN_00338388_0x338388.cpp")
+    target_include_directories(bt2-kernel-handler-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
+    target_compile_features(bt2-kernel-handler-tests PRIVATE cxx_std_20)
+    target_compile_options(bt2-kernel-handler-tests PRIVATE /W4 /permissive- /utf-8)
+    target_compile_definitions(bt2-kernel-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    add_test(NAME generated-kernel-handler COMMAND bt2-kernel-handler-tests)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"

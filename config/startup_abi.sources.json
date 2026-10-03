@@ -34,5 +34,12 @@
         "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
       }
     ]
+  },
+  "kernel_mapping_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/Memory.cpp",
+    "sha256": "d0fe8073d5bc9b52ed50bffe38c3c8111fd61e735a9f0eb4b1a1f7db02cb5830",
+    "role": "memMapKernelMem address mapping evidence only; no source copied/linked"
   }
 }

@@ -127,3 +127,15 @@ For the recorded executable hash, this independently checks three raw selector/s
 `python tools/ps2recomp/inspect_blocker.py` verifies generated provenance and classifies the latest registered handler or branch target against the provisional map and Ghidra candidates. The pipeline runs it automatically after a verified stop. Read ignored `work/bt2-generation/blocker-map.json` before adding discovery targets; range membership does not certify a function boundary.
 
 `python tools/ghidra/analyze_game.py --discover-blocker` performs focused provisional discovery at the latest observed map-gap address and re-exports candidates. It rejects an address inside an existing function and checks that the target appears in the fresh export. Then run `python tools/ps2recomp/run_pipeline.py` to regenerate from the updated automated map. Discovery is not correctness certification.
+
+### Local kernel capture diagnostic
+
+Use your own BIOS/game in PCSX2, pause BT2 at PC `0x00338388` after startup registers its syscall handlers, and export **raw physical EE RAM**, addresses `0x00000000..0x01FFFFFF` (32 MiB). Keep it under ignored `game_data/`; a BIOS ROM or savestate is not the required input. Record PCSX2 version and capture timing.
+
+After building the pipeline, run:
+
+```powershell
+python tools/ps2recomp/probe_kernel.py game_data/ee-ram.bin --capture-note "PCSX2 version and paused PC/capture timing"
+```
+
+This extracts a read-only kernel window and invokes the generated scan handler in isolation. Hashes and notes are saved under ignored `work/bt2-generation/`. The result does not establish a full boot, exact BIOS exception behavior or writable kernel-patch compatibility. No capture is downloaded or bundled.

@@ -210,3 +210,15 @@ Next: focused automated Ghidra discovery at the actually reached missing handler
 **Current counts:** 7,242 generated; 9 distinct compiled/executed (including the isolated wrapper). Four completed/returned; five entered partially. These remain startup/helper paths, not working gameplay.
 
 Next: establish the required kernel-address access and local memory provenance before continuing the handler's read/scan.
+
+## 2026-10-03 — Read-only kernel capture adapter and generated scan tests
+
+- Checked PCSX2 `memMapKernelMem`: KSEG0 at `0x80000000` maps physical address zero. Pinned revision/file hash in `config/startup_abi.sources.json`. PS2Recomp's FindAddress implementation was consulted as a reference, but not adopted as a substitute for BT2's generated handler.
+- Added a bounded read-only word view backed only by explicitly supplied snapshot bytes for `[0x80000000, 0x80080004)`. Other aliases, kernel writes, BIOS exception state and MMIO remain unsupported. Without a snapshot, real startup still stops at its first kernel read.
+- Generated `FUN_00338388` now completes and returns in synthetic match/no-match tests; verified a match at `0x80000008`, no-match zero, upper-bound read, rejected writes and invalid snapshot sizes. Synthetic words are authored fixtures, not a retail kernel or proof of retail behavior.
+- Added `probe_kernel.py` to accept user-captured raw 32 MiB EE RAM, extract only the low `0x80004` bytes, record capture note/source/snapshot hashes in ignored output, and run the compiled handler diagnostic against the real startup arguments. BIOS ROMs/savestates/wrong-size input are rejected. The extra word is needed because emitted code reads at the upper limit before evaluating the loop bound.
+- MSVC pipeline/build and four CTests passed; all 18 Python tests passed. No real EE capture was available, so snapshot-driven diagnostic remains unverified on retail memory; game boot has not advanced beyond the original read. Proprietary captures and reports remain ignored.
+
+**Counts:** 7,242 generated; 9 distinct functions entered. Four complete in real startup/isolated-wrapper probes; the discovered handler additionally completes on synthetic data. No gameplay works yet.
+
+Next: supply/capture local EE RAM at the reached handler and validate the scan result before proceeding with kernel patch dependencies.

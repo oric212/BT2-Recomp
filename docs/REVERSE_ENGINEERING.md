@@ -143,3 +143,7 @@ Execution enters `FUN_003383C8` and invokes selector `0x83` at `0x003383CC`, res
 ### Discovered handler's actual memory blocker
 
 Focused Ghidra discovery produced provisional `[0x00338388, 0x003383C8)`. The regenerated handler compiles and is entered, but its first word read at `0x80000000` is rejected by the current main-RAM-only adapter. Required address mapping and kernel-memory contents have not been established. The callback adapter is a host execution model, not confirmed BIOS exception behavior; no missing memory was synthesized to advance the scan.
+
+### Kernel address evidence and fixture limits
+
+[PCSX2 memMapKernelMem](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/Memory.cpp) maps `0x80000000` to physical zero. Our adapter exposes only a read-only captured window; it does not treat ELF zero-fill as kernel contents. Generated handler match/no-match behavior passes authored synthetic fixtures. Real capture comparison at PC `0x00338388` is pending, as are kernel table mutation and BIOS exception semantics.
