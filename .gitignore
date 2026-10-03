@@ -1,7 +1,8 @@
 # Local game content: keep all extracted assets inside these directories.
 /rom/
 /game_data/
-/assets/
+/assets/*
+!/assets/BT2 Recomp Banner.png
 *.iso
 *.ISO
 *.cue

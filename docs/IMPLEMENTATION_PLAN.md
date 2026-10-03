@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: capture raw 32 MiB physical EE RAM locally with BT2 paused at PC `0x00338388` (after its SetSyscall registrations). Run the documented `probe_kernel.py` diagnostic to verify the real handler scan against supplied bytes; preserve capture timing/hash provenance. Continue full startup only after understanding kernel table/patch dependencies. No snapshot is currently available.
+Current next step: integrate the explicitly supplied local kernel snapshot into the bounded entry probe, execute to the next observed blocker, and implement only the required kernel table/patch access. The generated scan returned `0x80014F0C` on a local PCSX2 capture at the instrumented handler boundary. Captures and patched executables stay ignored.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

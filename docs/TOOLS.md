@@ -130,12 +130,18 @@ For the recorded executable hash, this independently checks three raw selector/s
 
 ### Local kernel capture diagnostic
 
-Use your own BIOS/game in PCSX2, pause BT2 at PC `0x00338388` after startup registers its syscall handlers, and export **raw physical EE RAM**, addresses `0x00000000..0x01FFFFFF` (32 MiB). Keep it under ignored `game_data/`; a BIOS ROM or savestate is not the required input. Record PCSX2 version and capture timing.
+Capture with the installed PCSX2 and your own BIOS/game:
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin"
+```
+
+The tool copies PCSX2 and the selected BIOS into ignored `work/pcsx2-capture/`, with a separate settings profile. It instruments only a copy of the validated local ELF: 24 bytes at `0x00338388` write marker `0xB702` at `0x00387E80` and spin before the handler's first read. Read-only Windows process access captures 32 MiB of physical EE RAM from the exported `EEmem` pointer in the process it launched. It checks the marker, trap bytes, isolated data folder and stability of the kernel prefix across two reads, then terminates only that process. Hashes, instrumentation and timing are recorded in `capture.json`. Original game/BIOS files and the user's PCSX2 profile are preserved. This is an instrumented standalone ELF diagnostic; the IOP remains active during capture.
 
 After building the pipeline, run:
 
 ```powershell
-python tools/ps2recomp/probe_kernel.py game_data/ee-ram.bin --capture-note "PCSX2 version and paused PC/capture timing"
+python tools/ps2recomp/probe_kernel.py work/pcsx2-capture/ee-ram.bin --capture-note "PCSX2 2.9.81; instrumented ELF handler entry, stable kernel prefix"
 ```
 
 This extracts a read-only kernel window and invokes the generated scan handler in isolation. Hashes and notes are saved under ignored `work/bt2-generation/`. The result does not establish a full boot, exact BIOS exception behavior or writable kernel-patch compatibility. No capture is downloaded or bundled.

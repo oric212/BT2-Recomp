@@ -227,3 +227,14 @@ Next: supply/capture local EE RAM at the reached handler and validate the scan r
 
 - Repaired two invalid Windows-encoded dash bytes in this document. All tracked text now passes strict UTF-8 decoding and contains no replacement characters. Added a UTF-8 editor rule and explicit UTF-8 reads/writes in the recent tooling.
 - Execution progress is unchanged; the next step remains a local PCSX2 EE RAM capture at the reached kernel handler.
+
+## 2026-10-03 - Local PCSX2 kernel capture and README banner
+
+- Added the supplied banner to the root README; only that named image is allowed through the assets ignore rule.
+- Added an isolated local capture tool using PCSX2 2.9.81 and the user's scph39001 BIOS. A copied ELF reaches an authored marker/self-loop at handler entry `0x00338388`; original ELF hash is unchanged. Captured 32 MiB EE RAM, verified instrumentation and stable kernel prefix across two reads, and recorded hashes/timing in ignored output. This is an instrumented standalone ELF boot, with IOP still active.
+- Generated `FUN_00338388` completes on the captured kernel bytes and returns `0x80014F0C`; an independent aligned word scan confirms the same first match. The full entry probe still stops at its original unsupported memory boundary because snapshot integration is not enabled there yet.
+- Build/pipeline and four CTests passed; four capture-tool tests and 18 existing recomp tooling tests passed. No BIOS, patched ELF, captures, logs, generated code or game assets were staged.
+
+**Counts:** 7,242 generated; 9 distinct functions entered. Four previously completed in startup/isolated probes; the kernel scan now also completes on local captured data (five completed across probes). No gameplay works yet.
+
+Next: explicitly load the local snapshot in the entry probe, inspect the next execution blocker, and add only evidence-backed kernel patch support.

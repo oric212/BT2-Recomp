@@ -1,10 +1,12 @@
+![BT2 Recomp banner](assets/BT2%20Recomp%20Banner.png)
+
 # BT2 Native Recompilation Project
 
 A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static recompilation of the original PS2 game logic and a custom PS2 compatibility runtime. The initial target is the North American release, SLUS-21441. This is a recompilation project, not a ground-up remake.
 
 ## Current status
 
-The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. Optional probes execute a generated BT2 syscall wrapper and generated entry CPU initialization/RAM clearing. Entry applies bounded SetupThread/SetupHeap bootstrap models and executes nested generated startup code through checked guest dispatch and creates two bounded semaphore objects, returns through nested calls, and registers two syscall handlers, and enters discovered syscall handler FUN_00338388 and stops at its unsupported read from 0x80000000. The pipeline reports reached map gaps automatically. The kernel scan passes synthetic tests; a local EE RAM capture is needed to validate real kernel contents. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. Optional probes execute a generated BT2 syscall wrapper and generated entry CPU initialization/RAM clearing. Entry applies bounded SetupThread/SetupHeap bootstrap models and executes nested generated startup code through checked guest dispatch and creates two bounded semaphore objects, returns through nested calls, and registers two syscall handlers, and enters discovered syscall handler FUN_00338388 and stops at its unsupported read from 0x80000000. The pipeline reports reached map gaps automatically. The generated kernel scan passes synthetic tests and returns `0x80014F0C` against a local PCSX2 capture from an instrumented ELF boot. Full startup still needs explicit snapshot integration and checked kernel-patch support. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
