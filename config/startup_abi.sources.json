@@ -18,6 +18,14 @@
     {
       "path": "ee/startup/src/crt0.c",
       "sha256": "695d59d4a7b38ce9009ae6e934989131893ea359c92b32ee516521e21e15637e"
+    },
+    {
+      "path": "common/include/ee_regs.h",
+      "sha256": "085cba40b126ccf6c7ffe86e1b7cb7487de63fc9541f67f3d3ad39b426aee3ee"
+    },
+    {
+      "path": "ee/kernel/include/timer.h",
+      "sha256": "00bfea47e976d8f5ce1331e5a3e6dcc1843306af1b942d058d54a1d86fee752f"
     }
   ],
   "bootstrap_model_reference": {

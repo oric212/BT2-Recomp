@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute generated entry initialization, RAM clearing, nested startup calls, semaphore creation and syscall registration. The generated kernel scan completes against a local PCSX2 capture and returns `0x80014F0C`, confirmed by an independent aligned scan. With the explicit snapshot, both scans return and `FUN_00338410` completes; startup reaches an unregistered call to `FUN_00338A00`. Game boot and gameplay are incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute generated entry initialization, RAM clearing, nested startup calls, semaphore creation and syscall registration. The generated kernel scan completes against a local PCSX2 capture and returns `0x80014F0C`, confirmed by an independent aligned scan. With the explicit snapshot, both scans return and `FUN_00338410` completes; `FUN_00338A00` is now compiled/registered and reaches an unsupported Timer 3 mode read. Game boot and gameplay are incomplete.
 
 Latest verification: MSVC build/pipeline, four CTests, 20 recomp tooling tests and four disc-validator tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Snapshot-driven startup stops at an unregistered call to `0x00338A00`, from `0x00338538`, resume `0x00338540`. The target already exists in the provisional generated map. Without an explicit snapshot, the original first-read stop at `0x80000000` remains checked.
+Snapshot-driven startup stops in `FUN_00338A00`: word read at `0x10001810` (Timer 3 mode), PC `0x00338A1C`. Generated `Load32` now forwards to checked memory access; MMIO remains unsupported. Without a snapshot, the original kernel-read boundary stays checked.
 
-Next: compile/link/register `FUN_00338A00`, then execute to its next actual blocker. The captured kernel stays read-only; BIOS exception behavior, writable kernel patches and full boot remain unverified.
+Next: establish Timer 3 mode state/behavior from pinned PS2SDK/PCSX2 evidence and local comparison, then add the smallest required MMIO support. Kernel snapshots remain read-only; full BIOS/timer behavior and game boot remain unverified.
 
 ## Key counts
 
 - **7,242** functions generated locally; **7,245** generated C++/header files.
-- **9** distinct functions entered across native probes.
-- **7** functions completed across probes: the previous five plus `FUN_003383C8` and `FUN_00338410` during snapshot-driven startup. These are startup/helper paths, not working gameplay.
+- **10** distinct functions entered across native probes.
+- **7** functions completed across probes; entry, `FUN_00338520` and `FUN_00338A00` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

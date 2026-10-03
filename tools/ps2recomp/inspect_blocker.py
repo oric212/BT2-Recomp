@@ -8,7 +8,7 @@ def classify(address, rows, functions, excluded):
     containing = [row for row in rows if row["start"] <= address < row["end"]]
     exact = any(row["start"] == address for row in containing)
     candidates = [row for row in functions if row["start"] <= address < row["end_exclusive"]]
-    return {"address": address, "neutral_name": f"FUN_{address:08X}",
+    return {"address": address, "neutral_name": f"FUN_{containing[0]['start'] if len(containing) == 1 else address:08X}",
             "map_status": "mapped entry" if exact else "inside mapped function" if containing else "map gap",
             "mapped_ranges": containing, "analysis_candidates": candidates,
             "exclusions": [row for row in excluded if row["start"] <= address < row["end"]]}
@@ -18,7 +18,7 @@ def main():
     verify_generated()
     folder = ROOT / "work/bt2-generation"
     stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
-    address = stop.get("target") or stop.get("handler")
+    address = stop.get("target") or (stop.get("pc") if "memory" in stop.get("status", "") else stop.get("handler"))
     if address is None:
         print("Syscall blocker has no registered handler to map.")
         return

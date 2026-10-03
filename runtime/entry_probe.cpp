@@ -51,25 +51,20 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338510, FUN_00338510_0x338510);
         runtime.registerFunction(0x003383C8, FUN_003383C8_0x3383c8);
         runtime.registerFunction(0x00338388, FUN_00338388_0x338388);
+        runtime.registerFunction(0x00338A00, FUN_00338A00_0x338a00);
         bool stopped = false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (snapshot_mode) throw;
-            require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388, "Unexpected entry memory boundary");
+            if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
+                                       "Unexpected snapshot MMIO boundary");
+            else require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388,
+                         "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
             stopped = true;
-        }
-        catch (const UnsupportedGuestBranch& stop) {
-            if (!snapshot_mode) throw;
-            require(stop.target == 0x00338A00 && stop.source_pc == 0x00338538 && stop.resume_pc == 0x00338540, "Unexpected snapshot dispatch boundary");
-            stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc;
-            stopped = true;
-            std::cout << "Snapshot branch target 0x" << std::hex << stop_target << ", source 0x" << stop_source
-                      << ", resume 0x" << stop_resume << std::dec << '\n';
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
         require(std::all_of(runtime.memory().begin() + zero_start, runtime.memory().begin() + zero_end,
@@ -86,7 +81,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (snapshot_mode ? 16 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -96,14 +91,14 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == 11 && runtime.custom_syscall_calls == 2 && runtime.returns == 10
-                    && runtime.word_writes == 9 && runtime.doubleword_writes == 10,
+            require(runtime.guest_calls == 12 && runtime.custom_syscall_calls == 2 && runtime.returns == 10
+                    && runtime.word_writes == 9 && runtime.doubleword_writes == 14,
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
         }
         const auto frame = runtime.initial_sp - 144;
-        require(runtime.read64(runtime.memory().data(), frame + 112) == 0x00338538,
+        require(runtime.read64(runtime.memory().data(), frame + 112) == (snapshot_mode ? 0x00338540 : 0x00338538),
                 "Current frame did not save return address");
         for (const auto offset : {0u, 16u, 32u, 48u, 64u, 80u, 96u})
             require(runtime.read64(runtime.memory().data(), frame + offset) == 0,
@@ -137,8 +132,8 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (snapshot_mode) std::cout << "Snapshot scans returned and FUN_00338410 completed; next unregistered dispatch target 0x"
-                                     << std::hex << stop_target << " at source 0x" << stop_source << std::dec << "\n";
+        if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
+                                     << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";
         else std::cout << "No kernel snapshot supplied; stopped at first kernel read 0x80000000.\n";
         std::cout << "Game boot remains incomplete.\n";
         return 0;

@@ -235,6 +235,11 @@ public:
         kernel_snapshot_.assign(bytes.begin(), bytes.end());
     }
 
+    // Emitted slow-path load ABI; unsupported MMIO still fails explicitly.
+    std::uint32_t Load32(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
+        return read32(rdram, address);
+    }
+
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address) {
         // Read-only KSEG0 view of locally supplied kernel bytes; no fabricated kernel.
         if (address >= 0x80000000 && address < 0x80000000 + kernel_snapshot_size) {

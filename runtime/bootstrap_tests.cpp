@@ -169,6 +169,10 @@ int main() {
         runtime.handleSyscall(memory, &context, 0);
         require(context.pc == 0x104 && context.r[31].low == 0xABCDEF
                 && context.r[31].high == 0x123456 && runtime.custom_syscall_calls == 1);
+        bool mmio_stop = false;
+        try { (void)runtime.Load32(memory, &context, 0x10001810); }
+        catch (const UnsupportedGuestMemory& stop) { mmio_stop = stop.address == 0x10001810 && stop.size == 4; }
+        require(mmio_stop);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

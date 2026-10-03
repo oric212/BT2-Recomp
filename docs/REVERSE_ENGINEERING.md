@@ -151,3 +151,7 @@ Focused Ghidra discovery produced provisional `[0x00338388, 0x003383C8)`. The re
 ### Snapshot-driven entry execution
 
 With the explicitly supplied local capture, generated `FUN_00338388` returns twice through `FUN_003383C8`. `FUN_00338410` completes and stores `0x80014D00` at `0x0036AB40`; the two searches converge on the same value after their emitted offsets. Execution then attempts `FUN_00338A00` from `0x00338538`, resume `0x00338540`. This target is already provisionally mapped/generated, but is not registered in the bounded adapter. The capture window remains read-only and separate from main RAM; no kernel writes or BIOS exception semantics are established.
+
+### First observed Timer 3 MMIO boundary
+
+Generated `FUN_00338A00` now compiles/links/registers. It saves four doublewords in its 64-byte frame, then attempts a word read at `0x10001810`, PC `0x00338A1C`, through emitted `Load32`. The authored forwarding API uses the same checked read path and rejects MMIO. Pinned PS2SDK `common/include/ee_regs.h` (`A_EE_T3_MODE`) and `ee/kernel/include/timer.h` (`T3_MODE`) identify this register; hashes are recorded in `config/startup_abi.sources.json`. No value is supplied and no timer state or game-specific purpose is inferred. The emitted following instructions mask bit `0x100`; they have not executed in the native probe yet.

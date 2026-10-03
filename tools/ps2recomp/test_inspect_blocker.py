@@ -7,6 +7,7 @@ class BlockerTests(unittest.TestCase):
         rows = [{"start": 0x100, "end": 0x120}]
         self.assertEqual(classify(0x100, rows, [], [])["map_status"], "mapped entry")
         self.assertEqual(classify(0x104, rows, [], [])["map_status"], "inside mapped function")
+        self.assertEqual(classify(0x104, rows, [], [])["neutral_name"], "FUN_00000100")
         self.assertEqual(classify(0x120, rows, [], [])["map_status"], "map gap")
 
     def test_quarantine_evidence_is_retained(self):
