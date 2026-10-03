@@ -25,7 +25,17 @@
 - The declared entry is inside an executable load region. No game code has executed.
 - Preserved an empty load record and flagged its generic alignment anomaly; its purpose is unknown.
 
-Next: assess PS2Recomp requirements and licensing against this executable metadata, then establish an integration plan. Trusted retail revision confirmation remains pending.
+## 2026-10-03 — PS2Recomp tooling
+
+- Pinned PS2Recomp at `c5a9d02573410a2085a4b4b831b0b68ba3515440` and six dependencies in `config/ps2recomp.lock.json`; recorded inspected license files in `LEGAL.md`.
+- Built the recompiler and analyzer with Visual Studio 2022/MSVC x64, with upstream runtime, studio, and tests disabled.
+- Added reproducible build, synthetic translation, and guarded BT2 generation scripts. Source checkouts, build outputs, and generated output stay ignored.
+- Synthetic translation recompiled one self-authored function with zero decode failures, unhandled instructions, warnings, or errors. Generated C++ has not been compiled or executed.
+- Function-map tests passed, including the actual exporter header, neutral naming, range validation, empty maps, and duplicates. Missing-map generation stops before producing BT2 output.
+- Optional zlib/zstd dependencies were not found, so compressed DWARF support was not established. fmt emitted a C4834 warning on the initial build.
+- `README.md` stays at the repository root; the remaining documentation stays under `docs/`.
+
+Next: establish reviewed Ghidra function boundaries for the local executable, then run local generation. No BT2-derived C++ has been generated and no upstream runtime has been linked. Trusted retail revision confirmation remains pending.
 
 ## Milestones
 
@@ -33,7 +43,8 @@ Next: assess PS2Recomp requirements and licensing against this executable metada
 - [x] Preliminary local executable validation.
 - [ ] Trusted retail revision confirmation.
 - [x] ELF metadata inspection (alignment anomaly recorded).
-- [ ] PS2Recomp integration.
+- [x] Pinned PS2Recomp tools build and synthetic translation.
+- [ ] BT2 generation and custom runtime integration.
 - [ ] Game entry point reached.
 - [ ] First rendered frame.
 - [ ] Title screen.

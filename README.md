@@ -8,7 +8,7 @@ The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Stud
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
-See [build instructions](BUILDING.md), [the implementation plan](IMPLEMENTATION_PLAN.md), [progress](PROG.md), [content and license rules](LEGAL.md), [local tools](TOOLS.md), and [reverse-engineering notes](REVERSE_ENGINEERING.md).
+See [build instructions](docs/BUILDING.md), [the implementation plan](docs/IMPLEMENTATION_PLAN.md), [progress](docs/PROG.md), [content and license rules](docs/LEGAL.md), [local tools](docs/TOOLS.md), and [reverse-engineering notes](docs/REVERSE_ENGINEERING.md).
 
 ## Layout
 
@@ -19,4 +19,4 @@ See [build instructions](BUILDING.md), [the implementation plan](IMPLEMENTATION_
 - `external/`: dependency integration notes; no dependencies are bundled yet.
 - `docs/`: goals, build instructions, progress, and evidence records.
 
-No configuration, game integration, or external dependencies are implemented yet. Add shared configuration examples only when needed; record dependency source, pinned version, license, and build requirements before integration. Keep local game paths under ignored `game_data/` or `rom/`.
+Pinned PS2Recomp tools build separately from the host and pass synthetic translation. Dependency checkouts stay under ignored `work/`; versions are in `config/ps2recomp.lock.json`. BT2 generation requires a reviewed function map, and custom runtime integration is pending. Keep local game paths under ignored `game_data/` or `rom/`.

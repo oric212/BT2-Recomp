@@ -36,3 +36,29 @@ python -m unittest discover -s tools/inspect_elf -p "test_*.py"
 ```
 
 Field layouts and generic semantics follow the ELF specification: [header](https://gabi.xinuos.com/elf/02-eheader.html), [program headers](https://gabi.xinuos.com/elf/07-pheader.html), and [section headers](https://gabi.xinuos.com/elf/03-sheader.html). Processor-specific values are recorded without guessing their meaning.
+
+## Pinned PS2Recomp tools
+
+Requires Python 3.10+, Git, CMake 3.21+, and Visual Studio 2022/MSVC x64. Internet access is needed to fetch the open-source sources on the first build. The host's normal CMake build stays independent.
+
+```powershell
+python tools/ps2recomp/build_tools.py
+python tools/ps2recomp/smoke_test.py
+python -m unittest discover -s tools/ps2recomp -p "test_*.py"
+```
+
+The build checks immutable revisions from `config/ps2recomp.lock.json`, stores clean checkouts in ignored `work/dependencies/`, and builds tools in ignored `build/ps2recomp-tools/`. Upstream runtime, studio, and test targets are disabled. Supplying dependency paths directly to CMake avoids Git submodule shell helpers in the Windows sandbox. Builds run serially with MSBuild node reuse disabled. Local provenance records the lock-file and recompiler hashes.
+
+The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` and our own function map, then checks the emitted C++. It does not compile or execute that output and establishes no BT2 function boundaries.
+
+## Local BT2 generation (awaiting reviewed map)
+
+Review function boundaries in the local executable using Ghidra and the pinned upstream `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`. Keep projects and maps under ignored `work/` or `research/`. Preserve neutral `FUN_<eight-digit-address>` names until their purpose is established. The initial driver accepts contiguous aligned ranges within executable sections; noncontiguous bodies require review and future support.
+
+```powershell
+python tools/ps2recomp/generate_game.py --function-map work/bt2-functions.csv
+```
+
+CSV columns are `Name,Start,End,Size` (case insensitive), with exclusive ends. The driver checks the locally recorded candidate size/hash, map ranges, and tool provenance. Matching the candidate hash establishes consistency with our inspected file, not authenticity against a retail reference. It writes local configuration under `work/bt2-generation/` and C++ under ignored `game/generated/bt2/`, with automatic instruction patches disabled and no manual stubs or skips.
+
+These checks cannot certify map correctness. Generated output can include upstream heuristic discoveries; treat them as candidates. BT2 generation has not run because no reviewed map exists. The emitted code depends on upstream runtime APIs, so custom runtime adaptation remains future work.
