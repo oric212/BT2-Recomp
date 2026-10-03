@@ -76,3 +76,12 @@ python tools/ghidra/analyze_game.py
 The driver imports the recorded local candidate using `r5900:LE:32:default` and runs our authored exporter. Override installations with `--ghidra-home PATH --java-home PATH`. Projects, logs, JSON, instruction listings, and candidate CSV stay in ignored `work/ghidra/`. An existing project is reopened without repeating analysis. Remove or archive it explicitly when a fresh analysis is needed.
 
 Exports use neutral address names and remain unreviewed. Ghidra reports overlay and decompiler limitations; verify boundaries and control flow before preparing a reviewed map. Do not feed the candidate CSV directly into game generation or commit it.
+
+## Entry control audit
+
+```powershell
+python -m unittest discover -s tools/ghidra -p "test_*.py"
+python tools/ghidra/review_entry.py
+```
+
+The audit compares raw ELF control encodings with the entry export, checks instruction coverage and delay-slot inclusion, and writes ignored `work/ghidra/review/entry-control.json`. It supports only the control encodings needed by the current entry; unsupported branch families stop the audit. It verifies neither full instruction semantics nor callees, and never automatically marks a map reviewed. Static review findings are recorded in `REVERSE_ENGINEERING.md`.

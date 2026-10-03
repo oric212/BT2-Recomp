@@ -31,6 +31,21 @@ Program 2 declares 176,668 bytes beyond its file payload. Program 3 is empty and
 
 Ghidra 12.1.4 with the pinned R5900 extension analyzed the recorded local executable. It discovered 9,541 unreviewed function candidates; 7,241 have contiguous aligned bodies exported to the local CSV. These counts describe analyzer output, not verified boundaries or purposes. The entry candidate is `FUN_00100008`, with proposed exclusive end `0x00100248` (576 bytes). No semantic function name has been established.
 
+### Entry boundary review, 2026-10-03
+
+For the executable hash above, `tools/ghidra/review_entry.py` cross-checked raw ELF control instruction words against the Ghidra export. All 144 instruction addresses cover `[0x00100008, 0x00100248)` without gaps. Sixteen control transfers were audited, including two syscall instructions. Direct targets agree with the export, conditional branches stay within the body, and all delayed transfers include their following instruction.
+
+The final transfer at `0x00100240` jumps to `0x00324398`; its delay slot at `0x00100244` is included. This supports the exclusive end `0x00100248` for a static entry-body map. It does not establish that the external target never returns, certify all opcode semantics, or prove behavior during execution. No full-game reviewed map exists.
+
+| Direct call site | Neutral target |
+| --- | --- |
+| `0x001001E8` | `FUN_00338520` |
+| `0x001001F0` | `FUN_0032EEE0` |
+| `0x00100220` | `FUN_003242D0` |
+| `0x00100238` | `FUN_00100388` |
+
+These are encoded targets, not established purposes or reviewed callee boundaries. An indirect call through register 16 occurs at `0x00100208`; its reachability and target require separate analysis.
+
 ## Subsystems
 
 No BT2 subsystem behavior has been established.
@@ -41,7 +56,7 @@ Only executable container metadata has been inspected. The section table include
 
 ## Runtime Calls
 
-No PS2 runtime calls used by BT2 have been identified.
+Entry contains syscall instructions at `0x001001C8` and `0x001001E4`, each with encoded code field zero. The preceding Ghidra instructions load register `v1` with `0x3C` and `0x3D`, respectively. These observations do not assign syscall names or establish the required runtime ABI. No runtime implementation has been added.
 
 ## Confirmed Facts
 

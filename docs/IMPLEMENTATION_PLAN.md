@@ -24,4 +24,6 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
+Current next step: extend the local export to the entry's direct callees and final jump target, review their boundaries, and investigate the two observed syscall sites. The entry body passed a limited static control audit; this is insufficient for a complete generation map.
+
 Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.

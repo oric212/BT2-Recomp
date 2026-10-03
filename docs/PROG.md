@@ -65,3 +65,13 @@ Next: establish reviewed Ghidra function boundaries for the local executable, th
 - After each completed pass, review, commit, and push as requested by the user.
 
 Next: review the entry candidate boundary and control flow before producing a reviewed map. No BT2-derived C++ has been generated or executed.
+
+## 2026-10-03 — Entry control and boundary review
+
+- Added an authored static audit that reads instruction words through the ELF executable section and compares control targets against the hash-matched R5900 export. Reports remain ignored.
+- Three synthetic tests passed, covering signed branch offsets, jump-region arithmetic, indirect/syscall encodings, unsupported branches, target mismatches, and missing delay-slot coverage.
+- The local entry audit passed: 144 instruction addresses, 16 transfers, all direct targets matching, conditional branches internal, and delay slots present.
+- Reviewed the entry's static body extent `[0x00100008, 0x00100248)`: final external jump at `0x00100240`, followed by its included delay slot. Recorded neutral direct targets and two syscall sites without inventing purposes or ABI behavior.
+- Full opcode semantics, callee boundaries, syscall meanings, runtime behavior, and a complete generation map remain unverified. No game code generated or executed.
+
+Next: export and review the entry's direct callees and final jump target, then establish the observed syscall ABI from primary evidence.
