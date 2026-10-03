@@ -442,6 +442,28 @@ int main() {
         identity.handleSyscall(nullptr, &identity_context, 0);
         require(identity_context.r[2].low == 1 && identity_context.r[2].high == UINT64_MAX);
         reject([&] { identity.handleSyscall(nullptr, &identity_context, 1); });
+        R5900Context priority_context{};
+        priority_context.r[3].low = 0x29;
+        priority_context.r[4].low = priority_context.r[5].low = 1;
+        priority_context.r[2] = {0xABCD, UINT64_MAX};
+        PS2Runtime priority;
+        reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
+        priority.thread_initialized = true;
+        priority.current_thread_id = 1;
+        priority_context.r[4].low = 2;
+        reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
+        priority_context.r[4].low = 1;
+        for (const auto value : {0u, 2u, 128u, UINT32_MAX}) {
+            priority_context.r[5].low = value;
+            reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
+        }
+        require(priority.main_thread_priority == 0 && priority.priority_changes == 0 && priority_context.r[2].low == 0xABCD);
+        priority_context.r[5].low = 1;
+        reject([&] { priority.handleSyscall(nullptr, &priority_context, 1); });
+        priority.handleSyscall(nullptr, &priority_context, 0);
+        require(priority_context.r[2].low == 0 && priority_context.r[2].high == UINT64_MAX && priority.main_thread_priority == 1);
+        priority.handleSyscall(nullptr, &priority_context, 0);
+        require(priority_context.r[2].low == 1 && priority.priority_changes == 2);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

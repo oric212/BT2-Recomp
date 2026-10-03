@@ -109,6 +109,15 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x29) {
+            // Only the main thread is runnable; created threads remain dormant.
+            if (!thread_initialized || current_thread_id != 1 || context->r[4].low != 1 || context->r[5].low != 1)
+                throw UnsupportedSyscall(selector, context->pc);
+            context->r[2].low = main_thread_priority;
+            main_thread_priority = 1;
+            ++priority_changes;
+            return;
+        }
         if (code == 0 && selector == 0x2F) {
             if (!thread_initialized || !current_thread_id) throw UnsupportedSyscall(selector, context->pc);
             context->r[2].low = current_thread_id;
@@ -456,7 +465,8 @@ public:
         std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
     };
     std::vector<DormantThread> threads;
-    std::uint32_t current_thread_id = 0;
+    std::uint32_t current_thread_id = 0, main_thread_priority = 0;
+    unsigned priority_changes = 0;
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;

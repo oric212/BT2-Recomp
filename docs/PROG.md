@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, then queries the main thread ID. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, queries the main thread ID and changes its priority to 1. Game boot and gameplay remain incomplete.
 
 Latest verification: MSVC build/pipeline, six CTests, 29 recomp tooling tests and eight capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops at ChangeThreadPriority (`0x29`) in `FUN_0032EAF0`, resume PC `0x0032EAF8`, requesting main thread ID 1 / priority 1. CreateThread records dormant ID 2 (entry `0x0032F960`, stack `0x003A8840`, size `0x400`); GetThreadId returns the authored main ID 1. The created thread has not executed.
+Startup stops at GetOsdConfigParam (`0x4B`) in `FUN_0032ED10`, resume PC `0x0032ED18`, with output pointer `0x01FFECE0`. The bounded main-thread priority change returns previous priority 0 and records priority 1. Dormant thread ID 2 has not executed.
 
-Next: establish and implement the reached main-thread priority change, then rerun. Thread IDs/context initialization follow the pinned reference model, not a confirmed retail BIOS allocation. `FUN_0032FDA0` returns -1 through its guard with the probe's IE bit clear; its other paths remain untested. Counter progression, interrupt delivery and thread scheduling remain unimplemented.
+Next: establish the reached OSD configuration ABI and local BIOS value before implementing it. Thread IDs/context initialization follow the pinned reference model, not a confirmed retail BIOS allocation. Counter progression, interrupt delivery and scheduling remain unimplemented.
 
 ## Key counts
 
 - **7,244** functions generated locally: 7,243 main ELF + one scoped kernel entry; **7,250** raw generated C++/header files.
-- **31** distinct functions entered across native probes.
-- **27** functions completed across probes; entry, `FUN_00338520`, `FUN_0032FA38` and `FUN_0032EAF0` remain partial. These are startup/helper paths, not working gameplay.
+- **34** distinct functions entered across native probes.
+- **29** functions completed across probes; entry, `FUN_00338520`, `FUN_00338648`, `FUN_003385E0` and `FUN_0032ED10` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

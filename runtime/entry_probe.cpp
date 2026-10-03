@@ -106,6 +106,9 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338B78, FUN_00338B78_0x338b78);
         runtime.registerFunction(0x003251DC, FUN_003251DC_0x3251dc);
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
+        runtime.registerFunction(0x00338648, FUN_00338648_0x338648);
+        runtime.registerFunction(0x003385E0, FUN_003385E0_0x3385e0);
+        runtime.registerFunction(0x0032ED10, FUN_0032ED10_0x32ed10);
         runtime.registerFunction(0x0032EAF0, FUN_0032EAF0_0x32eaf0);
         runtime.registerFunction(0x0032FDA0, FUN_0032FDA0_0x32fda0);
         runtime.registerFunction(0x0032F730, FUN_0032F730_0x32f730);
@@ -151,11 +154,12 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (readback_mode) require(stop.selector == 0x29 && !stop.handler && stop.resume_pc == 0x0032EAF8
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 1 && GPR_U32(&context, 5) == 1
+            if (readback_mode) require(stop.selector == 0x4B && !stop.handler && stop.resume_pc == 0x0032ED18
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 128
+                    && runtime.main_thread_priority == 1 && runtime.priority_changes == 1
                     && runtime.timer2_mode_reads == 2 && runtime.timer2_mode_writes == 1
                     && runtime.intc_mask == 0x1802 && runtime.intc_enable_calls == 1,
-                    "Unexpected ChangeThreadPriority boundary after dormant thread creation");
+                    "Unexpected GetOsdConfigParam boundary after priority change");
             else require(!intc_mode && timer2_mode && stop.selector == 0x14 && !stop.handler && stop.resume_pc == 0x0032E9A8
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 11
                     && runtime.timer2_mode_writes == 1 && runtime.timer2_mode_after_write == 0x382
@@ -180,7 +184,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (readback_mode ? 160 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -190,8 +194,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (readback_mode ? 55u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (readback_mode ? 51u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 34u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -231,8 +235,8 @@ int main(int argc, char** argv) {
         require(std::equal(kernel_before.begin(), kernel_before.end(), runtime.kernelBaseline().begin()),
                 "Captured kernel baseline changed");
         if (timer_mode) {
-            const auto frame = runtime.initial_sp - (readback_mode ? 160 : intc_mode ? 48 : 112);
-            require(runtime.read64(runtime.memory().data(), frame + (readback_mode ? 128 : intc_mode ? 16 : 80)) == (readback_mode ? 0x00338558 : intc_mode ? 0x00338550 : 0x00338548)
+            const auto frame = runtime.initial_sp - (readback_mode ? 128 : intc_mode ? 48 : 112);
+            require(runtime.read64(runtime.memory().data(), frame + (readback_mode ? 32 : intc_mode ? 16 : 80)) == (readback_mode ? 0x00338660 : intc_mode ? 0x00338550 : 0x00338548)
                     && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                     "Current startup frames did not save return addresses");
             if (!intc_mode) for (const auto offset : {0u, 16u, 32u, 48u, 64u})
@@ -297,6 +301,7 @@ int main(int argc, char** argv) {
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << GPR_U32(&context, 3)
                << ",\"write_value\":" << (runtime.timer2_mode_writes ? 0x382 : 0)
+               << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"priority_changes\":" << runtime.priority_changes
                << ",\"intc_mask\":" << runtime.intc_mask << ",\"intc_enable_calls\":" << runtime.intc_enable_calls
                << ",\"timer2_mode_writes\":" << runtime.timer2_mode_writes
                << ",\"timer2_mode_after_write\":" << runtime.timer2_mode_after_write
@@ -312,7 +317,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; GetThreadId returned main ID 1; reached ChangeThreadPriority syscall 0x29.\n";
+        if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";
         else if (timer2_mode) std::cout << "Timer 2 startup mode write completed; generated ErrorEPC/ERET returned; stopped at EnableIntc syscall 0x14, cause 11.\n";
         else if (timer_mode) std::cout << "Interrupt handler ID 2 stored; generated status helper returned; stopped at Timer 2 MMIO read 0x10001010 at PC 0x00338C58.\n";
