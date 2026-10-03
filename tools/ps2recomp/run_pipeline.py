@@ -67,6 +67,7 @@ def main():
     if result.returncode:
         print("Boot integration remains blocked; this diagnostic failure is recorded separately from the passing probe.")
     elif entry_stop:
+        run([sys.executable, str(ROOT / "tools/ps2recomp/inspect_blocker.py")])
         print(f"Entry stop: {entry_stop['status']}; game boot remains blocked. See {folder / 'entry-stop.json'}.")
 
 

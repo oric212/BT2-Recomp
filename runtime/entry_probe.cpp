@@ -38,17 +38,18 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x0032EC60, FUN_0032EC60_0x32ec60);
         runtime.registerFunction(0x00338410, FUN_00338410_0x338410);
         runtime.registerFunction(0x00338510, FUN_00338510_0x338510);
+        runtime.registerFunction(0x003383C8, FUN_003383C8_0x3383c8);
         bool stopped = false;
-        std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
+        std::uint32_t stop_selector = 0, stop_handler = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
-        catch (const UnsupportedGuestBranch& stop) {
-            require(stop.target == 0x003383C8 && stop.source_pc == 0x00338464 && stop.resume_pc == 0x0033846C, "Unexpected entry dispatch boundary");
-            stop_target = stop.target;
-            stop_source = stop.source_pc;
+        catch (const UnsupportedSyscall& stop) {
+            require(stop.selector == 0x83 && stop.handler == 0x00338388 && stop.resume_pc == 0x003383D0, "Unexpected entry syscall boundary");
+            stop_selector = stop.selector;
+            stop_handler = stop.handler;
             stop_resume = stop.resume_pc;
             stopped = true;
         }
-        require(stopped, "Entry did not stop at the unsupported guest branch");
+        require(stopped, "Entry did not stop at the unsupported syscall");
         require(std::all_of(runtime.memory().begin() + zero_start, runtime.memory().begin() + zero_end,
                             [](std::uint8_t value) { return value == 0; }), "Entry zeroing was incomplete");
         require(runtime.memory()[zero_start - 1] == image[zero_start - 1]
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
                 && runtime.heap_end == runtime.stack_base,
                 "Unexpected SetupHeap state or return");
-        require(runtime.guest_calls == 7 && runtime.returns == 5 && runtime.doubleword_writes == 10 && runtime.word_writes == 8
+        require(runtime.guest_calls == 8 && runtime.returns == 5 && runtime.doubleword_writes == 10 && runtime.word_writes == 8
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         const auto frame = runtime.initial_sp - 144;
@@ -94,8 +95,8 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"blocked at unsupported guest branch\",\"entry_executed\":true,"
-               << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source
+        report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,"
+               << "\"selector\":" << stop_selector << ",\"handler\":" << stop_handler
                << ",\"resume_pc\":" << stop_resume << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
@@ -107,7 +108,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 generated entry executed: CPU initialization and guest zeroing verified.\n"
-                  << "SetupThread/SetupHeap models applied; executed nested startup code; created two semaphore objects and returned; executed FUN_00338410 prologue; registered two syscall handlers; stopped at FUN_003383C8.\n"
+                  << "SetupThread/SetupHeap models applied; executed nested startup code; created two semaphore objects and returned; executed FUN_00338410 prologue; registered two syscall handlers; stopped at registered syscall 0x83; handler 0x00338388 is missing from the map.\n"
                   << "Empty launch arguments; retail BIOS comparison and game boot remain pending.\n";
         return 0;
     } catch (const std::exception& error) {

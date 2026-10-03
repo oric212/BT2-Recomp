@@ -121,3 +121,7 @@ python tools/ghidra/audit_startup.py
 For the recorded executable hash, this independently checks three raw selector/syscall pairs and the entry's zero-loop bound constants. It reports whether `0x003B7FA8` lies in a declared load extent or the apparent zero-loop interval, plus aligned exact literal and encoded JAL matches. Output stays in ignored `work/ghidra/review/startup-evidence.json`. The scan does not resolve split constants, later writers, or executable runtime contents.
 
 `config/startup_abi.sources.json` records the pinned PS2SDK reference revision and file hashes used for the ABI interpretation in `REVERSE_ENGINEERING.md`. These are research references, not build dependencies.
+
+### Reached target diagnostics
+
+`python tools/ps2recomp/inspect_blocker.py` verifies generated provenance and classifies the latest registered handler or branch target against the provisional map and Ghidra candidates. The pipeline runs it automatically after a verified stop. Read ignored `work/bt2-generation/blocker-map.json` before adding discovery targets; range membership does not certify a function boundary.

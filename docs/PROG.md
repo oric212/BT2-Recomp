@@ -184,3 +184,13 @@ Next: integrate the reached `FUN_00338410` and repeat the execution-led loop. Ga
 - MSVC pipeline/build, three CTests and all 14 Python tooling tests passed. Registration tests check state, preserved return register, invalid selector/address/alignment and unsupported invocation. CPU/zeroing/semaphore checks remain active. Independent host runs; proprietary output remains ignored.
 
 Next: compile/link/register the reached target and resolve only the compatibility behavior actually needed. Game boot remains incomplete.
+
+## 2026-10-03 — Registered syscall invocation exposes a map gap
+
+- Linked/registered original generated `FUN_003383C8`. It sets v1=`0x83` and invokes syscall at `0x003383CC`, resume `0x003383D0`. The registered handler is `0x00338388`; invocation remains unsupported, with no handler body skipped or result fabricated.
+- Extended syscall-stop diagnostics to include the registered handler address. Verified eight guest calls, five returns and prior CPU/zeroing/semaphore/registration checks. The new wrapper has no extra memory stores.
+- Confirmed no `0x00338388` entry in selected map or Ghidra export and no generated function for that address. This is a discovery gap, rather than an excluded candidate. Neighboring functions alone do not establish its boundary.
+- Added reusable `inspect_blocker.py`, automatically invoked after successful pipeline execution, to classify registered handlers/direct targets as mapped entries, function interiors or map gaps and retain candidate/quarantine evidence. Reports stay ignored. The tool does not infer boundaries or alter maps.
+- MSVC pipeline/build and three CTests passed; all 16 Python tests passed, including classifier exclusive-end and quarantine cases. Runtime test verifies selector/handler/resume diagnostics. Independent host runs; game files and generated output remain ignored.
+
+Next: focused automated Ghidra discovery at the actually reached missing handler, then provisional map regeneration and compile/execute. Custom syscall execution contract and game boot remain incomplete.

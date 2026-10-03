@@ -135,3 +135,7 @@ Generated startup now stores CreateSema IDs 0 and 1 at `0x0036AB58` and `0x0036A
 ### Executed SetSyscall registrations
 
 Pinned PS2SDK names selector `0x74` SetSyscall and declares a void result. Generated startup now records `0x83` -> `0x00338388` and `0x5A` -> `0x00338350` from loaded guest globals. Invocation of custom handlers remains unsupported. Execution next reaches `FUN_003383C8` from JAL `0x00338464`, return `0x0033846C`, with a0/a1/a2=`0x80000000`/`0x80080000`/`0x00338388`. Handler purposes and memory behavior remain unknown; no semantic function names assigned.
+
+### Registered handler discovery blocker
+
+Execution enters `FUN_003383C8` and invokes selector `0x83` at `0x003383CC`, resume `0x003383D0`. The table contains handler `0x00338388`, which has no function entry in the current Ghidra export or provisional map. No handler boundary or purpose is established. `inspect_blocker.py` records range membership and exclusions in ignored `blocker-map.json`; it never guesses a boundary.

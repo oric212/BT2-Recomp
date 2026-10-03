@@ -25,9 +25,9 @@ struct R5900Context {
 };
 
 struct UnsupportedSyscall : std::runtime_error {
-    UnsupportedSyscall(std::uint32_t selector, std::uint32_t pc)
-        : std::runtime_error("Unsupported bootstrap syscall"), selector(selector), resume_pc(pc) {}
-    std::uint32_t selector, resume_pc;
+    UnsupportedSyscall(std::uint32_t selector, std::uint32_t pc, std::uint32_t handler = 0)
+        : std::runtime_error("Unsupported bootstrap syscall"), selector(selector), resume_pc(pc), handler(handler) {}
+    std::uint32_t selector, resume_pc, handler;
 };
 
 struct UnsupportedGuestBranch : std::runtime_error {
@@ -58,7 +58,7 @@ public:
     void handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
         const auto selector = static_cast<std::uint32_t>(context->r[3].low);
         if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector])
-            throw UnsupportedSyscall(selector, context->pc); // Registered guest handlers require explicit execution support.
+            throw UnsupportedSyscall(selector, context->pc, syscall_handlers[selector]); // Registered guest handlers require explicit execution support.
         if (code == 0 && selector == 0x74) {
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
