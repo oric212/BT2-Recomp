@@ -131,6 +131,14 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338648, FUN_00338648_0x338648);
         runtime.registerFunction(0x003385E0, FUN_003385E0_0x3385e0);
         runtime.registerFunction(0x00321E50, FUN_00321E50_0x321e50);
+        runtime.registerFunction(0x00321D90, FUN_00321D90_0x321d90);
+        runtime.registerFunction(0x00322F90, FUN_00322F90_0x322f90);
+        runtime.registerFunction(0x0032EC80, FUN_0032EC80_0x32ec80);
+        runtime.registerFunction(0x0032ECA0, FUN_0032ECA0_0x32eca0);
+        runtime.registerFunction(0x003242D0, FUN_003242D0_0x3242d0);
+        runtime.registerFunction(0x00331FE8, FUN_00331FE8_0x331fe8);
+        runtime.registerFunction(0x00331888, FUN_00331888_0x331888);
+        runtime.registerFunction(0x003382B8, FUN_003382B8_0x3382b8);
         runtime.registerFunction(0x00100388, FUN_00100388_0x100388);
         runtime.registerFunction(0x0033A238, FUN_0033A238_0x33a238);
         runtime.registerFunction(0x0033A820, FUN_0033A820_0x33a820);
@@ -176,8 +184,11 @@ int main(int argc, char** argv) {
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (osd_readback_mode) throw;
-            if (readback_mode) throw;
+            if (osd_readback_mode) require(stop.address == 0x1000E010 && stop.size == 4
+                    && context.pc == 0x003319CC && GPR_U32(&context, 4) == 0
+                    && runtime.semaphore_waits == 1 && runtime.semaphore_signals == 1,
+                    "Unexpected DMA status boundary");
+            else if (readback_mode) throw;
             else if (intc_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338DD8
                     && runtime.intc_mask == 0x1802 && runtime.intc_enable_calls == 1
                     && runtime.timer2_mode_reads == 1 && runtime.timer2_mode_writes == 1,
@@ -191,18 +202,6 @@ int main(int argc, char** argv) {
                          "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
-            stopped = true;
-        }
-        catch (const UnsupportedGuestBranch& stop) {
-            require(osd_readback_mode && stop.target == 0x00321D90 && stop.source_pc == 0x00321E74
-                    && stop.resume_pc == 0 && context.pc == stop.target
-                    && GPR_U32(&context, 4) == 0x003A8830 && GPR_U32(&context, 5) == 0x0038B984
-                    && runtime.read32(runtime.memory().data(), 0x003A8830) == 1
-                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 48) == 0x0010039C,
-                    "Unexpected main-entry dispatch boundary");
-            stop_target = stop.target;
-            stop_source = stop.source_pc;
-            stop_resume = stop.resume_pc;
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
@@ -244,7 +243,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (osd_readback_mode ? 32 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (osd_readback_mode ? 192 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -254,8 +253,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (osd_readback_mode ? 89u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (osd_readback_mode ? 86u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (osd_readback_mode ? 910u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (osd_readback_mode ? 47u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -268,7 +267,7 @@ int main(int argc, char** argv) {
                     && runtime.read32(runtime.memory().data(), 0x0036BAD8) == 2 && context.cop0_status == (osd_readback_mode ? 0x10000u : 0u),
                     "Interrupt registration ID/state or generated status helper differs");
             require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
-            require(runtime.kernel_word_writes == (osd_readback_mode ? 668u : 0x740 / 4) && runtime.cache_requests == (osd_readback_mode ? 5u : 2u) && runtime.instruction_cache_invalidations == (osd_readback_mode ? 2u : 1u),
+            require(runtime.kernel_word_writes == (osd_readback_mode ? 668u : 0x740 / 4) && runtime.cache_requests == (osd_readback_mode ? 6u : 2u) && runtime.instruction_cache_invalidations == (osd_readback_mode ? 2u : 1u),
                     "Unexpected copied kernel size/cache request count");
             require(runtime.kernel_dispatch_validations == (osd_readback_mode ? 12u : 6u), "Unexpected copied kernel dispatch count");
             std::array<bool, 4> registered_slots{};
@@ -299,6 +298,14 @@ int main(int argc, char** argv) {
             require(runtime.syscall_handlers[0x5B] == 0x80075000, "Startup kernel entry not registered");
         }
         if (osd_readback_mode) {
+            require(runtime.semaphore_waits == 1 && runtime.semaphore_signals == 1
+                    && runtime.read32(runtime.memory().data(), 0x003A8830) == 1
+                    && runtime.read32(runtime.memory().data(), 0x003A8838) == 0x003A8818
+                    && runtime.read32(runtime.memory().data(), 0x003A8820) == 0x0036C148,
+                    "Generated helper/semaphore list state differs");
+            for (const auto offset : {0u, 4u, 12u, 16u, 20u})
+                require(runtime.read32(runtime.memory().data(), 0x003A8818 + offset) == 0,
+                        "Generated helper descriptor differs");
             for (std::uint32_t offset = 0x300; offset < 0x328; offset += 8) {
                 const auto selector = runtime.read32(runtime.memory().data(), 0x80075000 + offset);
                 const auto handler = runtime.read32(runtime.memory().data(), 0x80075004 + offset);
@@ -318,7 +325,6 @@ int main(int argc, char** argv) {
                     && (osd_readback_mode
                         ? runtime.read64(runtime.memory().data(), runtime.initial_sp - 8) == 0x00100240
                           && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0
-                          && GPR_U32(&context, 16) == 0x00370000
                         : runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0),
                     "Current startup frames did not save return addresses");
             if (!intc_mode) for (const auto offset : {0u, 16u, 32u, 48u, 64u})
@@ -372,10 +378,10 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"" << (osd_readback_mode ? "blocked at unsupported guest branch" : readback_mode ? "blocked at unsupported syscall" : intc_mode ? "blocked at unsupported guest memory" : timer2_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
+        report << "{\"status\":\"" << (osd_readback_mode ? "blocked at unsupported guest memory" : readback_mode ? "blocked at unsupported syscall" : intc_mode ? "blocked at unsupported guest memory" : timer2_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
                << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source << ",\"resume_pc\":" << stop_resume << ","
                << "\"selector\":" << stop_selector << ","
-               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (osd_readback_mode ? "branch" : readback_mode ? "syscall" : intc_mode ? "read" : timer2_mode ? "syscall" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (osd_readback_mode ? "read" : readback_mode ? "syscall" : intc_mode ? "read" : timer2_mode ? "syscall" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
                << ",\"timer3_interrupt_handler\":" << runtime.timer3_interrupt_handler
                << ",\"timer3_interrupt_enable_requested\":" << (runtime.timer3_interrupt_enable_requested ? "true" : "false")
                << ",\"extended_registrations\":" << runtime.extended_registrations
@@ -393,6 +399,7 @@ int main(int argc, char** argv) {
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
+               << ",\"semaphore_waits\":" << runtime.semaphore_waits << ",\"semaphore_signals\":" << runtime.semaphore_signals
                << ",\"semaphores_created\":" << runtime.semaphores.size() << ",\"returns\":" << runtime.returns
                << ",\"syscall_registrations\":" << runtime.syscall_registrations
                << ",\"word_writes\":" << runtime.word_writes
@@ -400,7 +407,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (osd_readback_mode) std::cout << "Generated FUN_00321E50 executed; reached unlinked tail target FUN_00321D90.\n";
+        if (osd_readback_mode) std::cout << "Generated helper tail chain returned; DMA initialization reached unsupported D_STAT read 0x1000E010.\n";
         else if (osd_mode) std::cout << "Captured OSD configuration returned; reached SetOsdConfigParam syscall 0x4A.\n";
         else if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";

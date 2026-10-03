@@ -10,7 +10,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Complete: local ISO matches official Redump size/MD5/SHA-1, and its embedded ELF matches the local executable. Reference provenance is in `config/retail_revision.json`.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
 4. PS2Recomp generation and integration: pinned tools, synthetic validation, Ghidra discovery, automatic provisional EE map preparation, and local generation are working. One generated BT2 syscall wrapper compiles/links and executes through an isolated authored adapter. Extend the runtime from observed compile/execution blockers; proprietary-derived output remains ignored.
-5. Runtime entry: bounded generated platform initialization returns to entry using validated local checkpoints. Generated `FUN_00100388` and `FUN_00321E50` now execute to unlinked tail target `0x00321D90`. Resolve only observed mapping, compilation and execution blockers; [current status](PROG.md) and [history](progress/2026-10.md) record evidence and limits.
+5. Runtime entry: bounded generated platform initialization returns to entry using validated local checkpoints. The first helper tail chain now returns to `FUN_00100388`; the next generated path reaches its first unsupported DMA status read. Resolve only observed mapping, compilation and execution blockers; [current status](PROG.md) and [history](progress/2026-10.md) record evidence and limits.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
 8. Playable versus battle: reach the first major gameplay goal with working controls.
@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: link reached target `0x00321D90` and execute to its actual blocker. A source-checked single-NOP tail padding rule now admits the prior noncontiguous candidate. Preserve payload binding checks, captured baseline and earlier optional boundaries.
+Current next step: obtain reference evidence for DMA status `D_STAT` at the reached `0x003319CC` read, then implement only the required DMA behavior with validated state. Preserve payload binding checks, captured baseline and earlier optional boundaries. Continue through multiple link/runtime blockers per pass until a new major subsystem or missing evidence prevents a safe change.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

@@ -121,6 +121,34 @@ int main() {
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x500, 0x100, 0x104,
                 PS2Runtime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
+        runtime.Store32(memory, &context, 0x500, 0x12345678);
+        require(runtime.read32(memory, 0x500) == 0x12345678);
+        reject([&] { runtime.Store32(memory, &context, 0x1000E010, 1); });
+        require(runtime.read32(memory, 0x500) == 0x12345678);
+        PS2Runtime semaphore_runtime;
+        semaphore_runtime.semaphores.push_back({1, 1, 0});
+        R5900Context semaphore_context{};
+        semaphore_context.r[3].low = 0x44;
+        semaphore_context.r[4].low = 0;
+        semaphore_context.r[2] = {0x1234, 0x5678};
+        semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0);
+        require(semaphore_context.r[2].low == 0 && semaphore_context.r[2].high == 0x5678
+                && semaphore_runtime.semaphores[0].count == 0 && semaphore_runtime.semaphore_waits == 1);
+        semaphore_context.r[2].low = 0x1234;
+        reject([&] { semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0); });
+        require(semaphore_context.r[2].low == 0x1234 && semaphore_runtime.semaphore_waits == 1);
+        semaphore_context.r[3].low = 0x42;
+        semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0);
+        require(semaphore_context.r[2].low == 0 && semaphore_runtime.semaphores[0].count == 1
+                && semaphore_runtime.semaphore_signals == 1);
+        reject([&] { semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0); });
+        require(semaphore_runtime.semaphores[0].count == 1 && semaphore_runtime.semaphore_signals == 1);
+        for (const auto selector : {0x42u, 0x44u}) {
+            semaphore_context.r[3].low = selector;
+            semaphore_context.r[4].low = UINT32_MAX;
+            semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0);
+            require(semaphore_context.r[2].low == UINT64_MAX && semaphore_context.r[2].high == 0x5678);
+        }
         context.r[3].low = 0x40;
         context.r[4].low = 0x600;
         context.r[2].high = 0x1234;

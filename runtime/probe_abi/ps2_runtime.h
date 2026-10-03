@@ -301,6 +301,26 @@ public:
             context->r[2].low = id;
             return;
         }
+        if (code == 0 && (selector == 0x44 || selector == 0x42)) {
+            const auto id = static_cast<std::uint32_t>(context->r[4].low);
+            if (id >= semaphores.size()) {
+                context->r[2].low = UINT64_MAX;
+                return;
+            }
+            auto& semaphore = semaphores[id];
+            if (selector == 0x44) {
+                if (!semaphore.count) throw UnsupportedSyscall(selector, context->pc);
+                --semaphore.count;
+                ++semaphore_waits;
+            } else {
+                // No waiting threads exist in this bounded model. Overflow is unverified.
+                if (semaphore.count >= semaphore.maximum) throw UnsupportedSyscall(selector, context->pc);
+                ++semaphore.count;
+                ++semaphore_signals;
+            }
+            context->r[2].low = id;
+            return;
+        }
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
         const auto operation = static_cast<std::uint32_t>(context->r[4].low);
@@ -483,7 +503,11 @@ public:
         timer2_mode_supplied_ = true;
     }
 
-    // Emitted slow-path load ABI; unsupported MMIO still fails explicitly.
+    // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
+    void Store32(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint32_t value) {
+        write32(rdram, address, value);
+    }
+
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
         if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
             checkMemory(rdram, 0, 0);
@@ -545,6 +569,7 @@ public:
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
+    std::uint32_t semaphore_waits = 0, semaphore_signals = 0;
     std::array<std::uint32_t, 256> syscall_handlers{};
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
     struct IntcHandler { std::uint32_t cause, address, arg, gp; };

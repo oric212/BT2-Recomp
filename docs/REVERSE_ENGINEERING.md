@@ -307,3 +307,8 @@ Verification: full checkpoint pipeline/MSVC build, seven CTests, 34 recomp tooli
 ## 2026-10-04 - Platform initialization continuation
 
 Exact copied-table selector/address registration allows generated startup to finish; registration alone does not allow execution of uncompiled kernel handlers. Generated cleanup and entry continuation reach the unlinked FUN_00100388 call at 0x00100238. EI at 0x00100228 sets modeled Status 0x10000; interrupt delivery remains unimplemented. Arguments are a0=0 and a1=0x0038B984. The routine's purpose remains unknown. See [detailed pass evidence](progress/2026-10.md#bounded-platform-initialization-returned-to-entry-2026-10-04).
+
+
+## 2026-10-04 - First helper chain returned; DMA boundary
+
+Generated FUN_00321D90/FUN_00322F90 use semaphore 1 in a nonblocking WaitSema/SignalSema pair; bounded semantics and pinned ABI reference are recorded in config/startup_abi.sources.json. FUN_003242D0 returns through the helper tail chain to FUN_00100388. Newly reached FUN_00331FE8/FUN_00331888 execute generated RAM initialization and status/cache helpers, then read 0x1000E010 at 0x003319CC. PS2SDK ee_regs.h names this register D_STAT; its actual initial value and required DMA behavior remain unknown. No semantic function renaming, register default or DMA transfer is inferred. See [pass evidence](progress/2026-10.md#multiple-execution-blockers-resolved-first-dma-status-read-reached-2026-10-04).

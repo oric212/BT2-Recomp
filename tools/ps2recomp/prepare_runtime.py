@@ -43,11 +43,20 @@ def main():
     patched = ROOT / "game/generated/bt2-runtime"
     patched.mkdir(parents=True, exist_ok=True)
     prepared_sources = []
-    for filename in ("FUN_00100008_0x100008.cpp", "FUN_00338520_0x338520.cpp", "FUN_0033A238_0x33a238.cpp", "FUN_00321E50_0x321e50.cpp"):
+    tail_sources = {
+        "FUN_00100008_0x100008.cpp": 1,
+        "FUN_00338520_0x338520.cpp": 1,
+        "FUN_0033A238_0x33a238.cpp": 1,
+        "FUN_00321E50_0x321e50.cpp": 1,
+        "FUN_00321D90_0x321d90.cpp": 1,
+        "FUN_00331FE8_0x331fe8.cpp": 2,
+        "FUN_00331888_0x331888.cpp": 3,
+    }
+    for filename, expected_count in tail_sources.items():
         source = ROOT / "game/generated/bt2" / filename
         text, count = route_tail_calls(source.read_text(encoding="utf-8"))
-        if count != 1:
-            raise ValueError(f"Expected one emitted tail call in {filename}; review changed output.")
+        if count != expected_count:
+            raise ValueError(f"Unexpected emitted tail call count in {filename}; review changed output.")
         destination = patched / source.name
         destination.write_text(text, encoding="utf-8")
         prepared_sources.append({"source": filename,

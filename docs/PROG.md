@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Generated platform initialization now returns to the entry code after bounded kernel copies/lookup registrations, buffer setup, INTC/Timer 2 setup, dormant thread creation, priority adjustment and OSD calls. Explicit validated PCSX2 checkpoints support this continuation. Entry restores its stack, executes EI and enters generated `FUN_00100388`, and its first generated helper `FUN_00321E50`. The helper takes its initial branch path, stores a one-time flag and restores its frame before tail dispatch. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Generated platform initialization returns to entry using validated local PCSX2 checkpoints. The first helper tail chain now returns to `FUN_00100388` after generated descriptor/list setup, a nonblocking semaphore wait/signal pair and another generated registration helper. The next generated path initializes RAM tables and reaches its first DMA status read. Game boot and gameplay remain incomplete.
 
 Latest verification: MSVC build/pipeline, seven CTests, 35 recomp tooling tests and ten capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Generated `FUN_00321E50` stops at unlinked tail target `FUN_00321D90` from `0x00321E74`. Target range `[0x00321D90,0x00321E50)` is mapped and generated locally. The earlier gap is verified unreachable NOP padding and now accepted by a narrow source-checked map rule.
+Generated `FUN_00331888` stops reading DMA status register `D_STAT` at `0x1000E010`, PC `0x003319CC`. No DMA register state, transfers or interrupts are implemented; the load fails before returning a value.
 
-Next: link the reached target, execute, and inspect the actual next blocker. Counter progression, interrupt delivery and scheduling remain unimplemented.
+Next: obtain reference evidence for this reached DMA path and validate its initial register state before implementing bounded DMA behavior. Counter progression, interrupt delivery and scheduling remain unimplemented.
 
 ## Key counts
 
 - **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
-- **44** distinct functions entered across native probes.
-- **41** functions completed across probes; entry, `FUN_00100388` and `FUN_00321E50` remain partial at tail dispatch. These are startup/helper paths, not working gameplay.
+- **52** distinct functions entered across native probes.
+- **48** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8` and `FUN_00331888` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 
