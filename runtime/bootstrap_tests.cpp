@@ -534,6 +534,40 @@ int main() {
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
         sequence_context.r[3].low = 0x4B;
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        PS2Runtime second_overlay;
+        second_overlay.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        const std::vector<std::uint8_t> payload(0x330, 0xC3);
+        reject([&] { second_overlay.enableStartupKernelPayload(payload); });
+        second_overlay.loadKernelSnapshot(baseline);
+        second_overlay.enableKernelPatch(0x80076000, 8);
+        reject([&] { second_overlay.enableStartupKernelPayload(std::span<const std::uint8_t>(payload).first(4)); });
+        second_overlay.enableStartupKernelPayload(payload);
+        reject([&] { second_overlay.enableStartupKernelPayload(payload); });
+        auto* overlay_ram = second_overlay.memory().data();
+        reject([&] { second_overlay.write32(nullptr, 0x80075000, 0xC3C3C3C3); });
+        reject([&] { second_overlay.write32(overlay_ram, 0x80075002, 0xC3C3C3C3); });
+        reject([&] { second_overlay.write32(overlay_ram, 0x80074FFC, 0xC3C3C3C3); });
+        reject([&] { second_overlay.write32(overlay_ram, 0x80075330, 0xC3C3C3C3); });
+        reject([&] { second_overlay.write32(overlay_ram, 0xA0075000, 0xC3C3C3C3); });
+        reject([&] { second_overlay.write32(overlay_ram, 0x80075000, 0); });
+        R5900Context overlay_registration{};
+        overlay_registration.r[3].low = 0x74;
+        overlay_registration.r[4].low = 0x5B;
+        overlay_registration.r[5].low = 0x80075000;
+        reject([&] { second_overlay.handleSyscall(overlay_ram, &overlay_registration, 0); });
+        second_overlay.write32(overlay_ram, 0x80075000, 0xC3C3C3C3);
+        reject([&] { second_overlay.write32(overlay_ram, 0x80075000, 0xC3C3C3C3); });
+        reject([&] { second_overlay.handleSyscall(overlay_ram, &overlay_registration, 0); });
+        for (std::uint32_t offset = 4; offset < 0x330; offset += 4)
+            second_overlay.write32(overlay_ram, 0x80075000 + offset, 0xC3C3C3C3);
+        second_overlay.handleSyscall(overlay_ram, &overlay_registration, 0);
+        require(second_overlay.syscall_handlers[0x5B] == 0x80075000
+                && second_overlay.startup_kernel_word_writes == 204 && second_overlay.kernel_word_writes == 204
+                && second_overlay.word_writes == 204 && second_overlay.read32(overlay_ram, 0x8007532C) == 0xC3C3C3C3
+                && second_overlay.read32(overlay_ram, 0x80075330) == 0x5A5A5A5A
+                && std::equal(baseline.begin(), baseline.end(), second_overlay.kernelBaseline().begin()));
+        overlay_registration.r[5].low = 0x80075004;
+        reject([&] { second_overlay.handleSyscall(overlay_ram, &overlay_registration, 0); });
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

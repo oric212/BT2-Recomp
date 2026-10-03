@@ -274,3 +274,16 @@ Added generated-copy-handler CTest: actual emitted function copies 12 and `0x330
 Counts: 7,245 generated functions (7,244 main + one scoped kernel), 7,251 raw C++/header files; 39 entered and 35 completed across probes. The new handler completed only in isolated RAM tests and is partial during startup. Full startup records 65 guest calls, 11 custom callbacks, 60 JR returns, 11 registrations, 702 word / 44 doubleword / 43,632 quadword / 15 byte writes; old kernel overlay remains 464 words.
 
 Verification: full checkpoint pipeline/MSVC build, seven CTests, 31 recomp tooling tests and ten capture-tool tests passed. Earlier first OSD setter stop remains checked without readback input. Next: bounded second kernel overlay for the observed payload, preserve captured baseline and existing compiled binding checks, then execute to the next blocker. No full startup/gameplay is claimed.
+
+
+## Second bounded kernel payload copy completed (2026-10-04)
+
+Added an explicit startup payload capability only for `[0x80075000,0x80075330)`, enabled from the validated local ELF source `[0x0036BAF8,0x0036BE28)` in the full OSD-readback probe. It requires the existing captured baseline and primary overlay, rejects overlapping/duplicate capabilities and wrong size, and checks each aligned store against the expected original word. Wrong RAM pointers, changed/duplicate stores, aliases and adjacent/unrelated kernel addresses remain rejected. Stored words use the existing separate overlay; captured kernel bytes are never mutated.
+
+SetSyscall permits only the exact secondary entry after all 204 unique expected words have been written. Partial copies and interior entry registrations fail. Existing primary range and compiled-binding verification remain intact. Bootstrap tests check these rejection cases, read-through of copied words, adjacent baseline preservation and unchanged full baseline. No broad kernel mapping or host memcpy replacement was added.
+
+Generated `FUN_0033A7C8` and its caller wrapper complete. Startup records FlushCache operations 0/2, registers `0x5B -> 0x80075000`, then registers `0x54 -> 0x0033AD40`. Newly linked `FUN_0033A800` reaches syscall `0x5B`, resume PC `0x0033A808`, lookup argument `0x55`; runtime stops before executing the unbound copied entry. All 204 words compare equal to their ELF source in the entry probe. The first payload and its six compiled dispatch checks remain validated.
+
+Counts: 40 functions entered / 36 completed across probes; entry, startup parent, `FUN_0033A820` and `FUN_0033A800` remain partial. Full probe: 70 guest calls, 66 JR returns, 11 custom callbacks, 13 registrations; 668 kernel word writes (464 primary + 204 secondary), 906 total word writes, 44 doubleword / 43,632 quadword / 15 byte writes; four cache requests/two instruction-cache invalidations. Generation totals remain 7,245 functions and 7,251 raw files.
+
+Verification: MSVC/full checkpoint pipeline, seven CTests, 31 recomp tooling tests and ten capture-tool tests passed. Omitting OSD readback still preserves the first setter stop. Proprietary payload/captures/generated code remain ignored. Next: scoped relocated generation and binding for actual reached entry `0x80075000`, preserving complete payload verification and prior kernel binding. No full boot/gameplay.

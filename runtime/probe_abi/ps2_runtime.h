@@ -207,8 +207,10 @@ public:
             if (address >= 0x80000000) {
                 // Register only a word actually written into the explicitly enabled patch.
                 // Registration does not make these bytes a compiled native function.
-                if (memory_.empty() || rdram != memory_.data() || address < kernel_patch_start_
-                        || address >= kernel_patch_end_ || !kernel_patch_words_.contains(address - 0x80000000))
+                const bool primary_patch = address >= kernel_patch_start_ && address < kernel_patch_end_;
+                const bool startup_payload = address == 0x80075000 && startup_kernel_word_writes == 0x330 / 4;
+                if (memory_.empty() || rdram != memory_.data() || (!primary_patch && !startup_payload)
+                        || !kernel_patch_words_.contains(address - 0x80000000))
                     throw UnsupportedGuestMemory(address, 4);
             } else if (address) checkMemory(rdram, address, 4);
             if (timer_interrupt) {
@@ -361,6 +363,20 @@ public:
             ++word_writes;
             return;
         }
+        if (!startup_kernel_payload_.empty() && address >= 0x80075000 && address < 0x80075330) {
+            if (memory_.empty() || rdram != memory_.data() || address % 4)
+                throw UnsupportedGuestMemory(address, 4);
+            const auto offset = address - 0x80075000;
+            std::uint32_t expected;
+            std::memcpy(&expected, startup_kernel_payload_.data() + offset, 4);
+            if (value != expected || kernel_patch_words_.contains(address - 0x80000000))
+                throw std::runtime_error("Startup kernel payload store differs or repeats");
+            kernel_patch_words_[address - 0x80000000] = value;
+            ++startup_kernel_word_writes;
+            ++kernel_word_writes;
+            ++word_writes;
+            return;
+        }
         if (address >= kernel_patch_start_ && address < kernel_patch_end_) {
             if (!kernel_patch_end_ || memory_.empty() || rdram != memory_.data() || address % 4
                     || kernel_patch_end_ - address < 4) throw UnsupportedGuestMemory(address, 4);
@@ -395,6 +411,15 @@ public:
         if (kernel_patch_end_) throw std::runtime_error("Cannot replace a kernel baseline with enabled patches");
         kernel_snapshot_.assign(bytes.begin(), bytes.end());
     }
+
+    void enableStartupKernelPayload(std::span<const std::uint8_t> expected) {
+        if (!kernel_patch_end_ || kernel_snapshot_.empty() || !startup_kernel_payload_.empty() || expected.size() != 0x330)
+            throw std::runtime_error("Invalid startup kernel payload capability");
+        if (kernel_patch_start_ < 0x80075330 && 0x80075000 < kernel_patch_end_)
+            throw std::runtime_error("Startup kernel payload overlaps existing patch");
+        startup_kernel_payload_.assign(expected.begin(), expected.end());
+    }
+    unsigned startup_kernel_word_writes = 0;
 
     void enableKernelPatch(std::uint32_t start, std::uint32_t size) {
         if (kernel_snapshot_.empty() || kernel_patch_end_ || !size || start % 4 || size % 4
@@ -556,7 +581,7 @@ private:
             throw UnsupportedGuestMemory(address, count);
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
-    std::vector<std::uint8_t> memory_, kernel_snapshot_;
+    std::vector<std::uint8_t> memory_, kernel_snapshot_, startup_kernel_payload_;
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;

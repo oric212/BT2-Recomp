@@ -246,3 +246,6 @@ The full OSD readback pipeline now accepts the ordered same-value restore, compl
 
 
 The reached `FUN_0033A7C8` map gap has now been discovered with the existing focused Ghidra command, regenerated and linked. The full pipeline dispatches it and stops at its first store to `0x80075000`; writable support for that payload is pending. `generated-copy-handler` is included in the pipeline tests and verifies aligned copies/zero size/strict return in isolated RAM. Generated code and discovery artifacts remain ignored.
+
+
+The full OSD-readback pipeline now enables a second fixed expected-word overlay at `0x80075000` for the observed `0x330`-byte payload. Generated copy execution fills it; SetSyscall accepts its entry only after complete matching stores. Startup stops before executing that uncompiled relocated entry through selector `0x5B`, argument `0x55`. Earlier inputs preserve their existing boundaries. The original kernel baseline and first compiled binding remain checked.
