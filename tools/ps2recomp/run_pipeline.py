@@ -176,7 +176,7 @@ def main():
     build = ROOT / "build/probe"
     run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF")], folder / "configure.log")
     run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
-    run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler|generated-buffer-fill|generated-timer-write"], folder / "probe-test.log")
+    run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler|generated-buffer-fill|generated-timer-write|generated-copy-handler"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
     result = run(["cmake", "--build", str(build), "--config", "Debug", "--target", "bt2-entry-probe",
                   "--parallel", "1", "--", "/nodeReuse:false"], folder / "integration-build.log", check=False)

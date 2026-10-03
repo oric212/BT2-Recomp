@@ -261,3 +261,16 @@ The stop-report catch previously omitted the exception's registered handler. It 
 Counts: 38 functions entered / 34 completed across probes; four startup frames remain partial. Full execution: 64 guest calls, 60 JR returns, 11 syscall registrations, two OSD reads/two setters, 702 word / 44 doubleword / 43,632 quadword / 15 byte writes. Current stack is initial SP minus `0x50`. Prior kernel payload/register/timer/thread assertions remain checked.
 
 Verification: MSVC/full checkpoint pipeline, six CTests, 31 recomp tooling tests and ten capture-tool tests passed. Without OSD readback validation the first setter stop is preserved. UTF-8/proprietary ignore checks passed. No complete startup/gameplay. Next: automate discovery/mapping of the actually reached handler, regenerate, link and run to its next blocker.
+
+
+## Reached copy handler discovered, generated and executed (2026-10-03)
+
+Used existing `analyze_game.py --discover-blocker` at observed map-gap `0x0033A7C8`. Ghidra provisionally discovered a contiguous aligned 56-byte body ending at `0x0033A800`; the wrapper remains separate. Re-export selected 7,244 eligible EE candidates and quarantined 2,300; 9,544 total Ghidra functions. Rebuilt the automatic map and regenerated 7,247 raw main C++/header files; scoped kernel output adds one function/four files. All local maps/code remain ignored and neutrally named.
+
+Linked/registers generated `FUN_0033A7C8` for the actual syscall handler. It shifts byte length right by two, loads a source word and reaches its first destination store. Native startup rejects store `0x80075000`, size 4, PC `0x0033A7E8`; request originally passed source `0x0036BAF8`, size `0x330`. At stop source has advanced to `0x0036BAFC`, word count is `0xCC`, loop index 1; destination has not advanced and no new kernel word was written. Reports preserve selector `0x5A`, handler and the actual attempted store word, rather than mislabeling the handler's overwritten v1 as a syscall selector or reporting the old timer write.
+
+Added generated-copy-handler CTest: actual emitted function copies 12 and `0x330` bytes in bounded RAM, handles zero size, returns zero through the strict guest return path and leaves all other RAM unchanged. This validates these aligned non-overlapping cases, not general memcpy semantics or kernel execution. Startup still stops before its first store; no handwritten replacement/stub or broader kernel access was added.
+
+Counts: 7,245 generated functions (7,244 main + one scoped kernel), 7,251 raw C++/header files; 39 entered and 35 completed across probes. The new handler completed only in isolated RAM tests and is partial during startup. Full startup records 65 guest calls, 11 custom callbacks, 60 JR returns, 11 registrations, 702 word / 44 doubleword / 43,632 quadword / 15 byte writes; old kernel overlay remains 464 words.
+
+Verification: full checkpoint pipeline/MSVC build, seven CTests, 31 recomp tooling tests and ten capture-tool tests passed. Earlier first OSD setter stop remains checked without readback input. Next: bounded second kernel overlay for the observed payload, preserve captured baseline and existing compiled binding checks, then execute to the next blocker. No full startup/gameplay is claimed.

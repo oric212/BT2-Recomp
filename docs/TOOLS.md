@@ -243,3 +243,6 @@ Add `--osd-readback-capture work/pcsx2-capture/osd-readback/capture.json` alongs
 
 
 The full OSD readback pipeline now accepts the ordered same-value restore, completes the generated OSD helper and enters `FUN_0033A820`. It stops at selector `0x5A` with registered handler `0x0033A7C8`, currently a map gap. Stop reports preserve the exception handler field for correct classification. No handler implementation or kernel payload copy is supplied. Earlier commands without readback retain their original stop.
+
+
+The reached `FUN_0033A7C8` map gap has now been discovered with the existing focused Ghidra command, regenerated and linked. The full pipeline dispatches it and stops at its first store to `0x80075000`; writable support for that payload is pending. `generated-copy-handler` is included in the pipeline tests and verifies aligned copies/zero size/strict return in isolated RAM. Generated code and discovery artifacts remain ignored.
