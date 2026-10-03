@@ -1,55 +1,64 @@
-# Local game dumps and proprietary content
+# Local game content: keep all extracted assets inside these directories.
 /rom/
 /game_data/
+/assets/
 *.iso
-*.bin
+*.ISO
 *.cue
+*.CUE
 *.chd
+*.CHD
 *.img
+*.IMG
 *.mdf
+*.MDF
+*.mds
+*.MDS
 *.nrg
-*.elf
-*.ELF
-*.exe
-*.EXE
-SLUS_*
-SLES_*
-SCES_*
+*.NRG
 
-# Generated code and reverse-engineering scratch data
+# Retail executable names, including common local naming variants.
+SLUS_214.41
+SLUS_214.41.*
+SLUS-21441
+SLUS-21441.*
+SLUS_21441
+SLUS_21441.*
+
+# Proprietary-derived generated code and reverse-engineering output.
 /generated/
+/game/generated/
 /research/
 /scratch/
+/work/
 /temp/
 /tmp/
-*.asm
-*.disasm
 *.i64
 *.idb
 *.id0
 *.id1
 *.id2
-*.nam
-*.til
 *.gpr
-*.ghidra
+*.rep/
 
-# Build output and editor files
+# Build output and Visual Studio/CMake temporary files.
 /build/
 /build-*/
 /out/
 /.vs/
-/.vscode/
 CMakeFiles/
 CMakeCache.txt
+CMakeUserPresets.json
 cmake_install.cmake
 compile_commands.json
 *.obj
 *.o
 *.pdb
 *.ilk
-*.lib
-*.exp
-*.log
+*.tlog/
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
 .DS_Store
 Thumbs.db

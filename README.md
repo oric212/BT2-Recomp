@@ -1,19 +1,20 @@
-# BT2 Recomp
+# BT2 Native Recompilation Project
 
-A clean C++ foundation for a future Budokai Tenkaichi 2 recompilation effort. The current executable is a startup smoke check; it does not load or execute game code yet.
+A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static recompilation of the original PS2 game logic and a custom PS2 compatibility runtime. The initial target is the North American release, SLUS-21441. This is a recompilation project, not a ground-up remake.
 
-## Build and run
+## Current status
 
-Requires CMake 3.20 or newer and a C++17 compiler.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022 and prints a startup message. Game loading, validation, recompilation, rendering, and audio are not implemented.
 
-```powershell
-cmake -S . -B build
-cmake --build build --config Debug
-.\build\Debug\bt2-recomp.exe
-```
+Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
-Run `bt2-recomp --help` for the available command line options.
+See [build instructions](docs/BUILDING.md), [project goals](docs/PROJECT_GOALS.md), [progress](docs/PROGRESS.md), [content and license rules](docs/LEGAL.md), and [reverse-engineering notes](docs/REVERSE_ENGINEERING.md).
 
-## Local data
+## Layout
 
-Keep legally obtained game data and reverse-engineering work outside version control. The existing `rom/` directory, `game_data/`, retail executables, generated code, build output, and scratch files are ignored. Do not add proprietary assets or code copied from the retail executable to this repository.
+- `runtime/`: native host and future PS2 compatibility code.
+- `game/`: handwritten BT2 integration; proprietary-derived output belongs in ignored `game/generated/`.
+- `config/`: shared configuration examples when needed.
+- `tools/`: development tools; game verification is only a documented next step.
+- `external/`: dependency integration notes; no dependencies are bundled yet.
+- `docs/`: goals, build instructions, progress, and evidence records.
