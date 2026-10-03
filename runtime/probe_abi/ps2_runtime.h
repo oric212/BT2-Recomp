@@ -274,6 +274,15 @@ public:
     }
 
     void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+        // Observed Timer 2 startup store only; no counter advancement or scheduling.
+        if (address == 0xB0001010 && timer2_mode_supplied_ && timer2_mode_reads == 1
+                && !timer2_mode_writes && value == 0x382) {
+            checkMemory(rdram, 0, 0);
+            timer2_mode_after_write = (timer2_mode_ & 0xC00 & ~value) | (value & 0x3FF);
+            ++timer2_mode_writes;
+            ++word_writes;
+            return;
+        }
         if (address >= kernel_patch_start_ && address < kernel_patch_end_) {
             if (!kernel_patch_end_ || memory_.empty() || rdram != memory_.data() || address % 4
                     || kernel_patch_end_ - address < 4) throw UnsupportedGuestMemory(address, 4);
@@ -392,7 +401,8 @@ public:
     bool startup_zero_verified = false;
     std::uint64_t startup_quadword_writes = 0, startup_byte_writes = 0;
     std::uint64_t kernel_word_writes = 0;
-    unsigned timer3_mode_reads = 0, timer2_mode_reads = 0;
+    unsigned timer3_mode_reads = 0, timer2_mode_reads = 0, timer2_mode_writes = 0;
+    std::uint32_t timer2_mode_after_write = 0;
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;

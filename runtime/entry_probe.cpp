@@ -86,6 +86,8 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338B78, FUN_00338B78_0x338b78);
         runtime.registerFunction(0x003251DC, FUN_003251DC_0x3251dc);
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
+        runtime.registerFunction(0x0032F7A8, FUN_0032F7A8_0x32f7a8);
+        runtime.registerFunction(0x0032E9A0, FUN_0032E9A0_0x32e9a0);
         runtime.registerFunction(0x00338B58, FUN_00338B58_0x338b58);
         runtime.registerFunction(0x00338AD8, FUN_00338AD8_0x338ad8);
         runtime.registerFunction(0x00338268, FUN_00338268_0x338268);
@@ -102,12 +104,11 @@ int main(int argc, char** argv) {
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
         std::uint32_t stop_selector = 0, stop_handler = 0;
+        std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (timer2_mode) require(stop.address == 0xB0001010 && stop.size == 4 && context.pc == 0x00338B30
-                    && GPR_U32(&context, 5) == 0x382 && runtime.timer2_mode_reads == 1,
-                    "Unexpected Timer 2 write boundary");
-            else if (timer_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338C58,
+            if (timer2_mode) throw;
+            if (timer_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338C58,
                                     "Unexpected Timer 2 MMIO boundary");
             else if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
                                        "Unexpected snapshot MMIO boundary");
@@ -115,6 +116,15 @@ int main(int argc, char** argv) {
                          "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
+            stopped = true;
+        }
+        catch (const UnsupportedSyscall& stop) {
+            require(timer2_mode && stop.selector == 0x14 && !stop.handler && stop.resume_pc == 0x0032E9A8
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 11
+                    && runtime.timer2_mode_writes == 1 && runtime.timer2_mode_after_write == 0x382
+                    && context.cop0_errorepc == 0x00338C90 && !context.ll_bit,
+                    "Unexpected syscall after generated Timer 2 write/ERET");
+            stop_selector = stop.selector;
             stopped = true;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
@@ -133,7 +143,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (timer_mode ? 112 : snapshot_mode ? 80 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -143,8 +153,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (timer2_mode ? 44u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (timer_mode ? 681u : 9u) && runtime.doubleword_writes == (timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -154,7 +164,7 @@ int main(int argc, char** argv) {
                     && runtime.intc_handlers[0].cause == 12 && runtime.intc_handlers[0].address == 0x80076488
                     && runtime.intc_handlers[1].cause == 11 && runtime.intc_handlers[1].address == 0x00339118
                     && runtime.intc_handlers[1].arg == 0 && runtime.intc_handlers[1].gp == 0x0038BDF0
-                    && runtime.read32(runtime.memory().data(), 0x0036BAD8) == 2 && context.cop0_status == (timer2_mode ? 4u : 0u),
+                    && runtime.read32(runtime.memory().data(), 0x0036BAD8) == 2 && context.cop0_status == 0,
                     "Interrupt registration ID/state or generated status helper differs");
             require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
             require(runtime.kernel_word_writes == 0x740 / 4 && runtime.cache_requests == 2 && runtime.instruction_cache_invalidations == 1,
@@ -220,16 +230,19 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"" << "blocked at unsupported guest memory" << "\",\"entry_executed\":true,"
+        report << "{\"status\":\"" << (timer2_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
+               << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source << ",\"resume_pc\":" << stop_resume << ","
                << "\"selector\":" << stop_selector << ","
-               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (timer2_mode ? "write" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (timer2_mode ? "dispatch" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
                << ",\"timer3_interrupt_handler\":" << runtime.timer3_interrupt_handler
                << ",\"timer3_interrupt_enable_requested\":" << (runtime.timer3_interrupt_enable_requested ? "true" : "false")
                << ",\"extended_registrations\":" << runtime.extended_registrations
                << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << GPR_U32(&context, 3)
-               << ",\"write_value\":" << (timer2_mode ? GPR_U32(&context, 5) : 0)
+               << ",\"write_value\":" << (runtime.timer2_mode_writes ? 0x382 : 0)
+               << ",\"timer2_mode_writes\":" << runtime.timer2_mode_writes
+               << ",\"timer2_mode_after_write\":" << runtime.timer2_mode_after_write
                << ",\"timer2_mode_reads\":" << runtime.timer2_mode_reads
                << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << (timer_mode ? stop_handler : runtime.syscall_handlers[0x83]) << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
@@ -242,7 +255,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (timer2_mode) std::cout << "Captured Timer 2 mode replayed; generated helper reached unsupported write 0xB0001010, value 0x382, PC 0x00338B30.\n";
+        if (timer2_mode) std::cout << "Timer 2 startup mode write completed; generated ErrorEPC/ERET returned; stopped at EnableIntc syscall 0x14, cause 11.\n";
         else if (timer_mode) std::cout << "Interrupt handler ID 2 stored; generated status helper returned; stopped at Timer 2 MMIO read 0x10001010 at PC 0x00338C58.\n";
         else if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
                                      << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";

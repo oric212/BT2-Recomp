@@ -95,5 +95,12 @@
       }
     ],
     "role": "sc_AddIntcHandler and sc_SetSyscall share a 128-entry pool with IDs starting at one. Observed cause 11, next/arg zero uses front insertion, captures GP and returns ID (sign-extended -1 on exhaustion). Timer 3 reserves ID one. Probe retains original guest addresses; no physical alias execution, interrupt delivery, removal or scheduling."
+  },
+  "timer2_write_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/Counters.cpp",
+    "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9",
+    "role": "rcntWmode register control bits and write-one-to-clear flags only. Authored adapter accepts one observed 0x382 store to 0xB0001010 after explicit capture replay; counter synchronization/rate/gating/events remain unimplemented."
   }
 }
