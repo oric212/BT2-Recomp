@@ -99,11 +99,37 @@ public:
         syscall_resume_pc = context->pc;
     }
 
-    bool dispatchGuestBranch(std::uint8_t*, R5900Context*, std::uint32_t target,
+    bool dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, std::uint32_t target,
                              std::uint32_t source, std::uint32_t resume, GuestBranchKind kind, const char*) {
-        if (kind != GuestBranchKind::Return) throw UnsupportedGuestBranch(target, source, resume);
-        if (target != expected_return) throw std::runtime_error("Unexpected probe return target");
-        ++returns;
+        if (kind == GuestBranchKind::Return) {
+            const auto expected = call_returns_.empty() ? expected_return : call_returns_.back();
+            if (target != expected) throw std::runtime_error("Unexpected probe return target");
+            context->pc = target;
+            ++returns;
+            return true;
+        }
+        const auto found = functions_.find(target);
+        if (found == functions_.end()) throw UnsupportedGuestBranch(target, source, resume);
+        if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
+        struct DepthGuard {
+            unsigned& depth;
+            explicit DepthGuard(unsigned& value) : depth(value) { ++depth; }
+            ~DepthGuard() { --depth; }
+        } depth_guard(dispatch_depth_);
+        if (kind == GuestBranchKind::TailJump) {
+            context->pc = target;
+            found->second(rdram, context, this);
+            return true;
+        }
+        if (!resume || (resume & 3)) throw std::runtime_error("Invalid guest return address");
+        call_returns_.push_back(resume);
+        ++guest_calls;
+        context->pc = target;
+        try {
+            found->second(rdram, context, this);
+            if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller");
+        } catch (...) { call_returns_.pop_back(); throw; }
+        call_returns_.pop_back();
         return true;
     }
 
@@ -127,6 +153,20 @@ public:
         ++quadword_writes;
     }
 
+    void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
+        checkMemory(rdram, address, 8);
+        if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword store");
+        std::memcpy(memory_.data() + address, &value, 8);
+        ++doubleword_writes;
+    }
+    std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
+        checkMemory(rdram, address, 8);
+        if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
+        std::uint64_t value;
+        std::memcpy(&value, memory_.data() + address, 8);
+        return value;
+    }
+
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address) {
         checkMemory(rdram, address, 4);
         if (address % 4) throw std::runtime_error("Unsupported unaligned word read");
@@ -147,7 +187,8 @@ public:
     std::uint32_t stack_base = 0, initial_sp = 0;
     std::array<std::uint32_t, 5> thread_arguments{};
     unsigned cache_requests = 0;
-    unsigned returns = 0;
+    unsigned returns = 0, guest_calls = 0;
+    std::uint64_t doubleword_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
@@ -157,5 +198,6 @@ private:
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
     std::vector<std::uint8_t> memory_;
-    unsigned checkpoints_ = 0;
+    std::vector<std::uint32_t> call_returns_;
+    unsigned checkpoints_ = 0, dispatch_depth_ = 0;
 };

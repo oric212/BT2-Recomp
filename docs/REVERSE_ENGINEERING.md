@@ -119,3 +119,7 @@ Exact retail revision, actual runtime memory behavior, the empty load record's p
 ### SetupHeap bootstrap model and executed call boundary
 
 The pinned Play! `sc_SetupHeap` returns main-thread stack base for size `0xFFFFFFFF`. Our bounded adapter records the requested lower boundary without changing its alignment and returns `0x01EFF000`. This model has not been compared against retail BIOS behavior. Generated entry now reaches JAL at `0x001001E8` to `FUN_00338520`, return PC `0x001001F0`; the callee has not executed yet.
+
+### Executed first callee prologue
+
+Generated `FUN_00338520` now executes its stack allocation and saves RA=`0x001001F0` at guest address `0x01FFED50`. Runtime then observes the JAL at `0x00338528` to `FUN_003382D0`, resume `0x00338530`. This establishes execution of the prologue only; no subsystem purpose has been assigned and no deeper target is yet executed.

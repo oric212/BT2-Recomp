@@ -33,11 +33,12 @@ int main(int argc, char** argv) {
         context.fcr31 = context.sa = UINT32_MAX;
         context.f_acc = 1.0f;
         runtime.registerFunction(0x00100008, FUN_00100008_0x100008);
+        runtime.registerFunction(0x00338520, FUN_00338520_0x338520);
         bool stopped = false;
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestBranch& stop) {
-            require(stop.target == 0x00338520 && stop.source_pc == 0x001001E8 && stop.resume_pc == 0x001001F0, "Unexpected entry dispatch boundary");
+            require(stop.target == 0x003382D0 && stop.source_pc == 0x00338528 && stop.resume_pc == 0x00338530, "Unexpected entry dispatch boundary");
             stop_target = stop.target;
             stop_source = stop.source_pc;
             stop_resume = stop.resume_pc;
@@ -58,12 +59,15 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp,
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - 16,
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
                 && runtime.heap_end == runtime.stack_base && GPR_U64(&context, 2) == runtime.heap_end,
                 "Unexpected SetupHeap state or return");
+        require(runtime.guest_calls == 1 && runtime.doubleword_writes == 1
+                && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
+                "Generated callee did not save the caller return address");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
         report << "{\"status\":\"blocked at unsupported guest branch\",\"entry_executed\":true,"
@@ -71,11 +75,12 @@ int main(int argc, char** argv) {
                << ",\"resume_pc\":" << stop_resume << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
+               << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
                << ",\"byte_writes\":" << runtime.byte_writes << ",\"game_booted\":false}\n";
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 generated entry executed: CPU initialization and guest zeroing verified.\n"
-                  << "SetupThread/SetupHeap models applied; stopped at direct call to FUN_00338520.\n"
+                  << "SetupThread/SetupHeap models applied; executed FUN_00338520 prologue; stopped at call to FUN_003382D0.\n"
                   << "Empty launch arguments; retail BIOS comparison and game boot remain pending.\n";
         return 0;
     } catch (const std::exception& error) {

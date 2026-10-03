@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: compile/link and register the generated `FUN_00338520` reached from entry, implement checked guest call/return dispatch, and run to its actual blocker. Keep startup models distinguished from retail BIOS confirmation and compare against local PCSX2 when available. Address unresolved `0x003B7FA8` only when execution reaches it.
+Current next step: add generated `FUN_003382D0`, the nested target actually reached by execution, to the local prepared-source/build/registration set. Compile and resolve only its required compatibility APIs, execute, and inspect the next blocker. Keep bootstrap behavior distinguished from retail BIOS confirmation. Investigate `0x003B7FA8` only when reached.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

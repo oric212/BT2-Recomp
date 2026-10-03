@@ -143,3 +143,13 @@ Next: implement the reached SetupHeap contract, then repeat generation/compile/e
 - MSVC builds and three CTests passed; all 14 Python tooling tests passed. CPU initialization and 43,120 quadword plus 15 byte zero stores still verified. The independent host runs; generated code, local executable and reports remain ignored.
 
 Next: compile/link the already generated reached callee and implement checked call/return dispatch, then execute to the next actual blocker. Retail BIOS equivalence remains unverified.
+
+## 2026-10-03 — First generated callee and checked guest dispatch
+
+- Compiled/linked the existing neutral generated `FUN_00338520` and registered it alongside entry. Runtime preparation deterministically routes its emitted direct tail call through the dispatch hook, just as for entry; original generated files remain unchanged and ignored. Preparation records hashes for both compiler-facing copies.
+- Added bounded call/return dispatch for registered direct/indirect calls and tail targets, with nested return frames, a 64-level depth limit, return-PC validation, and exception cleanup. Unregistered targets still stop with structured source/target/resume diagnostics.
+- Added checked aligned 64-bit guest reads/writes required by the callee's stack operations. No general MMIO/TLB behavior added.
+- Executed real entry into `FUN_00338520`: SP changed from `0x01FFED60` to `0x01FFED50`; one 64-bit stack store saved the caller return address `0x001001F0`. Then stopped at nested JAL source `0x00338528`, target `FUN_003382D0`, return PC `0x00338530`. The nested target has not executed; no function was skipped or stubbed.
+- MSVC builds, all three CTests and all 14 Python tests passed. Synthetic checks exercise nested indirect calls, tail calls, invalid returns, cleanup after a failed callee, and doubleword memory bounds/alignment. The generated wrapper and independent host still run; CPU startup and zero-store checks remain intact.
+
+Next: compile/link/register the reached nested target and repeat the execution-led loop. Full generated-set integration and game boot remain incomplete.

@@ -8,6 +8,27 @@ template<class Action> void reject(Action action) {
     try { action(); } catch (const std::runtime_error&) { caught = true; }
     require(caught);
 }
+void return_leaf(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0,
+                                PS2Runtime::GuestBranchKind::Return, "synthetic return");
+}
+void nested_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    const auto saved_ra = GPR_U32(ctx, 31);
+    SET_GPR_U32(ctx, 31, 0x204);
+    runtime->dispatchGuestBranch(ram, ctx, 0x300, 0x200, 0x204,
+                                PS2Runtime::GuestBranchKind::IndirectCall, "synthetic indirect call");
+    SET_GPR_U32(ctx, 31, saved_ra);
+    return_leaf(ram, ctx, runtime);
+}
+void bad_return(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    runtime->dispatchGuestBranch(ram, ctx, 0xBAD, ctx->pc, 0,
+                                PS2Runtime::GuestBranchKind::Return, "synthetic invalid return");
+}
+void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    runtime->dispatchGuestBranch(ram, ctx, 0x300, ctx->pc, 0,
+                                PS2Runtime::GuestBranchKind::TailJump, "synthetic tail");
+}
+
 }
 int main() {
     try {
@@ -70,6 +91,23 @@ int main() {
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         PS2Runtime uninitialized;
         reject([&] { uninitialized.handleSyscall(nullptr, &context, 0); });
+        runtime.write64(memory, 0x180, UINT64_C(0xFEDCBA9876543210));
+        require(runtime.read64(memory, 0x180) == UINT64_C(0xFEDCBA9876543210) && memory[0x188] == 0xA5);
+        reject([&] { runtime.write64(memory, 3, 0); });
+        reject([&] { (void)runtime.read64(memory, PS2Runtime::ram_size - 4); });
+        runtime.registerFunction(0x200, nested_call);
+        runtime.registerFunction(0x300, return_leaf);
+        runtime.registerFunction(0x400, bad_return);
+        runtime.registerFunction(0x500, tail_call);
+        SET_GPR_U32(&context, 31, 0x104);
+        require(runtime.dispatchGuestBranch(memory, &context, 0x200, 0x100, 0x104,
+                PS2Runtime::GuestBranchKind::DirectCall, "synthetic call") && context.pc == 0x104);
+        require(runtime.returns == 2 && runtime.guest_calls == 2);
+        reject([&] { runtime.dispatchGuestBranch(memory, &context, 0x400, 0x100, 0x104,
+                     PS2Runtime::GuestBranchKind::DirectCall, "bad callee"); });
+        SET_GPR_U32(&context, 31, 0x104);
+        require(runtime.dispatchGuestBranch(memory, &context, 0x500, 0x100, 0x104,
+                PS2Runtime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
