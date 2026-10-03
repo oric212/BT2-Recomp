@@ -1,6 +1,6 @@
 import struct
 import unittest
-from generate_kernel import extract_payload, package_elf
+from generate_kernel import extract_payload, package_elf, leaf_extent
 
 
 class KernelPackagingTests(unittest.TestCase):
@@ -30,3 +30,12 @@ class KernelPackagingTests(unittest.TestCase):
         elf[84:116] = elf[52:84]
         with self.assertRaises(ValueError):
             extract_payload(elf, 0x1000, 8)
+
+    def test_leaf_closure_excludes_adjacent_functions(self):
+        payload = struct.pack('<6I', 0x10800002, 0, 0, 0x03E00008, 0, 0x03E00008) + bytes(4)
+        self.assertEqual(leaf_extent(payload, 0x80075000), 0x80075014)
+
+    def test_leaf_escaping_or_indirect_flow_rejected(self):
+        for words in [(0x10007FFF, 0), (0x08000000, 0), (0x03E00008,), (0x03E00008, 0x08000000)]:
+            with self.assertRaises(ValueError):
+                leaf_extent(struct.pack('<' + str(len(words)) + 'I', *words), 0x80075000)

@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, queries the main thread ID and changes its priority to 1. Explicit local OSD checkpoints support the first read, two ordered same-value setters and a validated second read. Generated OSD helpers return and the next startup routine registers another syscall handler. The generated handler now completes its second kernel payload copy into a bounded overlay; startup registers the copied lookup entry. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, queries the main thread ID and changes its priority to 1. Explicit local OSD checkpoints support the first read, two ordered same-value setters and a validated second read. Generated OSD helpers return and the next startup routine registers another syscall handler. The generated handler now completes its second kernel payload copy into a bounded overlay; startup registers and executes the copied lookup entry with full payload checks. Game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, seven CTests, 31 recomp tooling tests and ten capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, seven CTests, 34 recomp tooling tests and ten capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops at syscall `0x5B`, resume PC `0x0033A808`, registered kernel entry `0x80075000`, lookup argument `0x55`. Generated `FUN_0033A7C8` copied all `0x330` bytes from `0x0036BAF8`; every overlay word matches the expected payload. The copied entry has no compiled native binding and has not executed.
+Startup stops registering interior kernel entry `0x80075038` for selector `0x55`, via SetSyscall (`0x74`) at resume PC `0x0033A818`. Generated lookup `FUN_80075000` executed and returned that address. Registration currently permits only the copied payload entry, so this new address is rejected before registration or execution.
 
-Next: generate the reached relocated kernel entry and bind it with complete payload validation, using the existing scoped kernel pipeline as a model. Preserve captured baseline and the earlier binding; do not execute raw guest bytes. Counter progression, interrupt delivery and scheduling remain unimplemented.
+Next: validate registration of the returned interior entry and generate only its reached code when execution requires it. Preserve full payload checks, the captured baseline and earlier binding. Counter progression, interrupt delivery and scheduling remain unimplemented.
 
 ## Key counts
 
-- **7,245** functions generated locally: 7,244 main ELF + one scoped kernel entry; **7,251** raw generated C++/header files.
-- **40** distinct functions entered across native probes.
-- **36** functions completed across probes; entry, `FUN_00338520`, `FUN_0033A820` and `FUN_0033A800` remain partial. `FUN_0033A7C8` now completes during startup as well as isolated RAM tests. These are startup/helper paths, not working gameplay.
+- **7,246** functions generated locally: 7,244 main ELF + two scoped kernel entries; **7,255** raw generated C++/header files.
+- **41** distinct functions entered across native probes.
+- **38** functions completed across probes; entry, `FUN_00338520` and `FUN_0033A820` remain partial. `FUN_0033A810` completed earlier invocations and is partial on the current registration call. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

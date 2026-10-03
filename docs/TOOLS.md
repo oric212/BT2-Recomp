@@ -249,3 +249,8 @@ The reached `FUN_0033A7C8` map gap has now been discovered with the existing foc
 
 
 The full OSD-readback pipeline now enables a second fixed expected-word overlay at `0x80075000` for the observed `0x330`-byte payload. Generated copy execution fills it; SetSyscall accepts its entry only after complete matching stores. Startup stops before executing that uncompiled relocated entry through selector `0x5B`, argument `0x55`. Earlier inputs preserve their existing boundaries. The original kernel baseline and first compiled binding remain checked.
+
+
+### Startup kernel lookup generation
+
+`python tools/ps2recomp/generate_kernel.py --payload startup` scopes the reached relocated entry using direct-branch leaf closure; full payload bytes remain unchanged. The full OSD-readback pipeline runs it automatically, uses `BT2_BUILD_STARTUP_KERNEL_PAYLOAD=ON`, binds with complete payload verification, and stops registering returned interior entry `0x80075038`. Separate startup output/header names keep the earlier kernel payload intact. Registration diagnostics now classify their handler addresses, and Ghidra discovery rejects kernel addresses requiring relocated payload analysis.

@@ -1,6 +1,7 @@
 #pragma once
 
 // Authored bootstrap adapter for generated probes. Broader PS2 APIs fail explicitly.
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -66,8 +67,12 @@ public:
 
     void registerKernelFunction(std::uint32_t address, RecompiledFunction function,
                                 std::span<const std::uint8_t> expected_payload) {
-        if (!function || !kernel_patch_end_ || address != kernel_patch_start_
-                || expected_payload.size() != kernel_patch_end_ - kernel_patch_start_ || functions_.contains(address))
+        const bool primary = kernel_patch_end_ && address == kernel_patch_start_
+            && expected_payload.size() == kernel_patch_end_ - kernel_patch_start_;
+        const bool startup = address == 0x80075000 && !startup_kernel_payload_.empty()
+            && expected_payload.size() == startup_kernel_payload_.size()
+            && std::equal(expected_payload.begin(), expected_payload.end(), startup_kernel_payload_.begin());
+        if (!function || (!primary && !startup) || functions_.contains(address))
             throw std::runtime_error("Invalid copied kernel binding");
         kernel_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected_payload.begin(), expected_payload.end()));
         functions_.emplace(address, function);

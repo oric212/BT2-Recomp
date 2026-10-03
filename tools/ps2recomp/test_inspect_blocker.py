@@ -1,5 +1,5 @@
 import unittest
-from inspect_blocker import classify
+from inspect_blocker import classify, stop_address
 
 
 class BlockerTests(unittest.TestCase):
@@ -24,3 +24,13 @@ class BlockerTests(unittest.TestCase):
         self.assertTrue(result["requires_kernel_payload_mapping"])
         self.assertEqual(result["mapped_ranges"], [])
         self.assertFalse(classify(0x36B328, [], [], [])["requires_kernel_payload_mapping"])
+
+
+    def test_registration_diagnostic_targets_handler_not_wrapper(self):
+        stop = {'status': 'blocked at unsupported guest memory', 'access': 'handler registration',
+                'handler': 0x80075038, 'pc': 0x33A818}
+        self.assertEqual(stop_address(stop), 0x80075038)
+        stop['access'] = 'write'
+        self.assertEqual(stop_address(stop), 0x33A818)
+        stop.update(status='blocked at unsupported syscall', access='syscall')
+        self.assertEqual(stop_address(stop), 0x80075038)

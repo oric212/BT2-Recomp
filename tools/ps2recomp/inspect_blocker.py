@@ -15,11 +15,19 @@ def classify(address, rows, functions, excluded):
             "exclusions": [row for row in excluded if row["start"] <= address < row["end"]]}
 
 
+def stop_address(stop):
+    if stop.get('target'):
+        return stop['target']
+    if stop.get('access') == 'handler registration' and stop.get('handler'):
+        return stop['handler']
+    return stop.get('pc') if 'memory' in stop.get('status', '') else stop.get('handler') or stop.get('pc')
+
+
 def main():
     verify_generated()
     folder = ROOT / "work/bt2-generation"
     stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
-    address = stop.get("target") or (stop.get("pc") if "memory" in stop.get("status", "") else stop.get("handler") or stop.get("pc"))
+    address = stop_address(stop)
     if address is None:
         print("Syscall blocker has no registered handler to map.")
         return

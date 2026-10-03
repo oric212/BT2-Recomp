@@ -173,8 +173,12 @@ def main():
     if timer_capture:
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py")])
         kernel_generation = json.loads((ROOT / "work/kernel-generation/generation.manifest.json").read_text(encoding="utf-8"))
+    startup_kernel_generation = None
+    if osd_readback:
+        run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py"), "--payload", "startup"])
+        startup_kernel_generation = json.loads((ROOT / "work/kernel-generation-startup/generation.manifest.json").read_text(encoding="utf-8"))
     build = ROOT / "build/probe"
-    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF")], folder / "configure.log")
+    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF"), "-DBT2_BUILD_STARTUP_KERNEL_PAYLOAD=" + ("ON" if osd_readback else "OFF")], folder / "configure.log")
     run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
     run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler|generated-buffer-fill|generated-timer-write|generated-copy-handler"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
@@ -215,6 +219,7 @@ def main():
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
         "osd_readback_provenance": osd_readback[1] if osd_readback else None,
         "osd_capture_provenance": osd_capture[1] if osd_capture else None,
+        "startup_kernel_generation_provenance": startup_kernel_generation,
         "kernel_generation_provenance": kernel_generation,
         "timer2_readback_capture_provenance": readback_capture[1] if readback_capture else None,
         "intc_capture_provenance": intc_capture[1] if intc_capture else None,

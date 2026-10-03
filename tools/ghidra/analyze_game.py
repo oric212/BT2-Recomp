@@ -7,8 +7,11 @@ from pathlib import Path
 import subprocess
 import struct
 import time
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools/ps2recomp"))
+from inspect_blocker import stop_address
 
 
 def main():
@@ -38,7 +41,7 @@ def main():
         if blocker["map_status"] != "map gap":
             parser.error("Discovery requires an observed map gap.")
         stop = json.loads((ROOT / "work/bt2-generation/entry-stop.json").read_text(encoding="utf-8"))
-        discovered_address = stop.get("target") or (stop.get("pc") if "memory" in stop.get("status", "") else stop.get("handler") or stop.get("pc"))
+        discovered_address = stop_address(stop)
         if blocker.get("requires_kernel_payload_mapping"):
             parser.error("Copied kernel target requires a separate relocation-aware payload map; it is not original ELF .text.")
         if discovered_address != blocker["address"]:
