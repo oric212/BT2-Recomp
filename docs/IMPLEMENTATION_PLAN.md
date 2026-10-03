@@ -20,7 +20,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 
 Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored `work/` or `research/`, and proprietary-derived generated code in ignored `game/generated/`. Never download or commit proprietary content. Record confirmed facts, hypotheses, and unknowns separately. Preserve unknown function names until evidence supports renaming. Implement only PS2 behavior required by BT2.
 
-Update `PROG.md`, the single progress log, after each verified step. Keep `README.md` at the repository root and other documentation under `docs/`. Review staged files before committing.
+After each verified step, update [the current status](PROG.md) and append detailed evidence to `progress/YYYY-MM.md`. Keep `PROG.md` concise and link each monthly history file there. Keep `README.md` at the repository root and other documentation under `docs/`. Review staged files before committing.
 
 ## Repository workflow
 
