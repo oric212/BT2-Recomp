@@ -167,5 +167,46 @@
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
     "role": "sc_SifGetReg reads the low 32-bit selector and writes a sign-extended 32-bit result. Authored adapter replays only selector 0x80000000 once after explicit local checkpoint and DMAC enable. Value 0x19600 comes from local PCSX2 capture, not this reference. No generic SIF registers or transport. sc_SifSetDma confirms the next boundary submits descriptors to channel 6; no transfer implementation in this pass."
+  },
+  "sif_command_receive_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "sources": [
+      {
+        "path": "ee/kernel/include/sifdma.h",
+        "sha256": "dc6d3ac908259c866f4a93226b914739d6c3d8a1610efb8beef7f999da48bab1"
+      },
+      {
+        "path": "common/include/sifcmd-common.h",
+        "sha256": "5db2f91a13052756d5a9be62480e149dd9681b50e251759eddf554d9aea8ddba"
+      },
+      {
+        "path": "ee/kernel/src/sifcmd.c",
+        "sha256": "3184529a0b741e9b8b495e3928bd3f8e2c4f89c25f02cfa2c1791efe6adecdc5"
+      },
+      {
+        "path": "iop/system/sifcmd/src/sifcmd.c",
+        "sha256": "40f4956fa3500bdc82ce1b6e6da8f0c771faa81095da6e45958e3afbefbedc5e"
+      },
+      {
+        "path": "common/include/sifrpc-common.h",
+        "sha256": "76647296efff26b5a48796ee1647f1651ba4fefc333d27016c03f313e35a1b8f"
+      }
+    ],
+    "role": "Public descriptor/header ABI, CHANGE_SADDR=0x80000000, RPCINIT software selector=0x80000002, RPC_BIND=0x80000009. EE initialized-service branch sends new receive address; IOP receive consumes psize and CHANGE_SADDR stores the new EE buffer. Authored adapter implements only the first observed 20-byte command logical effects, on an explicit before-capture IOP snapshot, with matching after-capture evidence and return 0x701. No general DMA engine, cycle timing, interrupt callback, RPC backend or transfer padding. RPCINIT result 1 is separately captured, opt-in and one-shot. SifRpcBindPkt_t establishes rec_id/pkt_addr/rpc_id/client/server-ID field positions for the reached pending packet."
+  },
+  "iop_capture_layout_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/MemoryTypes.h",
+    "sha256": "7f0066d74627959fffe68767f45038c7b3213f6de63e1a6822771b32867f2e8c",
+    "role": "IopVM_MemoryAllocMess begins with Main. Local PCSX2 exports IOPmem; tool reads its pointer and first 2 MiB with process read-only access. Packet/table windows stable in two reads; unrelated IOP/kernel memory remains live."
+  },
+  "uncached_ram_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "path": "ee/kernel/include/kernel.h",
+    "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
+    "role": "UNCACHED_SEG sets address bit 0x20000000. Authored coherent RAM adapter enables checked byte/word alias accesses in [0x20000000,0x22000000) only after explicit RPCINIT query. Reached CACHE line checks accept this alias; wider access sizes, MMIO, TLB and guest cache state remain unsupported."
   }
 }

@@ -89,3 +89,7 @@ inline void SET_GPR_ZE32(R5900Context* context, unsigned index, std::uint32_t va
 #define READ8(address) runtime->read8(rdram, (address))
 
 inline std::uint32_t SUB32(std::uint32_t left, std::uint32_t right) { return left - right; }
+
+inline std::uint32_t SRA32(std::uint32_t value, unsigned shift) {
+    return std::bit_cast<std::uint32_t>(std::bit_cast<std::int32_t>(value) >> (shift & 31u));
+}

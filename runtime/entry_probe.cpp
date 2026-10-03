@@ -19,7 +19,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD]]]]]]]]]]]]");
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
         const bool timer2_mode = argc >= 6;
@@ -28,6 +28,8 @@ int main(int argc, char** argv) {
         const bool osd_mode = argc >= 9;
         const bool osd_readback_mode = argc >= 10;
         const bool dma_status_mode = argc >= 11;
+        const bool sif_rpc_mode = argc >= 15;
+        const bool sif_dma_mode = argc >= 14;
         const bool sif_mode = argc >= 13;
         const bool dma5_mode = argc >= 12;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
@@ -120,6 +122,26 @@ int main(int argc, char** argv) {
             if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("SIF checkpoint read failed");
             runtime.supplySifCommand(word);
         }
+        if (sif_dma_mode) {
+            std::ifstream capture(argv[13], std::ios::binary | std::ios::ate);
+            if (!capture || capture.tellg() != static_cast<std::streamoff>(PS2Runtime::sif_iop_size + 4))
+                throw std::runtime_error("Invalid SIF DMA checkpoint bundle");
+            std::vector<std::uint8_t> bytes(PS2Runtime::sif_iop_size);
+            std::uint32_t result;
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(bytes.data()), bytes.size())
+                    || !capture.read(reinterpret_cast<char*>(&result), 4))
+                throw std::runtime_error("SIF DMA checkpoint read failed");
+            runtime.supplySifDma(bytes, result);
+        }
+        if (sif_rpc_mode) {
+            std::ifstream capture(argv[14], std::ios::binary | std::ios::ate);
+            std::uint32_t word;
+            if (!capture || capture.tellg() != 4) throw std::runtime_error("Invalid SIF RPC checkpoint word");
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("SIF RPC checkpoint read failed");
+            runtime.supplySifRpcState(word);
+        }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
         runtime.expectStartupZeroRegion(zero_start, zero_end);
@@ -165,6 +187,12 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x0032F070, FUN_0032F070_0x32f070);
         runtime.registerFunction(0x00331D70, FUN_00331D70_0x331d70);
         runtime.registerFunction(0x00331C38, FUN_00331C38_0x331c38);
+        runtime.registerFunction(0x00331B70, FUN_00331B70_0x331b70);
+        runtime.registerFunction(0x0031F8B0, FUN_0031F8B0_0x31f8b0);
+        runtime.registerFunction(0x0031F638, FUN_0031F638_0x31f638);
+        runtime.registerFunction(0x00332B70, FUN_00332B70_0x332b70);
+        runtime.registerFunction(0x00332790, FUN_00332790_0x332790);
+        runtime.registerFunction(0x003321B0, FUN_003321B0_0x3321b0);
         runtime.registerFunction(0x0032F020, FUN_0032F020_0x32f020);
         runtime.registerFunction(0x00331F38, FUN_00331F38_0x331f38);
         runtime.registerFunction(0x00100388, FUN_00100388_0x100388);
@@ -241,7 +269,15 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (sif_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
+            if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 464
+                    && GPR_U32(&context, 5) == 1 && runtime.sif_dma_submissions == 1 && runtime.sif_rpc_reads == 1,
+                    "Unexpected first RPC bind submission boundary");
+            else if (sif_dma_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000002
+                    && runtime.sif_dma_submissions == 1 && runtime.sif_rpc_reads == 0,
+                    "Unexpected RPCINIT query boundary");
+            else if (sif_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 240
                     && GPR_U32(&context, 5) == 1 && runtime.sif_command_reads == 1
                     && runtime.data_cache_lines == 1, "Unexpected first SIF DMA submission boundary");
@@ -277,8 +313,8 @@ int main(int argc, char** argv) {
         require(runtime.memory()[zero_start - 1] == image[zero_start - 1]
                 && runtime.memory()[zero_end] == image[zero_end], "Entry zeroing crossed its bounds");
         require(runtime.quadword_writes == (zero_end - zero_start) / 16 + (timer_mode ? 512u : 0u)
-                && runtime.byte_writes == (zero_end - zero_start) % 16 + (osd_readback_mode ? 512u : 0u) + (sif_mode ? 1u : 0u), "Unexpected startup/fill store counts");
-        require(context.hi == 0 && context.lo == 0 && context.hi1 == 0 && context.lo1 == 0
+                && runtime.byte_writes == (zero_end - zero_start) % 16 + (osd_readback_mode ? 512u : 0u) + (sif_rpc_mode ? 2u : sif_mode ? 1u : 0u), "Unexpected startup/fill store counts");
+        require(context.hi == 0 && context.lo == (sif_dma_mode ? 144u : 0u) && context.hi1 == 0 && context.lo1 == 0
                 && context.sa == 0 && context.fcr31 == 0 && context.f_acc == 0, "CPU startup state incorrect");
         require(std::all_of(context.f.begin(), context.f.end(), [](float value) { return value == 0; }), "FPR clearing failed");
         const std::array<std::uint32_t, 5> args{GPR_U32(&context, 4), GPR_U32(&context, 5),
@@ -286,7 +322,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (sif_mode ? 240 : osd_readback_mode ? 192 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (sif_rpc_mode ? 464 : sif_dma_mode ? 96 : sif_mode ? 240 : osd_readback_mode ? 192 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -296,8 +332,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (sif_mode ? 108u : dma5_mode ? 105u : osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (sif_mode ? 102u : dma5_mode ? 100u : osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (sif_mode ? 1040u : dma5_mode ? 1031u : osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (sif_mode ? 76u : dma5_mode ? 69u : osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (sif_rpc_mode ? 129u : sif_dma_mode ? 115u : sif_mode ? 108u : dma5_mode ? 105u : osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (sif_rpc_mode ? 122u : sif_dma_mode ? 111u : sif_mode ? 102u : dma5_mode ? 100u : osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (sif_rpc_mode ? 1093u : sif_dma_mode ? 1062u : sif_mode ? 1040u : dma5_mode ? 1031u : osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (sif_rpc_mode ? 107u : sif_mode ? 76u : dma5_mode ? 69u : osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -372,8 +408,8 @@ int main(int argc, char** argv) {
         } else require(runtime.dmac_handlers.empty() && runtime.dmac_enable_calls == 0,
                        "DMA handler state advanced before checkpoint");
         require(runtime.sif_command_reads == (sif_mode ? 1u : 0u)
-                && runtime.data_cache_lines == (sif_mode ? 1u : 0u), "Unexpected SIF/cache checkpoint counts");
-        if (sif_mode) {
+                && runtime.data_cache_lines == (sif_rpc_mode ? 2u : sif_mode ? 1u : 0u), "Unexpected SIF/cache checkpoint counts");
+        if (sif_mode && !sif_dma_mode) {
             const auto frame = runtime.initial_sp - 240;
             const std::array<std::uint32_t, 4> descriptor{0x003A9580, 0x19600, 20, 0x44};
             for (unsigned index = 0; index < descriptor.size(); ++index)
@@ -390,6 +426,52 @@ int main(int argc, char** argv) {
                     && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0,
                     "Generated SIF packet/current stack differs");
         }
+        require(runtime.sif_dma_submissions == (sif_dma_mode ? 1u : 0u)
+                && runtime.sif_rpc_reads == (sif_rpc_mode ? 1u : 0u)
+                && runtime.uncached_word_accesses == (sif_rpc_mode ? 11u : 0u)
+                && runtime.uncached_byte_accesses == (sif_rpc_mode ? 2u : 0u), "Unexpected receive/RPC/alias counts");
+        if (sif_dma_mode) {
+            const auto iop = runtime.sifIopMemory();
+            const std::array<std::uint32_t, 5> consumed{0, 0, 0x80000000, 0, 0x3A94C0};
+            require(iop.size() == PS2Runtime::sif_iop_size && runtime.sif_ee_receive_address == 0x3A94C0
+                    && std::memcmp(iop.data() + 0x19600, consumed.data(), 20) == 0
+                    && std::memcmp(iop.data() + 0x196C8, &consumed[4], 4) == 0,
+                    "Bounded IOP receive effects differ from capture");
+            const std::array<std::uint32_t, 4> handlers{0x3322E8, 0x3326C0, 0x3328E0, 0x3323F8};
+            const std::array<unsigned, 4> ids{8, 9, 10, 12};
+            for (unsigned index = 0; index < ids.size(); ++index) {
+                const auto address = 0x3A95C0 + ids[index] * 12;
+                require(runtime.read32(runtime.memory().data(), address) == handlers[index]
+                        && runtime.read32(runtime.memory().data(), address + 4) == 0x3AAFC0
+                        && runtime.read32(runtime.memory().data(), address + 8) == 0x38BDF0,
+                        "Generated command handler registrations differ");
+            }
+            require(runtime.read64(runtime.memory().data(), runtime.initial_sp - 8) == 0x00100240
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0,
+                    "Persistent main frame changed");
+        }
+        if (sif_rpc_mode) {
+            const auto frame = runtime.initial_sp - 464;
+            const std::array<std::uint32_t, 4> descriptor{0x203A97C0, 0x19600, 64, 0x44};
+            for (unsigned index = 0; index < descriptor.size(); ++index)
+                require(runtime.read32(runtime.memory().data(), frame + index * 4) == descriptor[index],
+                        "Pending RPC DMA descriptor differs");
+            require(runtime.read32(runtime.memory().data(), 0x3A97C0) == 64
+                    && runtime.read32(runtime.memory().data(), 0x3A97C8) == 0x80000009
+                    && runtime.read32(runtime.memory().data(), 0x3A97D8) == 2
+                    && runtime.read32(runtime.memory().data(), 0x3A97DC) == 0x3A87A8
+                    && runtime.read32(runtime.memory().data(), 0x3A97E0) == 0x80000592
+                    && runtime.read32(runtime.memory().data(), 0x3A87B0) == 3
+                    && runtime.semaphores.size() == 4 && runtime.semaphores[3].count == 0 && runtime.semaphores[3].maximum == 1
+                    && runtime.semaphores[3].option == 0x3838D8,
+                    "Pending RPC bind packet/semaphore differs");
+            require(runtime.read64(runtime.memory().data(), frame + 112) == 0x331DA0
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 336) == 0x33284C
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 224) == 0x31F984
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 48) == 0x1003AC,
+                    "Active RPC bind frames differ");
+        } else if (sif_dma_mode) require(runtime.read64(runtime.memory().data(), runtime.initial_sp - 48) == 0x1003A4,
+                                      "Active RPC initialization frame differs");
         require(std::equal(kernel_before.begin(), kernel_before.end(), runtime.kernelBaseline().begin()),
                 "Captured kernel baseline changed");
         if (timer_mode) {
@@ -421,7 +503,7 @@ int main(int argc, char** argv) {
                 "Expected syscall registrations missing");
         if (!snapshot_mode) require(args[0] == 0x80000000 && args[1] == 0x80080000 && args[2] == 0x00338388,
                 "Unexpected reached guest call arguments");
-        require(runtime.semaphores.size() == (readback_mode ? 3u : 2u)
+        require(runtime.semaphores.size() == (sif_rpc_mode ? 4u : readback_mode ? 3u : 2u)
                 && runtime.semaphores[0].count == 1 && runtime.semaphores[0].maximum == 1
                 && runtime.semaphores[0].option == 0x00383BF0
                 && runtime.semaphores[1].count == 1 && runtime.semaphores[1].maximum == 1
@@ -460,6 +542,8 @@ int main(int argc, char** argv) {
                << ",\"extended_registrations\":" << runtime.extended_registrations
                << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
+               << ",\"sif_dma_submissions\":" << runtime.sif_dma_submissions << ",\"sif_rpc_reads\":" << runtime.sif_rpc_reads
+               << ",\"uncached_word_accesses\":" << runtime.uncached_word_accesses << ",\"uncached_byte_accesses\":" << runtime.uncached_byte_accesses
                << ",\"sif_command_reads\":" << runtime.sif_command_reads << ",\"data_cache_lines\":" << runtime.data_cache_lines
                << ",\"dma_status_reads\":" << runtime.dma_status_reads << ",\"dma5_control_reads\":" << runtime.dma5_control_reads
                << ",\"dmac_handlers\":" << runtime.dmac_handlers.size() << ",\"dmac_mask\":" << runtime.dmac_mask
@@ -484,7 +568,9 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (sif_mode) std::cout << "Captured SIF query returned; generated descriptor/cache path reached SifSetDma syscall 0x77.\n";
+        if (sif_rpc_mode) std::cout << "Generated initialization returned; native RPC bind packet reached unsupported IOP service 0x80000592.\n";
+        else if (sif_dma_mode) std::cout << "Validated CHANGE_SADDR receive effects completed; reached RPCINIT query selector 0x80000002.\n";
+        else if (sif_mode) std::cout << "Captured SIF query returned; generated descriptor/cache path reached SifSetDma syscall 0x77.\n";
         else if (dma5_mode) std::cout << "DMA checkpoints replayed; channel 5 handler/enable request recorded; reached SifGetReg selector 0x80000000.\n";
         else if (dma_status_mode) std::cout << "Captured D_STAT replayed; reached channel 5 control read 0x1000C000.\n";
         else if (osd_readback_mode) std::cout << "Generated helper tail chain returned; DMA initialization reached unsupported D_STAT read 0x1000E010.\n";

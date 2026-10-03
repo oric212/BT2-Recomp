@@ -274,3 +274,17 @@ python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" 
 ```
 
 Add `--sif-command-capture work/pcsx2-capture/sif-command/capture.json` to the full pipeline with all earlier captures, including channel 5. The trap at `0x00331A34` publishes returned `v0` and selector `a0`; strict source/RAM hashes, trap, marker and selector validation precede replay. Observed selector `0x80000000` returns `0x00019600` once. Prepared `FUN_00331F38` replaces nine omitted CACHE 0x18 sites with aligned, RAM-bounded line checks; raw generated source remains unchanged. Coherent host RAM has no guest cache model. The executed path checks one line and reaches SifSetDma `0x77`; no DMA/IOP transfer is performed.
+
+## First SIF command receive and RPC state checkpoints
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-dma-before
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-dma-after
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-rpc-state
+```
+
+Append `--sif-dma-before-capture work/pcsx2-capture/sif-dma-before/capture.json --sif-dma-after-capture work/pcsx2-capture/sif-dma-after/capture.json` to the full pipeline including `--sif-command-capture`. Both are required together. The tool also captures the first 2 MiB of IOP RAM through PCSX2's IOPmem export; source/RAM hashes, traps, descriptors, packets, table fields and observed receive effects/return are verified. Packet/table windows are checked twice; unrelated kernel and IOP memory continue running. The ignored `sif-dma.bin` bundle contains the before IOP state and observed return, enabling only a synchronous logical CHANGE_SADDR receive model.
+
+Append `--sif-rpc-state-capture work/pcsx2-capture/sif-rpc-state/capture.json` to continue through the reached RPCINIT query. It requires the paired receive captures and matching PCSX2/BIOS provenance. Observed selector `0x80000002` returns 1 once. Omit this input to retain that query stop; omit the paired inputs to retain the first SifSetDma stop.
+
+Checked coherent main-RAM byte/word aliases `[0x20000000,0x22000000)` support the reached packet allocator; other access widths and address regions remain unsupported. Full continuation stops at the second submission: RPC bind command `0x80000009`, server ID `0x80000592`, packet source `0x203A97C0`, size 64. No general transfer scheduler, IRQ delivery or RPC service response is implemented. All EE/IOP/capture/generated output stays ignored.

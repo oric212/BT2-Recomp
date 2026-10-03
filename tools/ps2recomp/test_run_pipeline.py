@@ -130,6 +130,22 @@ class TimerCaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run_pipeline.verify_dma_capture(self.path, channel)
 
+    def test_sif_rpc_query_capture(self):
+        address, marker = 0x332110, 0xB70E
+        words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
+                 0x3419B70E, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+        self.data[address:address + 32] = struct.pack('<8I', *words)
+        struct.pack_into('<III', self.data, 0x387E80, marker, 1, 0x80000002)
+        self.manifest.update(capture_point='sif-rpc-state: fixture',
+            patch=dict(address=address, size=32, authored_words=words, marker_address=0x387E80, marker_value=marker),
+            capture_sha256=hashlib.sha256(self.data).hexdigest(), observed_sif_rpc_state=1, observed_sif_rpc_selector=0x80000002)
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_sif_capture(self.path, rpc=True)[0], 1)
+        self.manifest['observed_sif_rpc_selector'] = 0x80000000
+        self.save()
+        with self.assertRaises(ValueError): run_pipeline.verify_sif_capture(self.path, rpc=True)
+
     def test_sif_return_capture_and_rejected_selector(self):
         address, marker = 0x331A34, 0xB70B
         words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
@@ -283,6 +299,49 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_osd_readback_capture(self.path)
 
+
+
+
+class SifDmaCaptureTests(unittest.TestCase):
+    def test_receive_pair_rejects_changed_return_effect_and_hash(self):
+        folder = run_pipeline.ROOT / 'work/test-provenance'
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=folder) as temp:
+            paths = []
+            for after, address, marker in ((False, 0x331D44, 0xB70C), (True, 0x331D4C, 0xB70D)):
+                path = Path(temp) / ('after' if after else 'before') / 'capture.json'
+                path.parent.mkdir()
+                ee = bytearray(32 * 1024 * 1024)
+                iop = bytearray(2 * 1024 * 1024)
+                words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF1D0008,
+                         0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+                ee[address:address + 32] = struct.pack('<8I', *words)
+                result = 0x701 if after else 0
+                struct.pack_into('<III', ee, 0x387E80, marker, result, 0x1FFEC70)
+                struct.pack_into('<4I', ee, 0x1FFEC70, 0x3A9580, 0x19600, 20, 0x44)
+                struct.pack_into('<5I', ee, 0x3A9580, 20, 0, 0x80000000, 0, 0x3A94C0)
+                struct.pack_into('<3I', iop, 0x196C0, 0x19600, 0x19680, 0x3A94C0 if after else 0x93640)
+                if after: iop[0x19600:0x19614] = bytes(4) + ee[0x3A9584:0x3A9594]
+                m = dict(source_elf_sha256=run_pipeline.LOCAL_CANDIDATE_SHA256,
+                    capture_point=('sif-dma-after' if after else 'sif-dma-before') + ': fixture',
+                    patch=dict(address=address, size=32, authored_words=words, marker_address=0x387E80, marker_value=marker),
+                    capture_sha256=hashlib.sha256(ee).hexdigest(), iop_capture_sha256=hashlib.sha256(iop).hexdigest(),
+                    observed_sif_dma_result=result, observed_sif_dma_sp=0x1FFEC70, pcsx2_sha256='fixture-pcsx2', bios_sha256='fixture-bios')
+                path.write_text(json.dumps(m), encoding='utf-8')
+                path.with_name('ee-ram.bin').write_bytes(ee)
+                path.with_name('iop-ram.bin').write_bytes(iop)
+                paths.append(path)
+            blob, _ = run_pipeline.verify_sif_dma_pair(*paths)
+            self.assertEqual(len(blob), 2 * 1024 * 1024 + 4)
+            for field, value in (('observed_sif_dma_result', 0x702), ('iop_capture_sha256', 'wrong')):
+                changed = dict(m); changed[field] = value
+                paths[1].write_text(json.dumps(changed), encoding='utf-8')
+                with self.assertRaises(ValueError): run_pipeline.verify_sif_dma_pair(*paths)
+            iop[0x196C8] ^= 1
+            m['iop_capture_sha256'] = hashlib.sha256(iop).hexdigest()
+            paths[1].write_text(json.dumps(m), encoding='utf-8')
+            paths[1].with_name('iop-ram.bin').write_bytes(iop)
+            with self.assertRaises(ValueError): run_pipeline.verify_sif_dma_pair(*paths)
 
 if __name__ == "__main__":
     unittest.main()

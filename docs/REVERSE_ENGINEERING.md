@@ -312,3 +312,10 @@ Exact copied-table selector/address registration allows generated startup to fin
 ## 2026-10-04 - First helper chain returned; DMA boundary
 
 Generated FUN_00321D90/FUN_00322F90 use semaphore 1 in a nonblocking WaitSema/SignalSema pair; bounded semantics and pinned ABI reference are recorded in config/startup_abi.sources.json. FUN_003242D0 returns through the helper tail chain to FUN_00100388. Newly reached FUN_00331FE8/FUN_00331888 execute generated RAM initialization and status/cache helpers, then read 0x1000E010 at 0x003319CC. PS2SDK ee_regs.h names this register D_STAT; its actual initial value and required DMA behavior remain unknown. No semantic function renaming, register default or DMA transfer is inferred. See [pass evidence](progress/2026-10.md#multiple-execution-blockers-resolved-first-dma-status-read-reached-2026-10-04).
+
+
+## 2026-10-04 - First command receive effects and pending RPC bind
+
+Pinned PS2SDK headers define command 0x80000000 as CHANGE_SADDR, 0x80000002 as INIT_CMD (also the separate RPCINIT software register selector), and 0x80000009 as RPC_BIND. Captured first-query value 0x19600 selects the already initialized EE startup branch. Paired EE/IOP captures show the first 20-byte packet consumed at IOP 0x19600 and the field at 0x196C8 changing from 0x93640 to 0x3A94C0, matching the public CHANGE_SADDR handler effect. The field interpretation is supported by matching buffer/table structure and before/after evidence; no retail IOP function is renamed or executed by the native model.
+
+Generated code later reads RPCINIT selector 0x80000002; a separate capture returns 1. The initialization helper returns, then the generated next path uses PS2SDK's 0x20000000 uncached main-RAM alias, allocates a packet and prepares RPC_BIND for server ID 0x80000592. The server's identity/purpose, RPC response, timing and EE delivery path remain unknown/unimplemented. See [detailed pass evidence](progress/2026-10.md#first-sif-command-received-generated-initialization-returned-rpc-bind-reached-2026-10-04).

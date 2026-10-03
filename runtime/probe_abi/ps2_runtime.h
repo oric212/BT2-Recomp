@@ -115,6 +115,40 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x77) {
+            if (sif_iop_.empty() || sif_dma_submissions || sif_command_reads != 1 || data_cache_lines != 1
+                    || context->r[5].low != 1 || context->r[4].low > UINT32_MAX)
+                throw UnsupportedSyscall(selector, context->pc);
+            const auto descriptor = static_cast<std::uint32_t>(context->r[4].low);
+            if (descriptor & 15) throw UnsupportedGuestMemory(descriptor, 16);
+            checkMemory(rdram, descriptor, 16);
+            const auto source = read32(rdram, descriptor), destination = read32(rdram, descriptor + 4);
+            if (source != 0x3A9580 || destination != 0x19600 || read32(rdram, descriptor + 8) != 20
+                    || read32(rdram, descriptor + 12) != 0x44)
+                throw UnsupportedSyscall(selector, context->pc);
+            checkMemory(rdram, source, 20);
+            // Observed CHANGE_SADDR command only; unknown commands fail before mutation.
+            if (read32(rdram, source) != 20 || read32(rdram, source + 4) != 0
+                    || read32(rdram, source + 8) != 0x80000000 || read32(rdram, source + 12) != 0
+                    || read32(rdram, source + 16) != 0x3A94C0)
+                throw UnsupportedSyscall(selector, context->pc);
+            std::copy_n(memory_.data() + source, 20, sif_iop_.data() + destination);
+            // Model only the validated logical receive effects, synchronously.
+            // The service consumes psize and stores the new EE receive address.
+            sif_iop_[destination] = 0;
+            sif_ee_receive_address = 0x3A94C0;
+            std::memcpy(sif_iop_.data() + 0x196C8, &sif_ee_receive_address, 4);
+            ++sif_dma_submissions;
+            context->r[2].low = sif_dma_result_;
+            return;
+        }
+        if (code == 0 && selector == 0x7A && static_cast<std::uint32_t>(context->r[4].low) == 0x80000002) {
+            if (!sif_rpc_supplied_ || sif_rpc_reads || sif_dma_submissions != 1)
+                throw UnsupportedSyscall(selector, context->pc);
+            context->r[2].low = 1;
+            ++sif_rpc_reads;
+            return;
+        }
         if (code == 0 && selector == 0x7A) {
             if (!sif_command_supplied_ || sif_command_reads || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000
                     || dmac_enable_calls != 1) throw UnsupportedSyscall(selector, context->pc);
@@ -412,7 +446,28 @@ public:
 
     std::span<std::uint8_t> memory() { return memory_; }
 
+    // PS2SDK UNCACHED_SEG: reached low 32 MiB main-RAM alias only.
+    // Enabled after the explicit RPCINIT query; no TLB/MMIO or cache state.
+    std::uint32_t uncachedWordAddress(std::uint8_t* rdram, std::uint32_t address) {
+        if (address < 0x20000000 || address >= 0x22000000) return address;
+        if (sif_rpc_reads != 1 || address % 4) throw UnsupportedGuestMemory(address, 4);
+        const auto physical = address - 0x20000000;
+        checkMemory(rdram, physical, 4);
+        ++uncached_word_accesses;
+        return physical;
+    }
+    unsigned uncached_word_accesses = 0;
+    std::uint32_t uncachedByteAddress(std::uint8_t* rdram, std::uint32_t address) {
+        if (address < 0x20000000 || address >= 0x22000000) return address;
+        if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, 1);
+        const auto physical = address - 0x20000000;
+        checkMemory(rdram, physical, 1);
+        ++uncached_byte_accesses;
+        return physical;
+    }
+    unsigned uncached_byte_accesses = 0;
     void write8(std::uint8_t* rdram, std::uint32_t address, std::uint8_t value) {
+        address = uncachedByteAddress(rdram, address);
         checkMemory(rdram, address, 1);
         memory_[address] = value;
         ++byte_writes;
@@ -426,6 +481,7 @@ public:
     }
 
     void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+        address = uncachedWordAddress(rdram, address);
         // Observed Timer 2 startup store only; no counter advancement or scheduling.
         if (address == 0xB0001010 && timer2_mode_supplied_ && timer2_mode_reads == 1
                 && !timer2_mode_writes && value == 0x382) {
@@ -470,6 +526,7 @@ public:
         ++doubleword_writes;
     }
     std::uint8_t read8(std::uint8_t* rdram, std::uint32_t address) {
+        address = uncachedByteAddress(rdram, address);
         checkMemory(rdram, address, 1);
         return memory_[address];
     }
@@ -547,11 +604,38 @@ public:
     // Reached CACHE 0x18 path only. This adapter has coherent main RAM and no cache state.
     // Validate a complete aligned line; this does not perform DMA or synchronize an IOP.
     void dataCacheLine(std::uint8_t* rdram, std::uint32_t address) {
+        if (address >= 0x20000000 && address < 0x22000000) {
+            if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, 64);
+            address -= 0x20000000;
+        }
         if (address & 63) throw UnsupportedGuestMemory(address, 64);
         checkMemory(rdram, address, 64);
         ++data_cache_lines;
     }
     unsigned data_cache_lines = 0;
+    static constexpr std::size_t sif_iop_size = 2 * 1024 * 1024;
+    void supplySifRpcState(std::uint32_t word) {
+        if (sif_iop_.empty() || sif_rpc_supplied_ || word != 1)
+            throw std::runtime_error("SIF RPC state checkpoint differs or was already supplied");
+        sif_rpc_supplied_ = true;
+    }
+    unsigned sif_rpc_reads = 0;
+    void supplySifDma(std::span<const std::uint8_t> before, std::uint32_t result) {
+        if (!sif_command_supplied_ || !sif_iop_.empty() || before.size() != sif_iop_size || result != 0x701)
+            throw std::runtime_error("SIF DMA checkpoint size/return/order differs");
+        std::uint32_t buffer, system_buffer, old_ee;
+        std::memcpy(&buffer, before.data() + 0x196C0, 4);
+        std::memcpy(&system_buffer, before.data() + 0x196C4, 4);
+        std::memcpy(&old_ee, before.data() + 0x196C8, 4);
+        if (buffer != 0x19600 || system_buffer != 0x19680 || old_ee != 0x93640)
+            throw std::runtime_error("SIF IOP checkpoint table differs");
+        sif_iop_.assign(before.begin(), before.end());
+        sif_dma_result_ = result;
+        sif_ee_receive_address = old_ee;
+    }
+    std::span<const std::uint8_t> sifIopMemory() const { return sif_iop_; }
+    unsigned sif_dma_submissions = 0;
+    std::uint32_t sif_ee_receive_address = 0;
     void supplySifCommand(std::uint32_t word) {
         if (!dma5_control_supplied_ || sif_command_supplied_ || word != 0x19600)
             throw std::runtime_error("SIF checkpoint differs or was already supplied");
@@ -605,6 +689,7 @@ public:
     }
 
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address) {
+        address = uncachedWordAddress(rdram, address);
         if (address == 0x1000E010 && dma_status_supplied_ && !dma_status_reads) {
             checkMemory(rdram, 0, 0);
             ++dma_status_reads;
@@ -678,6 +763,9 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    std::vector<std::uint8_t> sif_iop_;
+    std::uint32_t sif_dma_result_ = 0;
+    bool sif_rpc_supplied_ = false;
     bool sif_command_supplied_ = false;
     std::uint32_t sif_command_word_ = 0;
     bool dma_status_supplied_ = false, dma5_control_supplied_ = false;

@@ -33,42 +33,100 @@ void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
 }
 int main() {
     try {
-        PS2Runtime sif;
-        std::vector<std::uint8_t> sif_image(PS2Runtime::ram_size);
-        sif.loadMemory(sif_image);
-        auto* sif_ram = sif.memory().data();
-        R5900Context sif_context{};
-        sif_context.r[3].low = 0x7A;
-        sif_context.r[4].low = 0xFFFFFFFF80000000ull;
-        sif_context.r[2] = {0xA5, 0xB6};
-        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-        reject([&] { sif.supplySifCommand(0x19600); });
-        sif.supplyDmaStatus(0x800040);
-        sif.supplyDma5Control(0x184);
-        reject([&] { sif.supplySifCommand(0x19601); });
-        sif.supplySifCommand(0x19600);
-        reject([&] { sif.supplySifCommand(0x19600); });
-        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-        sif.dmac_enable_calls = 1; // Synthetic prerequisite fixture.
-        sif_context.r[4].low = 0x80000001;
-        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-        require(sif.sif_command_reads == 0 && sif_context.r[2].low == 0xA5);
-        sif_context.r[4].low = 0xFFFFFFFF80000000ull;
-        sif.handleSyscall(sif_ram, &sif_context, 0);
-        require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6 && sif.sif_command_reads == 1);
-        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-        sif.memory().back() = 0xF1;
-        require(sif.read8(sif_ram, PS2Runtime::ram_size - 1) == 0xF1);
-        reject([&] { sif.read8(sif_ram, PS2Runtime::ram_size); });
-        reject([&] { sif.read8(nullptr, 0); });
-        sif.dataCacheLine(sif_ram, PS2Runtime::ram_size - 64);
-        reject([&] { sif.dataCacheLine(sif_ram, 1); });
-        reject([&] { sif.dataCacheLine(sif_ram, PS2Runtime::ram_size); });
-        require(sif.data_cache_lines == 1);
-        SET_GPR_ZE32(&sif_context, 2, 0x80000000);
-        require(sif_context.r[2].low == 0x80000000 && sif_context.r[2].high == 0xB6);
-        SET_GPR_ZE32(&sif_context, 0, 1);
-        require(GPR_U32(&sif_context, 0) == 0 && SUB32(0, 1) == UINT32_MAX);
+        {
+            PS2Runtime sif;
+            std::vector<std::uint8_t> sif_image(PS2Runtime::ram_size);
+            sif.loadMemory(sif_image);
+            auto* sif_ram = sif.memory().data();
+            R5900Context sif_context{};
+            sif_context.r[3].low = 0x7A;
+            sif_context.r[4].low = 0xFFFFFFFF80000000ull;
+            sif_context.r[2] = {0xA5, 0xB6};
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            reject([&] { sif.supplySifCommand(0x19600); });
+            sif.supplyDmaStatus(0x800040);
+            sif.supplyDma5Control(0x184);
+            reject([&] { sif.supplySifCommand(0x19601); });
+            sif.supplySifCommand(0x19600);
+            reject([&] { sif.supplySifCommand(0x19600); });
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif.dmac_enable_calls = 1; // Synthetic prerequisite fixture.
+            sif_context.r[4].low = 0x80000001;
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            require(sif.sif_command_reads == 0 && sif_context.r[2].low == 0xA5);
+            sif_context.r[4].low = 0xFFFFFFFF80000000ull;
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6 && sif.sif_command_reads == 1);
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif.memory().back() = 0xF1;
+            require(sif.read8(sif_ram, PS2Runtime::ram_size - 1) == 0xF1);
+            reject([&] { sif.read8(sif_ram, PS2Runtime::ram_size); });
+            reject([&] { sif.read8(nullptr, 0); });
+            sif.dataCacheLine(sif_ram, PS2Runtime::ram_size - 64);
+            reject([&] { sif.dataCacheLine(sif_ram, 1); });
+            reject([&] { sif.dataCacheLine(sif_ram, PS2Runtime::ram_size); });
+            require(sif.data_cache_lines == 1);
+            SET_GPR_ZE32(&sif_context, 2, 0x80000000);
+            require(sif_context.r[2].low == 0x80000000 && sif_context.r[2].high == 0xB6);
+            SET_GPR_ZE32(&sif_context, 0, 1);
+            require(GPR_U32(&sif_context, 0) == 0 && SUB32(0, 1) == UINT32_MAX);
+            std::vector<std::uint8_t> iop_fixture(PS2Runtime::sif_iop_size, 0xA5);
+            const std::array<std::uint32_t, 3> iop_table{0x19600, 0x19680, 0x93640};
+            std::memcpy(iop_fixture.data() + 0x196C0, iop_table.data(), 12);
+            reject([&] { sif.supplySifDma(iop_fixture, 0x702); });
+            sif.supplySifDma(iop_fixture, 0x701);
+            reject([&] { sif.supplySifRpcState(0); });
+            sif.supplySifRpcState(1);
+            reject([&] { sif.supplySifRpcState(1); });
+            sif_context.r[4].low = 0x80000002;
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            reject([&] { sif.read32(sif_ram, 0x20000200); });
+            require(sif.sif_rpc_reads == 0);
+            reject([&] { sif.supplySifDma(iop_fixture, 0x701); });
+            const std::array<std::uint32_t, 4> descriptor{0x3A9580, 0x19600, 20, 0x44};
+            const std::array<std::uint32_t, 5> packet{20, 0, 0x80000000, 0, 0x3A94C0};
+            for (unsigned index = 0; index < descriptor.size(); ++index) sif.write32(sif_ram, 0x200 + index * 4, descriptor[index]);
+            for (unsigned index = 0; index < packet.size(); ++index) sif.write32(sif_ram, 0x3A9580 + index * 4, packet[index]);
+            sif_context.r[3].low = 0x77;
+            sif_context.r[4].low = 0x200;
+            sif_context.r[5].low = 2;
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif_context.r[5].low = 1;
+            sif.write32(sif_ram, 0x3A9588, 0x80000009);
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            require(std::equal(iop_fixture.begin(), iop_fixture.end(), sif.sifIopMemory().begin()) && sif.sif_dma_submissions == 0);
+            sif.write32(sif_ram, 0x3A9588, 0x80000000);
+            const std::vector<std::uint8_t> ee_before_dma(sif.memory().begin(), sif.memory().end());
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            auto expected_iop = iop_fixture;
+            std::memcpy(expected_iop.data() + 0x19600, packet.data(), 20);
+            expected_iop[0x19600] = 0;
+            const std::uint32_t new_receive = 0x3A94C0;
+            std::memcpy(expected_iop.data() + 0x196C8, &new_receive, 4);
+            require(std::equal(expected_iop.begin(), expected_iop.end(), sif.sifIopMemory().begin())
+                    && sif.sif_dma_submissions == 1 && sif.sif_ee_receive_address == new_receive
+                    && sif_context.r[2].low == 0x701 && sif_context.r[2].high == 0xB6
+                    && std::equal(ee_before_dma.begin(), ee_before_dma.end(), sif.memory().begin()));
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif_context.r[3].low = 0x7A;
+            sif_context.r[4].low = 0xFFFFFFFF80000002ull;
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            require(sif.sif_rpc_reads == 1 && sif_context.r[2].low == 1 && sif_context.r[2].high == 0xB6);
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif.write32(sif_ram, 0x20000100, 0x89ABCDEF);
+            require(sif.read32(sif_ram, 0x100) == 0x89ABCDEF && sif.read32(sif_ram, 0x20000100) == 0x89ABCDEF);
+            sif.write32(sif_ram, 0x104, 0x76543210);
+            require(sif.read32(sif_ram, 0x20000104) == 0x76543210);
+            reject([&] { sif.read32(sif_ram, 0x20000001); });
+            reject([&] { sif.write32(sif_ram, 0x22000000, 0); });
+            reject([&] { sif.read32(nullptr, 0x20000000); });
+            require(sif.uncached_word_accesses == 3);
+            sif.write8(sif_ram, 0x20000101, 0x55);
+            require(sif.read8(sif_ram, 0x101) == 0x55 && sif.read8(sif_ram, 0x20000101) == 0x55);
+            reject([&] { sif.read8(sif_ram, 0x22000000); });
+            sif.dataCacheLine(sif_ram, 0x20000100);
+            require(sif.uncached_byte_accesses == 2 && sif.data_cache_lines == 2);
+        }
         const auto left = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{UINT32_MAX, 0, 0x80000000, 1});
         const auto right = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{1, 2, 0x80000000, 2});
         require(std::bit_cast<std::array<std::uint32_t, 4>>(ps2_paddu32(left, right))
@@ -805,6 +863,8 @@ int main() {
         require(SRL32(0x740, 2) == 0x1D0);
         require(SRL32(0x80000000, 1) == 0x40000000);
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);
+        require(SRA32(0x80000000, 31) == UINT32_MAX && SRA32(0x80000000, 0) == 0x80000000
+                && SRA32(UINT32_MAX, 32) == UINT32_MAX && SRA32(0x7FFFFFFF, 1) == 0x3FFFFFFF);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

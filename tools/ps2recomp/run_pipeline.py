@@ -88,16 +88,16 @@ def verify_dma_capture(path, channel=False):
     return verify_word_capture(path, point, field, address, marker, register, max_word=0xFFFFFFFF)
 
 
-def verify_sif_capture(path):
+def verify_sif_capture(path, rpc=False):
     manifest = json.loads(path.read_text(encoding='utf-8'))
     data = path.with_name('ee-ram.bin').read_bytes()
-    address, marker = 0x331A34, 0xB70B
+    address, marker, point = (0x332110, 0xB70E, 'sif-rpc-state') if rpc else (0x331A34, 0xB70B, 'sif-command')
     words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
              0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
     trap = struct.pack('<8I', *words)
     patch = manifest['patch']
     if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
-            or not manifest['capture_point'].startswith('sif-command:')
+            or not manifest['capture_point'].startswith(point + ':')
             or patch['address'] != address or patch['size'] != len(trap)
             or patch['authored_words'] != words or patch['marker_address'] != 0x387E80
             or patch['marker_value'] != marker or len(data) != 32 * 1024 * 1024
@@ -105,10 +105,50 @@ def verify_sif_capture(path):
             or data[address:address + len(trap)] != trap):
         raise ValueError('SIF capture provenance/instrumentation differs.')
     actual_marker, word, selector = struct.unpack_from('<III', data, 0x387E80)
-    if (actual_marker != marker or word != manifest['observed_sif_command']
-            or selector != manifest['observed_sif_selector'] or selector != 0x80000000):
+    if (actual_marker != marker or word != manifest['observed_sif_rpc_state' if rpc else 'observed_sif_command']
+            or selector != manifest['observed_sif_rpc_selector' if rpc else 'observed_sif_selector'] or selector != (0x80000002 if rpc else 0x80000000)):
         raise ValueError('SIF capture payload/selector differs.')
     return word, manifest
+
+
+def verify_sif_dma_pair(before_path, after_path):
+    captures = []
+    for path, point, address, marker in (
+            (before_path, 'sif-dma-before', 0x331D44, 0xB70C),
+            (after_path, 'sif-dma-after', 0x331D4C, 0xB70D)):
+        m = json.loads(path.read_text(encoding='utf-8'))
+        ee = path.with_name('ee-ram.bin').read_bytes()
+        iop = path.with_name('iop-ram.bin').read_bytes()
+        words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF1D0008,
+                 0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+        patch = m['patch']
+        if (m['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
+                or not m['capture_point'].startswith(point + ':')
+                or patch['address'] != address or patch['size'] != 32
+                or patch['authored_words'] != words or patch['marker_address'] != 0x387E80
+                or patch['marker_value'] != marker or len(ee) != 32 * 1024 * 1024
+                or len(iop) != 2 * 1024 * 1024
+                or hashlib.sha256(ee).hexdigest() != m['capture_sha256']
+                or hashlib.sha256(iop).hexdigest() != m['iop_capture_sha256']
+                or ee[address:address + 32] != struct.pack('<8I', *words)):
+            raise ValueError('SIF DMA capture provenance/instrumentation differs.')
+        actual_marker, result, sp = struct.unpack_from('<III', ee, 0x387E80)
+        if (actual_marker != marker or result != m['observed_sif_dma_result']
+                or sp != m['observed_sif_dma_sp'] or sp != 0x1FFEC70
+                or struct.unpack_from('<4I', ee, sp) != (0x3A9580, 0x19600, 20, 0x44)
+                or struct.unpack_from('<5I', ee, 0x3A9580) != (20, 0, 0x80000000, 0, 0x3A94C0)
+                or struct.unpack_from('<2I', iop, 0x196C0) != (0x19600, 0x19680)):
+            raise ValueError('SIF DMA descriptor/packet/table differs.')
+        captures.append((m, ee, iop, result))
+    before, after = captures
+    if (before[0]['pcsx2_sha256'] != after[0]['pcsx2_sha256']
+            or before[0]['bios_sha256'] != after[0]['bios_sha256']
+            or after[3] != 0x701
+            or struct.unpack_from('<I', before[2], 0x196C8)[0] != 0x93640
+            or struct.unpack_from('<I', after[2], 0x196C8)[0] != 0x3A94C0
+            or after[2][0x19600:0x19614] != bytes(4) + after[1][0x3A9584:0x3A9594]):
+        raise ValueError('SIF DMA receive effects/return differ.')
+    return before[2] + struct.pack('<I', after[3]), {'before': before[0], 'after': after[0]}
 
 
 def verify_osd_capture(path):
@@ -173,7 +213,18 @@ def main():
     parser.add_argument('--dma-status-capture', type=Path, help='Explicit first D_STAT checkpoint; requires OSD readback.')
     parser.add_argument('--dma5-control-capture', type=Path, help='Explicit first channel 5 CHCR checkpoint; requires D_STAT.')
     parser.add_argument('--sif-command-capture', type=Path, help='Explicit first SifGetReg return checkpoint; requires channel 5 capture.')
+    parser.add_argument('--sif-dma-before-capture', type=Path, help='First SIF submission EE/IOP capture; requires matching after capture.')
+    parser.add_argument('--sif-dma-after-capture', type=Path, help='First SIF return/receive capture; requires first-query capture.')
+    parser.add_argument('--sif-rpc-state-capture', type=Path, help='Explicit reached RPCINIT query result; requires first DMA receive captures.')
     args = parser.parse_args()
+    if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
+        parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
+    sif_rpc = verify_sif_capture(args.sif_rpc_state_capture, rpc=True) if args.sif_rpc_state_capture else None
+    if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
+        parser.error('SIF DMA captures require both before/after and --sif-command-capture')
+    sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
+    if sif_dma and sif_rpc and any(sif_dma[1]['after'][key] != sif_rpc[1][key] for key in ('pcsx2_sha256', 'bios_sha256')):
+        raise ValueError('SIF RPC query and DMA reference environment differ.')
     if args.sif_command_capture and not args.dma5_control_capture:
         parser.error('--sif-command-capture requires --dma5-control-capture')
     sif_command = verify_sif_capture(args.sif_command_capture) if args.sif_command_capture else None
@@ -261,9 +312,19 @@ def main():
                 word_path = folder / (name + '.bin')
                 word_path.write_bytes(struct.pack('<I', checkpoint[0]))
                 entry_command.append(str(word_path))
+        if sif_dma:
+            bundle = folder / 'sif-dma.bin'
+            bundle.write_bytes(sif_dma[0])
+            entry_command.append(str(bundle))
+        if sif_rpc:
+            word_path = folder / 'sif-rpc-state.bin'
+            word_path.write_bytes(struct.pack('<I', sif_rpc[0]))
+            entry_command.append(str(word_path))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "sif_rpc_provenance": sif_rpc[1] if sif_rpc else None,
+        "sif_dma_provenance": sif_dma[1] if sif_dma else None,
         "sif_command_provenance": sif_command[1] if sif_command else None,
         "dma_status_provenance": dma_status[1] if dma_status else None,
         "dma5_control_provenance": dma5_control[1] if dma5_control else None,
