@@ -7,17 +7,69 @@ from collections import Counter
 import hashlib
 import importlib.util
 import json
+import struct
 from pathlib import Path
 
 from generate_game import ROOT, LOCAL_CANDIDATE_SHA256
 
 
-def select_candidates(report, metadata, max_size=0x5000):
+def has_tail_nop_gap(candidate, metadata, data):
+    """Accept one unreachable NOP between a direct tail jump and alternate JR RA."""
+    start, end = candidate["start"], candidate["end_exclusive"]
+    ranges = candidate.get("body_ranges", [])
+    if start % 4 or end % 4 or end - start > 0x5000 or len(ranges) != 2:
+        return False
+    try:
+        spans = [(int(a, 16), int(b, 16) + 1) for a, b in (r.split("-") for r in ranges)]
+    except (ValueError, TypeError):
+        return False
+    gap = spans[0][1]
+    if spans != [(start, gap), (gap + 4, end)] or end != gap + 12 or gap - start < 8:
+        return False
+    if candidate["body_size"] != end - start - 4 or gap % 4:
+        return False
+    sections = [row for row in metadata["sections"] if row["name"] == ".text"
+                and row["flags"] & 4 and row["occupies_file_bytes"]
+                and row["address"] <= start < end <= row["address"] + row["size"]]
+    if len(sections) != 1:
+        return False
+    offset = sections[0]["file_offset"] + start - sections[0]["address"]
+    if offset < 0 or offset + end - start > len(data):
+        return False
+    def word(address):
+        return struct.unpack_from("<I", data, offset + address - start)[0]
+    jump = word(gap - 8)
+    destination = ((gap - 4) & 0xF0000000) | ((jump & 0x03FFFFFF) << 2)
+    if word(gap) != 0 or jump >> 26 != 2 or start <= destination < end or word(gap + 4) != 0x03E00008:
+        return False
+    def control(ins):
+        op = ins >> 26
+        return op in (1, 2, 3, 4, 5, 6, 7, 20, 21, 22, 23) or (op == 0 and ins & 63 in (8, 9))
+    if control(word(gap - 4)) or control(word(gap + 8)):
+        return False
+    for address in range(start, end, 4):
+        ins = word(address)
+        op = ins >> 26
+        if (op == 0 and ins & 63 in (8, 9) and ins != 0x03E00008) or (op in (16, 17, 18) and (ins >> 21) & 31 >= 8):
+            return False
+        if op in (1, 4, 5, 6, 7, 20, 21, 22, 23):
+            immediate = ins & 0xFFFF
+            if immediate & 0x8000:
+                immediate -= 0x10000
+            if address + 4 + immediate * 4 == gap:
+                return False
+        elif op in (2, 3) and (((address + 4) & 0xF0000000) | ((ins & 0x03FFFFFF) << 2)) == gap:
+            return False
+    return True
+
+
+def select_candidates(report, metadata, max_size=0x5000, data=None):
     rows, excluded = [], []
     for candidate in report["functions"]:
         start, end = candidate["start"], candidate["end_exclusive"]
         reason = None
-        if not candidate["contiguous_aligned"] or start % 4 or end % 4 or end <= start or candidate["body_size"] != end - start:
+        padding = data is not None and has_tail_nop_gap(candidate, metadata, data)
+        if not padding and (not candidate["contiguous_aligned"] or start % 4 or end % 4 or end <= start or candidate["body_size"] != end - start):
             reason = "noncontiguous_or_invalid"
         elif not any(section["name"] == ".text" and section["flags"] & 4 and section["occupies_file_bytes"]
                      and section["address"] <= start < end <= section["address"] + section["size"] for section in metadata["sections"]):
@@ -62,7 +114,7 @@ def main():
     inspector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inspector)
     metadata = inspector.inspect(data)
-    selected, excluded = select_candidates(report, metadata)
+    selected, excluded = select_candidates(report, metadata, data=data)
     folder = ROOT / "work/bt2-generation"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "candidates.csv"
@@ -74,6 +126,8 @@ def main():
                 "export_sha256": hashlib.sha256(export.read_bytes()).hexdigest(), "language": report["language"],
                 "selected_count": len(selected), "covered_bytes": sum(row["end"]-row["start"] for row in selected),
                 "excluded_counts": dict(Counter(row["reason"] for row in excluded)), "excluded": excluded,
+                "nop_padding_candidates": [row["start"] for row in report["functions"]
+                    if has_tail_nop_gap(row, metadata, data)],
                 "max_function_bytes": 0x5000, "limitations": "Boundaries are provisional. Upstream may discover additional functions. No VU map or overlay assumed."}
     path.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Prepared {len(selected)} provisional EE functions; quarantined {len(excluded)}. Map: {path}")

@@ -43,7 +43,7 @@ def main():
     patched = ROOT / "game/generated/bt2-runtime"
     patched.mkdir(parents=True, exist_ok=True)
     prepared_sources = []
-    for filename in ("FUN_00100008_0x100008.cpp", "FUN_00338520_0x338520.cpp", "FUN_0033A238_0x33a238.cpp"):
+    for filename in ("FUN_00100008_0x100008.cpp", "FUN_00338520_0x338520.cpp", "FUN_0033A238_0x33a238.cpp", "FUN_00321E50_0x321e50.cpp"):
         source = ROOT / "game/generated/bt2" / filename
         text, count = route_tail_calls(source.read_text(encoding="utf-8"))
         if count != 1:

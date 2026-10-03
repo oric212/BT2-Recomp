@@ -130,6 +130,7 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
         runtime.registerFunction(0x00338648, FUN_00338648_0x338648);
         runtime.registerFunction(0x003385E0, FUN_003385E0_0x3385e0);
+        runtime.registerFunction(0x00321E50, FUN_00321E50_0x321e50);
         runtime.registerFunction(0x00100388, FUN_00100388_0x100388);
         runtime.registerFunction(0x0033A238, FUN_0033A238_0x33a238);
         runtime.registerFunction(0x0033A820, FUN_0033A820_0x33a820);
@@ -193,9 +194,11 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedGuestBranch& stop) {
-            require(osd_readback_mode && stop.target == 0x00321E50 && stop.source_pc == 0x00100394
-                    && stop.resume_pc == 0x0010039C && context.pc == stop.target
-                    && GPR_U32(&context, 4) == 0 && GPR_U32(&context, 5) == 0x0038B984,
+            require(osd_readback_mode && stop.target == 0x00321D90 && stop.source_pc == 0x00321E74
+                    && stop.resume_pc == 0 && context.pc == stop.target
+                    && GPR_U32(&context, 4) == 0x003A8830 && GPR_U32(&context, 5) == 0x0038B984
+                    && runtime.read32(runtime.memory().data(), 0x003A8830) == 1
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 48) == 0x0010039C,
                     "Unexpected main-entry dispatch boundary");
             stop_target = stop.target;
             stop_source = stop.source_pc;
@@ -251,8 +254,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (osd_readback_mode ? 88u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (osd_readback_mode ? 86u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (osd_readback_mode ? 909u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (osd_readback_mode ? 46u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (osd_readback_mode ? 89u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (osd_readback_mode ? 86u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (osd_readback_mode ? 910u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (osd_readback_mode ? 47u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -397,7 +400,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (osd_readback_mode) std::cout << "Generated FUN_00100388 entered; reached unlinked target FUN_00321E50.\n";
+        if (osd_readback_mode) std::cout << "Generated FUN_00321E50 executed; reached unlinked tail target FUN_00321D90.\n";
         else if (osd_mode) std::cout << "Captured OSD configuration returned; reached SetOsdConfigParam syscall 0x4A.\n";
         else if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";

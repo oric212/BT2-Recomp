@@ -1,5 +1,6 @@
 import unittest
-from prepare_map import select_candidates
+import struct
+from prepare_map import select_candidates, has_tail_nop_gap
 
 
 class CandidateMapTests(unittest.TestCase):
@@ -24,6 +25,28 @@ class CandidateMapTests(unittest.TestCase):
         self.assertEqual(len(selected), 1)
         self.assertEqual({row["reason"] for row in excluded},
                          {"oversized", "outside_file_backed_ee_text", "noncontiguous_or_invalid"})
+
+    def test_single_tail_padding_gap_and_rejections(self):
+        metadata = {"sections": [{**self.metadata["sections"][0], "file_offset": 0}]}
+        words = [0x14000004, 0, 0x08000800, 0x27BD0010, 0, 0x03E00008, 0x27BD0010]
+        data = struct.pack("<7I", *words)
+        candidate = {"start": 0x1000, "end_exclusive": 0x101C, "body_size": 24,
+                     "contiguous_aligned": False, "body_ranges": ["1000-100f", "1014-101b"]}
+        self.assertTrue(has_tail_nop_gap(candidate, metadata, data))
+        self.assertEqual(select_candidates({"functions": [candidate]}, metadata, data=data)[0],
+                         [{"start": 0x1000, "end": 0x101C}])
+        for index, replacement in ((4, 1), (2, 0x0C000800), (2, 0x08000404),
+                                   (0, 0x14000003), (0, 0x03200008), (0, 0x45000003),
+                                   (3, 0x03E00008), (5, 0)):
+            changed = words.copy()
+            changed[index] = replacement
+            self.assertFalse(has_tail_nop_gap(candidate, metadata, struct.pack("<7I", *changed)))
+        self.assertFalse(has_tail_nop_gap(candidate, metadata, data[:-1]))
+        overlapping = self.row(0x1010, 0x1018)
+        selected, excluded = select_candidates({"functions": [candidate, overlapping, self.row(0x1040, 0x1048)]},
+                                               metadata, data=data)
+        self.assertEqual(selected, [{"start": 0x1040, "end": 0x1048}])
+        self.assertEqual(len(excluded), 2)
 
 
 if __name__ == "__main__":
