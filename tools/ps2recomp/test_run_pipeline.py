@@ -148,6 +148,25 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_timer_capture(self.path, 2)
 
+    def test_intc_checkpoint_validation(self):
+        address = 0x32E9A4
+        words = self.words.copy()
+        words[1], words[6], words[8] = 0x3718F010, 0x3419B705, 0x08000000 | ((address + 32) >> 2)
+        self.data[address:address + 40] = struct.pack('<10I', *words)
+        struct.pack_into('<II', self.data, 0x387E80, 0xB705, 0x1002)
+        self.manifest.update(capture_point='intc-mask: authored fixture', observed_intc_mask=0x1002,
+                             patch={'address': address, 'size': 40, 'authored_words': words},
+                             capture_sha256=hashlib.sha256(self.data).hexdigest())
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_intc_capture(self.path)[0], 0x1002)
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path, 2)
+        self.manifest['observed_intc_mask'] = 0x1802
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_intc_capture(self.path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -102,5 +102,12 @@
     "path": "pcsx2/Counters.cpp",
     "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9",
     "role": "rcntWmode register control bits and write-one-to-clear flags only. Authored adapter accepts one observed 0x382 store to 0xB0001010 after explicit capture replay; counter synchronization/rate/gating/events remain unimplemented."
+  },
+  "enable_intc_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_EnableIntc cause bit: return 1 if changed, 0 if already enabled; preserve other mask bits. Probe accepts only cause 11 with an explicit mask checkpoint captured immediately before this syscall; no BIOS default, pending interrupt processing or delivery."
   }
 }

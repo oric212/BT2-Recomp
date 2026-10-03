@@ -64,3 +64,13 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(words[6], 0x3419b704)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
         self.assertEqual(words[9], 0)
+
+    def test_intc_trap_reads_mask_before_enable_syscall(self):
+        address, trap, marker = capture_trap('intc-mask')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x32e9a4)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x1000f010)
+        self.assertEqual(words[2], 0x8f190000)
+        self.assertEqual(marker, 0xb705)
+        self.assertEqual(words[6], 0x3419b705)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)

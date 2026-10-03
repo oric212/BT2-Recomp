@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, executes the copied-kernel entry, records the Timer 3 interrupt registration and returns from kernel initialization. The next startup path fills a buffer, runs a generated list helper, registers INTC cause 11 as ID 2 and completes a generated CPU-status helper. Explicit Timer 2 capture replay and the observed mode write complete the generated register-write helper and its ErrorEPC/ERET return. Game boot and gameplay remain incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, executes the copied-kernel entry, records the Timer 3 interrupt registration and returns from kernel initialization. The next startup path fills a buffer, runs a generated list helper, registers INTC cause 11 as ID 2 and completes a generated CPU-status helper. Explicit Timer 2 capture replay and the observed mode write complete the generated register-write helper and its ErrorEPC/ERET return. With an explicit INTC checkpoint, EnableIntc and the timer startup routine return. Game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, six CTests, 27 recomp tooling tests and six capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, six CTests, 28 recomp tooling tests and seven capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops at EnableIntc syscall `0x14`, cause `11`, resume PC `0x0032E9A8` in `FUN_0032E9A0`, called by `FUN_0032F7A8`. The observed Timer 2 mode write `0x382` to `0xB0001010` now completes once after explicit read replay. Generated `FUN_00338B58` and `FUN_00338AD8` return through ErrorEPC/ERET; the probe verifies restored Status and cleared LL bit.
+Startup stops in `FUN_00338DB8` at a second Timer 2 mode read (`0x10001010`, PC `0x00338DD8`). An isolated pre-EnableIntc capture observed mask `0x1002`; cause 11 enable returns `1`, records `0x1802`, and generated `FUN_0032E9A0`, `FUN_0032F7A8` and `FUN_00338B78` complete. Neither interrupt handler has executed.
 
-Next: establish the required EnableIntc return/mask behavior and implement the observed cause 11 request. Timer mode bits are recorded; counter progression, event scheduling and interrupt delivery remain unimplemented. Retail BIOS CPU status remains unconfirmed. Earlier capture-free boundaries and kernel/stack/registration guards stay checked.
+Next: validate Timer 2 mode after its startup write and support the reached subsequent read, then rerun. The current one-read capture replay deliberately stops here; counter progression, event scheduling and interrupt delivery remain unimplemented. INTC state comes from the explicit checkpoint, not a fabricated BIOS default. Earlier capture-free boundaries and kernel/stack/registration guards stay checked.
 
 ## Key counts
 
 - **7,244** functions generated locally: 7,243 main ELF + one scoped kernel entry; **7,250** raw generated C++/header files.
-- **24** distinct functions entered across native probes.
-- **19** functions completed across probes; entry, `FUN_00338520`, `FUN_00338B78`, `FUN_0032F7A8` and `FUN_0032E9A0` remain partial. These are startup/helper paths, not working gameplay.
+- **25** distinct functions entered across native probes.
+- **22** functions completed across probes; entry, `FUN_00338520` and `FUN_00338DB8` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

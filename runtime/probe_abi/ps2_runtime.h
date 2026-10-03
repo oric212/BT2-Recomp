@@ -109,6 +109,16 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x14) {
+            // Observed cause only; explicit mask checkpoint avoids a fabricated BIOS default.
+            if (!intc_mask_supplied_ || static_cast<std::uint32_t>(context->r[4].low) != 11)
+                throw UnsupportedSyscall(selector, context->pc);
+            constexpr std::uint32_t bit = 1u << 11;
+            context->r[2].low = (intc_mask & bit) ? 0 : 1;
+            intc_mask |= bit;
+            ++intc_enable_calls;
+            return;
+        }
         if (code == 0 && selector == 0x10) {
             const auto cause = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
@@ -334,6 +344,12 @@ public:
         timer3_mode_supplied_ = true;
     }
 
+    void supplyIntcMask(std::uint32_t value) {
+        if (value > 0xFFFF || intc_mask_supplied_) throw std::runtime_error("Invalid/repeated INTC mask checkpoint");
+        intc_mask = value;
+        intc_mask_supplied_ = true;
+    }
+
     void supplyTimer2Mode(std::uint32_t value) {
         if (value > 0xFFFF || timer2_mode_supplied_) throw std::runtime_error("Invalid/repeated Timer 2 capture");
         timer2_mode_ = value;
@@ -398,6 +414,8 @@ public:
     std::uint32_t timer3_interrupt_handler = 0;
     bool timer3_interrupt_enable_requested = false;
     unsigned extended_registrations = 0;
+    std::uint32_t intc_mask = 0;
+    unsigned intc_enable_calls = 0;
     bool startup_zero_verified = false;
     std::uint64_t startup_quadword_writes = 0, startup_byte_writes = 0;
     std::uint64_t kernel_word_writes = 0;
@@ -443,5 +461,5 @@ private:
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
     bool timer3_mode_supplied_ = false;
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;
-    bool timer2_mode_supplied_ = false;
+    bool timer2_mode_supplied_ = false, intc_mask_supplied_ = false;
 };

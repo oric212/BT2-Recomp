@@ -336,6 +336,30 @@ int main() {
         patched.handleSyscall(patch_ram, &registration, 0);
         require(registration.r[2].low == UINT64_MAX && registration.r[2].high == 0x5678
                 && patched.intc_handlers.size() == 128 && patched.intc_handler_order.front() == 128);
+        PS2Runtime intc;
+        R5900Context intc_context{};
+        intc_context.r[3].low = 0x14;
+        intc_context.r[4].low = 11;
+        intc_context.r[2] = {0xABCD, UINT64_MAX};
+        reject([&] { intc.handleSyscall(nullptr, &intc_context, 0); });
+        reject([&] { intc.supplyIntcMask(0x10000); });
+        intc.supplyIntcMask(0x1002);
+        reject([&] { intc.supplyIntcMask(0x1002); });
+        for (const auto cause : {0u, 12u, 32u, UINT32_MAX}) {
+            intc_context.r[4].low = cause;
+            reject([&] { intc.handleSyscall(nullptr, &intc_context, 0); });
+        }
+        require(intc.intc_mask == 0x1002 && intc.intc_enable_calls == 0 && intc_context.r[2].low == 0xABCD);
+        intc_context.r[4].low = 11;
+        reject([&] { intc.handleSyscall(nullptr, &intc_context, 1); });
+        intc.handleSyscall(nullptr, &intc_context, 0);
+        require(intc.intc_mask == 0x1802 && intc_context.r[2].low == 1 && intc_context.r[2].high == UINT64_MAX);
+        intc.handleSyscall(nullptr, &intc_context, 0);
+        require(intc.intc_mask == 0x1802 && intc_context.r[2].low == 0 && intc.intc_enable_calls == 2);
+        PS2Runtime already_enabled;
+        already_enabled.supplyIntcMask(0x1802);
+        already_enabled.handleSyscall(nullptr, &intc_context, 0);
+        require(intc_context.r[2].low == 0 && already_enabled.intc_mask == 0x1802);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;
