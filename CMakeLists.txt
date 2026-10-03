@@ -55,7 +55,8 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${BT2_GENERATED_DIR}/FUN_00338A00_0x338a00.cpp"
         "${BT2_GENERATED_DIR}/FUN_00338998_0x338998.cpp"
         "${BT2_GENERATED_DIR}/FUN_003389A8_0x3389a8.cpp"
-        "${BT2_GENERATED_DIR}/FUN_003389B8_0x3389b8.cpp")
+        "${BT2_GENERATED_DIR}/FUN_003389B8_0x3389b8.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032EEE0_0x32eee0.cpp")
     target_include_directories(bt2-entry-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
     target_compile_features(bt2-entry-probe PRIVATE cxx_std_20)
     target_compile_options(bt2-entry-probe PRIVATE /W4 /permissive- /utf-8)

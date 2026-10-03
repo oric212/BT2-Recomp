@@ -148,7 +148,7 @@ public:
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
         if (static_cast<std::uint32_t>(context->r[4].low) != 0)
-            throw std::runtime_error("Unsupported probe cache operation");
+            throw UnsupportedSyscall(selector, context->pc);
         // Record writeback request only. This memory-free probe has no guest cache/DMA.
         ++cache_requests;
         syscall_resume_pc = context->pc;
@@ -209,6 +209,14 @@ public:
     }
 
     void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+        if (address >= kernel_patch_start_ && address < kernel_patch_end_) {
+            if (!kernel_patch_end_ || memory_.empty() || rdram != memory_.data() || address % 4
+                    || kernel_patch_end_ - address < 4) throw UnsupportedGuestMemory(address, 4);
+            kernel_patch_words_[address - 0x80000000] = value;
+            ++kernel_word_writes;
+            ++word_writes;
+            return;
+        }
         checkMemory(rdram, address, 4);
         if (address % 4) throw std::runtime_error("Unsupported unaligned word store");
         std::memcpy(memory_.data() + address, &value, 4);
@@ -232,8 +240,18 @@ public:
     static constexpr std::size_t kernel_snapshot_size = 0x80004;
     void loadKernelSnapshot(std::span<const std::uint8_t> bytes) {
         if (bytes.size() != kernel_snapshot_size) throw std::runtime_error("Kernel snapshot must cover physical [0, 0x80004)");
+        if (kernel_patch_end_) throw std::runtime_error("Cannot replace a kernel baseline with enabled patches");
         kernel_snapshot_.assign(bytes.begin(), bytes.end());
     }
+
+    void enableKernelPatch(std::uint32_t start, std::uint32_t size) {
+        if (kernel_snapshot_.empty() || kernel_patch_end_ || !size || start % 4 || size % 4
+                || start < 0x80000000 || start >= 0x80080000 || size > 0x80080000 - start)
+            throw std::runtime_error("Invalid bounded kernel patch range");
+        kernel_patch_start_ = start;
+        kernel_patch_end_ = start + size;
+    }
+    std::span<const std::uint8_t> kernelBaseline() const { return kernel_snapshot_; }
 
     // Single captured startup read, not a timer scheduler or mutable register model.
     void supplyTimer3Mode(std::uint32_t value) {
@@ -259,6 +277,8 @@ public:
             if (kernel_snapshot_.empty() || memory_.empty() || rdram != memory_.data()
                 || offset % 4 || offset > kernel_snapshot_.size() - 4)
                 throw UnsupportedGuestMemory(address, 4);
+            if (const auto patched = kernel_patch_words_.find(offset); patched != kernel_patch_words_.end())
+                return patched->second;
             std::uint32_t value;
             std::memcpy(&value, kernel_snapshot_.data() + offset, 4);
             return value;
@@ -286,6 +306,7 @@ public:
     std::vector<Semaphore> semaphores;
     std::array<std::uint32_t, 256> syscall_handlers{};
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
+    std::uint64_t kernel_word_writes = 0;
     unsigned timer3_mode_reads = 0;
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
@@ -299,6 +320,8 @@ private:
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
     std::vector<std::uint8_t> memory_, kernel_snapshot_;
+    std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
+    std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
     bool timer3_mode_supplied_ = false;

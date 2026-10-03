@@ -38,7 +38,7 @@ def main():
         if blocker["map_status"] != "map gap":
             parser.error("Discovery requires an observed map gap.")
         stop = json.loads((ROOT / "work/bt2-generation/entry-stop.json").read_text(encoding="utf-8"))
-        discovered_address = stop.get("target") or (stop.get("pc") if "memory" in stop.get("status", "") else stop.get("handler"))
+        discovered_address = stop.get("target") or (stop.get("pc") if "memory" in stop.get("status", "") else stop.get("handler") or stop.get("pc"))
         if discovered_address != blocker["address"]:
             parser.error("Blocker diagnostic differs from the latest execution stop.")
         discovery = ["-preScript", "DiscoverBT2Target.java", hex(blocker["address"])]

@@ -1,5 +1,6 @@
 #include "ps2_runtime_macros.h"
 #include <iostream>
+#include <algorithm>
 
 namespace {
 void require(bool value) { if (!value) throw std::runtime_error("Bootstrap helper test failed"); }
@@ -181,6 +182,31 @@ int main() {
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
         PS2Runtime invalid_timer;
         reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
+        PS2Runtime patched;
+        patched.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        auto* patch_ram = patched.memory().data();
+        reject([&] { patched.enableKernelPatch(0x80076000, 8); });
+        const std::vector<std::uint8_t> baseline(PS2Runtime::kernel_snapshot_size, 0x5A);
+        patched.loadKernelSnapshot(baseline);
+        reject([&] { patched.enableKernelPatch(0x80076001, 8); });
+        reject([&] { patched.enableKernelPatch(0x80076000, 0); });
+        reject([&] { patched.enableKernelPatch(0x8007FFFC, 8); });
+        reject([&] { patched.enableKernelPatch(0x80076000, UINT32_MAX); });
+        patched.enableKernelPatch(0x80076000, 8);
+        reject([&] { patched.enableKernelPatch(0x80076000, 8); });
+        reject([&] { patched.loadKernelSnapshot(baseline); });
+        patched.write32(patch_ram, 0x80076000, 0x12345678);
+        patched.write32(patch_ram, 0x80076004, 0xABCDEF01);
+        require(patched.read32(patch_ram, 0x80076000) == 0x12345678
+                && patched.read32(patch_ram, 0x80076004) == 0xABCDEF01);
+        reject([&] { patched.write32(patch_ram, 0x80075FFC, 0); });
+        reject([&] { patched.write32(patch_ram, 0x80076008, 0); });
+        reject([&] { patched.write32(patch_ram, 0x80076002, 0); });
+        reject([&] { patched.write32(nullptr, 0x80076000, 0); });
+        reject([&] { patched.write32(patch_ram, 0xA0076000, 0); });
+        require(std::equal(baseline.begin(), baseline.end(), patched.kernelBaseline().begin()));
+        require(patched.kernel_word_writes == 2 && patched.word_writes == 2
+                && patched.read32(patch_ram, 0x80076008) == 0x5A5A5A5A);
         require(SRL32(0x740, 2) == 0x1D0);
         require(SRL32(0x80000000, 1) == 0x40000000);
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);

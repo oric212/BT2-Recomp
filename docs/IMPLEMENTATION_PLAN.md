@@ -10,7 +10,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Complete: local ISO matches official Redump size/MD5/SHA-1, and its embedded ELF matches the local executable. Reference provenance is in `config/retail_revision.json`.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
 4. PS2Recomp generation and integration: pinned tools, synthetic validation, Ghidra discovery, automatic provisional EE map preparation, and local generation are working. One generated BT2 syscall wrapper compiles/links and executes through an isolated authored adapter. Extend the runtime from observed compile/execution blockers; proprietary-derived output remains ignored.
-5. Runtime entry: generated entry now compiles, links and executes initialization and nested startup. With an explicit kernel snapshot, scans return and startup reaches the the first kernel write in discovered `FUN_003389B8` after an explicit captured Timer 3 read replay. Implement only the required compatibility calls from evidence and record each new execution blocker.
+5. Runtime entry: generated entry now compiles, links and executes initialization and nested startup. With an explicit kernel snapshot, scans return and startup reaches the unsupported FlushCache operation `2` after a bounded kernel patch and explicit captured Timer 3 read replay. Implement only the required compatibility calls from evidence and record each new execution blocker.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
 8. Playable versus battle: reach the first major gameplay goal with working controls.
@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: establish bounded kernel patch storage/write semantics while preserving the capture baseline, then resume generated `FUN_003389B8`. The current stop is its first word write to `0x80076000`, PC `0x003389D8`. Keep unrelated memory/MMIO unsupported and preserve the no-snapshot/kernel-only stop paths.
+Current next step: establish and implement only the required FlushCache operation `2` semantics; current stop is selector `0x64`, PC `0x0032EEE8`. The generated handler completed the verified `0x740`-byte kernel overlay patch and `0x28`-byte main-RAM copy. Preserve the immutable capture baseline, exact write bounds and earlier no-snapshot/kernel-only boundaries.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
