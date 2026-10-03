@@ -110,7 +110,8 @@ public:
             return;
         }
         if (code == 0 && selector == 0x4A) {
-            if (!osd_readback_supplied || osd_config_reads != 1 || osd_config_sets || context->r[4].low > UINT32_MAX)
+            if (!osd_readback_supplied || !((osd_config_reads == 1 && osd_config_sets == 0)
+                    || (osd_config_reads == 2 && osd_config_sets == 1)) || context->r[4].low > UINT32_MAX)
                 throw UnsupportedSyscall(selector, context->pc);
             const auto address = static_cast<std::uint32_t>(context->r[4].low);
             if (address & 3) throw UnsupportedGuestMemory(address, 4);

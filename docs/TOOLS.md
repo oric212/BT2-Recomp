@@ -239,4 +239,7 @@ Add `--osd-capture work/pcsx2-capture/osd-config/capture.json` to the full pipel
 python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point osd-readback
 ```
 
-Add `--osd-readback-capture work/pcsx2-capture/osd-readback/capture.json` alongside `--osd-capture` in the full pipeline. This trap at `0x00338620` publishes both original and returned configuration words. Validation requires their equality and the first setter expression to equal the original. The adapter accepts one same-value setter and second getter, then stops at the restore setter. Omitting this checkpoint retains the first setter stop. Configuration mutation remains unsupported.
+Add `--osd-readback-capture work/pcsx2-capture/osd-readback/capture.json` alongside `--osd-capture` in the full pipeline. This trap at `0x00338620` publishes both original and returned configuration words. Validation requires their equality and the first setter expression to equal the original. The adapter accepts the first same-value setter, second getter and same-value restore, then reaches the next registered handler. Omitting this checkpoint retains the first setter stop. Configuration mutation remains unsupported.
+
+
+The full OSD readback pipeline now accepts the ordered same-value restore, completes the generated OSD helper and enters `FUN_0033A820`. It stops at selector `0x5A` with registered handler `0x0033A7C8`, currently a map gap. Stop reports preserve the exception handler field for correct classification. No handler implementation or kernel payload copy is supplied. Earlier commands without readback retain their original stop.

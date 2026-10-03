@@ -528,6 +528,12 @@ int main() {
                 && osd_sequence.osd_config_reads == 2 && osd_sequence.word_writes == 2
                 && sequence_context.r[2].low == 0xABCD && sequence_context.r[2].high == UINT64_MAX);
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[3].low = 0x4A;
+        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
+        require(osd_sequence.osd_config_sets == 2 && osd_sequence.word_writes == 2);
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[3].low = 0x4B;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;
