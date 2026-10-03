@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338B78, FUN_00338B78_0x338b78);
         runtime.registerFunction(0x003251DC, FUN_003251DC_0x3251dc);
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
+        runtime.registerFunction(0x00338268, FUN_00338268_0x338268);
         runtime.registerFunction(0x0032E950, FUN_0032E950_0x32e950);
         if (timer_mode) {
 #ifdef BT2_KERNEL_PAYLOAD
@@ -91,22 +92,14 @@ int main(int argc, char** argv) {
         std::uint32_t stop_selector = 0, stop_handler = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (timer_mode) throw;
-            if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
+            if (timer_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338C58,
+                                    "Unexpected Timer 2 MMIO boundary");
+            else if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
                                        "Unexpected snapshot MMIO boundary");
             else require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388,
                          "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
-            stopped = true;
-        }
-        catch (const UnsupportedSyscall& stop) {
-            if (!timer_mode) throw;
-            require(stop.selector == 0x10 && !stop.handler && stop.resume_pc == 0x0032E958
-                    && context.pc == 0x0032E958 && GPR_U32(&context, 4) == 11
-                    && GPR_U32(&context, 5) == 0x00339118 && GPR_U32(&context, 6) == 0 && GPR_U32(&context, 7) == 0,
-                    "Unexpected interrupt registration boundary");
-            stop_selector = stop.selector;
             stopped = true;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
@@ -135,13 +128,19 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (timer_mode ? 42u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (timer_mode ? 39u : 10u)
-                    && runtime.word_writes == (timer_mode ? 680u : 9u) && runtime.doubleword_writes == (timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (timer_mode ? 681u : 9u) && runtime.doubleword_writes == (timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
         }
         if (timer_mode) {
+            require(runtime.intc_handlers.size() == 2 && runtime.intc_handler_order == std::vector<std::uint32_t>{2, 1}
+                    && runtime.intc_handlers[0].cause == 12 && runtime.intc_handlers[0].address == 0x80076488
+                    && runtime.intc_handlers[1].cause == 11 && runtime.intc_handlers[1].address == 0x00339118
+                    && runtime.intc_handlers[1].arg == 0 && runtime.intc_handlers[1].gp == 0x0038BDF0
+                    && runtime.read32(runtime.memory().data(), 0x0036BAD8) == 2 && context.cop0_status == 0,
+                    "Interrupt registration ID/state or generated status helper differs");
             require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
             require(runtime.kernel_word_writes == 0x740 / 4 && runtime.cache_requests == 2 && runtime.instruction_cache_invalidations == 1,
                     "Unexpected copied kernel size/cache request count");
@@ -206,9 +205,9 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"" << (timer_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
+        report << "{\"status\":\"" << "blocked at unsupported guest memory" << "\",\"entry_executed\":true,"
                << "\"selector\":" << stop_selector << ","
-               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (timer_mode ? "handler registration" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << "read" << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
                << ",\"timer3_interrupt_handler\":" << runtime.timer3_interrupt_handler
                << ",\"timer3_interrupt_enable_requested\":" << (runtime.timer3_interrupt_enable_requested ? "true" : "false")
                << ",\"extended_registrations\":" << runtime.extended_registrations
@@ -226,7 +225,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (timer_mode) std::cout << "Generated copies and cache requests completed; kernel initialization returned; stopped at interrupt registration syscall 0x" << std::hex << stop_selector << std::dec << "\n";
+        if (timer_mode) std::cout << "Interrupt handler ID 2 stored; generated status helper returned; stopped at Timer 2 MMIO read 0x10001010 at PC 0x00338C58.\n";
         else if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
                                      << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";
         else std::cout << "No kernel snapshot supplied; stopped at first kernel read 0x80000000.\n";

@@ -286,6 +286,36 @@ int main() {
         reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
         require(patched.timer3_interrupt_handler == 0x80076004 && patched.extended_registrations == 1
                 && patched.syscall_registrations == registrations_before + 1 && patched.syscall_handlers == ordinary_handlers);
+        require(patched.intc_handlers.size() == 1 && patched.intc_handler_order == std::vector<std::uint32_t>{1});
+        registration.r[3].low = 0x10;
+        registration.r[4].low = 11;
+        registration.r[5].low = 0x100;
+        registration.r[6].low = registration.r[7].low = 0;
+        registration.r[28].low = 0x12345678;
+        patched.handleSyscall(patch_ram, &registration, 0);
+        require(registration.r[2].low == 2 && registration.r[2].high == 0x5678
+                && patched.intc_handlers[1].cause == 11 && patched.intc_handlers[1].address == 0x100
+                && patched.intc_handlers[1].arg == 0 && patched.intc_handlers[1].gp == 0x12345678
+                && patched.intc_handler_order == std::vector<std::uint32_t>{2, 1});
+        for (const auto address : {0u, 0x101u, static_cast<std::uint32_t>(PS2Runtime::ram_size), 0x80076000u}) {
+            registration.r[5].low = address;
+            reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        }
+        registration.r[5].low = 0x100;
+        registration.r[6].low = UINT32_MAX;
+        reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        registration.r[6].low = 0;
+        registration.r[4].low = 12;
+        reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        require(patched.intc_handlers.size() == 2 && registration.r[2].low == 2);
+        registration.r[4].low = 11;
+        for (unsigned id = 3; id <= 128; ++id) {
+            patched.handleSyscall(patch_ram, &registration, 0);
+            require(registration.r[2].low == id);
+        }
+        patched.handleSyscall(patch_ram, &registration, 0);
+        require(registration.r[2].low == UINT64_MAX && registration.r[2].high == 0x5678
+                && patched.intc_handlers.size() == 128 && patched.intc_handler_order.front() == 128);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

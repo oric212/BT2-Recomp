@@ -80,5 +80,20 @@
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
     "role": "sc_SetSyscall maps extended selector 0x12C to Timer 3 / INTC line 12 registration and enable request. Probe records one bounded startup request only; no interrupt delivery, physical alias execution or BIOS equivalence claimed."
+  },
+  "intc_registration_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ],
+    "role": "sc_AddIntcHandler and sc_SetSyscall share a 128-entry pool with IDs starting at one. Observed cause 11, next/arg zero uses front insertion, captures GP and returns ID (sign-extended -1 on exhaustion). Timer 3 reserves ID one. Probe retains original guest addresses; no physical alias execution, interrupt delivery, removal or scheduling."
   }
 }

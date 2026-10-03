@@ -105,6 +105,17 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x10) {
+            const auto cause = static_cast<std::uint32_t>(context->r[4].low);
+            const auto address = static_cast<std::uint32_t>(context->r[5].low);
+            // Observed startup contract only. No interrupt delivery or removal yet.
+            if (cause != 11 || !address || address % 4 || context->r[6].low != 0 || context->r[7].low != 0)
+                throw UnsupportedSyscall(selector, context->pc);
+            checkMemory(rdram, address, 4);
+            const auto id = addIntcHandler(cause, address, 0, static_cast<std::uint32_t>(context->r[28].low));
+            context->r[2].low = id;
+            return;
+        }
         if (code == 0 && selector == 0x74) {
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
@@ -122,6 +133,8 @@ public:
             if (timer_interrupt) {
                 // Pinned Play! maps this extended selector to INTC line 12.
                 // Record one startup registration/enable request; no interrupt delivery.
+                if (addIntcHandler(12, address, 0, 0) == UINT64_MAX)
+                    throw std::runtime_error("Timer 3 interrupt handler pool exhausted");
                 timer3_interrupt_handler = address;
                 timer3_interrupt_enable_requested = true;
                 ++extended_registrations;
@@ -354,6 +367,10 @@ public:
     std::vector<Semaphore> semaphores;
     std::array<std::uint32_t, 256> syscall_handlers{};
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
+    struct IntcHandler { std::uint32_t cause, address, arg, gp; };
+    // Shared 128-entry pool, IDs start at one, matching pinned Play!.
+    std::vector<IntcHandler> intc_handlers;
+    std::vector<std::uint32_t> intc_handler_order;
     std::uint32_t timer3_interrupt_handler = 0;
     bool timer3_interrupt_enable_requested = false;
     unsigned extended_registrations = 0;
@@ -368,6 +385,13 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    std::uint64_t addIntcHandler(std::uint32_t cause, std::uint32_t address, std::uint32_t arg, std::uint32_t gp) {
+        if (intc_handlers.size() == 128) return UINT64_MAX;
+        intc_handlers.push_back({cause, address, arg, gp});
+        const auto id = static_cast<std::uint32_t>(intc_handlers.size());
+        intc_handler_order.insert(intc_handler_order.begin(), id);
+        return id;
+    }
     std::uint32_t startup_zero_start_ = 0, startup_zero_end_ = 0;
     void verifyKernelBinding(std::uint32_t address) {
         const auto found = kernel_code_bindings_.find(address);
