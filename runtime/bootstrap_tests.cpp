@@ -41,6 +41,14 @@ int main() {
         context.r[0] = left;
         SET_GPR_VEC(&context, 0, right);
         require(GPR_VEC(&context, 0).low == 0 && context.r[0].low == left.low);
+        context.r[4] = {0x8000000000000000ull, 0x12345678};
+        require(GPR_S64(&context, 4) == INT64_MIN);
+        SET_GPR_S64(&context, 4, GPR_S64(&context, 4) >> 32);
+        require(context.r[4].low == 0xFFFFFFFF80000000ull && context.r[4].high == 0x12345678);
+        SET_GPR_S64(&context, 4, INT64_MAX);
+        require(GPR_S64(&context, 4) >> 32 == 0x7FFFFFFF);
+        SET_GPR_S64(&context, 0, -1);
+        require(GPR_S64(&context, 0) == 0 && context.r[0].low == left.low);
         PS2Runtime runtime;
         std::vector<std::uint8_t> image(PS2Runtime::ram_size, 0xA5);
         runtime.loadMemory(image);

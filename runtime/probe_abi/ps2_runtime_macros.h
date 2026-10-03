@@ -25,6 +25,12 @@ inline void SET_GPR_S32(R5900Context* context, unsigned index, std::int32_t valu
 inline std::uint64_t GPR_U64(const R5900Context* context, unsigned index) {
     return index == 0 ? 0 : context->r.at(index).low;
 }
+inline std::int64_t GPR_S64(const R5900Context* context, unsigned index) {
+    return std::bit_cast<std::int64_t>(GPR_U64(context, index));
+}
+inline void SET_GPR_S64(R5900Context* context, unsigned index, std::int64_t value) {
+    if (index) context->r.at(index).low = std::bit_cast<std::uint64_t>(value);
+}
 inline ProbeGpr GPR_VEC(const R5900Context* context, unsigned index) {
     return index == 0 ? ProbeGpr{} : context->r.at(index);
 }
