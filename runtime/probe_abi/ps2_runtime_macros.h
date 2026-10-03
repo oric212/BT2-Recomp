@@ -82,3 +82,10 @@ inline void ps2TraceGuestWrite(std::uint8_t*, std::uint32_t, unsigned, std::uint
 #define FAST_READ32(address) READ32(address)
 
 inline std::uint32_t SLL32(std::uint32_t value, unsigned amount) { return value << (amount & 31); }
+
+inline void SET_GPR_ZE32(R5900Context* context, unsigned index, std::uint32_t value) {
+    SET_GPR_U64(context, index, value);
+}
+#define READ8(address) runtime->read8(rdram, (address))
+
+inline std::uint32_t SUB32(std::uint32_t left, std::uint32_t right) { return left - right; }

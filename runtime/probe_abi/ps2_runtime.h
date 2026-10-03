@@ -3,6 +3,7 @@
 // Authored bootstrap adapter for generated probes. Broader PS2 APIs fail explicitly.
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
@@ -112,6 +113,14 @@ public:
             } catch (...) { context->r[31] = saved_ra; throw; }
             context->r[31] = saved_ra;
             context->pc = resume;
+            return;
+        }
+        if (code == 0 && selector == 0x7A) {
+            if (!sif_command_supplied_ || sif_command_reads || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000
+                    || dmac_enable_calls != 1) throw UnsupportedSyscall(selector, context->pc);
+            context->r[2].low = static_cast<std::uint64_t>(static_cast<std::int64_t>(
+                std::bit_cast<std::int32_t>(sif_command_word_)));
+            ++sif_command_reads;
             return;
         }
         if (code == 0 && selector == 0x4A) {
@@ -460,6 +469,10 @@ public:
         std::memcpy(memory_.data() + address, &value, 8);
         ++doubleword_writes;
     }
+    std::uint8_t read8(std::uint8_t* rdram, std::uint32_t address) {
+        checkMemory(rdram, address, 1);
+        return memory_[address];
+    }
     std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
@@ -531,6 +544,21 @@ public:
         timer2_mode_supplied_ = true;
     }
 
+    // Reached CACHE 0x18 path only. This adapter has coherent main RAM and no cache state.
+    // Validate a complete aligned line; this does not perform DMA or synchronize an IOP.
+    void dataCacheLine(std::uint8_t* rdram, std::uint32_t address) {
+        if (address & 63) throw UnsupportedGuestMemory(address, 64);
+        checkMemory(rdram, address, 64);
+        ++data_cache_lines;
+    }
+    unsigned data_cache_lines = 0;
+    void supplySifCommand(std::uint32_t word) {
+        if (!dma5_control_supplied_ || sif_command_supplied_ || word != 0x19600)
+            throw std::runtime_error("SIF checkpoint differs or was already supplied");
+        sif_command_word_ = word;
+        sif_command_supplied_ = true;
+    }
+    unsigned sif_command_reads = 0;
     void supplyDmaStatus(std::uint32_t word) {
         if (dma_status_supplied_ || word != 0x00800040)
             throw std::runtime_error("Unsupported/repeated DMA status checkpoint");
@@ -650,6 +678,8 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    bool sif_command_supplied_ = false;
+    std::uint32_t sif_command_word_ = 0;
     bool dma_status_supplied_ = false, dma5_control_supplied_ = false;
     std::uint32_t dma_status_word_ = 0, dma5_control_word_ = 0;
     bool osd_config_supplied = false, osd_readback_supplied = false;

@@ -265,4 +265,12 @@ python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" 
 python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point dma5-control
 ```
 
-Add `--dma-status-capture work/pcsx2-capture/dma-status/capture.json` and `--dma5-control-capture work/pcsx2-capture/dma5-control/capture.json` to the full pipeline with all earlier OSD-readback/checkpoint inputs. The first requires OSD readback; the second requires DMA status. Full 32-bit payload/provenance validation supplies only the observed one-time reads. The bounded adapter records channel 5 handler/enable requests; it has no DMA transfers or interrupt delivery. Full continuation currently stops at SifGetReg selector 0x80000000. Omitting channel input stops at CHCR; omitting both stops at D_STAT. Detailed earlier results are historical; see [current status](PROG.md).
+Add `--dma-status-capture work/pcsx2-capture/dma-status/capture.json` and `--dma5-control-capture work/pcsx2-capture/dma5-control/capture.json` to the full pipeline with all earlier OSD-readback/checkpoint inputs. The first requires OSD readback; the second requires DMA status. Full 32-bit payload/provenance validation supplies only the observed one-time reads. The bounded adapter records channel 5 handler/enable requests; it has no DMA transfers or interrupt delivery. Without the optional SIF capture, continuation stops at SifGetReg selector 0x80000000. Omitting channel input stops at CHCR; omitting both stops at D_STAT. Detailed earlier results are historical; see [current status](PROG.md).
+
+## First SIF query checkpoint
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-command
+```
+
+Add `--sif-command-capture work/pcsx2-capture/sif-command/capture.json` to the full pipeline with all earlier captures, including channel 5. The trap at `0x00331A34` publishes returned `v0` and selector `a0`; strict source/RAM hashes, trap, marker and selector validation precede replay. Observed selector `0x80000000` returns `0x00019600` once. Prepared `FUN_00331F38` replaces nine omitted CACHE 0x18 sites with aligned, RAM-bounded line checks; raw generated source remains unchanged. Coherent host RAM has no guest cache model. The executed path checks one line and reaches SifSetDma `0x77`; no DMA/IOP transfer is performed.

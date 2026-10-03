@@ -105,6 +105,15 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(marker, 0xB70A)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
 
+    def test_sif_trap_publishes_return_and_selector(self):
+        address, trap, marker = capture_trap('sif-command')
+        words = struct.unpack('<8I', trap)
+        self.assertEqual(address, 0x331A34)
+        self.assertEqual(words[2:4], (0xAF020004, 0xAF040008))
+        self.assertEqual(marker, 0xB70B)
+        self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
+        self.assertEqual(words[7], 0)
+
 
 class OsdCaptureTests(unittest.TestCase):
     def test_osd_trap_reads_returned_stack_word_before_setter(self):

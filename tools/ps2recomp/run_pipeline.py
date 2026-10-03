@@ -88,6 +88,29 @@ def verify_dma_capture(path, channel=False):
     return verify_word_capture(path, point, field, address, marker, register, max_word=0xFFFFFFFF)
 
 
+def verify_sif_capture(path):
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    data = path.with_name('ee-ram.bin').read_bytes()
+    address, marker = 0x331A34, 0xB70B
+    words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
+             0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+    trap = struct.pack('<8I', *words)
+    patch = manifest['patch']
+    if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
+            or not manifest['capture_point'].startswith('sif-command:')
+            or patch['address'] != address or patch['size'] != len(trap)
+            or patch['authored_words'] != words or patch['marker_address'] != 0x387E80
+            or patch['marker_value'] != marker or len(data) != 32 * 1024 * 1024
+            or hashlib.sha256(data).hexdigest() != manifest['capture_sha256']
+            or data[address:address + len(trap)] != trap):
+        raise ValueError('SIF capture provenance/instrumentation differs.')
+    actual_marker, word, selector = struct.unpack_from('<III', data, 0x387E80)
+    if (actual_marker != marker or word != manifest['observed_sif_command']
+            or selector != manifest['observed_sif_selector'] or selector != 0x80000000):
+        raise ValueError('SIF capture payload/selector differs.')
+    return word, manifest
+
+
 def verify_osd_capture(path):
     manifest = json.loads(path.read_text(encoding='utf-8'))
     data = path.with_name('ee-ram.bin').read_bytes()
@@ -149,7 +172,11 @@ def main():
     parser.add_argument('--osd-readback-capture', type=Path, help='Validate first same-value OSD setter/readback; requires OSD capture.')
     parser.add_argument('--dma-status-capture', type=Path, help='Explicit first D_STAT checkpoint; requires OSD readback.')
     parser.add_argument('--dma5-control-capture', type=Path, help='Explicit first channel 5 CHCR checkpoint; requires D_STAT.')
+    parser.add_argument('--sif-command-capture', type=Path, help='Explicit first SifGetReg return checkpoint; requires channel 5 capture.')
     args = parser.parse_args()
+    if args.sif_command_capture and not args.dma5_control_capture:
+        parser.error('--sif-command-capture requires --dma5-control-capture')
+    sif_command = verify_sif_capture(args.sif_command_capture) if args.sif_command_capture else None
     if args.dma_status_capture and not args.osd_readback_capture:
         parser.error('--dma-status-capture requires --osd-readback-capture')
     if args.dma5_control_capture and not args.dma_status_capture:
@@ -229,7 +256,7 @@ def main():
             osd_readback_word = folder / 'osd-readback.bin'
             osd_readback_word.write_bytes(struct.pack('<I', osd_readback[0]))
             entry_command.append(str(osd_readback_word))
-        for checkpoint, name in ((dma_status, 'dma-status'), (dma5_control, 'dma5-control')):
+        for checkpoint, name in ((dma_status, 'dma-status'), (dma5_control, 'dma5-control'), (sif_command, 'sif-command')):
             if checkpoint:
                 word_path = folder / (name + '.bin')
                 word_path.write_bytes(struct.pack('<I', checkpoint[0]))
@@ -237,6 +264,7 @@ def main():
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "sif_command_provenance": sif_command[1] if sif_command else None,
         "dma_status_provenance": dma_status[1] if dma_status else None,
         "dma5_control_provenance": dma5_control[1] if dma5_control else None,
         "osd_readback_provenance": osd_readback[1] if osd_readback else None,

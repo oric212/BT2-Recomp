@@ -1,9 +1,17 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls
+from prepare_runtime import build_memory, route_tail_calls, route_data_cache
 
 
 class RuntimePreparationTests(unittest.TestCase):
+    def test_checked_cache_hook_scope(self):
+        source = '// 0x1234: 0xbd180040  cache       0x18, 0x40($t0)\n    ctx->pc = 0x1234u;\n    // CACHE instruction (ignored)'
+        text, count = route_data_cache(source)
+        self.assertEqual(count, 1)
+        self.assertIn('dataCacheLine(rdram, ADD32(GPR_U32(ctx, 8), 0x40u))', text)
+        self.assertEqual(route_data_cache(text), (text, 0))
+        self.assertEqual(route_data_cache(source.replace('0x18,', '0x19,')), (source.replace('0x18,', '0x19,'), 0))
+
     def load(self, address=4, memory_size=8, file_size=4, offset=0):
         return {"virtual_address": address, "memory_size": memory_size,
                 "file_size": file_size, "file_offset": offset}

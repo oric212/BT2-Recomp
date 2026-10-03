@@ -29,6 +29,13 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
 def capture_trap(point):
     if point == 'kernel-handler':
         return HANDLER, TRAP, 0xB702
+    if point == 'sif-command':
+        # Caller resumed after the first SifGetReg; publish return and selector.
+        address, marker = 0x00331A34, 0xB70B
+        words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
+                 0x34190000 | marker, 0xAF190000,
+                 0x08000000 | ((address + 24) >> 2), 0]
+        return address, struct.pack('<8I', *words), marker
     if point == 'osd-readback':
         # First setter and second getter returned; capture original and readback.
         address, marker = 0x00338620, 0xB708
@@ -175,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -280,6 +287,8 @@ def main():
                     'observed_osd_readback': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'osd-readback' else None,
                     'observed_dma_status': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'dma-status' else None,
                     'observed_dma5_control': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'dma5-control' else None,
+                    'observed_sif_command': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'sif-command' else None,
+                    'observed_sif_selector': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'sif-command' else None,
                     'original_osd_config': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'osd-readback' else None,
                     'limitations': 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads. Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')

@@ -160,5 +160,12 @@
       }
     ],
     "role": "Separate 128-entry DMAC handler pool with ID base 1; sc_AddDmacHandler records channel/address/arg/GP and next=0 inserts at front. Authored adapter accepts only channel 5/front insertion; no callback execution, removal or delivery. sc_EnableDmac tests mask bit 16+channel and returns 1 if changed, 0 if already enabled. Adapter uses explicit captured D_STAT mask and records channel 5 enable after both validated checkpoint reads; no hardware status/transfer progression or general D_STAT writes."
+  },
+  "sif_query_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_SifGetReg reads the low 32-bit selector and writes a sign-extended 32-bit result. Authored adapter replays only selector 0x80000000 once after explicit local checkpoint and DMAC enable. Value 0x19600 comes from local PCSX2 capture, not this reference. No generic SIF registers or transport. sc_SifSetDma confirms the next boundary submits descriptors to channel 6; no transfer implementation in this pass."
   }
 }

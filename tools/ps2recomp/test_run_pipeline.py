@@ -130,6 +130,30 @@ class TimerCaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run_pipeline.verify_dma_capture(self.path, channel)
 
+    def test_sif_return_capture_and_rejected_selector(self):
+        address, marker = 0x331A34, 0xB70B
+        words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF040008,
+                 0x3419B70B, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+        self.data[address:address + 32] = struct.pack('<8I', *words)
+        struct.pack_into('<III', self.data, 0x387E80, marker, 0x19600, 0x80000000)
+        self.manifest.update(capture_point='sif-command: authored fixture',
+            patch={'address': address, 'size': 32, 'authored_words': words,
+                   'marker_address': 0x387E80, 'marker_value': marker},
+            capture_sha256=hashlib.sha256(self.data).hexdigest(),
+            observed_sif_command=0x19600, observed_sif_selector=0x80000000)
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_sif_capture(self.path)[0], 0x19600)
+        self.manifest['observed_sif_selector'] = 0x80000001
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_sif_capture(self.path)
+        self.manifest['observed_sif_selector'] = 0x80000000
+        self.manifest['patch']['authored_words'][2] ^= 1
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_sif_capture(self.path)
+
     def test_valid_capture_and_changed_payload_rejected(self):
         self.assertEqual(run_pipeline.verify_timer_capture(self.path)[0], 0x83)
         self.manifest['observed_timer3_mode'] = 0x100

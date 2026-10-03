@@ -18,6 +18,13 @@ def route_tail_calls(source):
         'PS2Runtime::GuestBranchKind::TailJump, "generated tail call"); return;', source)
 
 
+def route_data_cache(source):
+    pattern = (r'(// 0x[0-9a-f]+: 0x[0-9a-f]+  cache       0x18, 0x([0-9A-Fa-f]+)\(\$t0\)'
+               r'\s+ctx->pc = 0x[0-9A-Fa-f]+u;\s+)// CACHE instruction \(ignored\)')
+    return re.subn(pattern, lambda match: match[1] +
+        f'runtime->dataCacheLine(rdram, ADD32(GPR_U32(ctx, 8), 0x{match[2]}u));', source)
+
+
 def build_memory(data, metadata, size=32 * 1024 * 1024):
     memory = bytearray(size)
     occupied = []
@@ -63,6 +70,16 @@ def main():
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "prepared_sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
             "tail_dispatch_hooks": count})
+    source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
+    text, count = route_data_cache(source.read_text(encoding='utf-8'))
+    if count != 9 or 'CACHE instruction (ignored)' in text:
+        raise ValueError('Unexpected generated data cache instruction shape/count.')
+    destination = patched / source.name
+    destination.write_text(text, encoding='utf-8')
+    prepared_sources.append({'source': source.name,
+        'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'prepared_sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
+        'data_cache_hooks': count})
     spec = importlib.util.spec_from_file_location("bt2_elf", ROOT / "tools/inspect_elf/inspect_elf.py")
     inspector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inspector)

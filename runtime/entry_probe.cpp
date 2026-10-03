@@ -19,7 +19,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD]]]]]]]]]]");
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
         const bool timer2_mode = argc >= 6;
@@ -28,6 +28,7 @@ int main(int argc, char** argv) {
         const bool osd_mode = argc >= 9;
         const bool osd_readback_mode = argc >= 10;
         const bool dma_status_mode = argc >= 11;
+        const bool sif_mode = argc >= 13;
         const bool dma5_mode = argc >= 12;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(PS2Runtime::ram_size))
@@ -102,7 +103,7 @@ int main(int argc, char** argv) {
             runtime.supplyOsdReadback(word);
             runtime.enableStartupKernelPayload(std::span<const std::uint8_t>(runtime.memory()).subspan(0x0036BAF8, 0x330));
         }
-        for (int index = 10; index < argc; ++index) {
+        for (int index = 10; index < std::min(argc, 12); ++index) {
             std::ifstream capture(argv[index], std::ios::binary | std::ios::ate);
             if (!capture || capture.tellg() != 4) throw std::runtime_error("Invalid DMA checkpoint word");
             std::uint32_t word;
@@ -110,6 +111,14 @@ int main(int argc, char** argv) {
             if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("DMA checkpoint read failed");
             if (index == 10) runtime.supplyDmaStatus(word);
             else runtime.supplyDma5Control(word);
+        }
+        if (sif_mode) {
+            std::ifstream capture(argv[12], std::ios::binary | std::ios::ate);
+            if (!capture || capture.tellg() != 4) throw std::runtime_error("Invalid SIF checkpoint word");
+            std::uint32_t word;
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("SIF checkpoint read failed");
+            runtime.supplySifCommand(word);
         }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
@@ -154,6 +163,10 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x0032F878, FUN_0032F878_0x32f878);
         runtime.registerFunction(0x0032E9C0, FUN_0032E9C0_0x32e9c0);
         runtime.registerFunction(0x0032F070, FUN_0032F070_0x32f070);
+        runtime.registerFunction(0x00331D70, FUN_00331D70_0x331d70);
+        runtime.registerFunction(0x00331C38, FUN_00331C38_0x331c38);
+        runtime.registerFunction(0x0032F020, FUN_0032F020_0x32f020);
+        runtime.registerFunction(0x00331F38, FUN_00331F38_0x331f38);
         runtime.registerFunction(0x00100388, FUN_00100388_0x100388);
         runtime.registerFunction(0x0033A238, FUN_0033A238_0x33a238);
         runtime.registerFunction(0x0033A820, FUN_0033A820_0x33a820);
@@ -198,6 +211,10 @@ int main(int argc, char** argv) {
         std::uint32_t stop_selector = 0, stop_handler = 0;
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
+        catch (const UnsupportedGuestBranch& stop) {
+            std::cerr << "Branch target/source/resume: " << std::hex << stop.target << "/" << stop.source_pc << "/" << stop.resume_pc << "\n";
+            throw;
+        }
         catch (const UnsupportedGuestMemory& stop) {
             if (dma5_mode) throw;
             if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
@@ -224,7 +241,11 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (dma5_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
+            if (sif_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 240
+                    && GPR_U32(&context, 5) == 1 && runtime.sif_command_reads == 1
+                    && runtime.data_cache_lines == 1, "Unexpected first SIF DMA submission boundary");
+            else if (dma5_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000000,
                     "Unexpected first SIF register boundary");
             else if (osd_readback_mode) throw;
@@ -256,7 +277,7 @@ int main(int argc, char** argv) {
         require(runtime.memory()[zero_start - 1] == image[zero_start - 1]
                 && runtime.memory()[zero_end] == image[zero_end], "Entry zeroing crossed its bounds");
         require(runtime.quadword_writes == (zero_end - zero_start) / 16 + (timer_mode ? 512u : 0u)
-                && runtime.byte_writes == (zero_end - zero_start) % 16 + (osd_readback_mode ? 512u : 0u), "Unexpected startup/fill store counts");
+                && runtime.byte_writes == (zero_end - zero_start) % 16 + (osd_readback_mode ? 512u : 0u) + (sif_mode ? 1u : 0u), "Unexpected startup/fill store counts");
         require(context.hi == 0 && context.lo == 0 && context.hi1 == 0 && context.lo1 == 0
                 && context.sa == 0 && context.fcr31 == 0 && context.f_acc == 0, "CPU startup state incorrect");
         require(std::all_of(context.f.begin(), context.f.end(), [](float value) { return value == 0; }), "FPR clearing failed");
@@ -265,7 +286,7 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (osd_readback_mode ? 192 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - (sif_mode ? 240 : osd_readback_mode ? 192 : readback_mode ? 128 : intc_mode ? 48 : timer2_mode ? 160 : timer_mode ? 112 : snapshot_mode ? 80 : 144),
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
@@ -275,8 +296,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (dma5_mode ? 105u : osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (dma5_mode ? 100u : osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (dma5_mode ? 1031u : osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (dma5_mode ? 69u : osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (sif_mode ? 108u : dma5_mode ? 105u : osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (sif_mode ? 102u : dma5_mode ? 100u : osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (sif_mode ? 1040u : dma5_mode ? 1031u : osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (sif_mode ? 76u : dma5_mode ? 69u : osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -350,11 +371,30 @@ int main(int argc, char** argv) {
                     "Generated DMA registration/enable state differs");
         } else require(runtime.dmac_handlers.empty() && runtime.dmac_enable_calls == 0,
                        "DMA handler state advanced before checkpoint");
+        require(runtime.sif_command_reads == (sif_mode ? 1u : 0u)
+                && runtime.data_cache_lines == (sif_mode ? 1u : 0u), "Unexpected SIF/cache checkpoint counts");
+        if (sif_mode) {
+            const auto frame = runtime.initial_sp - 240;
+            const std::array<std::uint32_t, 4> descriptor{0x003A9580, 0x19600, 20, 0x44};
+            for (unsigned index = 0; index < descriptor.size(); ++index)
+                require(runtime.read32(runtime.memory().data(), frame + index * 4) == descriptor[index],
+                        "Generated SIF DMA descriptor differs");
+            require(runtime.read32(runtime.memory().data(), 0x003A95A0) == 0x19600
+                    && runtime.read32(runtime.memory().data(), 0x003A9580) == 20
+                    && runtime.read32(runtime.memory().data(), 0x003A9584) == 0
+                    && runtime.read32(runtime.memory().data(), 0x003A9588) == 0x80000000
+                    && runtime.read32(runtime.memory().data(), 0x003A9590) == 0x003A94C0
+                    && runtime.read64(runtime.memory().data(), frame + 112) == 0x00331DA0
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 112) == 0x00332038
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 8) == 0x00100240
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0,
+                    "Generated SIF packet/current stack differs");
+        }
         require(std::equal(kernel_before.begin(), kernel_before.end(), runtime.kernelBaseline().begin()),
                 "Captured kernel baseline changed");
         if (timer_mode) {
             const auto frame = runtime.initial_sp - (osd_readback_mode ? 80 : readback_mode ? 128 : intc_mode ? 48 : 112);
-            require(runtime.read64(runtime.memory().data(), frame + (osd_readback_mode ? 48 : readback_mode ? 32 : intc_mode ? 16 : 80)) == (osd_readback_mode ? 0x00338568 : readback_mode ? 0x00338660 : intc_mode ? 0x00338550 : 0x00338548)
+            if (!sif_mode) require(runtime.read64(runtime.memory().data(), frame + (osd_readback_mode ? 48 : readback_mode ? 32 : intc_mode ? 16 : 80)) == (osd_readback_mode ? 0x00338568 : readback_mode ? 0x00338660 : intc_mode ? 0x00338550 : 0x00338548)
                     && (osd_readback_mode
                         ? runtime.read64(runtime.memory().data(), runtime.initial_sp - 8) == 0x00100240
                           && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0
@@ -420,6 +460,7 @@ int main(int argc, char** argv) {
                << ",\"extended_registrations\":" << runtime.extended_registrations
                << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
+               << ",\"sif_command_reads\":" << runtime.sif_command_reads << ",\"data_cache_lines\":" << runtime.data_cache_lines
                << ",\"dma_status_reads\":" << runtime.dma_status_reads << ",\"dma5_control_reads\":" << runtime.dma5_control_reads
                << ",\"dmac_handlers\":" << runtime.dmac_handlers.size() << ",\"dmac_mask\":" << runtime.dmac_mask
                << ",\"dmac_enable_calls\":" << runtime.dmac_enable_calls
@@ -443,7 +484,8 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (dma5_mode) std::cout << "DMA checkpoints replayed; channel 5 handler/enable request recorded; reached SifGetReg selector 0x80000000.\n";
+        if (sif_mode) std::cout << "Captured SIF query returned; generated descriptor/cache path reached SifSetDma syscall 0x77.\n";
+        else if (dma5_mode) std::cout << "DMA checkpoints replayed; channel 5 handler/enable request recorded; reached SifGetReg selector 0x80000000.\n";
         else if (dma_status_mode) std::cout << "Captured D_STAT replayed; reached channel 5 control read 0x1000C000.\n";
         else if (osd_readback_mode) std::cout << "Generated helper tail chain returned; DMA initialization reached unsupported D_STAT read 0x1000E010.\n";
         else if (osd_mode) std::cout << "Captured OSD configuration returned; reached SetOsdConfigParam syscall 0x4A.\n";

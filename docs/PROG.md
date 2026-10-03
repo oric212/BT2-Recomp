@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Generated platform initialization and the first helper tail chain return to entry/main setup using validated local PCSX2 checkpoints. Two new explicit captures support one-time reads of DMA status and channel 5 control. Generated code registers a channel 5 handler and completes a bounded enable request before reaching its first SIF register query. DMA transfers, interrupts, game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Generated startup replays strictly validated local PCSX2 checkpoints. The first SIF register query returns, and generated code prepares a DMA descriptor and completes a checked cache-line path. Execution reaches the first SIF DMA submission. DMA transfers, interrupts, game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, seven CTests, 36 recomp tooling tests and twelve capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, seven CTests, 38 recomp tooling tests and thirteen capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Generated `FUN_0032F070` stops at SifGetReg (`0x7A`), selector `0x80000000`, resume PC `0x0032F078`. The runtime has no SIF/EE-IOP register state or transport implementation.
+Generated `FUN_0032F020` stops at SifSetDma (`0x77`), resume PC `0x0032F028`. It submits one descriptor: source `0x003A9580`, destination `0x00019600`, size 20, flags `0x44`.
 
-Next: obtain reference evidence for this SIF query and validate its returned state before implementing the required communication behavior. DMA transfers, counter progression, interrupt delivery and scheduling remain unimplemented.
+Next: establish the required SIF DMA/IOP receive behavior using reference evidence and a local checkpoint. A fabricated success return would leave the receiving subsystem unimplemented.
 
 ## Key counts
 
 - **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
-- **56** distinct functions entered across native probes.
-- **51** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8`, `FUN_00331888` and `FUN_0032F070` remain partial. These are startup/helper paths, not working gameplay.
+- **60** distinct functions entered across native probes.
+- **53** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8`, `FUN_00331888` `FUN_00331D70`, `FUN_00331C38` and `FUN_0032F020` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

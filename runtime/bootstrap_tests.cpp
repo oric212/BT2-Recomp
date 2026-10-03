@@ -33,6 +33,42 @@ void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
 }
 int main() {
     try {
+        PS2Runtime sif;
+        std::vector<std::uint8_t> sif_image(PS2Runtime::ram_size);
+        sif.loadMemory(sif_image);
+        auto* sif_ram = sif.memory().data();
+        R5900Context sif_context{};
+        sif_context.r[3].low = 0x7A;
+        sif_context.r[4].low = 0xFFFFFFFF80000000ull;
+        sif_context.r[2] = {0xA5, 0xB6};
+        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+        reject([&] { sif.supplySifCommand(0x19600); });
+        sif.supplyDmaStatus(0x800040);
+        sif.supplyDma5Control(0x184);
+        reject([&] { sif.supplySifCommand(0x19601); });
+        sif.supplySifCommand(0x19600);
+        reject([&] { sif.supplySifCommand(0x19600); });
+        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+        sif.dmac_enable_calls = 1; // Synthetic prerequisite fixture.
+        sif_context.r[4].low = 0x80000001;
+        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+        require(sif.sif_command_reads == 0 && sif_context.r[2].low == 0xA5);
+        sif_context.r[4].low = 0xFFFFFFFF80000000ull;
+        sif.handleSyscall(sif_ram, &sif_context, 0);
+        require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6 && sif.sif_command_reads == 1);
+        reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+        sif.memory().back() = 0xF1;
+        require(sif.read8(sif_ram, PS2Runtime::ram_size - 1) == 0xF1);
+        reject([&] { sif.read8(sif_ram, PS2Runtime::ram_size); });
+        reject([&] { sif.read8(nullptr, 0); });
+        sif.dataCacheLine(sif_ram, PS2Runtime::ram_size - 64);
+        reject([&] { sif.dataCacheLine(sif_ram, 1); });
+        reject([&] { sif.dataCacheLine(sif_ram, PS2Runtime::ram_size); });
+        require(sif.data_cache_lines == 1);
+        SET_GPR_ZE32(&sif_context, 2, 0x80000000);
+        require(sif_context.r[2].low == 0x80000000 && sif_context.r[2].high == 0xB6);
+        SET_GPR_ZE32(&sif_context, 0, 1);
+        require(GPR_U32(&sif_context, 0) == 0 && SUB32(0, 1) == UINT32_MAX);
         const auto left = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{UINT32_MAX, 0, 0x80000000, 1});
         const auto right = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{1, 2, 0x80000000, 2});
         require(std::bit_cast<std::array<std::uint32_t, 4>>(ps2_paddu32(left, right))
