@@ -235,8 +235,20 @@ public:
         kernel_snapshot_.assign(bytes.begin(), bytes.end());
     }
 
+    // Single captured startup read, not a timer scheduler or mutable register model.
+    void supplyTimer3Mode(std::uint32_t value) {
+        if (value > 0xFFFF || timer3_mode_supplied_) throw std::runtime_error("Invalid/repeated Timer 3 capture");
+        timer3_mode_ = value;
+        timer3_mode_supplied_ = true;
+    }
+
     // Emitted slow-path load ABI; unsupported MMIO still fails explicitly.
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
+        if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
+            checkMemory(rdram, 0, 0);
+            ++timer3_mode_reads;
+            return timer3_mode_;
+        }
         return read32(rdram, address);
     }
 
@@ -274,6 +286,7 @@ public:
     std::vector<Semaphore> semaphores;
     std::array<std::uint32_t, 256> syscall_handlers{};
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
+    unsigned timer3_mode_reads = 0;
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
@@ -288,4 +301,6 @@ private:
     std::vector<std::uint8_t> memory_, kernel_snapshot_;
     std::vector<std::uint32_t> call_returns_;
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
+    bool timer3_mode_supplied_ = false;
+    std::uint32_t timer3_mode_ = 0;
 };

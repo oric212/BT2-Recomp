@@ -6,7 +6,7 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host builds with CMake and MSVC. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute entry initialization, nested startup calls, semaphore creation and syscall registration. With an explicitly supplied local PCSX2 kernel snapshot, both kernel scans return and startup enters `FUN_00338A00` and reaches its unsupported Timer 3 mode register read. The supplied retail revision is confirmed through official Redump disc checksums and an embedded-executable match. Game boot, rendering and audio remain incomplete; see [current progress](docs/PROG.md).
+The C++20 host builds with CMake and MSVC. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute entry initialization, nested startup calls, semaphore creation and syscall registration. With an explicitly supplied local PCSX2 kernel snapshot, both kernel scans return and startup enters `FUN_00338A00`; explicit replay of a locally captured Timer 3 mode read advances to the unregistered generated call `FUN_00338998`. The supplied retail revision is confirmed through official Redump disc checksums and an embedded-executable match. Game boot, rendering and audio remain incomplete; see [current progress](docs/PROG.md).
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 

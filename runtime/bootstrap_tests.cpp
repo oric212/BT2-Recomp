@@ -173,6 +173,14 @@ int main() {
         try { (void)runtime.Load32(memory, &context, 0x10001810); }
         catch (const UnsupportedGuestMemory& stop) { mmio_stop = stop.address == 0x10001810 && stop.size == 4; }
         require(mmio_stop);
+        runtime.supplyTimer3Mode(0x83);
+        require(runtime.Load32(memory, &context, 0x10001810) == 0x83 && runtime.timer3_mode_reads == 1);
+        reject([&] { (void)runtime.Load32(memory, &context, 0x10001810); });
+        reject([&] { runtime.supplyTimer3Mode(0x83); });
+        reject([&] { runtime.write32(memory, 0x10001810, 0); });
+        reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
+        PS2Runtime invalid_timer;
+        reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

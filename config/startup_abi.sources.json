@@ -49,5 +49,24 @@
     "path": "pcsx2/Memory.cpp",
     "sha256": "d0fe8073d5bc9b52ed50bffe38c3c8111fd61e735a9f0eb4b1a1f7db02cb5830",
     "role": "memMapKernelMem address mapping evidence only; no source copied/linked"
+  },
+  "timer_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/Counters.cpp",
+        "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9"
+      },
+      {
+        "path": "pcsx2/Counters.h",
+        "sha256": "4ded27a61d2297fd08fbfc468c98aee975446c686fff4b7d3fb620cb6b492193"
+      },
+      {
+        "path": "pcsx2/HwRead.cpp",
+        "sha256": "5fe7ba3833e3aabb8d5fbb934b95f1d79f596fbcc03b3b6facac0bc8e1790fc1"
+      }
+    ],
+    "role": "Timer mode register read/bit-layout evidence only; captured read replay is not full timer emulation"
   }
 }

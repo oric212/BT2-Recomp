@@ -161,3 +161,12 @@ python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/
 ```
 
 The snapshot requires its `.json` sidecar from `probe_kernel.py`; size, SHA-256 and capture note are checked before the run. The entry probe verifies both successful scans, their converged table base, restored stack and the next dispatch boundary. CTest retains the no-snapshot boundary. Supplying a snapshot is explicit; there is no automatic kernel-memory loading.
+
+### Local Timer 3 boundary capture and read replay
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer3-mode
+python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json
+```
+
+This capture uses a 40-byte authored trap in an ELF copy at `0x00338A1C`: read `0x10001810`, publish its value at `0x00387E84`, publish marker `0xB703`, then spin. It uses a separate ignored capture folder/profile. The pipeline verifies ELF source, capture point, RAM size/hash, trap bytes, marker and payload before extracting the word for explicit replay. The native probe currently accepts the observed `0x83` and permits one mode read; timer writes, repeated reads, counter progression and interrupts are not implemented. Omitting `--timer3-capture` preserves the Timer 3 MMIO stop.

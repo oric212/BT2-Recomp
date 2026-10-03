@@ -1,6 +1,6 @@
 import struct
 import unittest
-from capture_ee import export_rva, instrument, TRAP, HANDLER, MARKER
+from capture_ee import export_rva, instrument, TRAP, HANDLER, MARKER, capture_trap
 
 
 class CaptureTests(unittest.TestCase):
@@ -41,3 +41,14 @@ class CaptureTests(unittest.TestCase):
         for data in (b'', b'MZ', b'MZ' + bytes(100)):
             with self.assertRaises(ValueError):
                 export_rva(data, 'EEmem')
+
+    def test_timer_trap_reads_exact_mmio_and_publishes_payload(self):
+        address, trap, marker = capture_trap('timer3-mode')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x338a1c)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x10001810)
+        self.assertEqual(words[2], 0x8f190000)
+        self.assertEqual(words[5], 0xaf190004)
+        self.assertEqual(marker, 0xb703)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+        self.assertEqual(words[9], 0)

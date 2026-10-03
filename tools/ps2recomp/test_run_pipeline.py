@@ -1,5 +1,6 @@
 """Synthetic provenance tests; no game bytes or generated retail source required."""
 import hashlib
+import struct
 import json
 from pathlib import Path
 import tempfile
@@ -83,6 +84,47 @@ class SnapshotProvenanceTests(unittest.TestCase):
                                                           'capture_note': 'authored fixture'}), encoding='utf-8')
             with self.assertRaises(ValueError):
                 run_pipeline.verify_snapshot(path)
+
+
+class TimerCaptureTests(unittest.TestCase):
+    def setUp(self):
+        folder = run_pipeline.ROOT / 'work/test-provenance'
+        folder.mkdir(parents=True, exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=folder)
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / 'capture.json'
+        self.data = bytearray(32 * 1024 * 1024)
+        self.words = [0x3C181000, 0x37181810, 0x8F190000, 0x3C180038, 0x37187E80,
+                      0xAF190004, 0x3419B703, 0xAF190000, 0x08000000 | ((0x338A1C + 32) >> 2), 0]
+        self.data[0x338A1C:0x338A1C + 40] = struct.pack('<10I', *self.words)
+        struct.pack_into('<II', self.data, 0x387E80, 0xB703, 0x83)
+        self.manifest = {'source_elf_sha256': run_pipeline.LOCAL_CANDIDATE_SHA256,
+                         'capture_point': 'timer3-mode: authored fixture',
+                         'patch': {'address': 0x338A1C, 'size': 40, 'authored_words': self.words},
+                         'observed_timer3_mode': 0x83, 'capture_sha256': hashlib.sha256(self.data).hexdigest()}
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+
+    def save(self):
+        self.path.write_text(json.dumps(self.manifest), encoding='utf-8')
+
+    def test_valid_capture_and_changed_payload_rejected(self):
+        self.assertEqual(run_pipeline.verify_timer_capture(self.path)[0], 0x83)
+        self.manifest['observed_timer3_mode'] = 0x100
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path)
+
+    def test_wrong_source_and_ram_hash_rejected(self):
+        self.manifest['source_elf_sha256'] = 'wrong'
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path)
+        self.manifest['source_elf_sha256'] = run_pipeline.LOCAL_CANDIDATE_SHA256
+        self.manifest['capture_sha256'] = 'wrong'
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path)
 
 
 if __name__ == "__main__":

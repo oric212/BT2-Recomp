@@ -26,19 +26,33 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
                    0xAF190000, 0x08000000 | ((HANDLER + 16) >> 2), 0)
 
 
-def instrument(data):
+def capture_trap(point):
+    if point == 'kernel-handler':
+        return HANDLER, TRAP, 0xB702
+    if point != 'timer3-mode':
+        raise ValueError('Unknown capture point.')
+    address = 0x00338A1C
+    # Read the observed MMIO word once, publish it beside the marker, then spin.
+    words = [0x3C181000, 0x37181810, 0x8F190000, 0x3C180038, 0x37187E80,
+             0xAF190004, 0x3419B703, 0xAF190000,
+             0x08000000 | ((address + 32) >> 2), 0]
+    return address, struct.pack('<10I', *words), 0xB703
+
+
+def instrument(data, point='kernel-handler'):
+    address, trap, marker = capture_trap(point)
     metadata = inspect(data)
     if metadata['sha256'] != EXPECTED_SHA:
         raise ValueError('Instrumentation requires the validated local BT2 executable hash.')
     matches = [seg for seg in metadata['load_segments']
-               if seg['flags'] & 1 and seg['virtual_address'] <= HANDLER
-               and HANDLER + len(TRAP) <= seg['virtual_address'] + seg['file_size']]
+               if seg['flags'] & 1 and seg['virtual_address'] <= address
+               and address + len(trap) <= seg['virtual_address'] + seg['file_size']]
     if len(matches) != 1:
         raise ValueError('Handler must lie in exactly one executable file-backed segment.')
     seg = matches[0]
-    offset = seg['file_offset'] + HANDLER - seg['virtual_address']
+    offset = seg['file_offset'] + address - seg['virtual_address']
     patched = bytearray(data)
-    patched[offset:offset + len(TRAP)] = TRAP
+    patched[offset:offset + len(trap)] = trap
     return bytes(patched), offset
 
 
@@ -141,6 +155,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -150,8 +165,11 @@ def main():
     rva = export_rva(exe_data, 'EEmem')
     source = ROOT / 'rom/SLUS_214.41'
     original = source.read_bytes()
-    patched, offset = instrument(original)
+    address, trap, marker = capture_trap(args.capture_point)
+    patched, offset = instrument(original, args.capture_point)
     folder = ROOT / 'work/pcsx2-capture'
+    if args.capture_point != 'kernel-handler':
+        folder = folder / args.capture_point
     # The user's portable.ini overrides -datapath. Launch a local package copy
     # without that marker; never change the user's installation/profile.
     package = folder / 'package'
@@ -206,7 +224,7 @@ def main():
                 if reader is None:
                     reader = ProcessReader(process.pid, executable)
                 pointer, = struct.unpack('<Q', reader.read(reader.base + rva, 8))
-                if pointer and reader.read(pointer + MARKER, 4) == struct.pack('<I', 0xB702):
+                if pointer and reader.read(pointer + MARKER, 4) == struct.pack('<I', marker):
                     break
             except OSError:
                 pass  # Module/EE allocation can still be initializing.
@@ -217,7 +235,7 @@ def main():
         if f'DataRoot Directory: {profile}' not in log:
             raise ValueError('PCSX2 did not use the isolated data profile.')
         data = reader.read(pointer, 32 * 1024 * 1024)
-        if data[HANDLER:HANDLER + len(TRAP)] != TRAP:
+        if data[address:address + len(trap)] != trap:
             raise ValueError('EE RAM instrumentation does not match.')
         time.sleep(0.1)
         if reader.read(pointer, 0x80004) != data[:0x80004]:
@@ -230,13 +248,14 @@ def main():
                     'instrumented_elf_sha256': hashlib.sha256(patched).hexdigest(),
                     'capture_sha256': hashlib.sha256(data).hexdigest(),
                     'capture_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                    'patch': {'address': HANDLER, 'file_offset': offset, 'size': len(TRAP),
-                              'authored_words': list(struct.unpack('<6I', TRAP)),
-                              'marker_address': MARKER, 'marker_value': 0xB702},
-                    'capture_point': 'Reached handler entry, replaced with marker stores and self-loop.',
+                    'patch': {'address': address, 'file_offset': offset, 'size': len(trap),
+                              'authored_words': list(struct.unpack('<' + str(len(trap) // 4) + 'I', trap)),
+                              'marker_address': MARKER, 'marker_value': marker},
+                    'capture_point': args.capture_point + ': authored marker and self-loop at the observed boundary',
+                    'observed_timer3_mode': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer3-mode' else None,
                     'limitations': 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads. Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-        print(f'Captured {len(data)} bytes at handler trap: {dump}')
+        print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')
     finally:
         if reader:
             reader.close()

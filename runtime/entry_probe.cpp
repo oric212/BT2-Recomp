@@ -13,8 +13,9 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT]");
-        const bool snapshot_mode = argc == 4;
+        if (argc != 3 && argc != 4 && argc != 5) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD]]");
+        const bool snapshot_mode = argc >= 4;
+        const bool timer_mode = argc == 5;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(PS2Runtime::ram_size))
             throw std::runtime_error("Invalid prepared guest image size");
@@ -33,6 +34,15 @@ int main(int argc, char** argv) {
             if (!kernel.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
                 throw std::runtime_error("Could not read kernel snapshot");
             runtime.loadKernelSnapshot(bytes);
+        }
+        if (timer_mode) {
+            std::ifstream timer(argv[4], std::ios::binary | std::ios::ate);
+            if (!timer || timer.tellg() != 4) throw std::runtime_error("Invalid Timer 3 capture word");
+            std::uint32_t word;
+            timer.seekg(0);
+            if (!timer.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("Timer capture read failed");
+            require(word == 0x83, "Timer capture differs from the validated startup observation");
+            runtime.supplyTimer3Mode(word);
         }
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
         // Poison only the observed startup zero region so zero stores are observable.
@@ -58,12 +68,22 @@ int main(int argc, char** argv) {
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
+            if (timer_mode) throw;
             if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
                                        "Unexpected snapshot MMIO boundary");
             else require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388,
                          "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
+            stopped = true;
+        }
+        catch (const UnsupportedGuestBranch& stop) {
+            if (!timer_mode) throw;
+            require(stop.target == 0x00338998 && stop.source_pc == 0x00338A40 && stop.resume_pc == 0x00338A48,
+                    "Unexpected Timer 3 replay dispatch boundary");
+            std::cerr << "Timer replay next target 0x" << std::hex << stop.target << ", source 0x" << stop.source_pc
+                      << ", resume 0x" << stop.resume_pc << std::dec << "\n";
+            stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc;
             stopped = true;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
@@ -97,6 +117,7 @@ int main(int argc, char** argv) {
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
         }
+        if (timer_mode) require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
         const auto frame = runtime.initial_sp - 144;
         require(runtime.read64(runtime.memory().data(), frame + 112) == (snapshot_mode ? 0x00338540 : 0x00338538),
                 "Current frame did not save return address");
@@ -121,7 +142,7 @@ int main(int argc, char** argv) {
         if (!report) throw std::runtime_error("Could not write entry stop report");
         report << "{\"status\":\"" << (stop_target ? "blocked at unsupported guest dispatch" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
                << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source << ",\"resume_pc\":" << stop_resume << ",\"address\":" << stop_address << ",\"size\":" << stop_size
-               << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << runtime.syscall_handlers[0x83] << ",\"pc\":" << context.pc << ",\"arguments\":[";
+               << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << runtime.syscall_handlers[0x83] << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
@@ -132,7 +153,8 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
+        if (timer_mode) std::cout << "Captured Timer 3 read replayed; next target 0x" << std::hex << stop_target << std::dec << "\n";
+        else if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
                                      << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";
         else std::cout << "No kernel snapshot supplied; stopped at first kernel read 0x80000000.\n";
         std::cout << "Game boot remains incomplete.\n";

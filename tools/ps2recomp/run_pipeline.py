@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import struct
 from generate_game import ROOT, LOCAL_CANDIDATE_SHA256
 
 
@@ -45,11 +46,33 @@ def verify_snapshot(path):
     return manifest
 
 
+def verify_timer_capture(path):
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
+            or not manifest['capture_point'].startswith('timer3-mode:')
+            or manifest['patch']['address'] != 0x00338A1C or manifest['patch']['size'] != 40):
+        raise ValueError('Timer 3 capture point/source differs.')
+    data = path.with_name('ee-ram.bin').read_bytes()
+    if len(data) != 32 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != manifest['capture_sha256']:
+        raise ValueError('Timer capture RAM hash/size differs.')
+    mode, = struct.unpack_from('<I', data, 0x00387E84)
+    marker, = struct.unpack_from('<I', data, 0x00387E80)
+    trap = struct.pack('<10I', *manifest['patch']['authored_words'])
+    if (mode != manifest['observed_timer3_mode'] or mode > 0xFFFF or marker != 0xB703
+            or data[0x00338A1C:0x00338A1C + 40] != trap):
+        raise ValueError('Timer capture payload/instrumentation differs.')
+    return mode, manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-generated", action="store_true", help="Verify provenance and reuse existing generated output.")
     parser.add_argument('--kernel-snapshot', type=Path, help='Explicit local snapshot with hash/capture-note sidecar; enables the next startup boundary.')
+    parser.add_argument('--timer3-capture', type=Path, help='Explicit capture.json from the timer3-mode capture; replays one observed MMIO read.')
     args = parser.parse_args()
+    if args.timer3_capture and not args.kernel_snapshot:
+        parser.error('--timer3-capture requires --kernel-snapshot')
+    timer_capture = verify_timer_capture(args.timer3_capture) if args.timer3_capture else None
     snapshot_provenance = verify_snapshot(args.kernel_snapshot) if args.kernel_snapshot else None
     folder = ROOT / "work/bt2-generation"
     folder.mkdir(parents=True, exist_ok=True)
@@ -71,10 +94,14 @@ def main():
         entry_command = [str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")]
         if args.kernel_snapshot:
             entry_command.append(str(args.kernel_snapshot.resolve()))
+        if timer_capture:
+            timer_word = folder / 'timer3-mode.bin'
+            timer_word.write_bytes(struct.pack('<I', timer_capture[0]))
+            entry_command.append(str(timer_word))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
-        "kernel_snapshot_provenance": snapshot_provenance, "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
+        "timer3_capture_provenance": timer_capture[1] if timer_capture else None, "kernel_snapshot_provenance": snapshot_provenance, "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
         "integration_log": str(folder / "integration-build.log")}, indent=2) + "\n", encoding="utf-8")
     print(f"Probes verified. Entry build exit code: {result.returncode}; inspect {folder / 'integration-build.log'}.")
     if result.returncode:
