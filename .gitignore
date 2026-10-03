@@ -62,3 +62,5 @@ compile_commands.json
 *.user
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
