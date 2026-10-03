@@ -52,3 +52,15 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(marker, 0xb703)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
         self.assertEqual(words[9], 0)
+
+    def test_timer2_trap_reads_reached_register(self):
+        address, trap, marker = capture_trap('timer2-mode')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x338c58)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x10001010)
+        self.assertEqual(words[2], 0x8f190000)
+        self.assertEqual(words[5], 0xaf190004)
+        self.assertEqual(marker, 0xb704)
+        self.assertEqual(words[6], 0x3419b704)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+        self.assertEqual(words[9], 0)

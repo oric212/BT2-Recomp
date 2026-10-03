@@ -126,6 +126,28 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_timer_capture(self.path)
 
+    def test_timer2_capture_and_forged_trap_rejected(self):
+        address = 0x338C58
+        words = self.words.copy()
+        words[1], words[6], words[8] = 0x37181010, 0x3419B704, 0x08000000 | ((address + 32) >> 2)
+        self.data[address:address + 40] = struct.pack('<10I', *words)
+        struct.pack_into('<II', self.data, 0x387E80, 0xB704, 0x80)
+        self.manifest.update(capture_point='timer2-mode: authored fixture', observed_timer2_mode=0x80,
+                             patch={'address': address, 'size': 40, 'authored_words': words},
+                             capture_sha256=hashlib.sha256(self.data).hexdigest())
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_timer_capture(self.path, 2)[0], 0x80)
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path)
+        words[1] = 0x37181810
+        self.data[address:address + 40] = struct.pack('<10I', *words)
+        self.manifest['capture_sha256'] = hashlib.sha256(self.data).hexdigest()
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

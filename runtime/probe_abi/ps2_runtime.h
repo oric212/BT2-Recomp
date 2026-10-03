@@ -25,6 +25,8 @@ struct R5900Context {
     std::uint32_t pc = 0;
     std::uint64_t hi = 0, lo = 0, hi1 = 0, lo1 = 0;
     std::uint32_t sa = 0, fcr31 = 0, cop0_status = 0, branch_pc = 0;
+    std::uint32_t cop0_epc = 0, cop0_errorepc = 0;
+    bool ll_bit = false;
     bool in_delay_slot = false;
     std::array<float, 32> f{};
     float f_acc = 0;
@@ -54,6 +56,8 @@ public:
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
     enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
+
+    void clearLLBit(R5900Context* context) { context->ll_bit = false; }
 
     void registerFunction(std::uint32_t address, RecompiledFunction function) {
         if (address >= 0x80000000 || !function || !functions_.emplace(address, function).second)
@@ -321,12 +325,23 @@ public:
         timer3_mode_supplied_ = true;
     }
 
+    void supplyTimer2Mode(std::uint32_t value) {
+        if (value > 0xFFFF || timer2_mode_supplied_) throw std::runtime_error("Invalid/repeated Timer 2 capture");
+        timer2_mode_ = value;
+        timer2_mode_supplied_ = true;
+    }
+
     // Emitted slow-path load ABI; unsupported MMIO still fails explicitly.
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
         if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
             checkMemory(rdram, 0, 0);
             ++timer3_mode_reads;
             return timer3_mode_;
+        }
+        if (address == 0x10001010 && timer2_mode_supplied_ && !timer2_mode_reads) {
+            checkMemory(rdram, 0, 0);
+            ++timer2_mode_reads;
+            return timer2_mode_;
         }
         return read32(rdram, address);
     }
@@ -377,7 +392,7 @@ public:
     bool startup_zero_verified = false;
     std::uint64_t startup_quadword_writes = 0, startup_byte_writes = 0;
     std::uint64_t kernel_word_writes = 0;
-    unsigned timer3_mode_reads = 0;
+    unsigned timer3_mode_reads = 0, timer2_mode_reads = 0;
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;
@@ -417,5 +432,6 @@ private:
     std::vector<std::uint32_t> call_returns_;
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
     bool timer3_mode_supplied_ = false;
-    std::uint32_t timer3_mode_ = 0;
+    std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;
+    bool timer2_mode_supplied_ = false;
 };

@@ -182,6 +182,18 @@ int main() {
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
         PS2Runtime invalid_timer;
         reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
+        reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
+        reject([&] { invalid_timer.supplyTimer2Mode(0x10000); });
+        runtime.supplyTimer2Mode(0x80);
+        reject([&] { runtime.supplyTimer2Mode(0x80); });
+        reject([&] { (void)runtime.Load32(nullptr, &context, 0x10001010); });
+        require(runtime.timer2_mode_reads == 0);
+        require(runtime.Load32(memory, &context, 0x10001010) == 0x80 && runtime.timer2_mode_reads == 1);
+        reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
+        reject([&] { runtime.write32(memory, 0xB0001010, 0x382); });
+        context.ll_bit = true;
+        runtime.clearLLBit(&context);
+        require(!context.ll_bit);
         PS2Runtime patched;
         patched.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
         auto* patch_ram = patched.memory().data();

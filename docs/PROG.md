@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, executes the copied-kernel entry, records the Timer 3 interrupt registration and returns from kernel initialization. The next startup path fills a buffer, runs a generated list helper, registers INTC cause 11 as ID 2 and completes a generated CPU-status helper. Game boot and gameplay remain incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, executes the copied-kernel entry, records the Timer 3 interrupt registration and returns from kernel initialization. The next startup path fills a buffer, runs a generated list helper, registers INTC cause 11 as ID 2 and completes a generated CPU-status helper. Explicit Timer 2 capture replay reaches the generated register-write helper. Game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, five CTests, 26 recomp tooling tests and five capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, five CTests, 27 recomp tooling tests and six capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops in `FUN_00338B78` at Timer 2 MMIO read `0x10001010`, PC `0x00338C58`. AddIntcHandler now returns ID 2 from the shared bounded handler pool; the generated wrapper stores it at `0x0036BAD8`. Timer 3 occupies ID 1. Neither interrupt handler has executed.
+Startup stops in `FUN_00338AD8` at the rejected Timer 2 mode write: alias `0xB0001010`, value `0x382`, PC `0x00338B30`. Isolated PCSX2 capture at the preceding exact read observed mode `0x80`; explicit one-read replay advances through `FUN_00338B58` into the generated write helper. Neither helper has returned.
 
-Next: capture the Timer 2 mode at this exact boundary in the isolated PCSX2 reference and establish the required read/write behavior. The CPU-status helper returned with the probe's explicit COP0 Status zero; this does not establish the retail BIOS status. Initial zeroing, kernel payload guards, buffer links, stack and registration state remain verified.
+Next: establish Timer 2 mode-write semantics and validate the generated helper's ErrorEPC/ERET return before accepting the write. COP0 Status becomes `4` before the rejected write from the probe's initial zero; retail BIOS status remains unconfirmed. Interrupt delivery and timer progression remain unimplemented. Earlier capture-free boundaries, kernel guards, stack and registration state stay checked.
 
 ## Key counts
 
 - **7,244** functions generated locally: 7,243 main ELF + one scoped kernel entry; **7,250** raw generated C++/header files.
-- **20** distinct functions entered across native probes.
-- **17** functions completed across probes; entry, `FUN_00338520` and `FUN_00338B78` remain partial. These are startup/helper paths, not working gameplay.
+- **22** distinct functions entered across native probes.
+- **17** functions completed across probes; entry, `FUN_00338520`, `FUN_00338B78`, `FUN_00338B58` and `FUN_00338AD8` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

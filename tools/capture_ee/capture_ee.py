@@ -29,14 +29,14 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
 def capture_trap(point):
     if point == 'kernel-handler':
         return HANDLER, TRAP, 0xB702
-    if point != 'timer3-mode':
+    if point not in ('timer3-mode', 'timer2-mode'):
         raise ValueError('Unknown capture point.')
-    address = 0x00338A1C
+    address, register, marker = (0x00338A1C, 0x1810, 0xB703) if point == 'timer3-mode' else (0x00338C58, 0x1010, 0xB704)
     # Read the observed MMIO word once, publish it beside the marker, then spin.
-    words = [0x3C181000, 0x37181810, 0x8F190000, 0x3C180038, 0x37187E80,
-             0xAF190004, 0x3419B703, 0xAF190000,
+    words = [0x3C181000, 0x37180000 | register, 0x8F190000, 0x3C180038, 0x37187E80,
+             0xAF190004, 0x34190000 | marker, 0xAF190000,
              0x08000000 | ((address + 32) >> 2), 0]
-    return address, struct.pack('<10I', *words), 0xB703
+    return address, struct.pack('<10I', *words), marker
 
 
 def instrument(data, point='kernel-handler'):
@@ -155,7 +155,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -253,6 +253,7 @@ def main():
                               'marker_address': MARKER, 'marker_value': marker},
                     'capture_point': args.capture_point + ': authored marker and self-loop at the observed boundary',
                     'observed_timer3_mode': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer3-mode' else None,
+                    'observed_timer2_mode': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer2-mode' else None,
                     'limitations': 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads. Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')

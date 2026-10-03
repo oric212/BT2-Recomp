@@ -185,6 +185,15 @@ Maps, packaged ELF, exploratory/scoped logs and hash manifests stay under ignore
 
 Current checked stop: SetSyscall (`0x74`), extended selector `0x12C`, handler `0x80076488`, PC `0x003389A0`. The generated kernel lookup entry and its wrapper have returned; this request is rejected before registration. Synthetic tests cover payload preservation, mapped addresses/code-data separation, unsafe extraction/mapping, missing/tampered copied words, invalid/duplicate kernel bindings and return validation.
 
-The captured pipeline now records one bounded extended `0x12C` Timer 3 registration/enable request using the pinned Play! reference; it does not run that handler or deliver interrupts. Ordinary slots remain separate and other extended selectors/repeated requests are rejected. AddIntcHandler now returns shared-pool ID 2 for cause `11`, handler `0x00339118`, next/arg zero; Timer 3 reserves ID 1. Current stop is the Timer 2 mode read `0x10001010` at PC `0x00338C58`.
+The captured pipeline now records one bounded extended `0x12C` Timer 3 registration/enable request using the pinned Play! reference; it does not run that handler or deliver interrupts. Ordinary slots remain separate and other extended selectors/repeated requests are rejected. AddIntcHandler now returns shared-pool ID 2 for cause `11`, handler `0x00339118`, next/arg zero; Timer 3 reserves ID 1. Without Timer 2 capture, the stop remains mode read `0x10001010` at PC `0x00338C58`. The optional Timer 2 continuation is described below.
 
 The optional generated-probe build includes `generated-buffer-fill`, bringing the suite to five CTests. It checks real generated `FUN_003251DC` with nonzero byte data, vector-aligned, unaligned, short and zero-size inputs, return value and complete outside-memory guards. The adapter supports signed low-word reads and the reached vector operations. Entry zeroing is verified at the first SetupThread call, with saved zero-store counts; later buffer/list initialization is checked separately. This avoids requiring cleared memory to stay zero after subsequent guest writes.
+
+### Timer 2 read capture and continuation
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer2-mode
+python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json --timer2-capture work/pcsx2-capture/timer2-mode/capture.json
+```
+
+The isolated 40-byte authored trap at `0x00338C58` reads `0x10001010`, publishes payload/marker `0xB704`, then spins. Observed mode: `0x80`. Capture remains under ignored `work/pcsx2-capture/timer2-mode/`. Pipeline validates exact expected trap instructions, source hash, RAM hash/size, marker and payload for both timers. `--timer2-capture` requires Timer 3 capture and a kernel snapshot. The native probe accepts the validated startup word once; wrong RAM pointers, duplicate reads and writes fail. Omitting it retains the Timer 2 read stop. With it, generated code reaches a rejected write of `0x382` to `0xB0001010` at `0x00338B30`; the report records write access/value. This is captured startup replay, not a running timer implementation.
