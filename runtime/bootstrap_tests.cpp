@@ -207,6 +207,25 @@ int main() {
         require(std::equal(baseline.begin(), baseline.end(), patched.kernelBaseline().begin()));
         require(patched.kernel_word_writes == 2 && patched.word_writes == 2
                 && patched.read32(patch_ram, 0x80076008) == 0x5A5A5A5A);
+        PS2Runtime cache;
+        R5900Context cache_context{};
+        cache_context.r[3].low = 0x64;
+        cache_context.r[2] = {0x12345678, 0xABCDEF};
+        cache_context.pc = 0x204;
+        for (const auto operation : {0u, 2u}) {
+            cache_context.r[4].low = operation;
+            cache.handleSyscall(nullptr, &cache_context, 0);
+            require(cache_context.r[2].low == 0x12345678 && cache_context.r[2].high == 0xABCDEF
+                    && cache_context.pc == 0x204);
+        }
+        require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
+        for (const auto operation : {1u, 3u, UINT32_MAX}) {
+            cache_context.r[4].low = operation;
+            reject([&] { cache.handleSyscall(nullptr, &cache_context, 0); });
+        }
+        cache_context.r[4].low = 2;
+        reject([&] { cache.handleSyscall(nullptr, &cache_context, 1); });
+        require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
         require(SRL32(0x740, 2) == 0x1D0);
         require(SRL32(0x80000000, 1) == 0x40000000);
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);

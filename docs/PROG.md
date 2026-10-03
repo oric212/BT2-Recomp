@@ -4,15 +4,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, then reaches FlushCache operation `2`. Game boot and gameplay remain incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, then reaches kernel handler registration. Game boot and gameplay remain incomplete.
 
 Latest verification: MSVC build/pipeline, four CTests, 22 recomp tooling tests and five capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops in `FUN_0032EEE0` at unsupported FlushCache selector `0x64`, operation `2`, PC `0x0032EEE8`. The generated handler/wrapper now return after copying `0x740` bytes into a bounded kernel overlay and `0x28` bytes into main RAM. Every copied word and the unchanged captured baseline are verified.
+Startup stops in `FUN_00338998` at SetSyscall selector `0x74`, attempting handler `0x80076000` for syscall `0x5B`, PC `0x003389A0`. This address is outside the supported main-RAM registration range; the handler is not installed. The generated handler/wrapper now return after copying `0x740` bytes into a bounded kernel overlay and `0x28` bytes into main RAM. Every copied word and the unchanged captured baseline are verified.
 
-Next: establish the required cache-operation semantics and add the smallest native compatibility behavior, then run to the next blocker. Only the observed KSEG0 patch range is writable; broader aliases, kernel execution, timer scheduling and BIOS exception behavior remain unverified.
+Next: validate registration/dispatch for the copied kernel handler, map or adapt only the required code path, then run to the next blocker. Only the observed KSEG0 patch range is writable; broader aliases, kernel execution, timer scheduling and BIOS exception behavior remain unverified.
 
 ## Key counts
 

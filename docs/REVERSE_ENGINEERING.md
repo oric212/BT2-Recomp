@@ -167,3 +167,9 @@ Generated `FUN_00338998` executes selector `0x74`, registers `0x003389B8` for se
 ### Bounded patch overlay and returned generated copies
 
 The entry probe explicitly enables aligned word stores only for `[0x80076000, 0x80076740)` after loading the captured kernel. Stores populate a separate overlay; KSEG0 word reads consult it, and baseline bytes remain immutable. No general KSEG1/physical alias coherency, guest kernel execution or instruction-cache invalidation is implemented. Generated `FUN_003389B8` copies 464 words from `0x0036B328`, returns through `FUN_003389A8`, then copies ten words from `0x0036BA68` to main RAM `0x00082000` and returns again. The probe compares every destination word against its source and checks the full baseline against its pre-run copy. Linked `FUN_0032EEE0` records an operation-0 FlushCache request and returns, then a second invocation stops at unsupported operation `2`, selector `0x64`, PC `0x0032EEE8`. This establishes returned copy paths, not cache/BIOS equivalence or a full boot.
+
+## 2026-10-03 - Cache boundary and kernel handler registration
+
+Pinned PS2SDK `kernel.h` defines FlushCache operation `2` as instruction-cache invalidation and declares a void return. The probe now accepts only observed operations `0`/`2`, preserves return registers, and records separate invalidation/total request counts. Its stores are immediately visible and dispatch is fixed native C++; no guest cache exists and no patched kernel instructions are translated by this call. This is a bounded compatibility behavior, not hardware cache validation.
+
+Generated entry completes both requests, then SetSyscall (`0x74`) attempts to register `0x80076000` for `0x5B` at resume PC `0x003389A0`. Main-RAM registration validation rejects that address before installing it. This is handler-address validation, not a guest load fault. Captured baseline/copy comparisons remain unchanged. Handler meaning, execution and aliases remain unknown.

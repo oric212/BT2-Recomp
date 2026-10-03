@@ -68,5 +68,10 @@
       }
     ],
     "role": "Timer mode register read/bit-layout evidence only; captured read replay is not full timer emulation"
+  },
+  "cache_reference": {
+    "path": "ee/kernel/include/kernel.h",
+    "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
+    "role": "FlushCache void ABI and operations 0 (D-cache writeback), 2 (I-cache invalidation). Fixed native dispatch has no guest instruction cache; patched guest code remains unsupported."
   }
 }

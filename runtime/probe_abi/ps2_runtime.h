@@ -147,9 +147,12 @@ public:
         }
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
-        if (static_cast<std::uint32_t>(context->r[4].low) != 0)
-            throw UnsupportedSyscall(selector, context->pc);
-        // Record writeback request only. This memory-free probe has no guest cache/DMA.
+        const auto operation = static_cast<std::uint32_t>(context->r[4].low);
+        if (operation != 0 && operation != 2) throw UnsupportedSyscall(selector, context->pc);
+        // Pinned PS2SDK: 0=writeback D-cache, 2=invalidate I-cache (void).
+        // Stores are immediately visible and dispatch uses fixed native functions.
+        // No guest instruction cache exists; this does not translate patched kernel code.
+        if (operation == 2) ++instruction_cache_invalidations;
         ++cache_requests;
         syscall_resume_pc = context->pc;
     }
@@ -308,7 +311,7 @@ public:
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
     std::uint64_t kernel_word_writes = 0;
     unsigned timer3_mode_reads = 0;
-    unsigned cache_requests = 0;
+    unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
