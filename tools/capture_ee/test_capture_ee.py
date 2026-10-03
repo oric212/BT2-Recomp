@@ -84,3 +84,17 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(words[5], 0xaf190004)
         self.assertEqual(marker, 0xb706)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+
+
+class OsdCaptureTests(unittest.TestCase):
+    def test_osd_trap_reads_returned_stack_word_before_setter(self):
+        address, trap, marker = capture_trap('osd-config')
+        words = struct.unpack('<8I', trap)
+        self.assertEqual(address, 0x3385F4)
+        self.assertEqual(words[0], (0x23 << 26) | (29 << 21) | (25 << 16))
+        self.assertEqual(((words[1] & 0xffff) << 16) | (words[2] & 0xffff), MARKER)
+        self.assertEqual(words[3], 0xAF190004)
+        self.assertEqual(marker, 0xB707)
+        self.assertEqual(words[5], 0xAF190000)
+        self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
+        self.assertEqual(words[7], 0)

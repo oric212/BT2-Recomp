@@ -131,5 +131,12 @@
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
     "role": "sc_ChangeThreadPriority returns previous current priority and sets requested priority. Authored probe accepts only main ID 1 / priority 1 with main sole runnable and created threads dormant; no scheduling or retail BIOS equivalence claimed."
+  },
+  "osd_read_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_GetOsdConfigParam writes one 32-bit output word; SDK kernel.h declares void pointer ABI. Probe uses only an explicit validated local PCSX2/BIOS capture, not Play! preference defaults; one read, no setter."
   }
 }

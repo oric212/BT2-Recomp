@@ -222,3 +222,12 @@ The full checkpoint pipeline now creates dormant thread ID 2 and reaches ChangeT
 
 
 The full checkpoint pipeline now passes the observed main ID 1 / priority 1 ChangeThreadPriority request and stops at GetOsdConfigParam (`0x4B`, PC `0x0032ED18`). Bootstrap tests cover previous-priority return, repeated requests, rejected arguments and state preservation. Only the main thread is runnable; no scheduler is implemented. OSD configuration remains unsupported pending evidence.
+
+
+### First OSD configuration checkpoint
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point osd-config
+```
+
+Add `--osd-capture work/pcsx2-capture/osd-config/capture.json` to the full pipeline command above. It requires Timer 2 readback and all earlier explicit inputs. The trap reads the first returned OSD stack word at `0x003385F4`; output stays ignored. Verified provenance supplies one native read; startup then stops at SetOsdConfigParam (`0x4A`). Omitting it retains the earlier OSD read stop. No host preferences or broader BIOS OSD behavior are implemented.

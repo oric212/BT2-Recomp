@@ -16,12 +16,13 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD]]]]]]");
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
         const bool timer2_mode = argc >= 6;
         const bool intc_mode = argc >= 7;
-        const bool readback_mode = argc == 8;
+        const bool readback_mode = argc >= 8;
+        const bool osd_mode = argc == 9;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(PS2Runtime::ram_size))
             throw std::runtime_error("Invalid prepared guest image size");
@@ -78,6 +79,14 @@ int main(int argc, char** argv) {
             require(word == 0x382, "Readback capture differs from validated startup observation");
             runtime.supplyTimer2Readback(word);
         }
+        std::uint32_t osd_word = 0;
+        if (osd_mode) {
+            std::ifstream capture(argv[8], std::ios::binary | std::ios::ate);
+            if (!capture || capture.tellg() != 4) throw std::runtime_error("Invalid OSD checkpoint word");
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(&osd_word), 4)) throw std::runtime_error("OSD checkpoint read failed");
+            runtime.supplyOsdConfig(osd_word);
+        }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
         runtime.expectStartupZeroRegion(zero_start, zero_end);
@@ -108,6 +117,7 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
         runtime.registerFunction(0x00338648, FUN_00338648_0x338648);
         runtime.registerFunction(0x003385E0, FUN_003385E0_0x3385e0);
+        runtime.registerFunction(0x0032ED00, FUN_0032ED00_0x32ed00);
         runtime.registerFunction(0x0032ED10, FUN_0032ED10_0x32ed10);
         runtime.registerFunction(0x0032EAF0, FUN_0032EAF0_0x32eaf0);
         runtime.registerFunction(0x0032FDA0, FUN_0032FDA0_0x32fda0);
@@ -154,7 +164,13 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (readback_mode) require(stop.selector == 0x4B && !stop.handler && stop.resume_pc == 0x0032ED18
+            if (osd_mode) require(stop.selector == 0x4A && !stop.handler && stop.resume_pc == 0x0032ED08
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 124
+                    && runtime.osd_config_reads == 1 && runtime.priority_changes == 1
+                    && runtime.read32(runtime.memory().data(), runtime.initial_sp - 128) == osd_word
+                    && runtime.read32(runtime.memory().data(), runtime.initial_sp - 124) == ((osd_word & 0xFFFF1FFF) | 0x2000),
+                    "Unexpected SetOsdConfigParam boundary");
+            else if (readback_mode) require(stop.selector == 0x4B && !stop.handler && stop.resume_pc == 0x0032ED18
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 128
                     && runtime.main_thread_priority == 1 && runtime.priority_changes == 1
                     && runtime.timer2_mode_reads == 2 && runtime.timer2_mode_writes == 1
@@ -194,8 +210,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -301,6 +317,7 @@ int main(int argc, char** argv) {
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << GPR_U32(&context, 3)
                << ",\"write_value\":" << (runtime.timer2_mode_writes ? 0x382 : 0)
+               << ",\"osd_config_reads\":" << runtime.osd_config_reads
                << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"priority_changes\":" << runtime.priority_changes
                << ",\"intc_mask\":" << runtime.intc_mask << ",\"intc_enable_calls\":" << runtime.intc_enable_calls
                << ",\"timer2_mode_writes\":" << runtime.timer2_mode_writes
@@ -317,7 +334,8 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
+        if (osd_mode) std::cout << "Captured OSD configuration returned; reached SetOsdConfigParam syscall 0x4A.\n";
+        else if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";
         else if (timer2_mode) std::cout << "Timer 2 startup mode write completed; generated ErrorEPC/ERET returned; stopped at EnableIntc syscall 0x14, cause 11.\n";
         else if (timer_mode) std::cout << "Interrupt handler ID 2 stored; generated status helper returned; stopped at Timer 2 MMIO read 0x10001010 at PC 0x00338C58.\n";

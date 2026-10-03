@@ -464,6 +464,31 @@ int main() {
         require(priority_context.r[2].low == 0 && priority_context.r[2].high == UINT64_MAX && priority.main_thread_priority == 1);
         priority.handleSyscall(nullptr, &priority_context, 0);
         require(priority_context.r[2].low == 1 && priority.priority_changes == 2);
+        PS2Runtime osd;
+        osd.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        R5900Context osd_context{};
+        osd_context.r[3].low = 0x4B;
+        osd_context.r[4].low = 0x100;
+        osd_context.r[2] = {0xABCD, UINT64_MAX};
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        osd.supplyOsdConfig(0x21C12010);
+        reject([&] { osd.supplyOsdConfig(0); });
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 1); });
+        reject([&] { osd.handleSyscall(nullptr, &osd_context, 0); });
+        osd_context.r[4].low = 0x101;
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        osd_context.r[4].low = PS2Runtime::ram_size;
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        osd_context.r[4].low = UINT64_MAX;
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        require(osd.osd_config_reads == 0 && osd.word_writes == 0);
+        osd_context.r[4].low = 0x100;
+        osd.memory()[0xFF] = osd.memory()[0x104] = 0xA5;
+        osd.handleSyscall(osd.memory().data(), &osd_context, 0);
+        require(osd.read32(osd.memory().data(), 0x100) == 0x21C12010 && osd.osd_config_reads == 1
+                && osd.word_writes == 1 && osd_context.r[2].low == 0xABCD && osd_context.r[2].high == UINT64_MAX
+                && osd.memory()[0xFF] == 0xA5 && osd.memory()[0x104] == 0xA5);
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

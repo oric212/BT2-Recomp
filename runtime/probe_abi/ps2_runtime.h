@@ -109,6 +109,16 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x4B) {
+            if (!osd_config_supplied || osd_config_reads || context->r[4].low > UINT32_MAX)
+                throw UnsupportedSyscall(selector, context->pc);
+            const auto address = static_cast<std::uint32_t>(context->r[4].low);
+            if (address & 3) throw UnsupportedGuestMemory(address, 4);
+            checkMemory(rdram, address, 4);
+            write32(rdram, address, osd_config_word);
+            ++osd_config_reads;
+            return; // SDK declares void; preserve the result register.
+        }
         if (code == 0 && selector == 0x29) {
             // Only the main thread is runnable; created threads remain dormant.
             if (!thread_initialized || current_thread_id != 1 || context->r[4].low != 1 || context->r[5].low != 1)
@@ -384,6 +394,13 @@ public:
     std::span<const std::uint8_t> kernelBaseline() const { return kernel_snapshot_; }
 
     // Single captured startup read, not a timer scheduler or mutable register model.
+    void supplyOsdConfig(std::uint32_t word) {
+        if (osd_config_supplied) throw std::runtime_error("Duplicate OSD checkpoint");
+        osd_config_word = word;
+        osd_config_supplied = true;
+    }
+    unsigned osd_config_reads = 0;
+
     void supplyTimer3Mode(std::uint32_t value) {
         if (value > 0xFFFF || timer3_mode_supplied_) throw std::runtime_error("Invalid/repeated Timer 3 capture");
         timer3_mode_ = value;
@@ -493,6 +510,8 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    bool osd_config_supplied = false;
+    std::uint32_t osd_config_word = 0;
     std::uint64_t addIntcHandler(std::uint32_t cause, std::uint32_t address, std::uint32_t arg, std::uint32_t gp) {
         if (intc_handlers.size() == 128) return UINT64_MAX;
         intc_handlers.push_back({cause, address, arg, gp});

@@ -81,6 +81,29 @@ def verify_word_capture(path, point, field, address, marker_value, register):
     return mode, manifest
 
 
+def verify_osd_capture(path):
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    data = path.with_name('ee-ram.bin').read_bytes()
+    address, marker = 0x003385F4, 0xB707
+    words = [0x8FB90000, 0x3C180038, 0x37187E80, 0xAF190004,
+             0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+    trap = struct.pack('<8I', *words)
+    patch = manifest['patch']
+    if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
+            or not manifest['capture_point'].startswith('osd-config:')
+            or patch['address'] != address or patch['size'] != len(trap)
+            or patch['authored_words'] != words
+            or patch['marker_address'] != 0x387E80 or patch['marker_value'] != marker
+            or len(data) != 32 * 1024 * 1024
+            or hashlib.sha256(data).hexdigest() != manifest['capture_sha256']
+            or data[address:address + len(trap)] != trap):
+        raise ValueError('OSD capture provenance/instrumentation differs.')
+    actual_marker, word = struct.unpack_from('<II', data, 0x387E80)
+    if actual_marker != marker or word != manifest['observed_osd_config']:
+        raise ValueError('OSD capture payload differs.')
+    return word, manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-generated", action="store_true", help="Verify provenance and reuse existing generated output.")
@@ -89,7 +112,11 @@ def main():
     parser.add_argument('--timer2-capture', type=Path, help='Explicit timer2-mode capture; requires kernel snapshot and Timer 3 capture.')
     parser.add_argument('--intc-capture', type=Path, help='Explicit intc-mask checkpoint; requires Timer 2 capture.')
     parser.add_argument('--timer2-readback-capture', type=Path, help='Explicit validation of the post-write mode read; requires INTC checkpoint.')
+    parser.add_argument('--osd-capture', type=Path, help='First OSD config output checkpoint; requires Timer 2 readback.')
     args = parser.parse_args()
+    if args.osd_capture and not args.timer2_readback_capture:
+        parser.error('--osd-capture requires --timer2-readback-capture')
+    osd_capture = verify_osd_capture(args.osd_capture) if args.osd_capture else None
     if args.timer2_readback_capture and not args.intc_capture:
         parser.error('--timer2-readback-capture requires --intc-capture')
     readback_capture = verify_timer2_readback_capture(args.timer2_readback_capture) if args.timer2_readback_capture else None
@@ -143,9 +170,14 @@ def main():
             readback_word = folder / 'timer2-readback.bin'
             readback_word.write_bytes(struct.pack('<I', readback_capture[0]))
             entry_command.append(str(readback_word))
+        if osd_capture:
+            osd_word = folder / 'osd-config.bin'
+            osd_word.write_bytes(struct.pack('<I', osd_capture[0]))
+            entry_command.append(str(osd_word))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "osd_capture_provenance": osd_capture[1] if osd_capture else None,
         "kernel_generation_provenance": kernel_generation,
         "timer2_readback_capture_provenance": readback_capture[1] if readback_capture else None,
         "intc_capture_provenance": intc_capture[1] if intc_capture else None,

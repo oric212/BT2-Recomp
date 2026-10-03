@@ -186,6 +186,32 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_timer2_readback_capture(self.path)
 
+    def test_osd_full_word_checkpoint_and_tamper_rejection(self):
+        address, marker, word = 0x3385F4, 0xB707, 0x21C12010
+        words = [0x8FB90000, 0x3C180038, 0x37187E80, 0xAF190004,
+                 0x34190000 | marker, 0xAF190000, 0x08000000 | ((address + 24) >> 2), 0]
+        self.data[address:address + 32] = struct.pack('<8I', *words)
+        struct.pack_into('<II', self.data, 0x387E80, marker, word)
+        self.manifest.update(capture_point='osd-config: authored fixture', observed_osd_config=word,
+                             patch={'address': address, 'size': 32, 'authored_words': words,
+                                    'marker_address': 0x387E80, 'marker_value': marker},
+                             capture_sha256=hashlib.sha256(self.data).hexdigest())
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_osd_capture(self.path)[0], word)
+        for key, value in [('source_elf_sha256', 'wrong'), ('capture_sha256', 'wrong'),
+                           ('observed_osd_config', word ^ 1), ('capture_point', 'timer2-mode: fixture')]:
+            previous = self.manifest[key]
+            self.manifest[key] = value
+            self.save()
+            with self.assertRaises(ValueError):
+                run_pipeline.verify_osd_capture(self.path)
+            self.manifest[key] = previous
+        self.manifest['patch']['authored_words'][0] ^= 1
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_osd_capture(self.path)
+
 
 if __name__ == "__main__":
     unittest.main()
