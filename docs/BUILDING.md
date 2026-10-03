@@ -11,7 +11,7 @@
 From PowerShell:
 
 ```powershell
-cd 'D:\Cs\C++\BT2-Recomp'
+cd 'D:\Cs\Cpp\BT2-Recomp'
 cmake -S . -B build
 cmake --build build --config Debug
 .\build\Debug\bt2-port.exe

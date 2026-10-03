@@ -29,7 +29,7 @@ Program 2 declares 176,668 bytes beyond its file payload. Program 3 is empty and
 
 ## Functions
 
-No functions have been analyzed or named.
+Ghidra 12.1.4 with the pinned R5900 extension analyzed the recorded local executable. It discovered 9,541 unreviewed function candidates; 7,241 have contiguous aligned bodies exported to the local CSV. These counts describe analyzer output, not verified boundaries or purposes. The entry candidate is `FUN_00100008`, with proposed exclusive end `0x00100248` (576 bytes). No semantic function name has been established.
 
 ## Subsystems
 
@@ -53,4 +53,4 @@ None recorded.
 
 ## Unknowns
 
-Exact retail revision, actual runtime memory behavior, the empty load record's purpose, function boundaries, game file formats, and required PS2 runtime behavior remain unverified. No instructions or functions have been analyzed. Raw metadata output stays in ignored `work/elf_report.json`.
+Exact retail revision, actual runtime memory behavior, the empty load record's purpose, function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Boundaries require manual review before generation.

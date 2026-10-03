@@ -2,14 +2,14 @@
 
 Target: Dragon Ball Z: Budokai Tenkaichi 2, North American PS2 SLUS-21441, running original game logic on Windows 10/11 x64. Build with Visual Studio 2022, MSVC, C++20, and CMake.
 
-The first major gameplay goal is a playable versus battle. Use a custom compatibility runtime for only the PS2 behavior BT2 requires. PS2Recomp is a prospective recompilation dependency, Ghidra a prospective analysis tool, and PCSX2 a behavioral reference.
+The first major gameplay goal is a playable versus battle. Use a custom compatibility runtime for only the PS2 behavior BT2 requires. PS2Recomp is a prospective recompilation dependency, Ghidra the installed analysis tool, and PCSX2 a behavioral reference.
 
 ## Ordered steps and completion evidence
 
 1. Native foundation: build and run `bt2-port`; document local content rules. Complete.
 2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Preliminary checks implemented; revision confirmation remains open.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
-4. PS2Recomp feasibility and integration: pinned tool builds, license assessment, and synthetic translation are complete. The guarded generation driver is ready. Next obtain reviewed Ghidra function boundaries, generate BT2 code locally, and assess emitted APIs against our custom runtime. Proprietary-derived output remains ignored.
+4. PS2Recomp feasibility and integration: pinned tool builds, license assessment, and synthetic translation are complete. The guarded generation driver is ready. Ghidra R5900 analysis and unreviewed candidate export are complete. Next obtain reviewed Ghidra function boundaries, generate BT2 code locally, and assess emitted APIs against our custom runtime. Proprietary-derived output remains ignored.
 5. Runtime entry: execute translated entry code with only the required compatibility calls. Record unsupported calls and evidence for each implementation.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
@@ -21,3 +21,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored `work/` or `research/`, and proprietary-derived generated code in ignored `game/generated/`. Never download or commit proprietary content. Record confirmed facts, hypotheses, and unknowns separately. Preserve unknown function names until evidence supports renaming. Implement only PS2 behavior required by BT2.
 
 Update `PROG.md`, the single progress log, after each verified step. Keep `README.md` at the repository root and other documentation under `docs/`. Review staged files before committing.
+
+## Repository workflow
+
+Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.

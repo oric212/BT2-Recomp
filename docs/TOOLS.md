@@ -62,3 +62,17 @@ python tools/ps2recomp/generate_game.py --function-map work/bt2-functions.csv
 CSV columns are `Name,Start,End,Size` (case insensitive), with exclusive ends. The driver checks the locally recorded candidate size/hash, map ranges, and tool provenance. Matching the candidate hash establishes consistency with our inspected file, not authenticity against a retail reference. It writes local configuration under `work/bt2-generation/` and C++ under ignored `game/generated/bt2/`, with automatic instruction patches disabled and no manual stubs or skips.
 
 These checks cannot certify map correctness. Generated output can include upstream heuristic discoveries; treat them as candidates. BT2 generation has not run because no reviewed map exists. The emitted code depends on upstream runtime APIs, so custom runtime adaptation remains future work.
+
+## Installed Ghidra analysis
+
+Project root: `D:\Cs\Cpp\BT2-Recomp`. Ghidra 12.1.4 is installed at `D:\Cs\Cpp\tools\ghidra_12.1.4_PUBLIC`; launch the GUI with `D:\Cs\Cpp\tools\run-ghidra.bat`. It uses the existing Adoptium JDK 25. Tool versions and archive hashes are recorded in `config/ghidra.lock.json`.
+
+The R5900 extension v2.1.37 was built from pinned source against this Ghidra version. Gradle 9.8.0 is installed beside Ghidra. These tools remain outside the repository.
+
+```powershell
+python tools/ghidra/analyze_game.py
+```
+
+The driver imports the recorded local candidate using `r5900:LE:32:default` and runs our authored exporter. Override installations with `--ghidra-home PATH --java-home PATH`. Projects, logs, JSON, instruction listings, and candidate CSV stay in ignored `work/ghidra/`. An existing project is reopened without repeating analysis. Remove or archive it explicitly when a fresh analysis is needed.
+
+Exports use neutral address names and remain unreviewed. Ghidra reports overlay and decompiler limitations; verify boundaries and control flow before preparing a reviewed map. Do not feed the candidate CSV directly into game generation or commit it.

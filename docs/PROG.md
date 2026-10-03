@@ -54,3 +54,14 @@ Next: establish reviewed Ghidra function boundaries for the local executable, th
 - [ ] Playable versus battle.
 - [ ] Audio.
 - [ ] Full match.
+
+## 2026-10-03 — Ghidra setup and project path rename
+
+- Renamed the parent directory from `D:\Cs\C++` to `D:\Cs\Cpp` at the user's request; project root is now `D:\Cs\Cpp\BT2-Recomp`. README remains at the root.
+- Installed Ghidra 12.1.4 under `D:\Cs\Cpp\tools`, verified the official archive hash, and built the pinned R5900 extension v2.1.37 against it. Added tool locks and an authored headless analysis/export workflow.
+- Imported the unchanged local executable with `r5900:LE:32:default`. Exported 9,541 unreviewed function candidates, including 7,241 contiguous aligned CSV candidates. All proprietary-derived reports and projects remain ignored.
+- Ghidra reported a conflicting `rom0` block, DVP overlay byte-mapping limitations, and decompiler flow errors. No function boundary or purpose is certified by this pass.
+- Rebuilt the native host and pinned PS2Recomp tools at the new path. The host ran with the expected startup output; synthetic translation passed with zero warnings, errors, decode failures, or unhandled instructions.
+- After each completed pass, review, commit, and push as requested by the user.
+
+Next: review the entry candidate boundary and control flow before producing a reviewed map. No BT2-derived C++ has been generated or executed.

@@ -20,3 +20,5 @@ See [build instructions](docs/BUILDING.md), [the implementation plan](docs/IMPLE
 - `docs/`: goals, build instructions, progress, and evidence records.
 
 Pinned PS2Recomp tools build separately from the host and pass synthetic translation. Dependency checkouts stay under ignored `work/`; versions are in `config/ps2recomp.lock.json`. BT2 generation requires a reviewed function map, and custom runtime integration is pending. Keep local game paths under ignored `game_data/` or `rom/`.
+
+Ghidra with R5900 support is installed under `D:\Cs\Cpp\tools`. Local analysis exports unreviewed function candidates under ignored `work/ghidra/`; boundary review remains pending.

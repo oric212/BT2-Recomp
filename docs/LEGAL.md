@@ -23,3 +23,7 @@ Dependency sources and binaries stay in ignored `work/` and `build/`; this repos
 Retain copyright/license notices and satisfy applicable source and copyleft requirements when distributing dependencies. No upstream runtime is linked into `bt2-port`. Future runtime linking and generated-output licensing require assessment before distribution; generator use does not resolve ownership of retail-derived code. libdwarf's separate GPLv2 dwarfdump tool is disabled.
 
 Review staged files before every commit; ignore rules help prevent accidental inclusion.
+
+## Installed analysis tools
+
+Ghidra 12.1.4 includes its Apache 2.0 license and third-party notices in the external installation. The pinned Emotion Engine extension uses Apache 2.0 (`work/ghidra-emotionengine/LICENSE`). Retain the installed tools' licenses and notices if redistributing them. No Ghidra installation, extension binary, project database, or proprietary-derived analysis report is committed.
