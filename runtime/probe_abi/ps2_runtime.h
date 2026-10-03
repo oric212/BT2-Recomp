@@ -50,13 +50,23 @@ public:
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
 
     void registerFunction(std::uint32_t address, RecompiledFunction function) {
-        if (!function || !functions_.emplace(address, function).second)
+        if (address >= 0x80000000 || !function || !functions_.emplace(address, function).second)
             throw std::runtime_error("Invalid or duplicate guest registration");
+    }
+
+    void registerKernelFunction(std::uint32_t address, RecompiledFunction function,
+                                std::span<const std::uint8_t> expected_payload) {
+        if (!function || !kernel_patch_end_ || address != kernel_patch_start_
+                || expected_payload.size() != kernel_patch_end_ - kernel_patch_start_ || functions_.contains(address))
+            throw std::runtime_error("Invalid copied kernel binding");
+        kernel_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected_payload.begin(), expected_payload.end()));
+        functions_.emplace(address, function);
     }
 
     void callFunction(std::uint32_t address, R5900Context& context) {
         const auto found = functions_.find(address);
         if (found == functions_.end()) throw std::runtime_error("Unregistered guest target");
+        verifyKernelBinding(address);
         context.pc = address;
         checkpoints_ = 0;
         found->second(memory_.empty() ? nullptr : memory_.data(), &context, this);
@@ -86,7 +96,7 @@ public:
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
             if (number >= syscall_handlers.size() || address % 4)
-                throw std::runtime_error("Unsupported SetSyscall registration");
+                throw UnsupportedSyscall(selector, context->pc);
             if (address >= 0x80000000) {
                 // Register only a word actually written into the explicitly enabled patch.
                 // Registration does not make these bytes a compiled native function.
@@ -174,6 +184,7 @@ public:
         }
         const auto found = functions_.find(target);
         if (found == functions_.end()) throw UnsupportedGuestBranch(target, source, resume);
+        verifyKernelBinding(target);
         if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
         struct DepthGuard {
             unsigned& depth;
@@ -318,11 +329,25 @@ public:
     std::uint64_t kernel_word_writes = 0;
     unsigned timer3_mode_reads = 0;
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
+    unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    void verifyKernelBinding(std::uint32_t address) {
+        const auto found = kernel_code_bindings_.find(address);
+        if (found == kernel_code_bindings_.end()) return;
+        for (std::size_t offset = 0; offset < found->second.size(); offset += 4) {
+            std::uint32_t expected;
+            std::memcpy(&expected, found->second.data() + offset, 4);
+            const auto word = kernel_patch_words_.find(address - 0x80000000 + static_cast<std::uint32_t>(offset));
+            if (word == kernel_patch_words_.end() || word->second != expected)
+                throw std::runtime_error("Copied kernel payload differs from compiled binding");
+        }
+        ++kernel_dispatch_validations;
+    }
+    std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> kernel_code_bindings_;
     void checkMemory(std::uint8_t* rdram, std::uint32_t address, std::size_t count) const {
         if (memory_.empty() || rdram != memory_.data() || address > memory_.size() || count > memory_.size() - address)
             throw UnsupportedGuestMemory(address, count);

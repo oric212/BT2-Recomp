@@ -1,6 +1,9 @@
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
+#ifdef BT2_KERNEL_PAYLOAD
+#include <bt2_kernel_functions.h>
+#endif
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -69,6 +72,14 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x003389B8, FUN_003389B8_0x3389b8);
         runtime.registerFunction(0x0032EEE0, FUN_0032EEE0_0x32eee0);
         runtime.registerFunction(0x003389F0, FUN_003389F0_0x3389f0);
+        if (timer_mode) {
+#ifdef BT2_KERNEL_PAYLOAD
+            runtime.registerKernelFunction(0x80076000, FUN_80076000_0x80076000,
+                std::span<const std::uint8_t>(runtime.memory()).subspan(0x0036B328, 0x740));
+#else
+            throw std::runtime_error("Timer replay requires generated kernel payload integration");
+#endif
+        }
         bool stopped = false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
@@ -86,11 +97,12 @@ int main(int argc, char** argv) {
         }
         catch (const UnsupportedSyscall& stop) {
             if (!timer_mode) throw;
-            require(stop.selector == 0x5B && stop.handler == 0x80076000 && stop.resume_pc == 0x003389F8
-                    && context.pc == 0x003389F8 && runtime.syscall_handlers[0x5B] == stop.handler,
-                    "Unexpected copied kernel callback dispatch boundary");
+            require(stop.selector == 0x74 && !stop.handler && stop.resume_pc == 0x003389A0
+                    && context.pc == 0x003389A0 && GPR_U32(&context, 4) == 0x12C
+                    && GPR_U32(&context, 5) == 0x80076488,
+                    "Unexpected extended kernel handler registration boundary");
             stop_selector = stop.selector;
-            stop_handler = stop.handler;
+            stop_address = GPR_U32(&context, 5);
             stopped = true;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
@@ -118,7 +130,7 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (timer_mode ? 21u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 4u : 2u) && runtime.returns == (timer_mode ? 18u : 10u)
+            require(runtime.guest_calls == (timer_mode ? 35u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 9u : 2u) && runtime.returns == (timer_mode ? 32u : 10u)
                     && runtime.word_writes == (timer_mode ? 483u : 9u) && runtime.doubleword_writes == 14,
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
@@ -128,6 +140,18 @@ int main(int argc, char** argv) {
             require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
             require(runtime.kernel_word_writes == 0x740 / 4 && runtime.cache_requests == 2 && runtime.instruction_cache_invalidations == 1,
                     "Unexpected copied kernel size/cache request count");
+            require(runtime.kernel_dispatch_validations == 5, "Unexpected copied kernel dispatch count");
+            std::array<bool, 4> registered_slots{};
+            for (std::uint32_t index = 0; index < 4; ++index) {
+                const auto slot = runtime.read32(runtime.memory().data(), 0x80076710 + index * 8);
+                require(slot >= 0xFC && slot <= 0xFF && !registered_slots[slot - 0xFC] && runtime.syscall_handlers[slot]
+                        == runtime.read32(runtime.memory().data(), 0x80076714 + index * 8),
+                        "Generated kernel table lookup/registration mismatch");
+                registered_slots[slot - 0xFC] = true;
+            }
+            require(runtime.read32(runtime.memory().data(), 0x80076730) == 0x12C
+                    && runtime.read32(runtime.memory().data(), 0x80076734) == stop_address,
+                    "Pending extended registration differs from copied table");
             for (std::uint32_t offset = 0; offset < 0x740; offset += 4)
                 require(runtime.read32(runtime.memory().data(), 0x80076000 + offset)
                         == runtime.read32(runtime.memory().data(), 0x0036B328 + offset), "Kernel copy mismatch");
@@ -143,7 +167,7 @@ int main(int argc, char** argv) {
         for (const auto offset : {0u, 16u, 32u, 48u, 64u, 80u, 96u})
             require(runtime.read64(runtime.memory().data(), frame + offset) == 0,
                     "Unexpected saved callee register");
-        require(runtime.syscall_registrations == (timer_mode ? 4u : 2u) && runtime.syscall_handlers[0x83] == 0x00338388
+        require(runtime.syscall_registrations == (timer_mode ? 8u : 2u) && runtime.syscall_handlers[0x83] == 0x00338388
                 && runtime.syscall_handlers[0x5A] == (timer_mode ? 0x003389B8u : 0x00338350u),
                 "Expected syscall registrations missing");
         if (!snapshot_mode) require(args[0] == 0x80000000 && args[1] == 0x80080000 && args[2] == 0x00338388,
@@ -161,7 +185,8 @@ int main(int argc, char** argv) {
         if (!report) throw std::runtime_error("Could not write entry stop report");
         report << "{\"status\":\"" << (timer_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
                << "\"selector\":" << stop_selector << ","
-               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (timer_mode ? "callback dispatch" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (timer_mode ? "handler registration" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << GPR_U32(&context, 3)
                << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << (timer_mode ? stop_handler : runtime.syscall_handlers[0x83]) << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
@@ -174,7 +199,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (timer_mode) std::cout << "Generated copies and cache requests completed; registered kernel handler; stopped at uncompiled callback 0x" << std::hex << stop_handler << std::dec << "\n";
+        if (timer_mode) std::cout << "Generated copies and cache requests completed; kernel entry returned; stopped at extended handler registration 0x" << std::hex << stop_address << std::dec << "\n";
         else if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
                                      << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";
         else std::cout << "No kernel snapshot supplied; stopped at first kernel read 0x80000000.\n";

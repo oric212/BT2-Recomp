@@ -81,8 +81,12 @@ def main():
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_game.py"), "--candidate-map", str(folder / "candidates.csv")])
     verify_generated()
     run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_runtime.py")])
+    kernel_generation = None
+    if timer_capture:
+        run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py")])
+        kernel_generation = json.loads((ROOT / "work/kernel-generation/generation.manifest.json").read_text(encoding="utf-8"))
     build = ROOT / "build/probe"
-    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON"], folder / "configure.log")
+    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF")], folder / "configure.log")
     run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
     run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
@@ -101,6 +105,7 @@ def main():
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "kernel_generation_provenance": kernel_generation,
         "timer3_capture_provenance": timer_capture[1] if timer_capture else None, "kernel_snapshot_provenance": snapshot_provenance, "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
         "integration_log": str(folder / "integration-build.log")}, indent=2) + "\n", encoding="utf-8")
     print(f"Probes verified. Entry build exit code: {result.returncode}; inspect {folder / 'integration-build.log'}.")
