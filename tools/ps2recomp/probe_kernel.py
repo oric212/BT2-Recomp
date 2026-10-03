@@ -31,7 +31,7 @@ def main():
                 "capture_note": args.capture_note, "physical_start": 0, "size": len(snapshot),
                 "snapshot_sha256": hashlib.sha256(snapshot).hexdigest(),
                 "limitations": "User-provided capture, not authenticated; diagnostic handler execution only."}
-    (folder / "kernel-snapshot.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (folder / "kernel-snapshot.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     subprocess.run([str(ROOT / "build/probe/Debug/bt2-kernel-handler-tests.exe"), str(path)], cwd=ROOT, check=True)
 
 

@@ -17,18 +17,18 @@ def classify(address, rows, functions, excluded):
 def main():
     verify_generated()
     folder = ROOT / "work/bt2-generation"
-    stop = json.loads((folder / "entry-stop.json").read_text())
+    stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     address = stop.get("handler") or stop.get("target")
     if address is None:
         print("Syscall blocker has no registered handler to map.")
         return
     with (folder / "candidates.csv").open(newline="") as stream:
         rows = [{"start": int(row["Start"], 0), "end": int(row["End"], 0)} for row in csv.DictReader(stream)]
-    export = json.loads((ROOT / "work/ghidra/exports/analysis.json").read_text())
-    manifest = json.loads((folder / "candidates.manifest.json").read_text())
+    export = json.loads((ROOT / "work/ghidra/exports/analysis.json").read_text(encoding="utf-8"))
+    manifest = json.loads((folder / "candidates.manifest.json").read_text(encoding="utf-8"))
     result = classify(address, rows, export["functions"], manifest["excluded"])
     result["limitations"] = "Range membership only; no boundary, handler semantics or execution is inferred."
-    (folder / "blocker-map.json").write_text(json.dumps(result, indent=2) + "\n")
+    (folder / "blocker-map.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"Reached {result['neutral_name']}: {result['map_status']}; see {folder / 'blocker-map.json'}.")
 
 

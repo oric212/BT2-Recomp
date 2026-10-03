@@ -199,7 +199,7 @@ Next: focused automated Ghidra discovery at the actually reached missing handler
 
 7,241 functions generated; 8 distinct functions compiled/executed. Four completed and returned (`FUN_0032EEE0`, `FUN_0032EC60`, `FUN_003382D0`, `FUN_00338510`); four executed partially. These are startup/helper paths; gameplay and game boot do not work yet.
 
-## 2026-10-03 — Observed handler discovered, regenerated and entered
+## 2026-10-03 â€” Observed handler discovered, regenerated and entered
 
 - Added `--discover-blocker` to the Ghidra driver and a neutral-name discovery script for one latest execution-observed gap. Guarded aligned initialized executable .text targets, existing-function overlap, matching stop/diagnostic address and fresh export containing the requested entry. No guessed manual map row or semantic name added.
 - Ghidra discovered provisional contiguous handler `[0x00338388, 0x003383C8)`, 64 bytes. Regenerated 7,242 functions (7,245 C++/header files) from the updated automated map; proprietary output and previous snapshots remain ignored.
@@ -211,7 +211,7 @@ Next: focused automated Ghidra discovery at the actually reached missing handler
 
 Next: establish the required kernel-address access and local memory provenance before continuing the handler's read/scan.
 
-## 2026-10-03 — Read-only kernel capture adapter and generated scan tests
+## 2026-10-03 â€” Read-only kernel capture adapter and generated scan tests
 
 - Checked PCSX2 `memMapKernelMem`: KSEG0 at `0x80000000` maps physical address zero. Pinned revision/file hash in `config/startup_abi.sources.json`. PS2Recomp's FindAddress implementation was consulted as a reference, but not adopted as a substitute for BT2's generated handler.
 - Added a bounded read-only word view backed only by explicitly supplied snapshot bytes for `[0x80000000, 0x80080004)`. Other aliases, kernel writes, BIOS exception state and MMIO remain unsupported. Without a snapshot, real startup still stops at its first kernel read.
@@ -222,3 +222,8 @@ Next: establish the required kernel-address access and local memory provenance b
 **Counts:** 7,242 generated; 9 distinct functions entered. Four complete in real startup/isolated-wrapper probes; the discovered handler additionally completes on synthetic data. No gameplay works yet.
 
 Next: supply/capture local EE RAM at the reached handler and validate the scan result before proceeding with kernel patch dependencies.
+
+## 2026-10-03 - Documentation encoding correction
+
+- Repaired two invalid Windows-encoded dash bytes in this document. All tracked text now passes strict UTF-8 decoding and contains no replacement characters. Added a UTF-8 editor rule and explicit UTF-8 reads/writes in the recent tooling.
+- Execution progress is unchanged; the next step remains a local PCSX2 EE RAM capture at the reached kernel handler.

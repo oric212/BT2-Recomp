@@ -34,10 +34,10 @@ def main():
     discovery = []
     discovered_address = None
     if args.discover_blocker:
-        blocker = json.loads((ROOT / "work/bt2-generation/blocker-map.json").read_text())
+        blocker = json.loads((ROOT / "work/bt2-generation/blocker-map.json").read_text(encoding="utf-8"))
         if blocker["map_status"] != "map gap":
             parser.error("Discovery requires an observed map gap.")
-        stop = json.loads((ROOT / "work/bt2-generation/entry-stop.json").read_text())
+        stop = json.loads((ROOT / "work/bt2-generation/entry-stop.json").read_text(encoding="utf-8"))
         discovered_address = stop.get("handler") or stop.get("target")
         if discovered_address != blocker["address"]:
             parser.error("Blocker diagnostic differs from the latest execution stop.")
