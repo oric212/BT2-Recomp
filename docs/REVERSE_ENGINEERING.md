@@ -302,3 +302,8 @@ Generated `FUN_80075000` executes its table lookup, returns `0x80075038` for sel
 Counts: 7,246 generated functions (7,244 main + two scoped kernel entries), 7,255 raw C++/header files; 41 entered / 38 completed across probes. A previously completed SetSyscall wrapper is partial on its current invocation. Full probe: 72 guest calls, 68 JR returns, 12 custom callbacks, 13 completed registrations, seven compiled kernel payload validations; write/cache counts remain 906 words including 668 kernel words, 44 doublewords, 43,632 quadwords, 15 bytes and four cache requests/two invalidations.
 
 Verification: full checkpoint pipeline/MSVC build, seven CTests, 34 recomp tooling tests and ten capture-tool tests passed. Earlier optional-input boundaries remain preserved. All payloads, maps, raw/prepared generated code, packaged ELF and diagnostics remain ignored. Next: bounded registration of lookup-returned interior entries, then translate only code actually reached. No complete boot/gameplay.
+
+
+## 2026-10-04 - Platform initialization continuation
+
+Exact copied-table selector/address registration allows generated startup to finish; registration alone does not allow execution of uncompiled kernel handlers. Generated cleanup and entry continuation reach the unlinked FUN_00100388 call at 0x00100238. EI at 0x00100228 sets modeled Status 0x10000; interrupt delivery remains unimplemented. Arguments are a0=0 and a1=0x0038B984. The routine's purpose remains unknown. See [detailed pass evidence](progress/2026-10.md#bounded-platform-initialization-returned-to-entry-2026-10-04).

@@ -589,6 +589,39 @@ int main() {
         incomplete_binding.write32(incomplete_binding.memory().data(), 0x80075000, 0xC3C3C3C3);
         reject([&] { incomplete_binding.callFunction(0x80075000, bound_context); });
         require(incomplete_binding.kernel_dispatch_validations == 0 && incomplete_binding.guest_calls == 0);
+        PS2Runtime table_registration;
+        table_registration.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        table_registration.loadKernelSnapshot(baseline);
+        table_registration.enableKernelPatch(0x80076000, 8);
+        auto table_payload = payload;
+        const std::array<std::uint32_t, 4> test_pairs{0x55, 0x80075038, 0x56, 0x800750C8};
+        std::memcpy(table_payload.data() + 0x300, test_pairs.data(), sizeof(test_pairs));
+        table_registration.enableStartupKernelPayload(table_payload);
+        R5900Context table_context{};
+        table_context.r[3].low = 0x74;
+        table_context.r[4].low = 0x55;
+        table_context.r[5].low = 0x80075038;
+        table_context.r[2] = {0x1234, UINT64_MAX};
+        auto* table_ram = table_registration.memory().data();
+        reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
+        for (std::uint32_t offset = 0; offset < 0x330; offset += 4) {
+            std::uint32_t value;
+            std::memcpy(&value, table_payload.data() + offset, 4);
+            table_registration.write32(table_ram, 0x80075000 + offset, value);
+        }
+        table_registration.handleSyscall(table_ram, &table_context, 0);
+        require(table_registration.syscall_handlers[0x55] == 0x80075038
+                && table_context.r[2].low == 0x1234 && table_context.r[2].high == UINT64_MAX);
+        table_context.r[4].low = 0x57;
+        reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
+        table_context.r[4].low = 0x55;
+        table_context.r[5].low = 0x8007503C;
+        reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
+        table_context.r[5].low = 0x80075330;
+        reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
+        table_context.r[3].low = 0x55;
+        reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
+        require(table_registration.custom_syscall_calls == 0 && table_registration.syscall_registrations == 1);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

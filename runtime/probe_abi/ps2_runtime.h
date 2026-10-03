@@ -213,7 +213,17 @@ public:
                 // Register only a word actually written into the explicitly enabled patch.
                 // Registration does not make these bytes a compiled native function.
                 const bool primary_patch = address >= kernel_patch_start_ && address < kernel_patch_end_;
-                const bool startup_payload = address == 0x80075000 && startup_kernel_word_writes == 0x330 / 4;
+                bool startup_payload = address == 0x80075000 && startup_kernel_word_writes == 0x330 / 4;
+                if (!startup_kernel_payload_.empty() && startup_kernel_word_writes == 0x330 / 4
+                        && address >= 0x80075000 && address < 0x80075330) {
+                    // Exact selector/address pairs from the fully validated copied table.
+                    for (std::size_t offset = 0x300; offset < 0x330; offset += 8) {
+                        std::uint32_t table_selector, table_address;
+                        std::memcpy(&table_selector, startup_kernel_payload_.data() + offset, 4);
+                        std::memcpy(&table_address, startup_kernel_payload_.data() + offset + 4, 4);
+                        if (number == table_selector && address == table_address) startup_payload = true;
+                    }
+                }
                 if (memory_.empty() || rdram != memory_.data() || (!primary_patch && !startup_payload)
                         || !kernel_patch_words_.contains(address - 0x80000000))
                     throw UnsupportedGuestMemory(address, 4);

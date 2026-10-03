@@ -63,6 +63,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_0033A238_0x33a238.cpp"
         "${BT2_GENERATED_DIR}/FUN_003382D0_0x3382d0.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032EC60_0x32ec60.cpp"
         "${BT2_GENERATED_DIR}/FUN_00338410_0x338410.cpp"
