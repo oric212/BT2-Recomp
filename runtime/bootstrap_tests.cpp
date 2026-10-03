@@ -378,6 +378,70 @@ int main() {
         already_enabled.supplyIntcMask(0x1802);
         already_enabled.handleSyscall(nullptr, &intc_context, 0);
         require(intc_context.r[2].low == 0 && already_enabled.intc_mask == 0x1802);
+        PS2Runtime creation;
+        creation.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        auto* creation_ram = creation.memory().data();
+        const auto descriptor = [&](unsigned offset, std::uint32_t value) {
+            creation.write32(creation_ram, 0x300 + offset, value);
+        };
+        descriptor(4, 0x1000); descriptor(8, 0x10000); descriptor(12, 0x400);
+        descriptor(16, 0x2000); descriptor(20, 0);
+        R5900Context create_context{};
+        create_context.r[3].low = 0x20;
+        create_context.r[4].low = 0x300;
+        create_context.r[2] = {0xCAFE, UINT64_MAX};
+        reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
+        creation.thread_initialized = true;
+        reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
+        creation.heap_initialized = true;
+        creation.heap_start = 0x4000;
+        for (const auto address : {0x301u, static_cast<std::uint32_t>(PS2Runtime::ram_size - 32)}) {
+            create_context.r[4].low = address;
+            reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
+        }
+        create_context.r[4].low = 0x300;
+        for (const auto [offset, invalid, original] : std::array<std::array<std::uint32_t, 3>, 8>{
+                {{4, 0, 0x1000}, {4, 0x1001, 0x1000}, {8, 0x10001, 0x10000},
+                 {8, 0x1FFFF00, 0x10000}, {8, 0, 0x10000}, {12, 0x2A0, 0x400}, {20, 128, 0}, {16, 0x80002000, 0x2000}}}) {
+            descriptor(offset, invalid);
+            reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
+            descriptor(offset, original);
+        }
+        require(creation.threads.empty() && create_context.r[2].low == 0xCAFE);
+        const std::vector<std::uint8_t> before_creation(creation.memory().begin(), creation.memory().end());
+        const auto before_words = creation.word_writes;
+        creation.handleSyscall(creation_ram, &create_context, 0);
+        require(creation.threads.size() == 1 && create_context.r[2].low == 2
+                && create_context.r[2].high == UINT64_MAX && creation.word_writes == before_words + 4);
+        const auto& created = creation.threads[0];
+        require(created.id == 2 && created.entry == 0x1000 && created.stack_base == 0x10000
+                && created.stack_size == 0x400 && created.gp == 0x2000 && created.initial_priority == 0
+                && created.heap_base == 0x4000 && created.context_address == 0x10160 && created.initial_sp == 0x103E0);
+        auto expected_creation = before_creation;
+        for (const auto [index, value] : std::array<std::array<std::uint32_t, 2>, 4>{
+                {{28, 0x2000}, {29, 0x103E0}, {30, 0x103E0}, {31, 0x1FC03000}}}) {
+            std::memcpy(expected_creation.data() + 0x10160 + index * 16, &value, 4);
+        }
+        require(std::equal(creation.memory().begin(), creation.memory().end(), expected_creation.begin()));
+        for (unsigned id = 3; id <= 255; ++id) {
+            creation.handleSyscall(creation_ram, &create_context, 0);
+            require(create_context.r[2].low == id);
+        }
+        const auto full_words = creation.word_writes;
+        creation.handleSyscall(creation_ram, &create_context, 0);
+        require(create_context.r[2].low == UINT64_MAX && create_context.r[2].high == UINT64_MAX
+                && creation.threads.size() == 254 && creation.word_writes == full_words);
+        PS2Runtime identity;
+        R5900Context identity_context{};
+        identity_context.r[3].low = 0x2F;
+        identity_context.r[2] = {0xABCD, UINT64_MAX};
+        reject([&] { identity.handleSyscall(nullptr, &identity_context, 0); });
+        identity.thread_initialized = true;
+        reject([&] { identity.handleSyscall(nullptr, &identity_context, 0); });
+        identity.current_thread_id = 1;
+        identity.handleSyscall(nullptr, &identity_context, 0);
+        require(identity_context.r[2].low == 1 && identity_context.r[2].high == UINT64_MAX);
+        reject([&] { identity.handleSyscall(nullptr, &identity_context, 1); });
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;
@@ -425,6 +489,8 @@ int main() {
         require(GPR_S32(&signed_context, 1) == -1);
         signed_context.r[1].low = 0xABCDEF007FFFFFFFULL;
         require(GPR_S32(&signed_context, 1) == INT32_MAX);
+        require(SLL32(1, 31) == 0x80000000 && SLL32(0x80000000, 1) == 0
+                && SLL32(1, 32) == 1 && SLL32(0xFFFFFFFF, 4) == 0xFFFFFFF0);
         require(SRL32(0x740, 2) == 0x1D0);
         require(SRL32(0x80000000, 1) == 0x40000000);
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);

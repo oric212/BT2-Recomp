@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and reaches CreateThread. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, then queries the main thread ID. Game boot and gameplay remain incomplete.
 
 Latest verification: MSVC build/pipeline, six CTests, 29 recomp tooling tests and eight capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops at CreateThread (`0x20`) in `FUN_0032EA60`, resume PC `0x0032EA68`, called by `FUN_0032FA38`. The descriptor is at `0x01FFECC0`. `FUN_00338DB8` now returns after recorded Timer 2 mode `0x382` matches the exact-read PCSX2 capture. Semaphore ID 2 has initial count 0, maximum 255 and option `0x00383660`.
+Startup stops at ChangeThreadPriority (`0x29`) in `FUN_0032EAF0`, resume PC `0x0032EAF8`, requesting main thread ID 1 / priority 1. CreateThread records dormant ID 2 (entry `0x0032F960`, stack `0x003A8840`, size `0x400`); GetThreadId returns the authored main ID 1. The created thread has not executed.
 
-Next: establish the observed CreateThread descriptor/return behavior and implement bounded thread creation before attempting scheduling. The mode readback is checked once; counter progression, interrupt delivery and thread scheduling remain unimplemented. Earlier optional-capture boundaries and kernel/stack/registration guards stay checked.
+Next: establish and implement the reached main-thread priority change, then rerun. Thread IDs/context initialization follow the pinned reference model, not a confirmed retail BIOS allocation. `FUN_0032FDA0` returns -1 through its guard with the probe's IE bit clear; its other paths remain untested. Counter progression, interrupt delivery and thread scheduling remain unimplemented.
 
 ## Key counts
 
 - **7,244** functions generated locally: 7,243 main ELF + one scoped kernel entry; **7,250** raw generated C++/header files.
-- **27** distinct functions entered across native probes.
-- **23** functions completed across probes; entry, `FUN_00338520`, `FUN_0032FA38` and `FUN_0032EA60` remain partial. These are startup/helper paths, not working gameplay.
+- **31** distinct functions entered across native probes.
+- **27** functions completed across probes; entry, `FUN_00338520`, `FUN_0032FA38` and `FUN_0032EAF0` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

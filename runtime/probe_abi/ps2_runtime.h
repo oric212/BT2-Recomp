@@ -109,6 +109,42 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x2F) {
+            if (!thread_initialized || !current_thread_id) throw UnsupportedSyscall(selector, context->pc);
+            context->r[2].low = current_thread_id;
+            return;
+        }
+        if (code == 0 && selector == 0x20) {
+            const auto parameter = static_cast<std::uint32_t>(context->r[4].low);
+            if (!thread_initialized || !heap_initialized || parameter % 4)
+                throw UnsupportedSyscall(selector, context->pc);
+            checkMemory(rdram, parameter, 36);
+            const auto entry = read32(rdram, parameter + 4);
+            const auto stack = read32(rdram, parameter + 8);
+            const auto size = read32(rdram, parameter + 12);
+            const auto gp = read32(rdram, parameter + 16);
+            const auto priority = read32(rdram, parameter + 20);
+            if (!entry || entry % 4 || stack % 16 || size % 16 || size < 0x2C0 || priority >= 128)
+                throw UnsupportedSyscall(selector, context->pc);
+            checkMemory(rdram, entry, 4);
+            checkMemory(rdram, stack, size);
+            checkMemory(rdram, gp, 4);
+            const auto top = stack + size;
+            const auto saved_context = top - 0x2A0;
+            if (parameter < top && saved_context < parameter + 36)
+                throw UnsupportedSyscall(selector, context->pc);
+            // Reference model reserves main ID 1 and idle ID 256; no ID reuse/scheduler yet.
+            if (threads.size() == 254) { context->r[2].low = UINT64_MAX; return; }
+            const auto id = static_cast<std::uint32_t>(threads.size()) + 2;
+            threads.push_back({id, entry, stack, size, gp, priority, heap_start, saved_context, top - 0x20});
+            // Pinned ThreadReset writes only these low words, preserving other context bytes.
+            write32(rdram, saved_context + 28 * 16, gp);
+            write32(rdram, saved_context + 29 * 16, top - 0x20);
+            write32(rdram, saved_context + 30 * 16, top - 0x20);
+            write32(rdram, saved_context + 31 * 16, 0x1FC03000);
+            context->r[2].low = id;
+            return;
+        }
         if (code == 0 && selector == 0x14) {
             // Observed cause only; explicit mask checkpoint avoids a fabricated BIOS default.
             if (!intc_mask_supplied_ || static_cast<std::uint32_t>(context->r[4].low) != 11)
@@ -181,6 +217,7 @@ public:
             thread_arguments = {static_cast<std::uint32_t>(context->r[4].low), stack, size,
                                 args, static_cast<std::uint32_t>(context->r[8].low)};
             context->r[2].low = initial_sp;
+            current_thread_id = 1;
             thread_initialized = true;
             return;
         }
@@ -415,6 +452,11 @@ public:
     std::uint32_t heap_start = 0, heap_end = 0;
     std::uint32_t stack_base = 0, initial_sp = 0;
     std::array<std::uint32_t, 5> thread_arguments{};
+    struct DormantThread {
+        std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
+    };
+    std::vector<DormantThread> threads;
+    std::uint32_t current_thread_id = 0;
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;

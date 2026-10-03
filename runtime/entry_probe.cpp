@@ -106,6 +106,10 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338B78, FUN_00338B78_0x338b78);
         runtime.registerFunction(0x003251DC, FUN_003251DC_0x3251dc);
         runtime.registerFunction(0x00339E48, FUN_00339E48_0x339e48);
+        runtime.registerFunction(0x0032EAF0, FUN_0032EAF0_0x32eaf0);
+        runtime.registerFunction(0x0032FDA0, FUN_0032FDA0_0x32fda0);
+        runtime.registerFunction(0x0032F730, FUN_0032F730_0x32f730);
+        runtime.registerFunction(0x0032EB50, FUN_0032EB50_0x32eb50);
         runtime.registerFunction(0x0032FA38, FUN_0032FA38_0x32fa38);
         runtime.registerFunction(0x0032EA60, FUN_0032EA60_0x32ea60);
         runtime.registerFunction(0x00338DB8, FUN_00338DB8_0x338db8);
@@ -147,11 +151,11 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (readback_mode) require(stop.selector == 0x20 && !stop.handler && stop.resume_pc == 0x0032EA68
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 160
+            if (readback_mode) require(stop.selector == 0x29 && !stop.handler && stop.resume_pc == 0x0032EAF8
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 1 && GPR_U32(&context, 5) == 1
                     && runtime.timer2_mode_reads == 2 && runtime.timer2_mode_writes == 1
                     && runtime.intc_mask == 0x1802 && runtime.intc_enable_calls == 1,
-                    "Unexpected CreateThread boundary after Timer 2 readback");
+                    "Unexpected ChangeThreadPriority boundary after dormant thread creation");
             else require(!intc_mode && timer2_mode && stop.selector == 0x14 && !stop.handler && stop.resume_pc == 0x0032E9A8
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 11
                     && runtime.timer2_mode_writes == 1 && runtime.timer2_mode_after_write == 0x382
@@ -186,8 +190,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (readback_mode ? 51u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (readback_mode ? 47u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (readback_mode ? 692u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 30u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (readback_mode ? 55u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 10u : 2u) && runtime.returns == (readback_mode ? 51u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (readback_mode ? 34u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -258,6 +262,21 @@ int main(int argc, char** argv) {
                 && runtime.semaphores[1].count == 1 && runtime.semaphores[1].maximum == 1
                 && runtime.semaphores[1].option == 0x00383C00,
                 "Unexpected created semaphore state");
+        if (readback_mode) {
+            require(runtime.threads.size() == 1 && runtime.current_thread_id == 1, "Dormant thread not recorded");
+            const auto& thread = runtime.threads[0];
+            require(thread.id == 2 && thread.entry == 0x0032F960 && thread.stack_base == 0x003A8840
+                    && thread.stack_size == 0x400 && thread.gp == 0x0038BDF0 && thread.initial_priority == 0
+                    && thread.heap_base == runtime.heap_start && thread.context_address == 0x003A89A0
+                    && thread.initial_sp == 0x003A8C20
+                    && runtime.read32(runtime.memory().data(), 0x0036AA84) == 2,
+                    "Generated CreateThread descriptor/return differs");
+            for (const auto index : {28u, 29u, 30u, 31u}) {
+                const auto expected = index == 28 ? thread.gp : index == 31 ? 0x1FC03000 : thread.initial_sp;
+                require(runtime.read32(runtime.memory().data(), thread.context_address + index * 16) == expected,
+                        "Dormant thread context initialization differs");
+            }
+        }
         if (readback_mode) require(runtime.semaphores[2].count == 0 && runtime.semaphores[2].maximum == 255
                 && runtime.semaphores[2].option == 0x00383660
                 && runtime.read32(runtime.memory().data(), 0x003A8C40) == 2,
@@ -293,7 +312,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (readback_mode) std::cout << "Timer 2 modeled readback matched capture; next initialization created semaphore ID 2 and reached CreateThread syscall 0x20.\n";
+        if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; GetThreadId returned main ID 1; reached ChangeThreadPriority syscall 0x29.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";
         else if (timer2_mode) std::cout << "Timer 2 startup mode write completed; generated ErrorEPC/ERET returned; stopped at EnableIntc syscall 0x14, cause 11.\n";
         else if (timer_mode) std::cout << "Interrupt handler ID 2 stored; generated status helper returned; stopped at Timer 2 MMIO read 0x10001010 at PC 0x00338C58.\n";
