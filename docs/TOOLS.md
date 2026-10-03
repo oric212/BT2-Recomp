@@ -231,3 +231,12 @@ python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" 
 ```
 
 Add `--osd-capture work/pcsx2-capture/osd-config/capture.json` to the full pipeline command above. It requires Timer 2 readback and all earlier explicit inputs. The trap reads the first returned OSD stack word at `0x003385F4`; output stays ignored. Verified provenance supplies one native read; startup then stops at SetOsdConfigParam (`0x4A`). Omitting it retains the earlier OSD read stop. No host preferences or broader BIOS OSD behavior are implemented.
+
+
+### OSD same-value setter/readback checkpoint
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point osd-readback
+```
+
+Add `--osd-readback-capture work/pcsx2-capture/osd-readback/capture.json` alongside `--osd-capture` in the full pipeline. This trap at `0x00338620` publishes both original and returned configuration words. Validation requires their equality and the first setter expression to equal the original. The adapter accepts one same-value setter and second getter, then stops at the restore setter. Omitting this checkpoint retains the first setter stop. Configuration mutation remains unsupported.

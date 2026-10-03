@@ -489,6 +489,45 @@ int main() {
                 && osd.word_writes == 1 && osd_context.r[2].low == 0xABCD && osd_context.r[2].high == UINT64_MAX
                 && osd.memory()[0xFF] == 0xA5 && osd.memory()[0x104] == 0xA5);
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        PS2Runtime osd_sequence;
+        osd_sequence.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        R5900Context sequence_context{};
+        sequence_context.r[3].low = 0x4B;
+        sequence_context.r[4].low = 0x100;
+        sequence_context.r[2] = {0xABCD, UINT64_MAX};
+        reject([&] { osd_sequence.supplyOsdReadback(0x21C12010); });
+        osd_sequence.supplyOsdConfig(0x21C12010);
+        reject([&] { osd_sequence.supplyOsdReadback(0); });
+        osd_sequence.supplyOsdReadback(0x21C12010);
+        reject([&] { osd_sequence.supplyOsdReadback(0x21C12010); });
+        sequence_context.r[3].low = 0x4A;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[3].low = 0x4B;
+        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[3].low = 0x4A;
+        sequence_context.r[4].low = 0x104;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[4].low = PS2Runtime::ram_size;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[4].low = UINT64_MAX;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[4].low = 0x101;
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[4].low = 0x100;
+        reject([&] { osd_sequence.handleSyscall(nullptr, &sequence_context, 0); });
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 1); });
+        require(osd_sequence.osd_config_sets == 0 && osd_sequence.osd_config_reads == 1);
+        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
+        require(osd_sequence.osd_config_sets == 1 && osd_sequence.word_writes == 1);
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        sequence_context.r[3].low = 0x4B;
+        sequence_context.r[4].low = 0x104;
+        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
+        require(osd_sequence.read32(osd_sequence.memory().data(), 0x104) == 0x21C12010
+                && osd_sequence.osd_config_reads == 2 && osd_sequence.word_writes == 2
+                && sequence_context.r[2].low == 0xABCD && sequence_context.r[2].high == UINT64_MAX);
+        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, queries the main thread ID and changes its priority to 1. An explicit local OSD checkpoint supplies the first configuration read. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Native probes execute generated entry/startup, kernel scans/copies/lookup, cache requests, buffer/list initialization, INTC registration/enable and Timer 2 setup. Explicit validated PCSX2 checkpoints support bounded continuation. Timer 2's second mode read matches its recorded startup write; the next initialization creates a third semaphore and a dormant thread, queries the main thread ID and changes its priority to 1. Explicit local OSD checkpoints support the first read, one same-value setter and a validated second read. Game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, six CTests, 30 recomp tooling tests and nine capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, six CTests, 31 recomp tooling tests and ten capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops at SetOsdConfigParam (`0x4A`) in `FUN_0032ED00`, resume PC `0x0032ED08`, input pointer `0x01FFECE4`. The first OSD read returns the validated local PCSX2/BIOS checkpoint word; generated code prepares bits 13..15 as 1. Dormant thread ID 2 has not executed.
+Startup stops at the second SetOsdConfigParam (`0x4A`) call in `FUN_0032ED00`, resume PC `0x0032ED08`, input pointer `0x01FFECE0`, restoring the saved original word. The first setter and second getter completed; local readback equals the original configuration. Only the observed same-value write is supported.
 
-Next: validate the reached setter and subsequent readback before implementing configuration mutation. Omitting the OSD capture preserves the earlier GetOsdConfigParam stop. Counter progression, interrupt delivery and scheduling remain unimplemented.
+Next: validate and continue the restore call, then link the next reached generated path. Omitting OSD readback validation preserves the first setter stop. Counter progression, interrupt delivery and scheduling remain unimplemented.
 
 ## Key counts
 
 - **7,244** functions generated locally: 7,243 main ELF + one scoped kernel entry; **7,250** raw generated C++/header files.
 - **35** distinct functions entered across native probes.
-- **30** functions completed across probes; entry, `FUN_00338520`, `FUN_00338648`, `FUN_003385E0` and `FUN_0032ED00` remain partial. These are startup/helper paths, not working gameplay.
+- **31** functions completed across probes; entry, `FUN_00338520`, `FUN_00338648`, `FUN_003385E0` remain partial; `FUN_0032ED00` completed its first invocation and is partial on its second. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

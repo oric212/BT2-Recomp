@@ -98,3 +98,17 @@ class OsdCaptureTests(unittest.TestCase):
         self.assertEqual(words[5], 0xAF190000)
         self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
         self.assertEqual(words[7], 0)
+
+
+class OsdReadbackCaptureTests(unittest.TestCase):
+    def test_trap_after_getter_before_restore(self):
+        address, trap, marker = capture_trap('osd-readback')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x338620)
+        self.assertEqual(marker, 0xB708)
+        self.assertEqual(words[2], 0x8FB90004)
+        self.assertEqual(words[4], 0x8FB90000)
+        self.assertEqual(words[3], 0xAF190004)
+        self.assertEqual(words[5], 0xAF190008)
+        self.assertEqual((words[8] & 0x3ffffff) << 2, address + 32)
+        self.assertEqual(words[9], 0)

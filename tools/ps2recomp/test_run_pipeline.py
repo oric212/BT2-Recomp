@@ -212,6 +212,31 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_osd_capture(self.path)
 
+    def test_osd_readback_requires_same_value_and_exact_trap(self):
+        address, marker, word = 0x338620, 0xB708, 0x21C12010
+        words = [0x3C180038, 0x37187E80, 0x8FB90004, 0xAF190004,
+                 0x8FB90000, 0xAF190008, 0x34190000 | marker, 0xAF190000,
+                 0x08000000 | ((address + 32) >> 2), 0]
+        self.data[address:address + 40] = struct.pack('<10I', *words)
+        struct.pack_into('<III', self.data, 0x387E80, marker, word, word)
+        self.manifest.update(capture_point='osd-readback: authored fixture', observed_osd_readback=word,
+                             original_osd_config=word,
+                             patch={'address': address, 'size': 40, 'authored_words': words,
+                                    'marker_address': 0x387E80, 'marker_value': marker},
+                             capture_sha256=hashlib.sha256(self.data).hexdigest())
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_osd_readback_capture(self.path)[0], word)
+        self.manifest['observed_osd_readback'] ^= 1
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_osd_readback_capture(self.path)
+        self.manifest['observed_osd_readback'] = word
+        self.manifest['patch']['authored_words'][2] ^= 4
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_osd_readback_capture(self.path)
+
 
 if __name__ == "__main__":
     unittest.main()

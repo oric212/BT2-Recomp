@@ -109,8 +109,19 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x4A) {
+            if (!osd_readback_supplied || osd_config_reads != 1 || osd_config_sets || context->r[4].low > UINT32_MAX)
+                throw UnsupportedSyscall(selector, context->pc);
+            const auto address = static_cast<std::uint32_t>(context->r[4].low);
+            if (address & 3) throw UnsupportedGuestMemory(address, 4);
+            checkMemory(rdram, address, 4);
+            // Capture established only the same-value write; mutations fail.
+            if (read32(rdram, address) != osd_config_word) throw UnsupportedSyscall(selector, context->pc);
+            ++osd_config_sets;
+            return;
+        }
         if (code == 0 && selector == 0x4B) {
-            if (!osd_config_supplied || osd_config_reads || context->r[4].low > UINT32_MAX)
+            if (!osd_config_supplied || (osd_config_reads && !(osd_readback_supplied && osd_config_reads == 1 && osd_config_sets == 1)) || context->r[4].low > UINT32_MAX)
                 throw UnsupportedSyscall(selector, context->pc);
             const auto address = static_cast<std::uint32_t>(context->r[4].low);
             if (address & 3) throw UnsupportedGuestMemory(address, 4);
@@ -399,7 +410,13 @@ public:
         osd_config_word = word;
         osd_config_supplied = true;
     }
-    unsigned osd_config_reads = 0;
+    void supplyOsdReadback(std::uint32_t expected) {
+        if (!osd_config_supplied || osd_readback_supplied || osd_config_reads || expected != osd_config_word
+                || ((expected & 0xFFFF1FFF) | 0x2000) != expected)
+            throw std::runtime_error("Unsupported OSD same-value readback checkpoint");
+        osd_readback_supplied = true;
+    }
+    unsigned osd_config_reads = 0, osd_config_sets = 0;
 
     void supplyTimer3Mode(std::uint32_t value) {
         if (value > 0xFFFF || timer3_mode_supplied_) throw std::runtime_error("Invalid/repeated Timer 3 capture");
@@ -510,7 +527,7 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
-    bool osd_config_supplied = false;
+    bool osd_config_supplied = false, osd_readback_supplied = false;
     std::uint32_t osd_config_word = 0;
     std::uint64_t addIntcHandler(std::uint32_t cause, std::uint32_t address, std::uint32_t arg, std::uint32_t gp) {
         if (intc_handlers.size() == 128) return UINT64_MAX;
