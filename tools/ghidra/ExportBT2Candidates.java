@@ -19,6 +19,24 @@ import java.util.List;
 import java.util.Map;
 
 public class ExportBT2Candidates extends GhidraScript {
+    private List<Map<String, Object>> instructionsFor(Function function) throws Exception {
+        List<Map<String, Object>> records = new ArrayList<>();
+        InstructionIterator iterator = currentProgram.getListing().getInstructions(function.getBody(), true);
+        while (iterator.hasNext()) {
+            monitor.checkCancelled();
+            Instruction instruction = iterator.next();
+            Map<String, Object> record = new LinkedHashMap<>();
+            record.put("address", instruction.getAddress().toString());
+            record.put("instruction", instruction.toString());
+            record.put("flow_type", instruction.getFlowType().toString());
+            List<String> flows = new ArrayList<>();
+            for (Address target : instruction.getFlows()) flows.add(target.toString());
+            record.put("flows", flows);
+            records.add(record);
+        }
+        return records;
+    }
+
     @Override
     public void run() throws Exception {
         String[] args = getScriptArgs();
@@ -94,6 +112,27 @@ public class ExportBT2Candidates extends GhidraScript {
         report.put("csv_count", contiguousCount);
         report.put("functions", functions);
         report.put("entry_instructions", entryInstructions);
+        List<Map<String, Object>> entryTargets = new ArrayList<>();
+        List<String> seen = new ArrayList<>();
+        Function entryFunction = currentProgram.getFunctionManager().getFunctionContaining(entry);
+        if (entryFunction == null) throw new IllegalStateException("No function contains the declared entry.");
+        for (Map<String, Object> instruction : entryInstructions) {
+            @SuppressWarnings("unchecked")
+            List<String> targets = (List<String>) instruction.get("flows");
+            for (String targetText : targets) {
+                Address target = toAddr(targetText);
+                if (entryFunction.getBody().contains(target) || seen.contains(targetText)) continue;
+                seen.add(targetText);
+                Function function = currentProgram.getFunctionManager().getFunctionAt(target);
+                Map<String, Object> record = new LinkedHashMap<>();
+                record.put("target", target.getOffset());
+                record.put("status", "unreviewed direct entry target");
+                record.put("has_function_at_target", function != null);
+                if (function != null) record.put("instructions", instructionsFor(function));
+                entryTargets.add(record);
+            }
+        }
+        report.put("entry_targets", entryTargets);
         report.put("memory_blocks", blocks);
         Files.writeString(output.resolve("candidates.csv"), csv.toString(), StandardCharsets.UTF_8);
         Files.writeString(output.resolve("analysis.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);

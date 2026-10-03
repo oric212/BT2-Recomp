@@ -46,6 +46,22 @@ The final transfer at `0x00100240` jumps to `0x00324398`; its delay slot at `0x0
 
 These are encoded targets, not established purposes or reviewed callee boundaries. An indirect call through register 16 occurs at `0x00100208`; its reachability and target require separate analysis.
 
+### Direct entry target boundary review, 2026-10-03
+
+The exporter now includes complete instruction listings for the five direct targets. `tools/ghidra/review_entry_targets.py` checks their file-backed ranges, raw control targets, complete instruction coverage, internal conditional branches, and included delay slots against the same executable hash. All five passed the limited static audit:
+
+| Neutral name | Exclusive end | Instructions | Transfers | Final transfer |
+| --- | --- | --- | --- | --- |
+| `FUN_00338520` | `0x00338574` | 21 | 9 | Jump to `0x0033A238` |
+| `FUN_0032EEE0` | `0x0032EEF0` | 4 | 2 | Return through `ra` |
+| `FUN_003242D0` | `0x00324370` | 40 | 5 | Return through `ra` |
+| `FUN_00100388` | `0x001006D8` | 212 | 72 | Return through `ra` |
+| `FUN_00324398` | `0x00324444` | 43 | 8 | Jump to `0x00100248` |
+
+These extents are supported for static body mapping; runtime semantics and deeper callees remain unverified. `FUN_00324398` includes branch-likely instructions and two indirect calls through `v0`; the audit records likely branches without claiming to execute their annulled delay-slot behavior.
+
+At `0x00100688`, `FUN_00100388` directly calls `0x003B7FA8`, outside the ELF's file-backed executable sections. Its origin and contents are unknown. Do not create a function body or stub for it without evidence. Ghidra assigned a semantic label to `0x0032EEE0`; retain the neutral name because the label's provenance has not been confirmed.
+
 ## Subsystems
 
 No BT2 subsystem behavior has been established.
@@ -57,6 +73,8 @@ Only executable container metadata has been inspected. The section table include
 ## Runtime Calls
 
 Entry contains syscall instructions at `0x001001C8` and `0x001001E4`, each with encoded code field zero. The preceding Ghidra instructions load register `v1` with `0x3C` and `0x3D`, respectively. These observations do not assign syscall names or establish the required runtime ABI. No runtime implementation has been added.
+
+The direct callee at `0x0032EEE0` loads `v1` with `0x64`, executes a syscall with encoded code field zero at `0x0032EEE4`, and returns through `ra`. Its meaning remains pending primary-source ABI confirmation.
 
 ## Confirmed Facts
 

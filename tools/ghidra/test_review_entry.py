@@ -13,8 +13,11 @@ class EntryAuditTests(unittest.TestCase):
     def test_indirect_and_syscall(self):
         self.assertEqual(control(0x0200F809, 0)["register"], 16)
         self.assertEqual(control(12, 0)["code"], 0)
+        self.assertEqual(control(0x04000000, 0)["kind"], "bltz")
+        self.assertTrue(control(0x04030000, 0)["branch_likely"])
+        self.assertTrue(control(0x5400FFFE, 0x100010)["branch_likely"])
         with self.assertRaises(ValueError):
-            control(0x04000000, 0)
+            control(0x45000000, 0)  # Coprocessor branch is unsupported
         self.assertIsNone(control(0x04180000, 0))  # R5900 MTSA family, not a branch
 
     def test_terminal_delay_slot_and_mismatch(self):
@@ -29,6 +32,13 @@ class EntryAuditTests(unittest.TestCase):
                       {"address": "00100000", "flows": ["00100200"], "flow_type": "UNCONDITIONAL_JUMP"},
                       {"address": "00100004", "flows": [], "flow_type": "FALL_THROUGH"}]}
         self.assertEqual(audit(data, metadata, report)["instruction_count"], 2)
+        return_data = bytes.fromhex("0800e00300000000")  # jr ra; nop
+        report["executable_sha256"] = hashlib.sha256(return_data).hexdigest()
+        report["entry_instructions"][0]["flows"] = []
+        self.assertEqual(audit(return_data, metadata, report, allow_return=True)["instruction_count"], 2)
+        with self.assertRaises(ValueError):
+            audit(return_data, metadata, report)
+        report["executable_sha256"] = hashlib.sha256(data).hexdigest()
         report["entry_instructions"][0]["flows"] = ["00100300"]
         with self.assertRaises(ValueError):
             audit(data, metadata, report)

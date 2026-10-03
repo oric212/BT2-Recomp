@@ -75,3 +75,14 @@ Next: review the entry candidate boundary and control flow before producing a re
 - Full opcode semantics, callee boundaries, syscall meanings, runtime behavior, and a complete generation map remain unverified. No game code generated or executed.
 
 Next: export and review the entry's direct callees and final jump target, then establish the observed syscall ABI from primary evidence.
+
+## 2026-10-03 — Direct entry target review
+
+- Extended the authored Ghidra exporter to include complete instruction listings for the five direct entry targets. Raw listings remain ignored.
+- Extended control decoding to integer branch and branch-likely families, with explicit likely metadata; no delay-slot execution or annulment is simulated.
+- All five target bodies passed limited static audits: 320 instruction addresses and 96 transfers total. Recorded supported body extents, return/jump endings, and unresolved indirect calls in `REVERSE_ENGINEERING.md`.
+- Found a direct call at `0x00100688` to `0x003B7FA8`, outside file-backed executable sections. No contents or purpose inferred and no stub added.
+- Recorded a third syscall site, with preceding `v1 = 0x64`; semantic names and ABI remain unverified. Preserved neutral names despite a Ghidra semantic label.
+- Synthetic checks and the entry audit passed after extending the decoder. No BT2 C++ generated or executed.
+
+Next: confirm syscall ABI from primary evidence and investigate the unmapped direct target before extending local generation.

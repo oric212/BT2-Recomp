@@ -20,26 +20,31 @@ def control(word, address):
     if opcode in (2, 3):
         target = ((address + 4) & 0xF0000000) | ((word & 0x03FFFFFF) << 2)
         return {"kind": "j" if opcode == 2 else "jal", "target": target, "delay_slot": True}
-    if opcode in (4, 5):
+    regimm = opcode == 1 and (word >> 16) & 31 in (0, 1, 2, 3, 16, 17, 18, 19)
+    if opcode in (4, 5, 6, 7, 20, 21, 22, 23) or regimm:
         immediate = word & 0xFFFF
         if immediate & 0x8000:
             immediate -= 0x10000
-        return {"kind": "beq" if opcode == 4 else "bne",
-                "target": address + 4 + immediate * 4, "delay_slot": True}
+        names = {4: "beq", 5: "bne", 6: "blez", 7: "bgtz",
+                 20: "beql", 21: "bnel", 22: "blezl", 23: "bgtzl"}
+        regimm_names = {0: "bltz", 1: "bgez", 2: "bltzl", 3: "bgezl",
+                        16: "bltzal", 17: "bgezal", 18: "bltzall", 19: "bgezall"}
+        rt = (word >> 16) & 31
+        kind = regimm_names[rt] if regimm else names[opcode]
+        return {"kind": kind, "target": address + 4 + immediate * 4,
+                "delay_slot": True, "branch_likely": opcode >= 20 or regimm and rt in (2, 3, 18, 19)}
     if opcode == 0 and word & 63 in (8, 9):
         return {"kind": "jr" if word & 63 == 8 else "jalr",
                 "register": (word >> 21) & 31, "delay_slot": True}
     if opcode == 0 and word & 63 == 12:
         return {"kind": "syscall", "code": (word >> 6) & 0xFFFFF, "delay_slot": False}
     # Other branch families are deliberately unsupported in this limited audit.
-    if (opcode == 1 and (word >> 16) & 31 in (0, 1, 2, 3, 16, 17, 18, 19)
-            or opcode in (6, 7, 20, 21, 22, 23)
-            or opcode in (16, 17, 18) and (word >> 21) & 31 == 8):
+    if opcode in (16, 17, 18) and (word >> 21) & 31 == 8:
         raise ValueError(f"Unsupported control encoding at 0x{address:08X}")
     return None
 
 
-def audit(data, metadata, report):
+def audit(data, metadata, report, allow_return=False):
     if report["executable_sha256"].lower() != hashlib.sha256(data).hexdigest():
         raise ValueError("Export and executable hashes differ.")
     if report["language"] != "r5900:LE:32:default":
@@ -77,12 +82,14 @@ def audit(data, metadata, report):
             raise ValueError(f"Raw/Ghidra target mismatch at 0x{address:08X}")
         if decoded["delay_slot"] and address + 4 not in addresses:
             raise ValueError("Candidate omits a transfer delay slot.")
-        if decoded["kind"] in ("beq", "bne") and not entry <= decoded["target"] < end:
+        if decoded["kind"].startswith("b") and not entry <= decoded["target"] < end:
             raise ValueError("Conditional branch leaves the entry candidate.")
         transfers.append({"address": address, **decoded})
     terminal = next((row for row in transfers if row["address"] == end - 8), None)
-    if terminal is None or terminal["kind"] != "j" or entry <= terminal["target"] < end:
-        raise ValueError("Expected a final external jump and included delay slot.")
+    external_jump = terminal is not None and terminal["kind"] == "j" and not entry <= terminal["target"] < end
+    return_jump = terminal is not None and terminal["kind"] == "jr" and terminal["register"] == 31
+    if not (external_jump or allow_return and return_jump):
+        raise ValueError("Expected a final external jump or allowed return with included delay slot.")
     return {"status": "limited static control audit passed; boundary review recorded separately",
             "sha256": report["executable_sha256"], "name": candidate["name"],
             "start": entry, "end_exclusive": end, "instruction_count": len(addresses),
