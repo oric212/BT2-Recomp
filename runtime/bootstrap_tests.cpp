@@ -112,6 +112,37 @@ int main() {
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x500, 0x100, 0x104,
                 PS2Runtime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
+        context.r[3].low = 0x40;
+        context.r[4].low = 0x600;
+        context.r[2].high = 0x1234;
+        runtime.write32(memory, 0x600, UINT32_MAX); // Output-only count ignored.
+        runtime.write32(memory, 0x604, 2);
+        runtime.write32(memory, 0x608, 1);
+        runtime.write32(memory, 0x60C, UINT32_MAX); // Output-only wait count ignored.
+        runtime.write32(memory, 0x610, 0);
+        runtime.write32(memory, 0x614, 0xDEADBEEF);
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.r[2].low == 0 && context.r[2].high == 0x1234
+                && runtime.semaphores[0].count == 1 && runtime.semaphores[0].maximum == 2
+                && runtime.semaphores[0].option == 0xDEADBEEF && runtime.read32(memory, 0x600) == UINT32_MAX);
+        runtime.write32(memory, 0x608, 3);
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.r[2].low == UINT64_MAX && runtime.semaphores.size() == 1);
+        runtime.write32(memory, 0x608, 1);
+        runtime.write32(memory, 0x610, 1);
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        runtime.write32(memory, 0x610, 0);
+        context.r[4].low = PS2Runtime::ram_size - 20;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[4].low = 0x601;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[4].low = 0x600;
+        for (unsigned id = 1; id < 256; ++id) {
+            runtime.handleSyscall(memory, &context, 0);
+            require(context.r[2].low == id);
+        }
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.r[2].low == UINT64_MAX && runtime.semaphores.size() == 256);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

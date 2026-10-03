@@ -90,6 +90,25 @@ public:
             heap_initialized = true;
             return;
         }
+        if (code == 0 && selector == 0x40) {
+            const auto address = static_cast<std::uint32_t>(context->r[4].low);
+            checkMemory(rdram, address, 24);
+            if (address % 4) throw std::runtime_error("Unaligned CreateSema parameters");
+            // Input count/wait_threads are output fields, not initial state.
+            const auto maximum = read32(rdram, address + 4);
+            const auto initial = read32(rdram, address + 8);
+            const auto attributes = read32(rdram, address + 16);
+            const auto option = read32(rdram, address + 20);
+            if (attributes != 0) throw std::runtime_error("Unsupported semaphore attributes");
+            if (!maximum || maximum > INT32_MAX || initial > maximum || semaphores.size() == 256) {
+                context->r[2].low = UINT64_MAX;
+                return;
+            }
+            const auto id = static_cast<std::uint32_t>(semaphores.size());
+            semaphores.push_back({initial, maximum, option});
+            context->r[2].low = id;
+            return;
+        }
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
         if (static_cast<std::uint32_t>(context->r[4].low) != 0)
@@ -193,6 +212,9 @@ public:
     std::uint32_t heap_start = 0, heap_end = 0;
     std::uint32_t stack_base = 0, initial_sp = 0;
     std::array<std::uint32_t, 5> thread_arguments{};
+    struct Semaphore { std::uint32_t count, maximum, option; };
+    // Bounded bootstrap objects; no wait queues or scheduling implementation.
+    std::vector<Semaphore> semaphores;
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;

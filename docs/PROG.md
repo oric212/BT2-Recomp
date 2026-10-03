@@ -163,3 +163,13 @@ Next: compile/link/register the reached nested target and repeat the execution-l
 - MSVC pipeline/build, three CTests and all 14 Python tooling tests passed. CPU clearing/43,120 quadword plus 15 byte zero stores still verified. Host output remains unchanged. Game data, generated sources and execution reports remain ignored.
 
 Next: implement the observed CreateSema syscall with explicit validated state, then repeat execution to the next blocker. Game boot remains incomplete.
+
+## 2026-10-03 — CreateSema state and real nested returns
+
+- Implemented bounded CreateSema for zero attributes using pinned PS2SDK parameter offsets and Play! creation behavior. Reads max_count/init_count/option, ignores output-only count/wait_threads, and stores explicit count/maximum/option state. IDs begin at zero; capacity is 256 as in the pinned Play! model. No wait queues, wakeups, deletion, signal or scheduler behavior is claimed.
+- Reject unsupported attributes and invalid memory/alignment explicitly. Invalid count ranges and exhausted capacity return signed -1 without allocating. Return writes preserve the upper 64 bits of the GPR. These error restrictions are bootstrap policy, not confirmed retail error codes.
+- Actual generated startup creates two count=1/max=1 objects, options `0x00383BF0` and `0x00383C00`. It stores IDs 0/1 at `0x0036AB58`/`0x0036AB5C`; generated FAST_WRITE32 uses the bounded store adapter.
+- Verified three real generated return paths: both syscall wrapper calls return, then `FUN_003382D0` restores RA and SP and returns to `FUN_00338520`. Execution stops at its next JAL: target `FUN_00338410`, source `0x00338530`, resume `0x00338538`; SP restored to `0x01FFED50`.
+- MSVC build/pipeline, three CTests and all 14 Python tooling tests passed. Synthetic semaphore tests cover state/IDs, ignored output fields, preserved upper bits, invalid count, unsupported attributes, parameter memory bounds/alignment and capacity exhaustion. Independent host runs; proprietary-derived files remain ignored.
+
+Next: integrate the reached `FUN_00338410` and repeat the execution-led loop. Game boot and retail BIOS equivalence remain incomplete.

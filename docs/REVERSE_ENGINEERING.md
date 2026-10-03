@@ -127,3 +127,7 @@ Generated `FUN_00338520` now executes its stack allocation and saves RA=`0x00100
 ### Executed nested startup syscall
 
 `FUN_003382D0` builds a stack frame and calls `FUN_0032EC60` at `0x00338304`, with a0=`0x01FFED00` and resume `0x0033830C`. The generated wrapper sets v1=`0x40` and executes syscall at `0x0032EC64`, resume `0x0032EC68`. Pinned PS2SDK `syscallnr.h` identifies selector `0x40` as CreateSema; no subsystem purpose is inferred for the enclosing unknown functions. The syscall has not been implemented or returned yet.
+
+### Executed semaphore creation and return paths
+
+Generated startup now stores CreateSema IDs 0 and 1 at `0x0036AB58` and `0x0036AB5C` under the bounded compatibility model. Both objects initialize count/max_count to 1, with option values `0x00383BF0` and `0x00383C00`. Three generated JR return paths complete, and the outer caller reaches JAL at `0x00338530` to neutral `FUN_00338410`, return PC `0x00338538`. No semantic name has been assigned to the enclosing functions. Wait/signal/scheduler behavior and retail BIOS equivalence remain unverified.

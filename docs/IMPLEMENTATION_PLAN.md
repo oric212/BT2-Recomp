@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: implement the reached CreateSema (selector `0x40`) contract from pinned PS2SDK/kernel references, with bounded parameter reads and explicit semaphore state. Re-run generated entry to discover the next actual blocker. Avoid naming the enclosing unknown functions or adding scheduling behavior until evidence requires it.
+Current next step: add generated `FUN_00338410`, now reached after two successful CreateSema calls and nested returns, to the build/registration set. Compile, implement only missing APIs it requires, and execute to the next blocker. Semaphore waits/signals and scheduling remain unsupported until reached.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
