@@ -124,7 +124,7 @@ Next: extend the compatibility API enough to compile/link and attempt entry exec
 
 Next: establish and implement SetupThread's observed sentinel/stack behavior, then repeat execution to discover the next blocker.
 
-## 2026-10-03 — SetupThread bootstrap model and next syscall
+## 2026-10-03 - SetupThread bootstrap model and next syscall
 
 - Added a bounded, single-initialization SetupThread adapter for the observed default-stack sentinel. Explicit stacks, invalid sizes/alignment, repeated setup and invalid argument memory remain unsupported.
 - Used Play! revision `83700b2c31e593bc94e845b4b31b797be84dda59`, `Source/ee/PS2OS.cpp` (`sc_SetupThread`) and `PS2OS.h` (`STACKRES`) as the behavioral model: RAM minus 4 KiB is stack top; reserve `0x2A0` for context. Source hashes are recorded in `config/startup_abi.sources.json`; reference downloads stay ignored. No emulator implementation was copied or linked.
@@ -134,7 +134,7 @@ Next: establish and implement SetupThread's observed sentinel/stack behavior, th
 
 Next: implement the reached SetupHeap contract, then repeat generation/compile/execution diagnostics.
 
-## 2026-10-03 — SetupHeap and first generated guest call
+## 2026-10-03 - SetupHeap and first generated guest call
 
 - Implemented the observed SetupHeap default-size sentinel using the already pinned Play! `sc_SetupHeap` model: return the initialized thread's stack base as heap end. Recorded the requested start `0x0043058F` and returned end `0x01EFF000` without silently aligning the caller's value. No allocator or heap memory initialization is claimed.
 - Reject setup before thread initialization, repeated initialization, explicit heap sizes and starts at/beyond stack base. Preserve upper 64 bits of the return GPR; bounds checks remain active.
@@ -144,7 +144,7 @@ Next: implement the reached SetupHeap contract, then repeat generation/compile/e
 
 Next: compile/link the already generated reached callee and implement checked call/return dispatch, then execute to the next actual blocker. Retail BIOS equivalence remains unverified.
 
-## 2026-10-03 — First generated callee and checked guest dispatch
+## 2026-10-03 - First generated callee and checked guest dispatch
 
 - Compiled/linked the existing neutral generated `FUN_00338520` and registered it alongside entry. Runtime preparation deterministically routes its emitted direct tail call through the dispatch hook, just as for entry; original generated files remain unchanged and ignored. Preparation records hashes for both compiler-facing copies.
 - Added bounded call/return dispatch for registered direct/indirect calls and tail targets, with nested return frames, a 64-level depth limit, return-PC validation, and exception cleanup. Unregistered targets still stop with structured source/target/resume diagnostics.
@@ -154,7 +154,7 @@ Next: compile/link the already generated reached callee and implement checked ca
 
 Next: compile/link/register the reached nested target and repeat the execution-led loop. Full generated-set integration and game boot remain incomplete.
 
-## 2026-10-03 — Nested generated startup reaches CreateSema
+## 2026-10-03 - Nested generated startup reaches CreateSema
 
 - Linked/registered neutral `FUN_003382D0` and its reached generated syscall wrapper `FUN_0032EC60`. Both compile directly from original ignored output; neither needed a tail-call transformation or manual source changes.
 - Added aligned, bounded 32-bit guest stores. Generated FAST_WRITE32 uses the same checked store API; optional guest-write diagnostic hook has no emulation effect. Tests verify value, adjacent byte preservation, bounds and alignment rejection.
@@ -164,7 +164,7 @@ Next: compile/link/register the reached nested target and repeat the execution-l
 
 Next: implement the observed CreateSema syscall with explicit validated state, then repeat execution to the next blocker. Game boot remains incomplete.
 
-## 2026-10-03 — CreateSema state and real nested returns
+## 2026-10-03 - CreateSema state and real nested returns
 
 - Implemented bounded CreateSema for zero attributes using pinned PS2SDK parameter offsets and Play! creation behavior. Reads max_count/init_count/option, ignores output-only count/wait_threads, and stores explicit count/maximum/option state. IDs begin at zero; capacity is 256 as in the pinned Play! model. No wait queues, wakeups, deletion, signal or scheduler behavior is claimed.
 - Reject unsupported attributes and invalid memory/alignment explicitly. Invalid count ranges and exhausted capacity return signed -1 without allocating. Return writes preserve the upper 64 bits of the GPR. These error restrictions are bootstrap policy, not confirmed retail error codes.
@@ -174,7 +174,7 @@ Next: implement the observed CreateSema syscall with explicit validated state, t
 
 Next: integrate the reached `FUN_00338410` and repeat the execution-led loop. Game boot and retail BIOS equivalence remain incomplete.
 
-## 2026-10-03 — Generated registration path reaches FUN_003383C8
+## 2026-10-03 - Generated registration path reaches FUN_003383C8
 
 - Linked/registered original ignored `FUN_00338410` and its reached wrapper `FUN_00338510`. Added FAST_READ32 as an alias to bounded aligned reads. No generated function bodies were changed or skipped.
 - First executed to SetSyscall selector `0x74`, resume `0x00338518`. Then implemented a bounded 256-entry registration table using pinned Play! `sc_SetSyscall`; PS2SDK declares SetSyscall void, so v0 is preserved. Reject out-of-range selectors, misaligned/out-of-RAM handlers. Custom handler execution remains explicitly unsupported, including overrides of built-in selectors; no fake invocation result.
@@ -185,7 +185,7 @@ Next: integrate the reached `FUN_00338410` and repeat the execution-led loop. Ga
 
 Next: compile/link/register the reached target and resolve only the compatibility behavior actually needed. Game boot remains incomplete.
 
-## 2026-10-03 — Registered syscall invocation exposes a map gap
+## 2026-10-03 - Registered syscall invocation exposes a map gap
 
 - Linked/registered original generated `FUN_003383C8`. It sets v1=`0x83` and invokes syscall at `0x003383CC`, resume `0x003383D0`. The registered handler is `0x00338388`; invocation remains unsupported, with no handler body skipped or result fabricated.
 - Extended syscall-stop diagnostics to include the registered handler address. Verified eight guest calls, five returns and prior CPU/zeroing/semaphore/registration checks. The new wrapper has no extra memory stores.
@@ -194,3 +194,19 @@ Next: compile/link/register the reached target and resolve only the compatibilit
 - MSVC pipeline/build and three CTests passed; all 16 Python tests passed, including classifier exclusive-end and quarantine cases. Runtime test verifies selector/handler/resume diagnostics. Independent host runs; game files and generated output remain ignored.
 
 Next: focused automated Ghidra discovery at the actually reached missing handler, then provisional map regeneration and compile/execute. Custom syscall execution contract and game boot remain incomplete.
+
+### Function count snapshot (before handler discovery)
+
+7,241 functions generated; 8 distinct functions compiled/executed. Four completed and returned (`FUN_0032EEE0`, `FUN_0032EC60`, `FUN_003382D0`, `FUN_00338510`); four executed partially. These are startup/helper paths; gameplay and game boot do not work yet.
+
+## 2026-10-03 — Observed handler discovered, regenerated and entered
+
+- Added `--discover-blocker` to the Ghidra driver and a neutral-name discovery script for one latest execution-observed gap. Guarded aligned initialized executable .text targets, existing-function overlap, matching stop/diagnostic address and fresh export containing the requested entry. No guessed manual map row or semantic name added.
+- Ghidra discovered provisional contiguous handler `[0x00338388, 0x003383C8)`, 64 bytes. Regenerated 7,242 functions (7,245 C++/header files) from the updated automated map; proprietary output and previous snapshots remain ignored.
+- Linked/registered the discovered handler. Added a narrow native callback contract preserving wrapper RA and checking a sentinel return; this does not model BIOS exception frames, privilege transitions or ERET. Synthetic successful callback verifies RA/PC restoration; unregistered handlers still stop explicitly.
+- Generated handler's first instruction attempts a word read at `0x80000000`, PC `0x00338388`. Added structured memory diagnostics and verified this exact unsupported boundary. No alias mapping or BIOS memory contents were fabricated. Nine guest calls and one custom callback are attempted; previous startup checks remain active.
+- MSVC pipeline/build and three CTests passed; all 16 Python tooling tests passed. Independent host runs; game boot remains incomplete.
+
+**Current counts:** 7,242 generated; 9 distinct compiled/executed (including the isolated wrapper). Four completed/returned; five entered partially. These remain startup/helper paths, not working gameplay.
+
+Next: establish the required kernel-address access and local memory provenance before continuing the handler's read/scan.

@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: recover the missing registered handler entry `0x00338388` through focused automated Ghidra discovery/export driven by `work/bt2-generation/blocker-map.json`. Validate its boundary sufficiently for experimental mapping, regenerate, compile, and execute. Do not bypass the handler with a stub or invent a function boundary; registered syscall execution still needs an explicit kernel/call contract.
+Current next step: establish the reached handler's `0x80000000` memory-access requirements using primary kernel/PCSX2 evidence. Define a checked kernel-memory/alias policy and obtain required local memory contents when needed; do not let it scan fabricated BIOS data or equate ELF RAM zero-fill with a retail kernel image. The callback adapter remains a bounded host model, not BIOS exception emulation.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

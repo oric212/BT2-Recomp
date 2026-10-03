@@ -163,6 +163,12 @@ int main() {
             handler_stop = stop.selector == 0x83 && stop.handler == 0x700 && stop.resume_pc == context.pc;
         }
         require(handler_stop);
+        runtime.registerFunction(0x700, return_leaf);
+        context.pc = 0x104;
+        context.r[31] = {0xABCDEF, 0x123456};
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.pc == 0x104 && context.r[31].low == 0xABCDEF
+                && context.r[31].high == 0x123456 && runtime.custom_syscall_calls == 1);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

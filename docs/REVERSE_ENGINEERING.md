@@ -139,3 +139,7 @@ Pinned PS2SDK names selector `0x74` SetSyscall and declares a void result. Gener
 ### Registered handler discovery blocker
 
 Execution enters `FUN_003383C8` and invokes selector `0x83` at `0x003383CC`, resume `0x003383D0`. The table contains handler `0x00338388`, which has no function entry in the current Ghidra export or provisional map. No handler boundary or purpose is established. `inspect_blocker.py` records range membership and exclusions in ignored `blocker-map.json`; it never guesses a boundary.
+
+### Discovered handler's actual memory blocker
+
+Focused Ghidra discovery produced provisional `[0x00338388, 0x003383C8)`. The regenerated handler compiles and is entered, but its first word read at `0x80000000` is rejected by the current main-RAM-only adapter. Required address mapping and kernel-memory contents have not been established. The callback adapter is a host execution model, not confirmed BIOS exception behavior; no missing memory was synthesized to advance the scan.

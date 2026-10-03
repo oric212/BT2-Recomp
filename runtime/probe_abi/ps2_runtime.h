@@ -36,6 +36,13 @@ struct UnsupportedGuestBranch : std::runtime_error {
     std::uint32_t target, source_pc, resume_pc;
 };
 
+struct UnsupportedGuestMemory : std::runtime_error {
+    UnsupportedGuestMemory(std::uint32_t address, std::size_t size)
+        : std::runtime_error("Unsupported or out-of-bounds guest memory access"), address(address), size(size) {}
+    std::uint32_t address;
+    std::size_t size;
+};
+
 class PS2Runtime {
 public:
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
@@ -57,8 +64,24 @@ public:
 
     void handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
         const auto selector = static_cast<std::uint32_t>(context->r[3].low);
-        if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector])
-            throw UnsupportedSyscall(selector, context->pc, syscall_handlers[selector]); // Registered guest handlers require explicit execution support.
+        if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector]) {
+            const auto handler = syscall_handlers[selector];
+            if (!functions_.contains(handler)) throw UnsupportedSyscall(selector, context->pc, handler);
+            // Narrow host callback model: preserve wrapper RA, validate native callback return.
+            // Does not emulate BIOS exception entry, privilege transitions or ERET.
+            const auto saved_ra = context->r[31];
+            const auto resume = context->pc;
+            constexpr std::uint32_t callback_return = 0xFFFFFFF8;
+            context->r[31].low = callback_return;
+            ++custom_syscall_calls;
+            try {
+                dispatchGuestBranch(rdram, context, handler, resume, callback_return,
+                                    GuestBranchKind::DirectCall, "registered syscall callback");
+            } catch (...) { context->r[31] = saved_ra; throw; }
+            context->r[31] = saved_ra;
+            context->pc = resume;
+            return;
+        }
         if (code == 0 && selector == 0x74) {
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
@@ -229,7 +252,7 @@ public:
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
     std::array<std::uint32_t, 256> syscall_handlers{};
-    unsigned syscall_registrations = 0;
+    unsigned syscall_registrations = 0, custom_syscall_calls = 0;
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
@@ -238,7 +261,7 @@ public:
 private:
     void checkMemory(std::uint8_t* rdram, std::uint32_t address, std::size_t count) const {
         if (memory_.empty() || rdram != memory_.data() || address > memory_.size() || count > memory_.size() - address)
-            throw std::runtime_error("Unsupported or out-of-bounds guest memory access");
+            throw UnsupportedGuestMemory(address, count);
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
     std::vector<std::uint8_t> memory_;

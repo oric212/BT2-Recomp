@@ -125,3 +125,5 @@ For the recorded executable hash, this independently checks three raw selector/s
 ### Reached target diagnostics
 
 `python tools/ps2recomp/inspect_blocker.py` verifies generated provenance and classifies the latest registered handler or branch target against the provisional map and Ghidra candidates. The pipeline runs it automatically after a verified stop. Read ignored `work/bt2-generation/blocker-map.json` before adding discovery targets; range membership does not certify a function boundary.
+
+`python tools/ghidra/analyze_game.py --discover-blocker` performs focused provisional discovery at the latest observed map-gap address and re-exports candidates. It rejects an address inside an existing function and checks that the target appears in the fresh export. Then run `python tools/ps2recomp/run_pipeline.py` to regenerate from the updated automated map. Discovery is not correctness certification.
