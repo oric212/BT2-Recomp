@@ -10,7 +10,7 @@ Latest verification: MSVC build/pipeline, seven CTests, 38 recomp tooling tests 
 
 ## Current blocker and next step
 
-Generated `FUN_0032F020` stops at SifSetDma (`0x77`), resume PC `0x0032F028`. It submits one descriptor: source `0x003A9580`, destination `0x00019600`, size 20, flags `0x44`.
+Generated `FUN_0032F020` stops at SifSetDma (`0x77`), resume PC `0x0032F028`. The pending submission contains one descriptor: source `0x003A9580`, destination `0x00019600`, size 20, flags `0x44`.
 
 Next: establish the required SIF DMA/IOP receive behavior using reference evidence and a local checkpoint. A fabricated success return would leave the receiving subsystem unimplemented.
 
@@ -18,7 +18,7 @@ Next: establish the required SIF DMA/IOP receive behavior using reference eviden
 
 - **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
 - **60** distinct functions entered across native probes.
-- **53** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8`, `FUN_00331888` `FUN_00331D70`, `FUN_00331C38` and `FUN_0032F020` remain partial. These are startup/helper paths, not working gameplay.
+- **53** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8`, `FUN_00331888`, `FUN_00331D70`, `FUN_00331C38` and `FUN_0032F020` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 
