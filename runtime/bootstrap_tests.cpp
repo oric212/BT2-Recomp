@@ -260,6 +260,32 @@ int main() {
         unwritten.registerKernelFunction(0x80076000, return_leaf, compiled_bytes);
         reject([&] { unwritten.callFunction(0x80076000, registration); });
         require(unwritten.kernel_dispatch_validations == 0);
+        registration.r[3].low = 0x74;
+        registration.r[4].low = 0x12C;
+        registration.r[5].low = 0x80076000;
+        reject([&] { unwritten.handleSyscall(unwritten.memory().data(), &registration, 0); });
+        require(unwritten.timer3_interrupt_handler == 0 && !unwritten.timer3_interrupt_enable_requested);
+        for (const auto address : {0u, 0x100u, 0x80076008u, 0x80076001u, 0xA0076000u}) {
+            registration.r[5].low = address;
+            reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        }
+        require(!patched.timer3_interrupt_handler && !patched.extended_registrations);
+        registration.r[5].low = 0x80076004;
+        const auto ordinary_handlers = patched.syscall_handlers;
+        const auto registrations_before = patched.syscall_registrations;
+        registration.r[2] = {0x1234, 0x5678};
+        patched.handleSyscall(patch_ram, &registration, 0);
+        require(patched.timer3_interrupt_handler == 0x80076004 && patched.timer3_interrupt_enable_requested
+                && patched.extended_registrations == 1 && patched.syscall_registrations == registrations_before + 1
+                && patched.syscall_handlers == ordinary_handlers && registration.r[2].low == 0x1234
+                && registration.r[2].high == 0x5678);
+        reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        registration.r[4].low = 0x12D;
+        reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        registration.r[3].low = 0x12C;
+        reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        require(patched.timer3_interrupt_handler == 0x80076004 && patched.extended_registrations == 1
+                && patched.syscall_registrations == registrations_before + 1 && patched.syscall_handlers == ordinary_handlers);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;
@@ -279,6 +305,34 @@ int main() {
         cache_context.r[4].low = 2;
         reject([&] { cache.handleSyscall(nullptr, &cache_context, 1); });
         require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
+        PS2Runtime zero_checkpoint;
+        reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
+        zero_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 16); });
+        zero_checkpoint.expectStartupZeroRegion(16, 32);
+        reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
+        R5900Context zero_context{};
+        zero_context.r[3].low = 0x3C;
+        zero_context.r[5].low = UINT32_MAX;
+        zero_context.r[6].low = 0x100000;
+        zero_context.r[7].low = 0x100;
+        auto* zero_ram = zero_checkpoint.memory().data();
+        reject([&] { zero_checkpoint.handleSyscall(zero_ram, &zero_context, 0); });
+        require(!zero_checkpoint.startup_zero_verified && !zero_checkpoint.thread_initialized);
+        for (std::uint32_t offset = 16; offset < 32; offset += 4) zero_checkpoint.write32(zero_ram, offset, 0);
+        zero_checkpoint.handleSyscall(zero_ram, &zero_context, 0);
+        require(zero_checkpoint.startup_zero_verified && zero_checkpoint.thread_initialized);
+        const auto lanes = std::bit_cast<std::array<std::uint32_t, 4>>(
+            PS2_PCPYLD({0x1111111122222222ULL, UINT64_MAX}, {0x3333333344444444ULL, UINT64_MAX}));
+        require(lanes == std::array<std::uint32_t, 4>{0x44444444, 0x33333333, 0x22222222, 0x11111111});
+        R5900Context signed_context{};
+        signed_context.r[0] = {UINT64_MAX, UINT64_MAX};
+        signed_context.r[1] = {0xABCDEF0080000000ULL, UINT64_MAX};
+        require(GPR_S32(&signed_context, 0) == 0 && GPR_S32(&signed_context, 1) == INT32_MIN);
+        signed_context.r[1].low = UINT64_MAX;
+        require(GPR_S32(&signed_context, 1) == -1);
+        signed_context.r[1].low = 0xABCDEF007FFFFFFFULL;
+        require(GPR_S32(&signed_context, 1) == INT32_MAX);
         require(SRL32(0x740, 2) == 0x1D0);
         require(SRL32(0x80000000, 1) == 0x40000000);
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);

@@ -8,10 +8,16 @@
 #include <span>
 #include <unordered_map>
 #include <vector>
+#include <immintrin.h>
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
     std::uint64_t high = 0;
+    operator __m128i() const {
+        __m128i value;
+        std::memcpy(&value, this, sizeof(value));
+        return value;
+    }
 };
 
 struct R5900Context {
@@ -72,6 +78,13 @@ public:
         found->second(memory_.empty() ? nullptr : memory_.data(), &context, this);
     }
 
+    void expectStartupZeroRegion(std::uint32_t start, std::uint32_t end) {
+        if (startup_zero_end_ || thread_initialized || end <= start || end > memory_.size())
+            throw std::runtime_error("Invalid startup zero checkpoint");
+        startup_zero_start_ = start;
+        startup_zero_end_ = end;
+    }
+
     void handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
         const auto selector = static_cast<std::uint32_t>(context->r[3].low);
         if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector]) {
@@ -95,7 +108,9 @@ public:
         if (code == 0 && selector == 0x74) {
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
-            if (number >= syscall_handlers.size() || address % 4)
+            const bool timer_interrupt = number == 0x12C;
+            if ((!timer_interrupt && number >= syscall_handlers.size()) || address % 4
+                    || (timer_interrupt && (timer3_interrupt_handler || address < 0x80000000)))
                 throw UnsupportedSyscall(selector, context->pc);
             if (address >= 0x80000000) {
                 // Register only a word actually written into the explicitly enabled patch.
@@ -104,7 +119,13 @@ public:
                         || address >= kernel_patch_end_ || !kernel_patch_words_.contains(address - 0x80000000))
                     throw UnsupportedGuestMemory(address, 4);
             } else if (address) checkMemory(rdram, address, 4);
-            syscall_handlers[number] = address;
+            if (timer_interrupt) {
+                // Pinned Play! maps this extended selector to INTC line 12.
+                // Record one startup registration/enable request; no interrupt delivery.
+                timer3_interrupt_handler = address;
+                timer3_interrupt_enable_requested = true;
+                ++extended_registrations;
+            } else syscall_handlers[number] = address;
             ++syscall_registrations;
             // PS2SDK declares void; preserve v0 rather than inventing a result.
             return;
@@ -119,6 +140,13 @@ public:
                 || size % 16 || args % 4)
                 throw std::runtime_error("Unsupported bootstrap SetupThread contract");
             checkMemory(rdram, args, 8);
+            if (startup_zero_end_) {
+                for (auto address = startup_zero_start_; address < startup_zero_end_; ++address)
+                    if (memory_[address]) throw std::runtime_error("Startup zero region was not cleared before SetupThread");
+                startup_zero_verified = true;
+                startup_quadword_writes = quadword_writes;
+                startup_byte_writes = byte_writes;
+            }
             stack_base = top - size;
             initial_sp = top - 0x2A0;
             // Explicit empty launch: argc=0, argv[0]=nullptr.
@@ -326,6 +354,11 @@ public:
     std::vector<Semaphore> semaphores;
     std::array<std::uint32_t, 256> syscall_handlers{};
     unsigned syscall_registrations = 0, custom_syscall_calls = 0;
+    std::uint32_t timer3_interrupt_handler = 0;
+    bool timer3_interrupt_enable_requested = false;
+    unsigned extended_registrations = 0;
+    bool startup_zero_verified = false;
+    std::uint64_t startup_quadword_writes = 0, startup_byte_writes = 0;
     std::uint64_t kernel_word_writes = 0;
     unsigned timer3_mode_reads = 0;
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
@@ -335,6 +368,7 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    std::uint32_t startup_zero_start_ = 0, startup_zero_end_ = 0;
     void verifyKernelBinding(std::uint32_t address) {
         const auto found = kernel_code_bindings_.find(address);
         if (found == kernel_code_bindings_.end()) return;

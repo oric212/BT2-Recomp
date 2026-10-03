@@ -42,6 +42,12 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_compile_options(bt2-kernel-handler-tests PRIVATE /W4 /permissive- /utf-8)
     target_compile_definitions(bt2-kernel-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     add_test(NAME generated-kernel-handler COMMAND bt2-kernel-handler-tests)
+    add_executable(bt2-buffer-fill-tests runtime/buffer_fill_tests.cpp "${BT2_GENERATED_DIR}/FUN_003251DC_0x3251dc.cpp")
+    target_include_directories(bt2-buffer-fill-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
+    target_compile_features(bt2-buffer-fill-tests PRIVATE cxx_std_20)
+    target_compile_options(bt2-buffer-fill-tests PRIVATE /W4 /permissive- /utf-8)
+    target_compile_definitions(bt2-buffer-fill-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    add_test(NAME generated-buffer-fill COMMAND bt2-buffer-fill-tests)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
@@ -57,7 +63,11 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${BT2_GENERATED_DIR}/FUN_003389A8_0x3389a8.cpp"
         "${BT2_GENERATED_DIR}/FUN_003389B8_0x3389b8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032EEE0_0x32eee0.cpp"
-        "${BT2_GENERATED_DIR}/FUN_003389F0_0x3389f0.cpp")
+        "${BT2_GENERATED_DIR}/FUN_003389F0_0x3389f0.cpp"
+        "${BT2_GENERATED_DIR}/FUN_00338B78_0x338b78.cpp"
+        "${BT2_GENERATED_DIR}/FUN_003251DC_0x3251dc.cpp"
+        "${BT2_GENERATED_DIR}/FUN_00339E48_0x339e48.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032E950_0x32e950.cpp")
     option(BT2_BUILD_KERNEL_PAYLOAD "Link the scoped ignored copied-kernel entry" OFF)
     if(BT2_BUILD_KERNEL_PAYLOAD)
         set(BT2_KERNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-kernel-runtime")

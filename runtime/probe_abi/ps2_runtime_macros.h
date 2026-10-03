@@ -6,6 +6,10 @@ inline std::uint32_t GPR_U32(const R5900Context* context, unsigned index) {
     return index == 0 ? 0 : static_cast<std::uint32_t>(context->r.at(index).low);
 }
 
+inline std::int32_t GPR_S32(const R5900Context* context, unsigned index) {
+    return std::bit_cast<std::int32_t>(GPR_U32(context, index));
+}
+
 inline std::uint32_t SRL32(std::uint32_t value, unsigned shift) {
     return value >> (shift & 31u);
 }
@@ -32,6 +36,12 @@ inline void SET_GPR_U32(R5900Context* context, unsigned index, std::uint32_t val
 }
 inline void SET_GPR_VEC(R5900Context* context, unsigned index, ProbeGpr value) {
     if (index) context->r.at(index) = value;
+}
+inline void SET_GPR_VEC(R5900Context* context, unsigned index, __m128i value) {
+    SET_GPR_VEC(context, index, std::bit_cast<ProbeGpr>(value));
+}
+inline ProbeGpr PS2_PCPYLD(ProbeGpr left, ProbeGpr right) {
+    return {right.low, left.low};
 }
 inline ProbeGpr ps2_paddu32(ProbeGpr left, ProbeGpr right) {
     auto a = std::bit_cast<std::array<std::uint32_t, 4>>(left);

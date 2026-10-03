@@ -73,5 +73,12 @@
     "path": "ee/kernel/include/kernel.h",
     "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
     "role": "FlushCache void ABI and operations 0 (D-cache writeback), 2 (I-cache invalidation). Fixed native dispatch has no guest instruction cache; patched guest code remains unsupported."
+  },
+  "extended_registration_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_SetSyscall maps extended selector 0x12C to Timer 3 / INTC line 12 registration and enable request. Probe records one bounded startup request only; no interrupt delivery, physical alias execution or BIOS equivalence claimed."
   }
 }
