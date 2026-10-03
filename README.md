@@ -4,7 +4,7 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. Optional probes execute a generated BT2 syscall wrapper and generated entry CPU initialization/RAM clearing. Entry stops at unsupported SetupThread. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. Optional probes execute a generated BT2 syscall wrapper and generated entry CPU initialization/RAM clearing. Entry applies a bounded SetupThread bootstrap model and stops at unsupported SetupHeap. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 

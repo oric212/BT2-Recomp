@@ -33,6 +33,29 @@ int main() {
         reject([&] { (void)runtime.read32(memory, 1); });
         reject([&] { (void)runtime.read32(memory, 0x10000000); });
         reject([&] { runtime.write8(nullptr, 0, 0); });
+        context.r[3].low = 0x3C;
+        context.r[5].low = UINT32_MAX;
+        context.r[6].low = 0x100000;
+        context.r[7].low = 0x100;
+        context.r[2].high = 0x1234;
+        context.r[6].low = UINT32_MAX;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        require(!runtime.thread_initialized && memory[0x100] == 0xA5);
+        context.r[6].low = 0x100000;
+        context.r[7].low = PS2Runtime::ram_size - 4;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        require(!runtime.thread_initialized);
+        context.r[7].low = 0x101;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[7].low = 0x100;
+        context.r[5].low = 0x100000;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[5].low = UINT32_MAX;
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.r[2].low == 0x01FFED60 && context.r[2].high == 0x1234
+                && runtime.stack_base == 0x01EFF000 && runtime.read32(memory, 0x100) == 0
+                && runtime.read32(memory, 0x104) == 0 && memory[0x108] == 0xA5);
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

@@ -123,3 +123,13 @@ Next: extend the compatibility API enough to compile/link and attempt entry exec
 - The normal host remains independent. Game boot, SetupThread/SetupHeap implementation, deeper callees and full generated-set integration remain incomplete.
 
 Next: establish and implement SetupThread's observed sentinel/stack behavior, then repeat execution to discover the next blocker.
+
+## 2026-10-03 — SetupThread bootstrap model and next syscall
+
+- Added a bounded, single-initialization SetupThread adapter for the observed default-stack sentinel. Explicit stacks, invalid sizes/alignment, repeated setup and invalid argument memory remain unsupported.
+- Used Play! revision `83700b2c31e593bc94e845b4b31b797be84dda59`, `Source/ee/PS2OS.cpp` (`sc_SetupThread`) and `PS2OS.h` (`STACKRES`) as the behavioral model: RAM minus 4 KiB is stack top; reserve `0x2A0` for context. Source hashes are recorded in `config/startup_abi.sources.json`; reference downloads stay ignored. No emulator implementation was copied or linked.
+- For BT2's 1 MiB request, stack base is `0x01EFF000` and initial SP is `0x01FFED60`. Empty launch policy writes argc=0 and argv[0]=null to checked guest memory. This is a compatibility model, not confirmed retail BIOS behavior; scheduler/root execution remains unsupported.
+- Re-executed real generated entry. CPU clearing and 43,120 quadword/15 byte stores still verified. Entry consumed the returned SP and reached unsupported SetupHeap selector `0x3D`, resume PC `0x001001E8`, arguments `0x0043058F`, `0xFFFFFFFF`.
+- MSVC build and all three CTests passed. Synthetic checks cover invalid sizes, repeated initialization, empty argv bounds and preserved upper return-register bits. Original generated source remains unchanged and ignored; game boot remains blocked.
+
+Next: implement the reached SetupHeap contract, then repeat generation/compile/execution diagnostics.

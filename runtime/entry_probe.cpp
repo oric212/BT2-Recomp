@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
         bool stopped = false;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedSyscall& stop) {
-            require(stop.selector == 0x3C && stop.resume_pc == 0x001001CC, "Unexpected entry syscall boundary");
+            require(stop.selector == 0x3D && stop.resume_pc == 0x001001E8, "Unexpected entry syscall boundary");
             stopped = true;
         }
         require(stopped, "Entry did not stop at the unsupported syscall");
@@ -51,21 +51,25 @@ int main(int argc, char** argv) {
         require(std::all_of(context.f.begin(), context.f.end(), [](float value) { return value == 0; }), "FPR clearing failed");
         const std::array<std::uint32_t, 5> args{GPR_U32(&context, 4), GPR_U32(&context, 5),
             GPR_U32(&context, 6), GPR_U32(&context, 7), GPR_U32(&context, 8)};
-        require(args == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
+        require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
-        require(GPR_U32(&context, 28) == args[0] && GPR_U64(&context, 29) == 0, "Unexpected gp/sp before SetupThread");
+        require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp,
+                "SetupThread stack model was not applied");
+        require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
+        require(args[0] == 0x0043058F && args[1] == UINT32_MAX, "Unexpected SetupHeap arguments");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
         report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,"
-               << "\"selector\":60,\"resume_pc\":" << context.pc << ",\"arguments\":[";
+               << "\"selector\":61,\"resume_pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"byte_writes\":" << runtime.byte_writes << ",\"game_booted\":false}\n";
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 generated entry executed: CPU initialization and guest zeroing verified.\n"
-                  << "Stopped at SetupThread selector 0x3C, resume PC 0x001001CC.\n"
-                  << "No syscall result invented; game boot remains blocked.\n";
+                  << "SetupThread bootstrap model applied; stopped at SetupHeap 0x3D, resume PC 0x001001E8.\n"
+                  << "Empty launch arguments; retail BIOS comparison and game boot remain pending.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Entry probe failed: " << error.what() << '\n';

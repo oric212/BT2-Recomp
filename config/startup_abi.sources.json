@@ -19,5 +19,20 @@
       "path": "ee/startup/src/crt0.c",
       "sha256": "695d59d4a7b38ce9009ae6e934989131893ea359c92b32ee516521e21e15637e"
     }
-  ]
+  ],
+  "bootstrap_model_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "role": "SetupThread behavioral reference only; no source copied or linked; retail BIOS comparison pending",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ]
+  }
 }

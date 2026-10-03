@@ -111,3 +111,7 @@ The unresolved target may acquire executable contents after the startup zero-sto
 ## Unknowns
 
 Exact retail revision, actual runtime memory behavior, the empty load record's purpose, general function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Experimental generation uses structurally filtered provisional maps; focus further manual review on actual build and execution blockers.
+
+### Bootstrap stack model (not retail BIOS confirmation)
+
+[Play! kernel source](https://github.com/jpd002/Play-/blob/83700b2c31e593bc94e845b4b31b797be84dda59/Source/ee/PS2OS.cpp) and [context reserve](https://github.com/jpd002/Play-/blob/83700b2c31e593bc94e845b4b31b797be84dda59/Source/ee/PS2OS.h) provide the current default-stack model. The authored adapter supports only the observed sentinel and empty launch arguments. Execution now reaches SetupHeap; its implementation and retail BIOS stack comparison remain pending.

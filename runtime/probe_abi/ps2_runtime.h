@@ -49,7 +49,28 @@ public:
         found->second(memory_.empty() ? nullptr : memory_.data(), &context, this);
     }
 
-    void handleSyscall(std::uint8_t*, R5900Context* context, std::uint32_t code) {
+    void handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
+        const auto selector = static_cast<std::uint32_t>(context->r[3].low);
+        if (code == 0 && selector == 0x3C) {
+            // Bootstrap model follows pinned Play! sc_SetupThread; no scheduler yet.
+            const auto stack = static_cast<std::uint32_t>(context->r[5].low);
+            const auto size = static_cast<std::uint32_t>(context->r[6].low);
+            const auto args = static_cast<std::uint32_t>(context->r[7].low);
+            constexpr std::uint32_t top = static_cast<std::uint32_t>(ram_size) - 4096;
+            if (thread_initialized || stack != UINT32_MAX || size < 0x2A0 || size > top
+                || size % 16 || args % 4)
+                throw std::runtime_error("Unsupported bootstrap SetupThread contract");
+            checkMemory(rdram, args, 8);
+            stack_base = top - size;
+            initial_sp = top - 0x2A0;
+            // Explicit empty launch: argc=0, argv[0]=nullptr.
+            std::memset(memory_.data() + args, 0, 8);
+            thread_arguments = {static_cast<std::uint32_t>(context->r[4].low), stack, size,
+                                args, static_cast<std::uint32_t>(context->r[8].low)};
+            context->r[2].low = initial_sp;
+            thread_initialized = true;
+            return;
+        }
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
         if (static_cast<std::uint32_t>(context->r[4].low) != 0)
@@ -102,6 +123,9 @@ public:
 
     std::uint32_t expected_return = 0;
     std::uint32_t syscall_resume_pc = 0;
+    bool thread_initialized = false;
+    std::uint32_t stack_base = 0, initial_sp = 0;
+    std::array<std::uint32_t, 5> thread_arguments{};
     unsigned cache_requests = 0;
     unsigned returns = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;

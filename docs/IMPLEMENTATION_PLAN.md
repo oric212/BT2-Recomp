@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: implement the observed SetupThread contract, including the default-stack sentinel and stack allocation/return behavior, using primary-source or PCSX2 evidence. Re-run entry to expose SetupHeap or the next actual blocker. Address unresolved callees and `0x003B7FA8` when execution reaches them. Do not bypass unsupported startup calls with invented results.
+Current next step: implement SetupHeap's observed default-size contract using the pinned kernel references, then repeat entry execution to discover the next blocker. Compare the bootstrap stack model against a local retail BIOS/PCSX2 observation when available. Address unresolved callees and `0x003B7FA8` when execution reaches them.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
