@@ -74,3 +74,13 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(marker, 0xb705)
         self.assertEqual(words[6], 0x3419b705)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+
+    def test_timer2_readback_trap_at_second_read(self):
+        address, trap, marker = capture_trap('timer2-readback')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x338dd8)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x10001010)
+        self.assertEqual(words[2], 0x8f190000)
+        self.assertEqual(words[5], 0xaf190004)
+        self.assertEqual(marker, 0xb706)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)

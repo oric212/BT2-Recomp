@@ -31,7 +31,8 @@ def capture_trap(point):
         return HANDLER, TRAP, 0xB702
     points = {'timer3-mode': (0x00338A1C, 0x1810, 0xB703),
               'timer2-mode': (0x00338C58, 0x1010, 0xB704),
-              'intc-mask': (0x0032E9A4, 0xF010, 0xB705)}
+              'intc-mask': (0x0032E9A4, 0xF010, 0xB705),
+              'timer2-readback': (0x00338DD8, 0x1010, 0xB706)}
     if point not in points:
         raise ValueError('Unknown capture point.')
     address, register, marker = points[point]
@@ -158,7 +159,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -258,6 +259,7 @@ def main():
                     'observed_timer3_mode': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer3-mode' else None,
                     'observed_timer2_mode': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer2-mode' else None,
                     'observed_intc_mask': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'intc-mask' else None,
+                    'observed_timer2_readback': struct.unpack_from('<I', data, MARKER + 4)[0] if args.capture_point == 'timer2-readback' else None,
                     'limitations': 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads. Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')

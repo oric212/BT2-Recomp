@@ -344,6 +344,12 @@ public:
         timer3_mode_supplied_ = true;
     }
 
+    void supplyTimer2Readback(std::uint32_t expected) {
+        if (expected > 0xFFFF || timer2_readback_supplied_) throw std::runtime_error("Invalid/repeated Timer 2 readback validation");
+        timer2_readback_expected_ = expected;
+        timer2_readback_supplied_ = true;
+    }
+
     void supplyIntcMask(std::uint32_t value) {
         if (value > 0xFFFF || intc_mask_supplied_) throw std::runtime_error("Invalid/repeated INTC mask checkpoint");
         intc_mask = value;
@@ -367,6 +373,13 @@ public:
             checkMemory(rdram, 0, 0);
             ++timer2_mode_reads;
             return timer2_mode_;
+        }
+        if (address == 0x10001010 && timer2_readback_supplied_ && timer2_mode_reads == 1 && timer2_mode_writes == 1) {
+            checkMemory(rdram, 0, 0);
+            if (timer2_mode_after_write != timer2_readback_expected_)
+                throw std::runtime_error("Timer 2 modeled mode differs from captured readback");
+            ++timer2_mode_reads;
+            return timer2_mode_after_write;
         }
         return read32(rdram, address);
     }
@@ -461,5 +474,6 @@ private:
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
     bool timer3_mode_supplied_ = false;
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;
-    bool timer2_mode_supplied_ = false, intc_mask_supplied_ = false;
+    bool timer2_mode_supplied_ = false, intc_mask_supplied_ = false, timer2_readback_supplied_ = false;
+    std::uint32_t timer2_readback_expected_ = 0;
 };

@@ -57,6 +57,10 @@ def verify_intc_capture(path):
     return verify_word_capture(path, 'intc-mask', 'observed_intc_mask', 0x0032E9A4, 0xB705, 0xF010)
 
 
+def verify_timer2_readback_capture(path):
+    return verify_word_capture(path, 'timer2-readback', 'observed_timer2_readback', 0x00338DD8, 0xB706, 0x1010)
+
+
 def verify_word_capture(path, point, field, address, marker_value, register):
     manifest = json.loads(path.read_text(encoding='utf-8'))
     if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
@@ -84,7 +88,11 @@ def main():
     parser.add_argument('--timer3-capture', type=Path, help='Explicit capture.json from the timer3-mode capture; replays one observed MMIO read.')
     parser.add_argument('--timer2-capture', type=Path, help='Explicit timer2-mode capture; requires kernel snapshot and Timer 3 capture.')
     parser.add_argument('--intc-capture', type=Path, help='Explicit intc-mask checkpoint; requires Timer 2 capture.')
+    parser.add_argument('--timer2-readback-capture', type=Path, help='Explicit validation of the post-write mode read; requires INTC checkpoint.')
     args = parser.parse_args()
+    if args.timer2_readback_capture and not args.intc_capture:
+        parser.error('--timer2-readback-capture requires --intc-capture')
+    readback_capture = verify_timer2_readback_capture(args.timer2_readback_capture) if args.timer2_readback_capture else None
     if args.intc_capture and not args.timer2_capture:
         parser.error('--intc-capture requires --timer2-capture')
     intc_capture = verify_intc_capture(args.intc_capture) if args.intc_capture else None
@@ -131,10 +139,15 @@ def main():
             intc_word = folder / 'intc-mask.bin'
             intc_word.write_bytes(struct.pack('<I', intc_capture[0]))
             entry_command.append(str(intc_word))
+        if readback_capture:
+            readback_word = folder / 'timer2-readback.bin'
+            readback_word.write_bytes(struct.pack('<I', readback_capture[0]))
+            entry_command.append(str(readback_word))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
         "kernel_generation_provenance": kernel_generation,
+        "timer2_readback_capture_provenance": readback_capture[1] if readback_capture else None,
         "intc_capture_provenance": intc_capture[1] if intc_capture else None,
         "timer2_capture_provenance": timer2_capture[1] if timer2_capture else None,
         "timer3_capture_provenance": timer_capture[1] if timer_capture else None, "kernel_snapshot_provenance": snapshot_provenance, "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,

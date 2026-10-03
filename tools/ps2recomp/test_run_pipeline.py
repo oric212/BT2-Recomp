@@ -167,6 +167,25 @@ class TimerCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_intc_capture(self.path)
 
+    def test_readback_capture_is_separate_from_initial_mode(self):
+        address = 0x338DD8
+        words = self.words.copy()
+        words[1], words[6], words[8] = 0x37181010, 0x3419B706, 0x08000000 | ((address + 32) >> 2)
+        self.data[address:address + 40] = struct.pack('<10I', *words)
+        struct.pack_into('<II', self.data, 0x387E80, 0xB706, 0x382)
+        self.manifest.update(capture_point='timer2-readback: authored fixture', observed_timer2_readback=0x382,
+                             patch={'address': address, 'size': 40, 'authored_words': words},
+                             capture_sha256=hashlib.sha256(self.data).hexdigest())
+        self.path.with_name('ee-ram.bin').write_bytes(self.data)
+        self.save()
+        self.assertEqual(run_pipeline.verify_timer2_readback_capture(self.path)[0], 0x382)
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer_capture(self.path, 2)
+        self.manifest['patch']['address'] = 0x338C58
+        self.save()
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_timer2_readback_capture(self.path)
+
 
 if __name__ == "__main__":
     unittest.main()

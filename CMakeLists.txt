@@ -78,7 +78,9 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${BT2_GENERATED_DIR}/FUN_00338AD8_0x338ad8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032F7A8_0x32f7a8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032E9A0_0x32e9a0.cpp"
-        "${BT2_GENERATED_DIR}/FUN_00338DB8_0x338db8.cpp")
+        "${BT2_GENERATED_DIR}/FUN_00338DB8_0x338db8.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032FA38_0x32fa38.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032EA60_0x32ea60.cpp")
     option(BT2_BUILD_KERNEL_PAYLOAD "Link the scoped ignored copied-kernel entry" OFF)
     if(BT2_BUILD_KERNEL_PAYLOAD)
         set(BT2_KERNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-kernel-runtime")

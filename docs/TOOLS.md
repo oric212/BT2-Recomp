@@ -208,3 +208,12 @@ python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/
 ```
 
 The isolated authored trap at `0x0032E9A4`, immediately before EnableIntc, reads `0x1000F010` and publishes marker `0xB705` plus mask `0x1002`. Output stays ignored under `work/pcsx2-capture/intc-mask/`. Exact trap, source/RAM hashes, size, marker and payload are validated through the shared word-capture validator. `--intc-capture` requires Timer 2 capture; this checkpoint applies to the reached syscall, not initial BIOS state. EnableIntc supports only cause 11, returns changed/already-enabled `1`/`0` and preserves other mask bits. It records `0x1802` and does not process pending interrupts. Omitting it retains the EnableIntc stop. With it, startup reaches the second Timer 2 read at `0x00338DD8`; repeated reads remain unsupported pending validation.
+
+### Validated Timer 2 readback
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer2-readback
+python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json --timer2-capture work/pcsx2-capture/timer2-mode/capture.json --intc-capture work/pcsx2-capture/intc-mask/capture.json --timer2-readback-capture work/pcsx2-capture/timer2-readback/capture.json
+```
+
+The isolated trap at second read PC `0x00338DD8` reads `0x10001010` and publishes marker `0xB706` plus observed mode `0x382`. Exact trap/source/RAM/payload provenance stays checked; outputs are ignored. Readback requires all earlier explicit inputs. The runtime compares its recorded post-write mode to the validated expected word, then returns its recorded state once. Missing writes, mismatch, wrong RAM pointers and further reads fail. Omitting this validation preserves the second-read stop. With it, generated `FUN_00338DB8` returns and startup creates semaphore ID 2 before stopping at CreateThread (`0x20`, PC `0x0032EA68`). This does not validate counter timing, future status flags or interrupt delivery.
