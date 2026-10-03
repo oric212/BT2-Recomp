@@ -56,6 +56,20 @@ int main() {
                 && runtime.stack_base == 0x01EFF000 && runtime.read32(memory, 0x100) == 0
                 && runtime.read32(memory, 0x104) == 0 && memory[0x108] == 0xA5);
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[3].low = 0x3D;
+        context.r[4].low = runtime.stack_base;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        require(!runtime.heap_initialized);
+        context.r[4].low = 0x43058F;
+        context.r[5].low = 0x1000;
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[5].low = UINT32_MAX;
+        runtime.handleSyscall(memory, &context, 0);
+        require(runtime.heap_start == 0x43058F && runtime.heap_end == 0x1EFF000
+                && context.r[2].low == runtime.heap_end && context.r[2].high == 0x1234);
+        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        PS2Runtime uninitialized;
+        reject([&] { uninitialized.handleSyscall(nullptr, &context, 0); });
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

@@ -67,7 +67,7 @@ def main():
     if result.returncode:
         print("Boot integration remains blocked; this diagnostic failure is recorded separately from the passing probe.")
     elif entry_stop:
-        print(f"Entry stopped at syscall 0x{entry_stop['selector']:02X}; game boot remains blocked. See {folder / 'entry-stop.json'}.")
+        print(f"Entry stop: {entry_stop['status']}; game boot remains blocked. See {folder / 'entry-stop.json'}.")
 
 
 if __name__ == "__main__":

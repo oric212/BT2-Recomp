@@ -30,6 +30,12 @@ struct UnsupportedSyscall : std::runtime_error {
     std::uint32_t selector, resume_pc;
 };
 
+struct UnsupportedGuestBranch : std::runtime_error {
+    UnsupportedGuestBranch(std::uint32_t target, std::uint32_t source, std::uint32_t resume)
+        : std::runtime_error("Unsupported bootstrap guest dispatch"), target(target), source_pc(source), resume_pc(resume) {}
+    std::uint32_t target, source_pc, resume_pc;
+};
+
 class PS2Runtime {
 public:
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
@@ -71,6 +77,19 @@ public:
             thread_initialized = true;
             return;
         }
+        if (code == 0 && selector == 0x3D) {
+            // Pinned Play! default heap end is the initialized main thread's stack base.
+            const auto start = static_cast<std::uint32_t>(context->r[4].low);
+            const auto size = static_cast<std::uint32_t>(context->r[5].low);
+            if (!thread_initialized || heap_initialized || size != UINT32_MAX || start >= stack_base)
+                throw std::runtime_error("Unsupported bootstrap SetupHeap contract");
+            checkMemory(rdram, start, 1);
+            heap_start = start;
+            heap_end = stack_base;
+            context->r[2].low = heap_end;
+            heap_initialized = true;
+            return;
+        }
         if (code != 0 || static_cast<std::uint32_t>(context->r[3].low) != 0x64)
             throw UnsupportedSyscall(static_cast<std::uint32_t>(context->r[3].low), context->pc);
         if (static_cast<std::uint32_t>(context->r[4].low) != 0)
@@ -81,8 +100,8 @@ public:
     }
 
     bool dispatchGuestBranch(std::uint8_t*, R5900Context*, std::uint32_t target,
-                             std::uint32_t, std::uint32_t, GuestBranchKind kind, const char*) {
-        if (kind != GuestBranchKind::Return) throw std::runtime_error("Unsupported bootstrap guest dispatch");
+                             std::uint32_t source, std::uint32_t resume, GuestBranchKind kind, const char*) {
+        if (kind != GuestBranchKind::Return) throw UnsupportedGuestBranch(target, source, resume);
         if (target != expected_return) throw std::runtime_error("Unexpected probe return target");
         ++returns;
         return true;
@@ -123,7 +142,8 @@ public:
 
     std::uint32_t expected_return = 0;
     std::uint32_t syscall_resume_pc = 0;
-    bool thread_initialized = false;
+    bool thread_initialized = false, heap_initialized = false;
+    std::uint32_t heap_start = 0, heap_end = 0;
     std::uint32_t stack_base = 0, initial_sp = 0;
     std::array<std::uint32_t, 5> thread_arguments{};
     unsigned cache_requests = 0;

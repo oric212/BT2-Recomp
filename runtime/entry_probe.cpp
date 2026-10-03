@@ -34,12 +34,16 @@ int main(int argc, char** argv) {
         context.f_acc = 1.0f;
         runtime.registerFunction(0x00100008, FUN_00100008_0x100008);
         bool stopped = false;
+        std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
-        catch (const UnsupportedSyscall& stop) {
-            require(stop.selector == 0x3D && stop.resume_pc == 0x001001E8, "Unexpected entry syscall boundary");
+        catch (const UnsupportedGuestBranch& stop) {
+            require(stop.target == 0x00338520 && stop.source_pc == 0x001001E8 && stop.resume_pc == 0x001001F0, "Unexpected entry dispatch boundary");
+            stop_target = stop.target;
+            stop_source = stop.source_pc;
+            stop_resume = stop.resume_pc;
             stopped = true;
         }
-        require(stopped, "Entry did not stop at the unsupported syscall");
+        require(stopped, "Entry did not stop at the unsupported guest branch");
         require(std::all_of(runtime.memory().begin() + zero_start, runtime.memory().begin() + zero_end,
                             [](std::uint8_t value) { return value == 0; }), "Entry zeroing was incomplete");
         require(runtime.memory()[zero_start - 1] == image[zero_start - 1]
@@ -57,18 +61,21 @@ int main(int argc, char** argv) {
                 && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp,
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
-        require(args[0] == 0x0043058F && args[1] == UINT32_MAX, "Unexpected SetupHeap arguments");
+        require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
+                && runtime.heap_end == runtime.stack_base && GPR_U64(&context, 2) == runtime.heap_end,
+                "Unexpected SetupHeap state or return");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,"
-               << "\"selector\":61,\"resume_pc\":" << context.pc << ",\"arguments\":[";
+        report << "{\"status\":\"blocked at unsupported guest branch\",\"entry_executed\":true,"
+               << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source
+               << ",\"resume_pc\":" << stop_resume << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"byte_writes\":" << runtime.byte_writes << ",\"game_booted\":false}\n";
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 generated entry executed: CPU initialization and guest zeroing verified.\n"
-                  << "SetupThread bootstrap model applied; stopped at SetupHeap 0x3D, resume PC 0x001001E8.\n"
+                  << "SetupThread/SetupHeap models applied; stopped at direct call to FUN_00338520.\n"
                   << "Empty launch arguments; retail BIOS comparison and game boot remain pending.\n";
         return 0;
     } catch (const std::exception& error) {

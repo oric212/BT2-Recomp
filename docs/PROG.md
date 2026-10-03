@@ -133,3 +133,13 @@ Next: establish and implement SetupThread's observed sentinel/stack behavior, th
 - MSVC build and all three CTests passed. Synthetic checks cover invalid sizes, repeated initialization, empty argv bounds and preserved upper return-register bits. Original generated source remains unchanged and ignored; game boot remains blocked.
 
 Next: implement the reached SetupHeap contract, then repeat generation/compile/execution diagnostics.
+
+## 2026-10-03 — SetupHeap and first generated guest call
+
+- Implemented the observed SetupHeap default-size sentinel using the already pinned Play! `sc_SetupHeap` model: return the initialized thread's stack base as heap end. Recorded the requested start `0x0043058F` and returned end `0x01EFF000` without silently aligning the caller's value. No allocator or heap memory initialization is claimed.
+- Reject setup before thread initialization, repeated initialization, explicit heap sizes and starts at/beyond stack base. Preserve upper 64 bits of the return GPR; bounds checks remain active.
+- Actual generated entry consumed both startup models and reached a direct call to neutral `FUN_00338520`, source PC `0x001001E8`, resume PC `0x001001F0`. Guest call dispatch remains unsupported; no body was skipped or stubbed.
+- Added structured guest-branch diagnostics and updated the pipeline to report either syscall or dispatch stops. The ignored entry report records target/source/resume PCs and game_booted=false.
+- MSVC builds and three CTests passed; all 14 Python tooling tests passed. CPU initialization and 43,120 quadword plus 15 byte zero stores still verified. The independent host runs; generated code, local executable and reports remain ignored.
+
+Next: compile/link the already generated reached callee and implement checked call/return dispatch, then execute to the next actual blocker. Retail BIOS equivalence remains unverified.

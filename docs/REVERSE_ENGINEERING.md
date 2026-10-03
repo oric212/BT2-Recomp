@@ -115,3 +115,7 @@ Exact retail revision, actual runtime memory behavior, the empty load record's p
 ### Bootstrap stack model (not retail BIOS confirmation)
 
 [Play! kernel source](https://github.com/jpd002/Play-/blob/83700b2c31e593bc94e845b4b31b797be84dda59/Source/ee/PS2OS.cpp) and [context reserve](https://github.com/jpd002/Play-/blob/83700b2c31e593bc94e845b4b31b797be84dda59/Source/ee/PS2OS.h) provide the current default-stack model. The authored adapter supports only the observed sentinel and empty launch arguments. Execution now reaches SetupHeap; its implementation and retail BIOS stack comparison remain pending.
+
+### SetupHeap bootstrap model and executed call boundary
+
+The pinned Play! `sc_SetupHeap` returns main-thread stack base for size `0xFFFFFFFF`. Our bounded adapter records the requested lower boundary without changing its alignment and returns `0x01EFF000`. This model has not been compared against retail BIOS behavior. Generated entry now reaches JAL at `0x001001E8` to `FUN_00338520`, return PC `0x001001F0`; the callee has not executed yet.
