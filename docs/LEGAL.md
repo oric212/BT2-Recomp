@@ -27,3 +27,5 @@ Review staged files before every commit; ignore rules help prevent accidental in
 ## Installed analysis tools
 
 Ghidra 12.1.4 includes its Apache 2.0 license and third-party notices in the external installation. The pinned Emotion Engine extension uses Apache 2.0 (`work/ghidra-emotionengine/LICENSE`). Retain the installed tools' licenses and notices if redistributing them. No Ghidra installation, extension binary, project database, or proprietary-derived analysis report is committed.
+
+PS2SDK source files consulted for startup ABI conventions identify Academic Free License 2.0 in their headers. They remain local research references under ignored `work/abi-reference/`; no SDK implementation is bundled or linked. Any future reuse must assess the applicable license and retain required notices.

@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/ps2dev/ps2sdk",
+  "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+  "role": "ABI reference only; no SDK code linked or bundled",
+  "sources": [
+    {
+      "path": "ee/kernel/include/syscallnr.h",
+      "sha256": "573f0c3276eaae064f0da04990126133b434259b3b235e53ed8f013694300edc"
+    },
+    {
+      "path": "ee/kernel/include/kernel.h",
+      "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a"
+    },
+    {
+      "path": "ee/kernel/src/kernel.S",
+      "sha256": "81e16f24d565ce07060f3211b33c8e006e8907dffac585190a95af1ebea012ab"
+    },
+    {
+      "path": "ee/startup/src/crt0.c",
+      "sha256": "695d59d4a7b38ce9009ae6e934989131893ea359c92b32ee516521e21e15637e"
+    }
+  ]
+}

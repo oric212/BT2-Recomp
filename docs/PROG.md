@@ -86,3 +86,13 @@ Next: export and review the entry's direct callees and final jump target, then e
 - Synthetic checks and the entry audit passed after extending the decoder. No BT2 C++ generated or executed.
 
 Next: confirm syscall ABI from primary evidence and investigate the unmapped direct target before extending local generation.
+
+## 2026-10-03 — Startup ABI and unmapped target evidence
+
+- Inspected pinned PS2SDK primary sources; recorded revision and file hashes in `config/startup_abi.sources.json`. Public selector/wrapper conventions match SetupThread (`0x3C`), SetupHeap (`0x3D`), and FlushCache (`0x64`) at the observed local sites. Runtime behavior and sentinel handling remain untested.
+- Added an authored, read-only startup audit. Raw instruction checks passed for all three selector/syscall pairs and zero-loop constants.
+- Confirmed `0x003B7FA8` lies outside every declared load memory extent but inside the apparent entry zero-store interval `[0x00387E80, 0x0043058F)`. Found one encoded JAL and no aligned exact target literal in allocated file-backed sections.
+- Recorded the limits of those scans: split constants, calculated addresses, subsequent writes, and actual target contents remain unresolved. No function body or stub was invented.
+- Reports and downloaded reference sources remain ignored. No guest code generated or executed and no runtime syscall implementation added.
+
+Next: trace the writer or copy operation that could populate the target before its call, using local PCSX2 memory observation if needed.

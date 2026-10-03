@@ -24,6 +24,6 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: establish the observed syscall ABI from primary evidence and investigate the call to `0x003B7FA8`, which is outside file-backed executable sections. The entry and its five direct target bodies passed limited static control audits; deeper callees, indirect targets, and a complete generation map remain unresolved.
+Current next step: trace writes or copy destinations that could populate `0x003B7FA8` before its call; use a local PCSX2 memory observation if static evidence is insufficient. Startup syscall selectors now match a pinned PS2SDK ABI reference, but stack/heap sentinel handling and actual runtime behavior need evidence. The entry and its five direct target bodies passed limited static control audits; deeper callees, indirect targets, and a complete generation map remain unresolved.
 
 Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.

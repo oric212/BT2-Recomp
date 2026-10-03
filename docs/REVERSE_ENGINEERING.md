@@ -62,6 +62,12 @@ These extents are supported for static body mapping; runtime semantics and deepe
 
 At `0x00100688`, `FUN_00100388` directly calls `0x003B7FA8`, outside the ELF's file-backed executable sections. Its origin and contents are unknown. Do not create a function body or stub for it without evidence. Ghidra assigned a semantic label to `0x0032EEE0`; retain the neutral name because the label's provenance has not been confirmed.
 
+### Unmapped target investigation, 2026-10-03
+
+`tools/ghidra/audit_startup.py` independently checked the raw entry constants and mapped sections for the recorded hash. `0x003B7FA8` is outside all declared PT_LOAD memory extents, including zero-fill regions. The entry constructs bounds `0x00387E80` and `0x0043058F`; its observed byte/quadword zero-store loops appear to clear that interval before the first direct callee. The unresolved target lies within this larger interval. This is static evidence, not an observed memory write during execution.
+
+An aligned scan of allocated file-backed sections found no exact 32-bit literal equal to the target. Executable-section scanning found one encoded JAL to it, at `0x00100688`. These scans do not exclude split address constants, calculated pointers, encoded data, or code copied/produced later. The target's contents and the writer remain unknown. A future memory layer must account for observed startup accesses beyond ELF load extents rather than assuming those extents describe every runtime access.
+
 ## Subsystems
 
 No BT2 subsystem behavior has been established.
@@ -74,7 +80,21 @@ Only executable container metadata has been inspected. The section table include
 
 Entry contains syscall instructions at `0x001001C8` and `0x001001E4`, each with encoded code field zero. The preceding Ghidra instructions load register `v1` with `0x3C` and `0x3D`, respectively. These observations do not assign syscall names or establish the required runtime ABI. No runtime implementation has been added.
 
-The direct callee at `0x0032EEE0` loads `v1` with `0x64`, executes a syscall with encoded code field zero at `0x0032EEE4`, and returns through `ra`. Its meaning remains pending primary-source ABI confirmation.
+The direct callee at `0x0032EEE0` loads `v1` with `0x64`, executes a syscall with encoded code field zero at `0x0032EEE4`, and returns through `ra`.
+
+### Startup ABI reference, 2026-10-03
+
+PS2SDK revision `ac92a9f657d2e531dd8f060250b07f2a5ac6dea5` defines selectors `0x3C` as SetupThread, `0x3D` as SetupHeap, and `0x64` as FlushCache. Its assembly wrapper puts the selector in register 3 (`v1`) and executes syscall; its startup code consumes the SetupThread return from register 2 (`v0`) as the stack pointer. These primary-source conventions match the reviewed local instruction sequences. This supports the following ABI interpretation, while actual retail kernel behavior remains untested. Sources: [selector definitions](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/include/syscallnr.h), [assembly wrapper](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/kernel.S), and [startup](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/startup/src/crt0.c).
+
+| Local syscall site | Selector / public ABI | Observed arguments |
+| --- | --- | --- |
+| `0x001001C8` | `0x3C` / SetupThread | `a0=0x0038BDF0`, `a1=0xFFFFFFFF`, `a2=0x00100000`, `a3=0x0038B980`, `t0=0x00100250`; returned `v0` copied to `sp` |
+| `0x001001E4` | `0x3D` / SetupHeap | `a0=0x0043058F`, `a1=0xFFFFFFFF` |
+| `0x0032EEE4` | `0x64` / FlushCache | Entry call sets `a0=0` in its delay slot |
+
+PS2SDK declares SetupThread parameters as gp, stack, stack size, args, root function; SetupHeap takes heap start and size. Its FlushCache operation zero is WRITEBACK_DCACHE. This identifies `FUN_0032EEE0` as a matching FlushCache syscall wrapper; retain its neutral working name in maps. Pointer contents, sentinel handling for `0xFFFFFFFF`, alignment, stack placement, heap limits, and cache behavior require further evidence before implementation. [Public declarations and cache modes](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/include/kernel.h).
+
+Reference revision and downloaded file hashes are recorded in `config/startup_abi.sources.json`. Reference files remain ignored under `work/abi-reference/ps2sdk/`; no SDK implementation is linked or copied into the runtime.
 
 ## Confirmed Facts
 
@@ -82,7 +102,7 @@ The native host builds and prints its startup message without loading game data.
 
 ## Hypotheses
 
-None recorded.
+The unresolved target may acquire executable contents after the startup zero-store loops. This is an investigation hypothesis; no writer, source bytes, or executed contents have been identified.
 
 ## Unknowns
 
