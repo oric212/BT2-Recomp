@@ -4,11 +4,11 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022 and prints a startup message. A read-only local executable validator performs preliminary format, filename, boot reference, and SHA-256 checks. Exact retail revision confirmation, game loading, recompilation, rendering, and audio remain pending.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022 and prints a startup message. Read-only tools validate the local executable preliminarily and inspect ELF metadata. The declared entry point and load regions are recorded with an alignment warning. Exact retail revision confirmation, game loading, recompilation, rendering, and audio remain pending.
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
-See [build instructions](BUILDING.md), [project goals](PROJECT_GOALS.md), [progress](../PROG.md), [content and license rules](LEGAL.md), [local validation](VERIFY_GAME.md), and [reverse-engineering notes](REVERSE_ENGINEERING.md).
+See [build instructions](BUILDING.md), [the implementation plan](IMPLEMENTATION_PLAN.md), [progress](PROG.md), [content and license rules](LEGAL.md), [local tools](TOOLS.md), and [reverse-engineering notes](REVERSE_ENGINEERING.md).
 
 ## Layout
 
@@ -20,5 +20,3 @@ See [build instructions](BUILDING.md), [project goals](PROJECT_GOALS.md), [progr
 - `docs/`: goals, build instructions, progress, and evidence records.
 
 No configuration, game integration, or external dependencies are implemented yet. Add shared configuration examples only when needed; record dependency source, pinned version, license, and build requirements before integration. Keep local game paths under ignored `game_data/` or `rom/`.
-
-See [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) for the ordered plan and [PROG.md](../PROG.md) for verified progress.
