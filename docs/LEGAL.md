@@ -24,6 +24,8 @@ Retain copyright/license notices and satisfy applicable source and copyleft requ
 
 Review staged files before every commit; ignore rules help prevent accidental inclusion.
 
+The generated-code probe adapter is authored project code and links no upstream runtime. The local translated source and the resulting executable contain retail-derived code and remain ignored. Do not publish or commit either as part of the project foundation.
+
 ## Installed analysis tools
 
 Ghidra 12.1.4 includes its Apache 2.0 license and third-party notices in the external installation. The pinned Emotion Engine extension uses Apache 2.0 (`work/ghidra-emotionengine/LICENSE`). Retain the installed tools' licenses and notices if redistributing them. No Ghidra installation, extension binary, project database, or proprietary-derived analysis report is committed.

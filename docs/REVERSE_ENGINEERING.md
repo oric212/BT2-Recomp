@@ -100,10 +100,12 @@ Reference revision and downloaded file hashes are recorded in `config/startup_ab
 
 The native host builds and prints its startup message without loading game data. This is a host observation, not a conclusion about the retail game.
 
+The optional native generated probe executes PS2Recomp's local translation of `FUN_0032EEE0` from the inspected executable through an authored adapter. It reaches a recorded FlushCache request and returns to a host sentinel. It performs no guest memory access and establishes no whole-game boot or cache-equivalence behavior. The broader provisional EE map and generation results are recorded in `PROG.md`.
+
 ## Hypotheses
 
 The unresolved target may acquire executable contents after the startup zero-store loops. This is an investigation hypothesis; no writer, source bytes, or executed contents have been identified.
 
 ## Unknowns
 
-Exact retail revision, actual runtime memory behavior, the empty load record's purpose, function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Boundaries require manual review before generation.
+Exact retail revision, actual runtime memory behavior, the empty load record's purpose, general function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Experimental generation uses structurally filtered provisional maps; focus further manual review on actual build and execution blockers.

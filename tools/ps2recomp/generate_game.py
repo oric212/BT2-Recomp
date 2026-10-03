@@ -1,4 +1,4 @@
-"""Generate local BT2 C++ only after a reviewed function map is supplied."""
+"""Generate local BT2 C++ from an explicit reviewed or automated provisional map."""
 
 import argparse
 import csv
@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_CANDIDATE_SHA256 = "f7e5ba8e74657b8533c3a0fedff45de0d052be3a23fe4c475059ef888a81f03e"
@@ -25,21 +26,28 @@ def validate_map(path, metadata):
     if not rows:
         raise ValueError("Function map is empty.")
     starts = set()
+    ranges = []
     for row in rows:
         start, end, size = (int(row[key], 0) for key in ("start", "end", "size"))
         if start in starts or start % 4 or end % 4 or end <= start or end - start != size:
             raise ValueError("Function map has duplicate starts or invalid contiguous aligned ranges/sizes.")
         starts.add(start)
+        ranges.append((start, end))
         if not re.fullmatch(r"FUN_[0-9a-fA-F]{8}", row["name"]) or int(row["name"][4:], 16) != start:
             raise ValueError("Initial BT2 function names must be FUN_<eight-digit-start-address>.")
         if not any(section["flags"] & 4 and section["address"] <= start < end <= section["address"] + section["size"] for section in metadata["sections"]):
             raise ValueError("Function range is outside an executable section.")
+    ranges.sort()
+    if any(current[0] < previous[1] for previous, current in zip(ranges, ranges[1:])):
+        raise ValueError("Function map has overlapping ranges.")
     return rows
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--function-map", required=True, type=Path, help="Reviewed Ghidra CSV with name,start,end,size columns; unknown names must be FUN_<address>.")
+    maps = parser.add_mutually_exclusive_group(required=True)
+    maps.add_argument("--function-map", type=Path, help="Reviewed CSV with Name,Start,End,Size columns.")
+    maps.add_argument("--candidate-map", type=Path, help="Automated provisional map from prepare_map.py; requires its manifest.")
     parser.add_argument("--executable", type=Path, default=ROOT / "rom" / "SLUS_214.41")
     args = parser.parse_args()
     try:
@@ -52,7 +60,15 @@ def main():
         inspector = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(inspector)
         metadata = inspector.inspect(data)
-        validate_map(args.function_map, metadata)
+        function_map = args.function_map or args.candidate_map
+        validate_map(function_map, metadata)
+        if args.candidate_map:
+            manifest = json.loads(function_map.with_suffix(".manifest.json").read_text(encoding="utf-8"))
+            if (manifest["status"] != "automated provisional EE map"
+                    or manifest["executable_sha256"] != LOCAL_CANDIDATE_SHA256
+                    or manifest["map_sha256"] != hashlib.sha256(function_map.read_bytes()).hexdigest()
+                    or manifest["language"] != "r5900:LE:32:default"):
+                raise ValueError("Candidate map provenance does not match.")
         build = ROOT / "build" / "ps2recomp-tools"
         tool = build / "ps2xRecomp" / "Debug" / "ps2_recomp.exe"
         provenance = json.loads((build / "bt2-tool-provenance.json").read_text(encoding="utf-8"))
@@ -61,14 +77,34 @@ def main():
         folder = ROOT / "work" / "bt2-generation"
         folder.mkdir(parents=True, exist_ok=True)
         output = ROOT / "game" / "generated" / "bt2"
+        if not output.resolve().is_relative_to(ROOT.resolve()) or not folder.resolve().is_relative_to(ROOT.resolve()):
+            raise ValueError("Generation paths must stay within the project root.")
+        # Preserve prior output and start from an empty directory to prevent stale functions.
+        if output.exists():
+            if output.is_symlink() or output.resolve().parent != (ROOT / "game/generated").resolve():
+                raise ValueError("Unexpected generated-output location.")
+            output.rename(folder / f"previous-output-{uuid.uuid4().hex}")
+        output.mkdir(parents=True)
         config = folder / "config.toml"
         config.write_text(
             '[general]\n' + '\n'.join(f'{key} = {json.dumps(path.resolve().as_posix())}' for key, path in (
-                ("input", args.executable), ("ghidra_output", args.function_map), ("output", output))) +
+                ("input", args.executable), ("ghidra_output", function_map), ("output", output))) +
             '\nsingle_file_output = false\nlow_memory_mode = true\noutput_worker_threads = 1\n'
             'patch_syscalls = false\npatch_cop0 = false\npatch_cache = false\nstubs = []\nskip = []\n', encoding="utf-8")
-        subprocess.run([str(tool), str(config)], cwd=folder, check=True)
-        print(f"Generated output stays local at {output}. It has not been compiled or executed.")
+        log = folder / "generation.log"
+        with log.open("w", encoding="utf-8") as stream:
+            subprocess.run([str(tool), str(config)], cwd=folder, check=True, stdout=stream, stderr=subprocess.STDOUT)
+        files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in sorted(output.iterdir()) if path.is_file() and path.suffix in (".cpp", ".h")}
+        if not files:
+            raise ValueError("Recompiler produced no source files.")
+        (folder / "generation.manifest.json").write_text(json.dumps({
+            "executable_sha256": LOCAL_CANDIDATE_SHA256,
+            "map_sha256": hashlib.sha256(function_map.read_bytes()).hexdigest(),
+            "lock_sha256": provenance["lock_sha256"],
+            "recompiler_sha256": provenance["recompiler_sha256"], "map_kind": "provisional" if args.candidate_map else "reviewed",
+            "files": files}, indent=2) + "\n", encoding="utf-8")
+        print(f"Generated {len(files)} local C++/header files. Log: {log}. Compile/execution is a separate stage.")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Generation stopped: {error}\n")
 

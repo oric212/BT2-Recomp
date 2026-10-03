@@ -51,17 +51,31 @@ The build checks immutable revisions from `config/ps2recomp.lock.json`, stores c
 
 The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` and our own function map, then checks the emitted C++. It does not compile or execute that output and establishes no BT2 function boundaries.
 
-## Local BT2 generation (awaiting reviewed map)
+## Local BT2 generation
 
-Review function boundaries in the local executable using Ghidra and the pinned upstream `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`. Keep projects and maps under ignored `work/` or `research/`. Preserve neutral `FUN_<eight-digit-address>` names until their purpose is established. The initial driver accepts contiguous aligned ranges within executable sections; noncontiguous bodies require review and future support.
+Automatically prepare a provisional map from our local Ghidra export with `tools/ps2recomp/prepare_map.py`. It retains contiguous aligned file-backed `.text` candidates, neutralizes names, and quarantines overlapping, oversized, noncontiguous or out-of-section candidates. It does not treat VU code as EE code or certify boundaries. Keep maps and exclusion/provenance manifests under ignored `work/`. Manual investigation follows actual build/execution blockers.
 
 ```powershell
-python tools/ps2recomp/generate_game.py --function-map work/bt2-functions.csv
+python tools/ps2recomp/prepare_map.py
+python tools/ps2recomp/generate_game.py --candidate-map work/bt2-generation/candidates.csv
 ```
 
-CSV columns are `Name,Start,End,Size` (case insensitive), with exclusive ends. The driver checks the locally recorded candidate size/hash, map ranges, and tool provenance. Matching the candidate hash establishes consistency with our inspected file, not authenticity against a retail reference. It writes local configuration under `work/bt2-generation/` and C++ under ignored `game/generated/bt2/`, with automatic instruction patches disabled and no manual stubs or skips.
+CSV columns are `Name,Start,End,Size` (case insensitive), with exclusive ends. The driver checks executable identity, ranges/overlaps, candidate manifest, and pinned tool provenance. `--function-map PATH` remains available for explicitly reviewed maps. Matching the hash establishes consistency with our inspected file, not authenticity against a retail reference. Configuration/logs/manifests stay under `work/bt2-generation/`; C++ stays under ignored `game/generated/bt2/`, with automatic instruction patches disabled and no manual stubs or skips. Prior generated output is archived locally before regenerating, preventing stale source files from joining the new set.
 
-These checks cannot certify map correctness. Generated output can include upstream heuristic discoveries; treat them as candidates. BT2 generation has not run because no reviewed map exists. The emitted code depends on upstream runtime APIs, so custom runtime adaptation remains future work.
+These checks cannot certify map correctness. Generated output can include upstream heuristic discoveries and fallback entrypoints; retain warnings as diagnostics. The emitted code uses PS2Recomp runtime APIs. The probe adapter supports one routine; broader integration remains unfinished.
+
+## Generate, build and execute
+
+```powershell
+python tools/ps2recomp/run_pipeline.py
+python tools/ps2recomp/run_pipeline.py --reuse-generated
+```
+
+The first command prepares the map, generates code, hashes all source/header output, builds the host and `bt2-generated-probe` with MSVC/C++20, runs CTest and the probe, and attempts entry compilation. Reuse verifies executable/map/tool-lock/recompiler/output hashes and file-set identity before building. Stages record logs under ignored `work/bt2-generation/`.
+
+The probe registers and executes the actual generated `FUN_0032EEE0` from the broad generation set. It verifies selector/operation, syscall resume PC, return target and preserved register bits. Unsupported syscalls, cache modes, guest targets and returns throw errors. It records the cache request; it does not model caches, DMA, MMIO, graphics, or boot the game. No upstream runtime is linked.
+
+The diagnostic `bt2-generated-compile-check` target starts at entry to expose the first missing adapter APIs without compiling thousands of files after the same failure. Its nonzero result is reported in `pipeline-result.json` and `integration-build.log`; the pipeline's successful exit means the probe stages passed, not that boot integration passed. The normal host build remains independent.
 
 ## Installed Ghidra analysis
 
@@ -75,7 +89,7 @@ python tools/ghidra/analyze_game.py
 
 The driver imports the recorded local candidate using `r5900:LE:32:default` and runs our authored exporter. Override installations with `--ghidra-home PATH --java-home PATH`. Projects, logs, JSON, instruction listings, and candidate CSV stay in ignored `work/ghidra/`. An existing project is reopened without repeating analysis. Remove or archive it explicitly when a fresh analysis is needed.
 
-Exports use neutral address names and remain unreviewed. Ghidra reports overlay and decompiler limitations; verify boundaries and control flow before preparing a reviewed map. Do not feed the candidate CSV directly into game generation or commit it.
+Exports use neutral address names and remain provisional. Ghidra reports overlay and decompiler limitations. Use `prepare_map.py` for structural filtering and provenance before experimental generation; do not commit either the raw or prepared map.
 
 ## Entry control audit
 

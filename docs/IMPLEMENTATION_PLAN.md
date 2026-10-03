@@ -9,7 +9,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 1. Native foundation: build and run `bt2-port`; document local content rules. Complete.
 2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Preliminary checks implemented; revision confirmation remains open.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
-4. PS2Recomp feasibility and integration: pinned tool builds, license assessment, and synthetic translation are complete. The guarded generation driver is ready. Ghidra R5900 analysis and unreviewed candidate export are complete. Next obtain reviewed Ghidra function boundaries, generate BT2 code locally, and assess emitted APIs against our custom runtime. Proprietary-derived output remains ignored.
+4. PS2Recomp generation and integration: pinned tools, synthetic validation, Ghidra discovery, automatic provisional EE map preparation, and local generation are working. One generated BT2 syscall wrapper compiles/links and executes through an isolated authored adapter. Extend the runtime from observed compile/execution blockers; proprietary-derived output remains ignored.
 5. Runtime entry: execute translated entry code with only the required compatibility calls. Record unsupported calls and evidence for each implementation.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
@@ -24,6 +24,8 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: trace writes or copy destinations that could populate `0x003B7FA8` before its call; use a local PCSX2 memory observation if static evidence is insufficient. Startup syscall selectors now match a pinned PS2SDK ABI reference, but stack/heap sentinel handling and actual runtime behavior need evidence. The entry and its five direct target bodies passed limited static control audits; deeper callees, indirect targets, and a complete generation map remain unresolved.
+Current next step: resolve the actual generated-entry compile blocker (MMI/GPR vector helpers, CPU/FPU context and memory/dispatch APIs) with a narrow compatibility layer, then link and attempt entry execution. Address unresolved callees, syscalls and `0x003B7FA8` when they block that execution. Startup syscall selectors match a pinned PS2SDK ABI reference; stack/heap sentinel handling remains untested.
+
+Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
 Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.

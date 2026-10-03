@@ -4,7 +4,7 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022 and prints a startup message. Read-only tools validate the local executable preliminarily and inspect ELF metadata. The declared entry point and load regions are recorded with an alignment warning. Exact retail revision confirmation, game loading, recompilation, rendering, and audio remain pending.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. An optional probe compiles and runs one generated BT2 syscall wrapper through a minimal runtime adapter. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
@@ -19,6 +19,8 @@ See [build instructions](docs/BUILDING.md), [the implementation plan](docs/IMPLE
 - `external/`: dependency integration notes; no dependencies are bundled yet.
 - `docs/`: goals, build instructions, progress, and evidence records.
 
-Pinned PS2Recomp tools build separately from the host and pass synthetic translation. Dependency checkouts stay under ignored `work/`; versions are in `config/ps2recomp.lock.json`. BT2 generation requires a reviewed function map, and custom runtime integration is pending. Keep local game paths under ignored `game_data/` or `rom/`.
+Pinned PS2Recomp tools build separately from the host. Dependency checkouts stay under ignored `work/`; versions are in `config/ps2recomp.lock.json`. The workflow uses a provisional neutral function map and advances through generation, builds, execution and blocker diagnostics. Keep local game paths under ignored `game_data/` or `rom/`.
 
 Ghidra with R5900 support is installed under `D:\Cs\Cpp\tools`. Local analysis exports unreviewed function candidates under ignored `work/ghidra/`; boundary review remains pending.
+
+Run `python tools/ps2recomp/run_pipeline.py` after local Ghidra export and tool setup; use `--reuse-generated` to verify and reuse generated output. See [reference architecture](docs/REFERENCE_ARCHITECTURE.md). The passing isolated probe does not indicate that the game entry has executed.

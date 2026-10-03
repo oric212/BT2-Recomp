@@ -41,6 +41,11 @@ class FunctionMapTests(unittest.TestCase):
             with self.subTest(row=row), self.assertRaises(ValueError):
                 self.read_map("Name,Start,End,Size\n" + row + "\n")
 
+    def test_overlapping_ranges_rejected(self):
+        with self.assertRaises(ValueError):
+            self.read_map("Name,Start,End,Size\nFUN_00100000,0x100000,0x10000c,12\n"
+                          "FUN_00100008,0x100008,0x100010,8\n")
+
 
 if __name__ == "__main__":
     unittest.main()

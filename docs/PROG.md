@@ -44,7 +44,9 @@ Next: establish reviewed Ghidra function boundaries for the local executable, th
 - [ ] Trusted retail revision confirmation.
 - [x] ELF metadata inspection (alignment anomaly recorded).
 - [x] Pinned PS2Recomp tools build and synthetic translation.
-- [ ] BT2 generation and custom runtime integration.
+- [x] Local provisional BT2 EE map and C++ generation.
+- [x] Isolated generated BT2 routine compiled, linked and executed.
+- [ ] Full generated-code/runtime integration.
 - [ ] Game entry point reached.
 - [ ] First rendered frame.
 - [ ] Title screen.
@@ -96,3 +98,16 @@ Next: confirm syscall ABI from primary evidence and investigate the unmapped dir
 - Reports and downloaded reference sources remain ignored. No guest code generated or executed and no runtime syscall implementation added.
 
 Next: trace the writer or copy operation that could populate the target before its call, using local PCSX2 memory observation if needed.
+
+## 2026-10-03 — Reference-guided recompilation pipeline and real-code probe
+
+- Inspected BT3-Recomp at `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc` as primary reference and Chronicle at `05fd37be122cd5833cfeeceb83475933959d938f` for validation/symbol/PCSX2 practices. Recorded architectural decisions and source links in `REFERENCE_ARCHITECTURE.md`. No foreign game addresses, assets, or patches were adopted.
+- Changed strategy to automated provisional mapping -> generation -> compile/link -> execution -> observed blocker -> narrow runtime/patch work. Existing manual entry audits remain tooling validation; exhaustive manual boundary review is no longer a generation gate.
+- Prepared 7,241 neutral EE `.text` rows automatically; quarantined 2,300 noncontiguous/invalid bodies. Selected coverage is 1,050,284 bytes (about 45% of declared `.text`), not a complete code map. Exclusions, maps and manifests remain ignored.
+- PS2Recomp generated 7,241 functions: zero decode failures, zero unhandled instructions, zero errors, 432 indirect-flow warnings and 17,654 promoted fallback entries. Warnings remain unresolved diagnostics, not correctness certification.
+- Added one-command orchestration, executable/map/tool/output provenance, stale-output archiving, an optional MSVC/C++20 generated probe, and separate entry compile diagnostics.
+- The real generated `FUN_0032EEE0` compiled, linked and executed through an authored minimal adapter. Verified syscall selector `0x64`, operation zero, resume PC, return sentinel and register preservation. Unsupported syscall/cache/target/return cases were rejected. Cache requests are recorded only; no PS2 cache model or boot claim.
+- CTest passed the generated probe; all 11 synthetic map/provenance tests passed, including modified output, stale source and changed-lock rejection. The normal host rebuilt and ran. MSVC emitted C4702 for an unreachable generated epilogue; no generated-source patch applied.
+- Entry compilation fails on missing `GPR_VEC`, `SET_GPR_VEC`, `ps2_paddu32` and broader context/runtime APIs. This is the actual next integration blocker. The game entry has not executed; the entire generated set has not compiled/linked.
+
+Next: extend the compatibility API enough to compile/link and attempt entry execution, then investigate only the paths that block it. Keep generated game output ignored and repeat the pipeline after each change.
