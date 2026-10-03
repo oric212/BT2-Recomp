@@ -207,6 +207,40 @@ int main() {
         require(std::equal(baseline.begin(), baseline.end(), patched.kernelBaseline().begin()));
         require(patched.kernel_word_writes == 2 && patched.word_writes == 2
                 && patched.read32(patch_ram, 0x80076008) == 0x5A5A5A5A);
+        R5900Context registration{};
+        registration.r[3].low = 0x74;
+        registration.r[4].low = 0x5B;
+        registration.r[2] = {0x1234, 0x5678};
+        registration.pc = 0x204;
+        for (const auto address : {0x80075FFCu, 0x80076008u, 0xA0076000u}) {
+            registration.r[5].low = address;
+            reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
+        }
+        PS2Runtime unwritten;
+        unwritten.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        unwritten.loadKernelSnapshot(baseline);
+        unwritten.enableKernelPatch(0x80076000, 8);
+        registration.r[5].low = 0x80076000;
+        reject([&] { unwritten.handleSyscall(unwritten.memory().data(), &registration, 0); });
+        reject([&] { patched.handleSyscall(nullptr, &registration, 0); });
+        require(patched.syscall_registrations == 0 && patched.syscall_handlers[0x5B] == 0);
+        for (const auto address : {0x80076000u, 0x80076004u}) {
+            registration.r[5].low = address;
+            patched.handleSyscall(patch_ram, &registration, 0);
+            require(patched.syscall_handlers[0x5B] == address && registration.r[2].low == 0x1234
+                    && registration.r[2].high == 0x5678 && registration.pc == 0x204);
+        }
+        registration.r[3].low = 0x5B;
+        bool kernel_callback_stop = false;
+        try { patched.handleSyscall(patch_ram, &registration, 0); }
+        catch (const UnsupportedSyscall& stop) {
+            kernel_callback_stop = stop.selector == 0x5B && stop.handler == 0x80076004 && stop.resume_pc == 0x204;
+        }
+        require(kernel_callback_stop && patched.custom_syscall_calls == 0);
+        registration.r[3].low = 0x74;
+        registration.r[5].low = 0;
+        patched.handleSyscall(patch_ram, &registration, 0);
+        require(patched.syscall_handlers[0x5B] == 0 && patched.syscall_registrations == 3);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

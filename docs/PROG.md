@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, then reaches kernel handler registration. Game boot and gameplay remain incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute initialization, nested startup, semaphore/syscall setup and kernel scans. With explicit kernel and Timer 3 captures, the generated handler completes a bounded kernel patch and a main-RAM copy, completes FlushCache operations `0`/`2`, registers the copied kernel handler, then reaches its uncompiled callback. Game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, four CTests, 22 recomp tooling tests and five capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, four CTests, 23 recomp tooling tests and five capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Startup stops in `FUN_00338998` at SetSyscall selector `0x74`, attempting handler `0x80076000` for syscall `0x5B`, PC `0x003389A0`. This address is outside the supported main-RAM registration range; the handler is not installed. The generated handler/wrapper now return after copying `0x740` bytes into a bounded kernel overlay and `0x28` bytes into main RAM. Every copied word and the unchanged captured baseline are verified.
+Startup stops in `FUN_003389F0` at syscall `0x5B`, dispatching to copied kernel handler `0x80076000`, resume PC `0x003389F8`. Registration returns, but the kernel target has no compiled native function and has not executed. The `0x740`-byte kernel overlay and `0x28`-byte main-RAM copy remain fully verified against their sources; the captured baseline is unchanged.
 
-Next: validate registration/dispatch for the copied kernel handler, map or adapt only the required code path, then run to the next blocker. Only the observed KSEG0 patch range is writable; broader aliases, kernel execution, timer scheduling and BIOS exception behavior remain unverified.
+Next: create a separate relocation-aware map/generation path for the execution-blocking copied kernel payload. Original ELF discovery must not treat the kernel address as original `.text`. Only the observed KSEG0 patch range is writable; broader aliases, kernel execution, timer scheduling and BIOS exception behavior remain unverified.
 
 ## Key counts
 
 - **7,243** functions generated locally; **7,246** generated C++/header files.
-- **13** distinct functions entered across native probes.
-- **10** functions completed across probes; entry, `FUN_00338520` and `FUN_00338A00` remain partial. These are startup/helper paths, not working gameplay.
+- **14** distinct functions entered across native probes.
+- **10** functions completed across probes; entry, `FUN_00338520`, `FUN_00338A00` and `FUN_003389F0` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

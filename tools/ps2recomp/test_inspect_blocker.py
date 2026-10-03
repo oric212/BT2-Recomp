@@ -17,3 +17,10 @@ class BlockerTests(unittest.TestCase):
         self.assertEqual(result["map_status"], "map gap")
         self.assertEqual(result["analysis_candidates"], candidates)
         self.assertEqual(result["exclusions"], excluded)
+
+    def test_copied_kernel_target_is_separate_from_elf_map(self):
+        result = classify(0x80076000, [{"start": 0x36B328, "end": 0x36BA68}], [], [])
+        self.assertEqual(result["map_status"], "map gap")
+        self.assertTrue(result["requires_kernel_payload_mapping"])
+        self.assertEqual(result["mapped_ranges"], [])
+        self.assertFalse(classify(0x36B328, [], [], [])["requires_kernel_payload_mapping"])

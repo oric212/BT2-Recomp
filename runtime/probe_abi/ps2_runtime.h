@@ -87,7 +87,13 @@ public:
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
             if (number >= syscall_handlers.size() || address % 4)
                 throw std::runtime_error("Unsupported SetSyscall registration");
-            if (address) checkMemory(rdram, address, 4);
+            if (address >= 0x80000000) {
+                // Register only a word actually written into the explicitly enabled patch.
+                // Registration does not make these bytes a compiled native function.
+                if (memory_.empty() || rdram != memory_.data() || address < kernel_patch_start_
+                        || address >= kernel_patch_end_ || !kernel_patch_words_.contains(address - 0x80000000))
+                    throw UnsupportedGuestMemory(address, 4);
+            } else if (address) checkMemory(rdram, address, 4);
             syscall_handlers[number] = address;
             ++syscall_registrations;
             // PS2SDK declares void; preserve v0 rather than inventing a result.

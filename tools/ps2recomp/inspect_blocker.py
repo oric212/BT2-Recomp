@@ -11,6 +11,7 @@ def classify(address, rows, functions, excluded):
     return {"address": address, "neutral_name": f"FUN_{containing[0]['start'] if len(containing) == 1 else address:08X}",
             "map_status": "mapped entry" if exact else "inside mapped function" if containing else "map gap",
             "mapped_ranges": containing, "analysis_candidates": candidates,
+            "requires_kernel_payload_mapping": 0x80000000 <= address < 0x80080000,
             "exclusions": [row for row in excluded if row["start"] <= address < row["end"]]}
 
 

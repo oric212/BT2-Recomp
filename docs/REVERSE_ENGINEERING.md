@@ -173,3 +173,9 @@ The entry probe explicitly enables aligned word stores only for `[0x80076000, 0x
 Pinned PS2SDK `kernel.h` defines FlushCache operation `2` as instruction-cache invalidation and declares a void return. The probe now accepts only observed operations `0`/`2`, preserves return registers, and records separate invalidation/total request counts. Its stores are immediately visible and dispatch is fixed native C++; no guest cache exists and no patched kernel instructions are translated by this call. This is a bounded compatibility behavior, not hardware cache validation.
 
 Generated entry completes both requests, then SetSyscall (`0x74`) attempts to register `0x80076000` for `0x5B` at resume PC `0x003389A0`. Main-RAM registration validation rejects that address before installing it. This is handler-address validation, not a guest load fault. Captured baseline/copy comparisons remain unchanged. Handler meaning, execution and aliases remain unknown.
+
+## 2026-10-03 - Copied kernel registration and dispatch
+
+The bounded adapter now accepts aligned SetSyscall destinations in the enabled kernel overlay only if the entry word was actually written. This registers a pointer without translating or executing its bytes. Baseline-only, unwritten, adjacent, unsupported-alias and wrong-memory-pointer destinations remain rejected; null unregister still works and the void ABI preserves return registers.
+
+Actual generated `FUN_00338998` registers `0x80076000` for `0x5B` and returns. Linked neutral wrapper `FUN_003389F0` invokes `0x5B` with observed `a0=0xFC`; dispatch rejects the uncompiled target before entering it, at resume PC `0x003389F8`. All previous copies/cache requests remain verified. The kernel destination is outside original file-backed ELF `.text`; it needs a separate payload map with source/copy provenance and runtime-address relocation. No purpose is assigned to the handler or argument.
