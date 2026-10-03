@@ -6,6 +6,10 @@ inline std::uint32_t GPR_U32(const R5900Context* context, unsigned index) {
     return index == 0 ? 0 : static_cast<std::uint32_t>(context->r.at(index).low);
 }
 
+inline std::uint32_t SRL32(std::uint32_t value, unsigned shift) {
+    return value >> (shift & 31u);
+}
+
 inline std::uint32_t ADD32(std::uint32_t left, std::uint32_t right) {
     return left + right;
 }

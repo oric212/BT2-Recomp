@@ -62,28 +62,26 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x003383C8, FUN_003383C8_0x3383c8);
         runtime.registerFunction(0x00338388, FUN_00338388_0x338388);
         runtime.registerFunction(0x00338A00, FUN_00338A00_0x338a00);
+        runtime.registerFunction(0x00338998, FUN_00338998_0x338998);
+        runtime.registerFunction(0x003389A8, FUN_003389A8_0x3389a8);
+        runtime.registerFunction(0x003389B8, FUN_003389B8_0x3389b8);
         bool stopped = false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
-        std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
+        std::uint32_t stop_handler = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (timer_mode) throw;
-            if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
+            if (timer_mode) {
+                require(stop.address == 0x80076000 && stop.size == 4 && context.pc == 0x003389D8,
+                        "Unexpected captured startup kernel-write boundary");
+                stop_handler = runtime.syscall_handlers[0x5A];
+            }
+            else if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
                                        "Unexpected snapshot MMIO boundary");
             else require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388,
                          "Unexpected entry memory boundary");
             stop_address = stop.address;
             stop_size = stop.size;
-            stopped = true;
-        }
-        catch (const UnsupportedGuestBranch& stop) {
-            if (!timer_mode) throw;
-            require(stop.target == 0x00338998 && stop.source_pc == 0x00338A40 && stop.resume_pc == 0x00338A48,
-                    "Unexpected Timer 3 replay dispatch boundary");
-            std::cerr << "Timer replay next target 0x" << std::hex << stop.target << ", source 0x" << stop.source_pc
-                      << ", resume 0x" << stop.resume_pc << std::dec << "\n";
-            stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc;
             stopped = true;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
@@ -111,21 +109,26 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == 12 && runtime.custom_syscall_calls == 2 && runtime.returns == 10
+            require(runtime.guest_calls == (timer_mode ? 15u : 12u) && runtime.custom_syscall_calls == (timer_mode ? 3u : 2u) && runtime.returns == (timer_mode ? 11u : 10u)
                     && runtime.word_writes == 9 && runtime.doubleword_writes == 14,
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
         }
-        if (timer_mode) require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
+        if (timer_mode) {
+            require(runtime.timer3_mode_reads == 1, "Unexpected Timer 3 replay read count");
+            require(args[0] == 0x80076000 && args[1] == 0x0036B32C && args[2] == 0x1D0 && args[3] == 1
+                    && GPR_U32(&context, 3) == runtime.read32(runtime.memory().data(), 0x0036B328),
+                    "Generated handler did not reach the first checked copy store");
+        }
         const auto frame = runtime.initial_sp - 144;
         require(runtime.read64(runtime.memory().data(), frame + 112) == (snapshot_mode ? 0x00338540 : 0x00338538),
                 "Current frame did not save return address");
         for (const auto offset : {0u, 16u, 32u, 48u, 64u, 80u, 96u})
             require(runtime.read64(runtime.memory().data(), frame + offset) == 0,
                     "Unexpected saved callee register");
-        require(runtime.syscall_registrations == 2 && runtime.syscall_handlers[0x83] == 0x00338388
-                && runtime.syscall_handlers[0x5A] == 0x00338350,
+        require(runtime.syscall_registrations == (timer_mode ? 3u : 2u) && runtime.syscall_handlers[0x83] == 0x00338388
+                && runtime.syscall_handlers[0x5A] == (timer_mode ? 0x003389B8u : 0x00338350u),
                 "Expected syscall registrations missing");
         if (!snapshot_mode) require(args[0] == 0x80000000 && args[1] == 0x80080000 && args[2] == 0x00338388,
                 "Unexpected reached guest call arguments");
@@ -140,9 +143,9 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"" << (stop_target ? "blocked at unsupported guest dispatch" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
-               << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source << ",\"resume_pc\":" << stop_resume << ",\"address\":" << stop_address << ",\"size\":" << stop_size
-               << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << runtime.syscall_handlers[0x83] << ",\"pc\":" << context.pc << ",\"arguments\":[";
+        report << "{\"status\":\"blocked at unsupported guest memory\",\"entry_executed\":true,"
+               << "\"access\":\"" << (timer_mode ? "write" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << (stop_handler ? stop_handler : runtime.syscall_handlers[0x83]) << ",\"pc\":" << context.pc << ",\"arguments\":[";
         for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
@@ -153,7 +156,7 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (timer_mode) std::cout << "Captured Timer 3 read replayed; next target 0x" << std::hex << stop_target << std::dec << "\n";
+        if (timer_mode) std::cout << "Captured Timer 3 read replayed; generated handler stopped at kernel write 0x" << std::hex << stop_address << std::dec << "\n";
         else if (snapshot_mode) std::cout << "Snapshot scans returned; FUN_00338A00 reached unsupported MMIO read 0x"
                                      << std::hex << stop_address << " at PC 0x" << context.pc << std::dec << "\n";
         else std::cout << "No kernel snapshot supplied; stopped at first kernel read 0x80000000.\n";

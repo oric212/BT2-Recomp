@@ -181,6 +181,9 @@ int main() {
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
         PS2Runtime invalid_timer;
         reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
+        require(SRL32(0x740, 2) == 0x1D0);
+        require(SRL32(0x80000000, 1) == 0x40000000);
+        require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";

@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute generated entry initialization, RAM clearing, nested startup calls, semaphore creation and syscall registration. The generated kernel scan completes against a local PCSX2 capture and returns `0x80014F0C`, confirmed by an independent aligned scan. With the explicit snapshot, both scans return and `FUN_00338410` completes; A local capture establishes Timer 3 mode `0x83` at the reached boundary; explicit single-read replay advances `FUN_00338A00` to an unregistered call to `FUN_00338998`. Game boot and gameplay are incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute entry initialization, nested startup, semaphore creation, syscall registration and kernel scans. Explicit replay of captured Timer 3 mode `0x83` advances startup through `FUN_00338998` and into the discovered registered handler `FUN_003389B8`. Game boot and gameplay remain incomplete.
 
 Latest verification: MSVC build/pipeline, four CTests, 22 recomp tooling tests and five capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-With explicit kernel and Timer 3 captures, startup stops at unregistered `FUN_00338998`: target `0x00338998`, source `0x00338A40`, resume `0x00338A48`. This target is already generated. Kernel-only mode still stops at Timer 3 MMIO; no-snapshot mode still stops at the first kernel read.
+With explicit kernel and Timer 3 captures, `FUN_003389B8` stops at its first rejected kernel word write: address `0x80076000`, PC `0x003389D8`. The handler read a source word from `0x0036B328`; its destination lies in the captured KSEG0 window. Kernel-only and no-snapshot stop paths remain checked.
 
-Next: compile/link/register `FUN_00338998` and execute to the next actual blocker. Timer support currently replays one supplied captured mode read; scheduling, interrupts, writes and repeated reads remain unsupported. Game boot is incomplete.
+Next: establish the required bounded kernel patch storage and write semantics, then continue the generated handler. Preserve the captured baseline and reject unrelated memory/MMIO. Timer support still replays one supplied read; full hardware behavior and game boot remain unverified.
 
 ## Key counts
 
-- **7,242** functions generated locally; **7,245** generated C++/header files.
-- **10** distinct functions entered across native probes.
-- **7** functions completed across probes; entry, `FUN_00338520` and `FUN_00338A00` remain partial. These are startup/helper paths, not working gameplay.
+- **7,243** functions generated locally; **7,246** generated C++/header files.
+- **13** distinct functions entered across native probes.
+- **8** functions completed across probes; five remain partial, including the new wrapper/handler path. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 
