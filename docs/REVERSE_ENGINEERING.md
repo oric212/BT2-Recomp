@@ -11,7 +11,7 @@ Planned target: North American SLUS-21441. Preliminary validation of local `rom/
 - Basic header: ELF32, little-endian, MIPS, executable.
 - Sibling `SYSTEM.CNF` boot reference: `cdrom0:\SLUS_214.41;1`.
 
-These observations establish a candidate match. No trusted reference hash has been supplied to authenticate the exact retail revision.
+Retail revision is now confirmed: the local 2,998,829,056-byte ISO matches the official [Redump PS2 datfile](http://redump.org/datfile/ps2/) USA entry (MD5 `37393b158051af0ab5cb3c86d04d51b7`, SHA-1 `0b11f7a2a4c178b555c45a58ce8ee725e57a1423`). Its root `SLUS_214.41;1` extent at byte offset 624,640 has the same size and SHA-256 as the local executable above. `config/retail_revision.json` records reference provenance; `verify_disc.py` repeats the read-only comparison. No independent published ELF hash is claimed.
 
 ELF metadata inspected with `tools/inspect_elf/inspect_elf.py` on 2026-10-03 using the same SHA-256 above. The header declares entry point `0x00100008`, four program headers, and 33 section headers. The declared entry lies within an executable load region. This does not mean the entry has executed.
 
@@ -110,7 +110,7 @@ The unresolved target may acquire executable contents after the startup zero-sto
 
 ## Unknowns
 
-Exact retail revision, actual runtime memory behavior, the empty load record's purpose, general function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Experimental generation uses structurally filtered provisional maps; focus further manual review on actual build and execution blockers.
+Actual runtime memory behavior, the empty load record's purpose, general function boundaries, game file formats, and required PS2 runtime behavior remain unverified. Ghidra reported a conflicting `rom0` block, unsupported byte mapping for DVP overlays, and decompiler flow errors. Candidate maps, disassembly, logs, and projects stay under ignored `work/ghidra/`; raw ELF metadata stays in ignored `work/elf_report.json`. Experimental generation uses structurally filtered provisional maps; focus further manual review on actual build and execution blockers.
 
 ### Bootstrap stack model (not retail BIOS confirmation)
 
@@ -147,3 +147,7 @@ Focused Ghidra discovery produced provisional `[0x00338388, 0x003383C8)`. The re
 ### Kernel address evidence and fixture limits
 
 [PCSX2 memMapKernelMem](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/Memory.cpp) maps `0x80000000` to physical zero. Our adapter exposes only a read-only captured window; it does not treat ELF zero-fill as kernel contents. Generated handler match/no-match behavior passes authored synthetic fixtures. Real capture comparison at PC `0x00338388` is pending, as are kernel table mutation and BIOS exception semantics.
+
+### Snapshot-driven entry execution
+
+With the explicitly supplied local capture, generated `FUN_00338388` returns twice through `FUN_003383C8`. `FUN_00338410` completes and stores `0x80014D00` at `0x0036AB40`; the two searches converge on the same value after their emitted offsets. Execution then attempts `FUN_00338A00` from `0x00338538`, resume `0x00338540`. This target is already provisionally mapped/generated, but is not registered in the bounded adapter. The capture window remains read-only and separate from main RAM; no kernel writes or BIOS exception semantics are established.

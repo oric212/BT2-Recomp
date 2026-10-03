@@ -18,7 +18,7 @@ def main():
     verify_generated()
     folder = ROOT / "work/bt2-generation"
     stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
-    address = stop.get("handler") or stop.get("target")
+    address = stop.get("target") or stop.get("handler")
     if address is None:
         print("Syscall blocker has no registered handler to map.")
         return

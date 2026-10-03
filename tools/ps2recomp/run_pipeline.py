@@ -37,10 +37,20 @@ def verify_generated():
             raise ValueError(f"Generated source changed: {name}")
 
 
+def verify_snapshot(path):
+    data = path.read_bytes()
+    manifest = json.loads(path.with_suffix('.json').read_text(encoding='utf-8'))
+    if len(data) != 0x80004 or hashlib.sha256(data).hexdigest() != manifest['snapshot_sha256'] or not manifest['capture_note']:
+        raise ValueError('Kernel snapshot size/hash/capture provenance differs.')
+    return manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-generated", action="store_true", help="Verify provenance and reuse existing generated output.")
+    parser.add_argument('--kernel-snapshot', type=Path, help='Explicit local snapshot with hash/capture-note sidecar; enables the next startup boundary.')
     args = parser.parse_args()
+    snapshot_provenance = verify_snapshot(args.kernel_snapshot) if args.kernel_snapshot else None
     folder = ROOT / "work/bt2-generation"
     folder.mkdir(parents=True, exist_ok=True)
     if not args.reuse_generated:
@@ -58,10 +68,13 @@ def main():
     entry_stop = None
     if result.returncode == 0:
         run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "^generated-entry-probe$"], folder / "entry-test.log")
-        run([str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")])
+        entry_command = [str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")]
+        if args.kernel_snapshot:
+            entry_command.append(str(args.kernel_snapshot.resolve()))
+        run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
-        "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
+        "kernel_snapshot_provenance": snapshot_provenance, "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
         "integration_log": str(folder / "integration-build.log")}, indent=2) + "\n", encoding="utf-8")
     print(f"Probes verified. Entry build exit code: {result.returncode}; inspect {folder / 'integration-build.log'}.")
     if result.returncode:

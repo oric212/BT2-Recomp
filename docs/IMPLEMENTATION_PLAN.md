@@ -7,10 +7,10 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 ## Ordered steps and completion evidence
 
 1. Native foundation: build and run `bt2-port`; document local content rules. Complete.
-2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Preliminary checks implemented; revision confirmation remains open.
+2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Complete: local ISO matches official Redump size/MD5/SHA-1, and its embedded ELF matches the local executable. Reference provenance is in `config/retail_revision.json`.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
 4. PS2Recomp generation and integration: pinned tools, synthetic validation, Ghidra discovery, automatic provisional EE map preparation, and local generation are working. One generated BT2 syscall wrapper compiles/links and executes through an isolated authored adapter. Extend the runtime from observed compile/execution blockers; proprietary-derived output remains ignored.
-5. Runtime entry: generated entry now compiles, links and executes CPU initialization and startup RAM clearing, then stops at unsupported SetupThread (`0x3C`). Implement only the required compatibility calls from evidence and record each new execution blocker.
+5. Runtime entry: generated entry now compiles, links and executes initialization and nested startup. With an explicit kernel snapshot, scans return and startup reaches the unregistered generated target `FUN_00338A00`. Implement only the required compatibility calls from evidence and record each new execution blocker.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
 8. Playable versus battle: reach the first major gameplay goal with working controls.
@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: integrate the explicitly supplied local kernel snapshot into the bounded entry probe, execute to the next observed blocker, and implement only the required kernel table/patch access. The generated scan returned `0x80014F0C` on a local PCSX2 capture at the instrumented handler boundary. Captures and patched executables stay ignored.
+Current next step: compile/link/register provisional `FUN_00338A00`, already generated, and execute snapshot-driven startup to its next blocker. Both generated scans returned, converged on `0x80014D00`, and `FUN_00338410` completed. The next unregistered call is at `0x00338538`, target `0x00338A00`, resume `0x00338540`. Captures and patched executables stay ignored.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

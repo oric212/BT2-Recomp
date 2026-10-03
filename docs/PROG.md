@@ -4,27 +4,27 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-03
 
 ## Current status
 
-The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute generated entry initialization, RAM clearing, nested startup calls, semaphore creation and syscall registration. The generated kernel scan completes against a local PCSX2 capture and returns `0x80014F0C`, confirmed by an independent aligned scan. Game boot and gameplay are incomplete.
+The C++20 host builds and runs. Automated provisional mapping and PS2Recomp generation work locally. Native probes execute generated entry initialization, RAM clearing, nested startup calls, semaphore creation and syscall registration. The generated kernel scan completes against a local PCSX2 capture and returns `0x80014F0C`, confirmed by an independent aligned scan. With the explicit snapshot, both scans return and `FUN_00338410` completes; startup reaches an unregistered call to `FUN_00338A00`. Game boot and gameplay are incomplete.
 
-Latest verification: MSVC build/pipeline, four CTests and 22 Python tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; trusted retail revision confirmation is pending.
+Latest verification: MSVC build/pipeline, four CTests, 20 recomp tooling tests and four disc-validator tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Full startup stops in `FUN_00338388` at its first word read from `0x80000000`, PC `0x00338388`. The entry probe does not yet load the captured kernel snapshot; isolated scan execution succeeds with it.
+Snapshot-driven startup stops at an unregistered call to `0x00338A00`, from `0x00338538`, resume `0x00338540`. The target already exists in the provisional generated map. Without an explicit snapshot, the original first-read stop at `0x80000000` remains checked.
 
-Next: explicitly load the local snapshot into the bounded entry probe, execute to the next observed blocker, then implement only the required kernel table/patch access. The capture uses an instrumented standalone ELF boot with an active IOP; it does not validate BIOS exception behavior or full game boot.
+Next: compile/link/register `FUN_00338A00`, then execute to its next actual blocker. The captured kernel stays read-only; BIOS exception behavior, writable kernel patches and full boot remain unverified.
 
 ## Key counts
 
 - **7,242** functions generated locally; **7,245** generated C++/header files.
 - **9** distinct functions entered across native probes.
-- **5** functions completed across probes: four startup/isolated helpers plus the kernel scan on captured data. These are startup/helper paths, not working gameplay.
+- **7** functions completed across probes: the previous five plus `FUN_003383C8` and `FUN_00338410` during snapshot-driven startup. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 
 - [x] Native host executable.
 - [x] Preliminary local executable validation and ELF metadata inspection.
-- [ ] Trusted retail revision confirmation.
+- [x] Trusted retail revision confirmation (Redump disc match; local ELF equals the embedded executable).
 - [x] Pinned PS2Recomp tools and synthetic translation.
 - [x] Provisional BT2 function map and local C++ generation.
 - [x] Generated routines compiled, linked and executed; game entry reached.

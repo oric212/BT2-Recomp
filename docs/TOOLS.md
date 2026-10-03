@@ -145,3 +145,19 @@ python tools/ps2recomp/probe_kernel.py work/pcsx2-capture/ee-ram.bin --capture-n
 ```
 
 This extracts a read-only kernel window and invokes the generated scan handler in isolation. Hashes and notes are saved under ignored `work/bt2-generation/`. The result does not establish a full boot, exact BIOS exception behavior or writable kernel-patch compatibility. No capture is downloaded or bundled.
+
+### Retail disc revision confirmation
+
+```powershell
+python tools/verify_game/verify_disc.py "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+```
+
+This streams the local ISO against the official Redump size/MD5/SHA-1 recorded in `config/retail_revision.json`, reads bounded ISO9660 root records, and compares the embedded executable's size/SHA-256 with the local ELF. Reports stay under ignored `work/disc-validation/`. Only reference checksum metadata is stored in Git.
+
+### Snapshot-driven entry pipeline
+
+```powershell
+python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin
+```
+
+The snapshot requires its `.json` sidecar from `probe_kernel.py`; size, SHA-256 and capture note are checked before the run. The entry probe verifies both successful scans, their converged table base, restored stack and the next dispatch boundary. CTest retains the no-snapshot boundary. Supplying a snapshot is explicit; there is no automatic kernel-memory loading.

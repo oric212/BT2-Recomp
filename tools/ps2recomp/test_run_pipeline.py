@@ -58,5 +58,32 @@ class GenerationProvenanceTests(unittest.TestCase):
             run_pipeline.verify_generated()
 
 
+class SnapshotProvenanceTests(unittest.TestCase):
+    def test_valid_and_modified_snapshot(self):
+        folder = run_pipeline.ROOT / 'work/test-provenance'
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=folder) as temp:
+            path = Path(temp) / 'kernel.bin'
+            data = bytes(0x80004)
+            path.write_bytes(data)
+            manifest = {'snapshot_sha256': hashlib.sha256(data).hexdigest(), 'capture_note': 'authored fixture'}
+            path.with_suffix('.json').write_text(json.dumps(manifest), encoding='utf-8')
+            self.assertEqual(run_pipeline.verify_snapshot(path), manifest)
+            path.write_bytes(bytes([1]) + data[1:])
+            with self.assertRaises(ValueError):
+                run_pipeline.verify_snapshot(path)
+
+    def test_wrong_size_snapshot(self):
+        folder = run_pipeline.ROOT / 'work/test-provenance'
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=folder) as temp:
+            path = Path(temp) / 'kernel.bin'
+            path.write_bytes(b'fixture')
+            path.with_suffix('.json').write_text(json.dumps({'snapshot_sha256': hashlib.sha256(b'fixture').hexdigest(),
+                                                          'capture_note': 'authored fixture'}), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                run_pipeline.verify_snapshot(path)
+
+
 if __name__ == "__main__":
     unittest.main()
