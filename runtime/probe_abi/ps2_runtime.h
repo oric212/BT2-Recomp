@@ -202,6 +202,34 @@ public:
             context->r[2].low = id;
             return;
         }
+        if (code == 0 && selector == 0x12) {
+            const auto channel = static_cast<std::uint32_t>(context->r[4].low);
+            const auto address = static_cast<std::uint32_t>(context->r[5].low);
+            if (channel != 5 || !address || address % 4 || context->r[6].low != 0)
+                throw UnsupportedSyscall(selector, context->pc);
+            checkMemory(rdram, address, 4);
+            if (dmac_handlers.size() == 128) {
+                context->r[2].low = UINT64_MAX;
+                return;
+            }
+            dmac_handlers.push_back({channel, address, static_cast<std::uint32_t>(context->r[7].low),
+                                     static_cast<std::uint32_t>(context->r[28].low)});
+            const auto id = static_cast<std::uint32_t>(dmac_handlers.size());
+            dmac_handler_order.insert(dmac_handler_order.begin(), id);
+            context->r[2].low = id;
+            return;
+        }
+        if (code == 0 && selector == 0x16) {
+            // Captured mask bits only. No status acknowledgements, DMA or interrupt delivery.
+            if (context->r[4].low != 5 || dma_status_reads != 1 || dma5_control_reads != 1
+                    || dmac_handlers.empty()) throw UnsupportedSyscall(selector, context->pc);
+            const auto bit = 0x10000u << 5;
+            const bool changed = !(dmac_mask & bit);
+            dmac_mask |= bit;
+            ++dmac_enable_calls;
+            context->r[2].low = changed ? 1 : 0;
+            return;
+        }
         if (code == 0 && selector == 0x74) {
             const auto number = static_cast<std::uint32_t>(context->r[4].low);
             const auto address = static_cast<std::uint32_t>(context->r[5].low);
@@ -503,6 +531,25 @@ public:
         timer2_mode_supplied_ = true;
     }
 
+    void supplyDmaStatus(std::uint32_t word) {
+        if (dma_status_supplied_ || word != 0x00800040)
+            throw std::runtime_error("Unsupported/repeated DMA status checkpoint");
+        dma_status_word_ = word;
+        dmac_mask = word & 0xFFFF0000;
+        dma_status_supplied_ = true;
+    }
+    void supplyDma5Control(std::uint32_t word) {
+        if (!dma_status_supplied_ || dma5_control_supplied_ || word != 0x184)
+            throw std::runtime_error("Unsupported/repeated DMA 5 control checkpoint");
+        dma5_control_word_ = word;
+        dma5_control_supplied_ = true;
+    }
+    unsigned dma_status_reads = 0, dma5_control_reads = 0;
+    struct DmacHandler { std::uint32_t channel, address, arg, gp; };
+    std::vector<DmacHandler> dmac_handlers;
+    std::vector<std::uint32_t> dmac_handler_order;
+    std::uint32_t dmac_mask = 0, dmac_enable_calls = 0;
+
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
     void Store32(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint32_t value) {
         write32(rdram, address, value);
@@ -530,6 +577,16 @@ public:
     }
 
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address) {
+        if (address == 0x1000E010 && dma_status_supplied_ && !dma_status_reads) {
+            checkMemory(rdram, 0, 0);
+            ++dma_status_reads;
+            return dma_status_word_;
+        }
+        if (address == 0x1000C000 && dma5_control_supplied_ && dma_status_reads == 1 && !dma5_control_reads) {
+            checkMemory(rdram, 0, 0);
+            ++dma5_control_reads;
+            return dma5_control_word_;
+        }
         // Read-only KSEG0 view of locally supplied kernel bytes; no fabricated kernel.
         if (address >= 0x80000000 && address < 0x80000000 + kernel_snapshot_size) {
             const auto offset = address - 0x80000000;
@@ -593,6 +650,8 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    bool dma_status_supplied_ = false, dma5_control_supplied_ = false;
+    std::uint32_t dma_status_word_ = 0, dma5_control_word_ = 0;
     bool osd_config_supplied = false, osd_readback_supplied = false;
     std::uint32_t osd_config_word = 0;
     std::uint64_t addIntcHandler(std::uint32_t cause, std::uint32_t address, std::uint32_t arg, std::uint32_t gp) {

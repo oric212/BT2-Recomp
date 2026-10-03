@@ -108,6 +108,28 @@ class TimerCaptureTests(unittest.TestCase):
     def save(self):
         self.path.write_text(json.dumps(self.manifest), encoding='utf-8')
 
+    def test_dma_full_word_checkpoints_and_changed_marker(self):
+        for channel, name, address, register, marker, field, value in [
+            (False, 'dma-status', 0x3319CC, 0xE010, 0xB709, 'observed_dma_status', 0x800040),
+            (True, 'dma5-control', 0x3319EC, 0xC000, 0xB70A, 'observed_dma5_control', 0x184)]:
+            words = self.words.copy()
+            words[1], words[6], words[8] = 0x37180000 | register, 0x34190000 | marker, 0x08000000 | ((address + 32) >> 2)
+            self.data[address:address + 40] = struct.pack('<10I', *words)
+            struct.pack_into('<II', self.data, 0x387E80, marker, value)
+            self.manifest.update(capture_point=name + ': authored fixture',
+                                 patch={'address': address, 'size': 40, 'authored_words': words},
+                                 capture_sha256=hashlib.sha256(self.data).hexdigest())
+            self.manifest[field] = value
+            self.path.with_name('ee-ram.bin').write_bytes(self.data)
+            self.save()
+            self.assertEqual(run_pipeline.verify_dma_capture(self.path, channel)[0], value)
+            struct.pack_into('<I', self.data, 0x387E80, marker + 1)
+            self.manifest['capture_sha256'] = hashlib.sha256(self.data).hexdigest()
+            self.path.with_name('ee-ram.bin').write_bytes(self.data)
+            self.save()
+            with self.assertRaises(ValueError):
+                run_pipeline.verify_dma_capture(self.path, channel)
+
     def test_valid_capture_and_changed_payload_rejected(self):
         self.assertEqual(run_pipeline.verify_timer_capture(self.path)[0], 0x83)
         self.manifest['observed_timer3_mode'] = 0x100

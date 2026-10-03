@@ -145,5 +145,20 @@
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
     "role": "sc_WaitSema/sc_SignalSema: valid nonblocking wait decrements count and returns ID; signal with no waiting thread increments count and returns ID; invalid ID returns sign-extended -1. Authored model rejects empty waits and maximum-count signaling before mutation; no thread sleep, wakeup, syscall stack clearing, interrupt variant or rescheduling."
+  },
+  "dmac_registration_enable_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ],
+    "role": "Separate 128-entry DMAC handler pool with ID base 1; sc_AddDmacHandler records channel/address/arg/GP and next=0 inserts at front. Authored adapter accepts only channel 5/front insertion; no callback execution, removal or delivery. sc_EnableDmac tests mask bit 16+channel and returns 1 if changed, 0 if already enabled. Adapter uses explicit captured D_STAT mask and records channel 5 enable after both validated checkpoint reads; no hardware status/transfer progression or general D_STAT writes."
   }
 }

@@ -61,7 +61,7 @@ def verify_timer2_readback_capture(path):
     return verify_word_capture(path, 'timer2-readback', 'observed_timer2_readback', 0x00338DD8, 0xB706, 0x1010)
 
 
-def verify_word_capture(path, point, field, address, marker_value, register):
+def verify_word_capture(path, point, field, address, marker_value, register, max_word=0xFFFF):
     manifest = json.loads(path.read_text(encoding='utf-8'))
     if (manifest['source_elf_sha256'] != LOCAL_CANDIDATE_SHA256
             or not manifest['capture_point'].startswith(point + ':')
@@ -75,10 +75,17 @@ def verify_word_capture(path, point, field, address, marker_value, register):
     trap = struct.pack('<10I', *manifest['patch']['authored_words'])
     expected_trap = struct.pack('<10I', 0x3C181000, 0x37180000 | register, 0x8F190000, 0x3C180038, 0x37187E80,
                                 0xAF190004, 0x34190000 | marker_value, 0xAF190000, 0x08000000 | ((address + 32) >> 2), 0)
-    if (trap != expected_trap or mode != manifest[field] or mode > 0xFFFF or marker != marker_value
+    if (trap != expected_trap or mode != manifest[field] or mode > max_word or marker != marker_value
             or data[address:address + 40] != trap):
         raise ValueError('Timer capture payload/instrumentation differs.')
     return mode, manifest
+
+
+def verify_dma_capture(path, channel=False):
+    point, address, marker, register, field = (
+        ('dma5-control', 0x003319EC, 0xB70A, 0xC000, 'observed_dma5_control') if channel else
+        ('dma-status', 0x003319CC, 0xB709, 0xE010, 'observed_dma_status'))
+    return verify_word_capture(path, point, field, address, marker, register, max_word=0xFFFFFFFF)
 
 
 def verify_osd_capture(path):
@@ -140,7 +147,15 @@ def main():
     parser.add_argument('--timer2-readback-capture', type=Path, help='Explicit validation of the post-write mode read; requires INTC checkpoint.')
     parser.add_argument('--osd-capture', type=Path, help='First OSD config output checkpoint; requires Timer 2 readback.')
     parser.add_argument('--osd-readback-capture', type=Path, help='Validate first same-value OSD setter/readback; requires OSD capture.')
+    parser.add_argument('--dma-status-capture', type=Path, help='Explicit first D_STAT checkpoint; requires OSD readback.')
+    parser.add_argument('--dma5-control-capture', type=Path, help='Explicit first channel 5 CHCR checkpoint; requires D_STAT.')
     args = parser.parse_args()
+    if args.dma_status_capture and not args.osd_readback_capture:
+        parser.error('--dma-status-capture requires --osd-readback-capture')
+    if args.dma5_control_capture and not args.dma_status_capture:
+        parser.error('--dma5-control-capture requires --dma-status-capture')
+    dma_status = verify_dma_capture(args.dma_status_capture) if args.dma_status_capture else None
+    dma5_control = verify_dma_capture(args.dma5_control_capture, channel=True) if args.dma5_control_capture else None
     if args.osd_readback_capture and not args.osd_capture:
         parser.error('--osd-readback-capture requires --osd-capture')
     osd_readback = verify_osd_readback_capture(args.osd_readback_capture) if args.osd_readback_capture else None
@@ -214,9 +229,16 @@ def main():
             osd_readback_word = folder / 'osd-readback.bin'
             osd_readback_word.write_bytes(struct.pack('<I', osd_readback[0]))
             entry_command.append(str(osd_readback_word))
+        for checkpoint, name in ((dma_status, 'dma-status'), (dma5_control, 'dma5-control')):
+            if checkpoint:
+                word_path = folder / (name + '.bin')
+                word_path.write_bytes(struct.pack('<I', checkpoint[0]))
+                entry_command.append(str(word_path))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "dma_status_provenance": dma_status[1] if dma_status else None,
+        "dma5_control_provenance": dma5_control[1] if dma5_control else None,
         "osd_readback_provenance": osd_readback[1] if osd_readback else None,
         "osd_capture_provenance": osd_capture[1] if osd_capture else None,
         "startup_kernel_generation_provenance": startup_kernel_generation,

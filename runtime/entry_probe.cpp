@@ -19,14 +19,16 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD]]]]]]]]]");
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
         const bool timer2_mode = argc >= 6;
         const bool intc_mode = argc >= 7;
         const bool readback_mode = argc >= 8;
         const bool osd_mode = argc >= 9;
-        const bool osd_readback_mode = argc == 10;
+        const bool osd_readback_mode = argc >= 10;
+        const bool dma_status_mode = argc >= 11;
+        const bool dma5_mode = argc >= 12;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(PS2Runtime::ram_size))
             throw std::runtime_error("Invalid prepared guest image size");
@@ -100,6 +102,15 @@ int main(int argc, char** argv) {
             runtime.supplyOsdReadback(word);
             runtime.enableStartupKernelPayload(std::span<const std::uint8_t>(runtime.memory()).subspan(0x0036BAF8, 0x330));
         }
+        for (int index = 10; index < argc; ++index) {
+            std::ifstream capture(argv[index], std::ios::binary | std::ios::ate);
+            if (!capture || capture.tellg() != 4) throw std::runtime_error("Invalid DMA checkpoint word");
+            std::uint32_t word;
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("DMA checkpoint read failed");
+            if (index == 10) runtime.supplyDmaStatus(word);
+            else runtime.supplyDma5Control(word);
+        }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
         runtime.expectStartupZeroRegion(zero_start, zero_end);
@@ -139,6 +150,10 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00331FE8, FUN_00331FE8_0x331fe8);
         runtime.registerFunction(0x00331888, FUN_00331888_0x331888);
         runtime.registerFunction(0x003382B8, FUN_003382B8_0x3382b8);
+        runtime.registerFunction(0x0032E970, FUN_0032E970_0x32e970);
+        runtime.registerFunction(0x0032F878, FUN_0032F878_0x32f878);
+        runtime.registerFunction(0x0032E9C0, FUN_0032E9C0_0x32e9c0);
+        runtime.registerFunction(0x0032F070, FUN_0032F070_0x32f070);
         runtime.registerFunction(0x00100388, FUN_00100388_0x100388);
         runtime.registerFunction(0x0033A238, FUN_0033A238_0x33a238);
         runtime.registerFunction(0x0033A820, FUN_0033A820_0x33a820);
@@ -184,7 +199,11 @@ int main(int argc, char** argv) {
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestMemory& stop) {
-            if (osd_readback_mode) require(stop.address == 0x1000E010 && stop.size == 4
+            if (dma5_mode) throw;
+            if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
+                    && context.pc == 0x003319EC && runtime.dma_status_reads == 1,
+                    "Unexpected DMA channel control boundary");
+            else if (osd_readback_mode) require(stop.address == 0x1000E010 && stop.size == 4
                     && context.pc == 0x003319CC && GPR_U32(&context, 4) == 0
                     && runtime.semaphore_waits == 1 && runtime.semaphore_signals == 1,
                     "Unexpected DMA status boundary");
@@ -205,8 +224,11 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (osd_readback_mode) throw;
-            if (osd_mode) require(stop.selector == 0x4A && !stop.handler && stop.resume_pc == 0x0032ED08
+            if (dma5_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
+                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000000,
+                    "Unexpected first SIF register boundary");
+            else if (osd_readback_mode) throw;
+            else if (osd_mode) require(stop.selector == 0x4A && !stop.handler && stop.resume_pc == 0x0032ED08
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 124
                     && runtime.osd_config_reads == 1 && runtime.priority_changes == 1
                     && runtime.read32(runtime.memory().data(), runtime.initial_sp - 128) == osd_word
@@ -253,8 +275,8 @@ int main(int argc, char** argv) {
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
         if (snapshot_mode) {
-            require(runtime.guest_calls == (osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
-                    && runtime.word_writes == (osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
+            require(runtime.guest_calls == (dma5_mode ? 105u : osd_readback_mode ? 99u : osd_mode ? 59u : readback_mode ? 58u : intc_mode ? 48u : timer2_mode ? 46u : timer_mode ? 43u : 12u) && runtime.custom_syscall_calls == (osd_readback_mode ? 17u : timer_mode ? 10u : 2u) && runtime.returns == (dma5_mode ? 100u : osd_readback_mode ? 95u : osd_mode ? 54u : readback_mode ? 53u : intc_mode ? 45u : timer_mode ? 41u : 10u)
+                    && runtime.word_writes == (dma5_mode ? 1031u : osd_readback_mode ? 1030u : osd_mode ? 701u : readback_mode ? 699u : timer2_mode ? 682u : timer_mode ? 681u : 9u) && runtime.doubleword_writes == (dma5_mode ? 69u : osd_readback_mode ? 66u : readback_mode ? 40u : intc_mode ? 26u : timer2_mode ? 24u : timer_mode ? 21u : 14u),
                     "Unexpected snapshot startup execution counts");
             require(runtime.read32(runtime.memory().data(), 0x0036AB40) == 0x80014D00,
                     "Two generated scans did not converge on the captured table base");
@@ -317,6 +339,17 @@ int main(int argc, char** argv) {
                     && std::all_of(runtime.memory().begin() + 0x003AF0C8, runtime.memory().begin() + 0x003AF2C8,
                                    [](auto byte) { return byte == 0; }), "Generated startup cleanup differs");
         }
+        require(runtime.dma_status_reads == (dma_status_mode ? 1u : 0u)
+                && runtime.dma5_control_reads == (dma5_mode ? 1u : 0u), "Unexpected DMA checkpoint read counts");
+        if (dma5_mode) {
+            require(runtime.dmac_handlers.size() == 1 && runtime.dmac_handler_order == std::vector<std::uint32_t>{1}
+                    && runtime.dmac_handlers[0].channel == 5 && runtime.dmac_handlers[0].address == 0x00331DF0
+                    && runtime.dmac_handlers[0].arg == 0x20 && runtime.dmac_handlers[0].gp == 0x0038BDF0
+                    && runtime.dmac_mask == 0x00A00000 && runtime.dmac_enable_calls == 1
+                    && runtime.read32(runtime.memory().data(), 0x003A9594) == 1,
+                    "Generated DMA registration/enable state differs");
+        } else require(runtime.dmac_handlers.empty() && runtime.dmac_enable_calls == 0,
+                       "DMA handler state advanced before checkpoint");
         require(std::equal(kernel_before.begin(), kernel_before.end(), runtime.kernelBaseline().begin()),
                 "Captured kernel baseline changed");
         if (timer_mode) {
@@ -378,15 +411,18 @@ int main(int argc, char** argv) {
                 "Generated code did not store semaphore IDs");
         std::ofstream report(argv[2]);
         if (!report) throw std::runtime_error("Could not write entry stop report");
-        report << "{\"status\":\"" << (osd_readback_mode ? "blocked at unsupported guest memory" : readback_mode ? "blocked at unsupported syscall" : intc_mode ? "blocked at unsupported guest memory" : timer2_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
+        report << "{\"status\":\"" << (dma5_mode ? "blocked at unsupported syscall" : osd_readback_mode ? "blocked at unsupported guest memory" : readback_mode ? "blocked at unsupported syscall" : intc_mode ? "blocked at unsupported guest memory" : timer2_mode ? "blocked at unsupported syscall" : "blocked at unsupported guest memory") << "\",\"entry_executed\":true,"
                << "\"target\":" << stop_target << ",\"source_pc\":" << stop_source << ",\"resume_pc\":" << stop_resume << ","
                << "\"selector\":" << stop_selector << ","
-               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (osd_readback_mode ? "read" : readback_mode ? "syscall" : intc_mode ? "read" : timer2_mode ? "syscall" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
+               << "\"kernel_word_writes\":" << runtime.kernel_word_writes << ",\"access\":\"" << (dma5_mode ? "syscall" : osd_readback_mode ? "read" : readback_mode ? "syscall" : intc_mode ? "read" : timer2_mode ? "syscall" : "read") << "\",\"address\":" << stop_address << ",\"size\":" << stop_size
                << ",\"timer3_interrupt_handler\":" << runtime.timer3_interrupt_handler
                << ",\"timer3_interrupt_enable_requested\":" << (runtime.timer3_interrupt_enable_requested ? "true" : "false")
                << ",\"extended_registrations\":" << runtime.extended_registrations
                << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
+               << ",\"dma_status_reads\":" << runtime.dma_status_reads << ",\"dma5_control_reads\":" << runtime.dma5_control_reads
+               << ",\"dmac_handlers\":" << runtime.dmac_handlers.size() << ",\"dmac_mask\":" << runtime.dmac_mask
+               << ",\"dmac_enable_calls\":" << runtime.dmac_enable_calls
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << (osd_readback_mode ? stop_selector : GPR_U32(&context, 3))
                << ",\"write_value\":" << (osd_readback_mode ? 0 : runtime.timer2_mode_writes ? 0x382 : 0)
                << ",\"osd_config_reads\":" << runtime.osd_config_reads << ",\"osd_config_sets\":" << runtime.osd_config_sets
@@ -407,7 +443,9 @@ int main(int argc, char** argv) {
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 entry CPU initialization, zeroing and bootstrap state verified.\n";
-        if (osd_readback_mode) std::cout << "Generated helper tail chain returned; DMA initialization reached unsupported D_STAT read 0x1000E010.\n";
+        if (dma5_mode) std::cout << "DMA checkpoints replayed; channel 5 handler/enable request recorded; reached SifGetReg selector 0x80000000.\n";
+        else if (dma_status_mode) std::cout << "Captured D_STAT replayed; reached channel 5 control read 0x1000C000.\n";
+        else if (osd_readback_mode) std::cout << "Generated helper tail chain returned; DMA initialization reached unsupported D_STAT read 0x1000E010.\n";
         else if (osd_mode) std::cout << "Captured OSD configuration returned; reached SetOsdConfigParam syscall 0x4A.\n";
         else if (readback_mode) std::cout << "Dormant thread ID 2 created; generated setup helper returned; main priority changed to 1; reached GetOsdConfigParam syscall 0x4B.\n";
         else if (intc_mode) std::cout << "EnableIntc changed cause 11; timer startup returned; stopped at a second Timer 2 read, PC 0x00338DD8.\n";

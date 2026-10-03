@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated provisional map/recompilation pipeline work locally. Generated platform initialization returns to entry using validated local PCSX2 checkpoints. The first helper tail chain now returns to `FUN_00100388` after generated descriptor/list setup, a nonblocking semaphore wait/signal pair and another generated registration helper. The next generated path initializes RAM tables and reaches its first DMA status read. Game boot and gameplay remain incomplete.
+The C++20 host and automated provisional map/recompilation pipeline work locally. Generated platform initialization and the first helper tail chain return to entry/main setup using validated local PCSX2 checkpoints. Two new explicit captures support one-time reads of DMA status and channel 5 control. Generated code registers a channel 5 handler and completes a bounded enable request before reaching its first SIF register query. DMA transfers, interrupts, game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, seven CTests, 35 recomp tooling tests and ten capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, seven CTests, 36 recomp tooling tests and twelve capture-tool tests passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Generated `FUN_00331888` stops reading DMA status register `D_STAT` at `0x1000E010`, PC `0x003319CC`. No DMA register state, transfers or interrupts are implemented; the load fails before returning a value.
+Generated `FUN_0032F070` stops at SifGetReg (`0x7A`), selector `0x80000000`, resume PC `0x0032F078`. The runtime has no SIF/EE-IOP register state or transport implementation.
 
-Next: obtain reference evidence for this reached DMA path and validate its initial register state before implementing bounded DMA behavior. Counter progression, interrupt delivery and scheduling remain unimplemented.
+Next: obtain reference evidence for this SIF query and validate its returned state before implementing the required communication behavior. DMA transfers, counter progression, interrupt delivery and scheduling remain unimplemented.
 
 ## Key counts
 
 - **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
-- **52** distinct functions entered across native probes.
-- **48** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8` and `FUN_00331888` remain partial. These are startup/helper paths, not working gameplay.
+- **56** distinct functions entered across native probes.
+- **51** functions completed across probes; entry, `FUN_00100388`, `FUN_00331FE8`, `FUN_00331888` and `FUN_0032F070` remain partial. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

@@ -253,4 +253,16 @@ The full OSD-readback pipeline now enables a second fixed expected-word overlay 
 
 ### Startup kernel lookup generation
 
-`python tools/ps2recomp/generate_kernel.py --payload startup` scopes the reached relocated entry using direct-branch leaf closure; full payload bytes remain unchanged. The full OSD-readback pipeline runs it automatically, uses `BT2_BUILD_STARTUP_KERNEL_PAYLOAD=ON`, binds with complete payload verification, and stops registering returned interior entry `0x80075038`. Separate startup output/header names keep the earlier kernel payload intact. Registration diagnostics now classify their handler addresses, and Ghidra discovery rejects kernel addresses requiring relocated payload analysis.
+`python tools/ps2recomp/generate_kernel.py --payload startup` scopes the reached relocated entry using direct-branch leaf closure; full payload bytes remain unchanged. The full OSD-readback pipeline runs it automatically, uses `BT2_BUILD_STARTUP_KERNEL_PAYLOAD=ON`, binds with complete payload verification, and executes the copied table lookup; exact returned selector/address registrations complete after payload validation. Separate startup output/header names keep the earlier kernel payload intact. Registration diagnostics now classify their handler addresses, and Ghidra discovery rejects kernel addresses requiring relocated payload analysis.
+
+
+### Explicit DMA startup checkpoints
+
+Capture each point from an independent local ELF boot:
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point dma-status
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point dma5-control
+```
+
+Add `--dma-status-capture work/pcsx2-capture/dma-status/capture.json` and `--dma5-control-capture work/pcsx2-capture/dma5-control/capture.json` to the full pipeline with all earlier OSD-readback/checkpoint inputs. The first requires OSD readback; the second requires DMA status. Full 32-bit payload/provenance validation supplies only the observed one-time reads. The bounded adapter records channel 5 handler/enable requests; it has no DMA transfers or interrupt delivery. Full continuation currently stops at SifGetReg selector 0x80000000. Omitting channel input stops at CHCR; omitting both stops at D_STAT. Detailed earlier results are historical; see [current status](PROG.md).

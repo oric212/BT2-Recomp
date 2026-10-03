@@ -85,6 +85,26 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(marker, 0xb706)
         self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
 
+    def test_dma_status_trap_reads_reached_register(self):
+        address, trap, marker = capture_trap('dma-status')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x3319CC)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x1000E010)
+        self.assertEqual(words[2], 0x8F190000)
+        self.assertEqual(words[5], 0xAF190004)
+        self.assertEqual(marker, 0xB709)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+        self.assertEqual(words[9], 0)
+
+    def test_dma5_control_trap_reads_reached_register(self):
+        address, trap, marker = capture_trap('dma5-control')
+        words = struct.unpack('<10I', trap)
+        self.assertEqual(address, 0x3319EC)
+        self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), 0x1000C000)
+        self.assertEqual(words[2], 0x8F190000)
+        self.assertEqual(marker, 0xB70A)
+        self.assertEqual((words[8] & 0x03ffffff) << 2, address + 32)
+
 
 class OsdCaptureTests(unittest.TestCase):
     def test_osd_trap_reads_returned_stack_word_before_setter(self):

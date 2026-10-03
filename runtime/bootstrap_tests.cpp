@@ -125,6 +125,65 @@ int main() {
         require(runtime.read32(memory, 0x500) == 0x12345678);
         reject([&] { runtime.Store32(memory, &context, 0x1000E010, 1); });
         require(runtime.read32(memory, 0x500) == 0x12345678);
+        PS2Runtime dma_checkpoint;
+        dma_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        auto* dma_ram = dma_checkpoint.memory().data();
+        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
+        reject([&] { dma_checkpoint.supplyDma5Control(0x184); });
+        reject([&] { dma_checkpoint.supplyDmaStatus(0); });
+        dma_checkpoint.supplyDmaStatus(0x00800040);
+        reject([&] { dma_checkpoint.supplyDmaStatus(0x00800040); });
+        reject([&] { dma_checkpoint.supplyDma5Control(0); });
+        dma_checkpoint.supplyDma5Control(0x184);
+        reject([&] { dma_checkpoint.supplyDma5Control(0x184); });
+        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000C000); });
+        reject([&] { dma_checkpoint.Load32(nullptr, &context, 0x1000E010); });
+        require(dma_checkpoint.dma_status_reads == 0 && dma_checkpoint.dma5_control_reads == 0);
+        require(dma_checkpoint.Load32(dma_ram, &context, 0x1000E010) == 0x00800040);
+        require(dma_checkpoint.read32(dma_ram, 0x1000C000) == 0x184);
+        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
+        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000C000); });
+        reject([&] { dma_checkpoint.Store32(dma_ram, &context, 0x1000E010, 0x20); });
+        require(dma_checkpoint.dma_status_reads == 1 && dma_checkpoint.dma5_control_reads == 1
+                && std::all_of(dma_checkpoint.memory().begin(), dma_checkpoint.memory().end(),
+                               [](auto byte) { return byte == 0xA5; }));
+        R5900Context dma_context{};
+        dma_context.r[3].low = 0x16;
+        dma_context.r[4].low = 5;
+        reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
+        dma_context.r[3].low = 0x12;
+        dma_context.r[5].low = 0x1000;
+        dma_context.r[6].low = 0;
+        dma_context.r[7].low = 0x20;
+        dma_context.r[28].low = 0x2000;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 1 && dma_checkpoint.dmac_handlers.size() == 1
+                && dma_checkpoint.dmac_handlers[0].channel == 5
+                && dma_checkpoint.dmac_handlers[0].address == 0x1000
+                && dma_checkpoint.dmac_handlers[0].arg == 0x20
+                && dma_checkpoint.dmac_handlers[0].gp == 0x2000
+                && dma_checkpoint.dmac_handler_order == std::vector<std::uint32_t>{1});
+        for (const auto index : {4u, 5u, 6u}) {
+            const auto saved = dma_context.r[index];
+            dma_context.r[index].low = index == 4 ? 6 : index == 5 ? 0x1001 : 1;
+            reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
+            dma_context.r[index] = saved;
+        }
+        require(dma_checkpoint.dmac_handlers.size() == 1);
+        dma_context.r[3].low = 0x16;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 1 && dma_checkpoint.dmac_mask == 0x00A00000
+                && dma_checkpoint.dmac_enable_calls == 1);
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 0 && dma_checkpoint.dmac_enable_calls == 2);
+        dma_context.r[4].low = 6;
+        reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
+        require(dma_checkpoint.dmac_mask == 0x00A00000 && dma_checkpoint.dmac_enable_calls == 2);
+        dma_context.r[4].low = 5;
+        dma_context.r[3].low = 0x12;
+        dma_checkpoint.dmac_handlers.resize(128);
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == UINT64_MAX && dma_checkpoint.dmac_handlers.size() == 128);
         PS2Runtime semaphore_runtime;
         semaphore_runtime.semaphores.push_back({1, 1, 0});
         R5900Context semaphore_context{};
