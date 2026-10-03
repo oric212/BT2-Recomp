@@ -102,6 +102,8 @@ The native host builds and prints its startup message without loading game data.
 
 The optional native generated probe executes PS2Recomp's local translation of `FUN_0032EEE0` from the inspected executable through an authored adapter. It reaches a recorded FlushCache request and returns to a host sentinel. It performs no guest memory access and establishes no whole-game boot or cache-equivalence behavior. The broader provisional EE map and generation results are recorded in `PROG.md`.
 
+On 2026-10-03, the generated entry also compiled/linked and executed through an authored bounded-RAM bootstrap adapter. With the observed uninitialized region poisoned for verification, it cleared `[0x00387E80, 0x0043058F)` with 43,120 quadword and 15 byte stores. Execution reached the first syscall with selector `0x3C`, resume PC `0x001001CC`, and argument registers matching the static review above. The runtime deliberately rejected that unsupported syscall. Its return value, stack behavior, later code and whole-game boot remain unobserved. Local evidence is in ignored `work/bt2-generation/entry-stop.json` and test logs.
+
 ## Hypotheses
 
 The unresolved target may acquire executable contents after the startup zero-store loops. This is an investigation hypothesis; no writer, source bytes, or executed contents have been identified.

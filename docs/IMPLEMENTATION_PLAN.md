@@ -10,7 +10,7 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 2. Local game validation: read the user's executable, check basic format and boot reference, and record size and SHA-256. Confirm the retail revision only against a trusted reference. Preliminary checks implemented; revision confirmation remains open.
 3. ELF inspection: validate program/section table bounds and record entry point and load regions from the supplied file. Complete for local metadata; an empty load record's alignment anomaly remains documented. Keep raw reports in ignored `work/`. Do not infer function purposes.
 4. PS2Recomp generation and integration: pinned tools, synthetic validation, Ghidra discovery, automatic provisional EE map preparation, and local generation are working. One generated BT2 syscall wrapper compiles/links and executes through an isolated authored adapter. Extend the runtime from observed compile/execution blockers; proprietary-derived output remains ignored.
-5. Runtime entry: execute translated entry code with only the required compatibility calls. Record unsupported calls and evidence for each implementation.
+5. Runtime entry: generated entry now compiles, links and executes CPU initialization and startup RAM clearing, then stops at unsupported SetupThread (`0x3C`). Implement only the required compatibility calls from evidence and record each new execution blocker.
 6. First rendered frame, title screen, and main menu: incrementally implement the required graphics and platform behavior using observed results and PCSX2 as a behavioral reference.
 7. Character selection and battle loading: validate required data access and gameplay transitions.
 8. Playable versus battle: reach the first major gameplay goal with working controls.
@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: resolve the actual generated-entry compile blocker (MMI/GPR vector helpers, CPU/FPU context and memory/dispatch APIs) with a narrow compatibility layer, then link and attempt entry execution. Address unresolved callees, syscalls and `0x003B7FA8` when they block that execution. Startup syscall selectors match a pinned PS2SDK ABI reference; stack/heap sentinel handling remains untested.
+Current next step: implement the observed SetupThread contract, including the default-stack sentinel and stack allocation/return behavior, using primary-source or PCSX2 evidence. Re-run entry to expose SetupHeap or the next actual blocker. Address unresolved callees and `0x003B7FA8` when execution reaches them. Do not bypass unsupported startup calls with invented results.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

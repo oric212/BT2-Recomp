@@ -4,7 +4,7 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. An optional probe compiles and runs one generated BT2 syscall wrapper through a minimal runtime adapter. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
+The C++20 host executable `bt2-port` builds with CMake and MSVC from Visual Studio 2022. Automated mapping and PS2Recomp generation work locally. Optional probes execute a generated BT2 syscall wrapper and generated entry CPU initialization/RAM clearing. Entry stops at unsupported SetupThread. Game boot, full runtime integration, rendering and audio remain pending; exact retail revision authentication still needs a trusted reference.
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 
@@ -23,4 +23,4 @@ Pinned PS2Recomp tools build separately from the host. Dependency checkouts stay
 
 Ghidra with R5900 support is installed under `D:\Cs\Cpp\tools`. Local analysis exports unreviewed function candidates under ignored `work/ghidra/`; boundary review remains pending.
 
-Run `python tools/ps2recomp/run_pipeline.py` after local Ghidra export and tool setup; use `--reuse-generated` to verify and reuse generated output. See [reference architecture](docs/REFERENCE_ARCHITECTURE.md). The passing isolated probe does not indicate that the game entry has executed.
+Run `python tools/ps2recomp/run_pipeline.py` after local Ghidra export and tool setup; use `--reuse-generated` to verify and reuse generated output. See [reference architecture](docs/REFERENCE_ARCHITECTURE.md). Passing probes establish execution to checked boundaries; the game has not booted.

@@ -25,7 +25,7 @@ After building pinned PS2Recomp tools and exporting the local executable with Gh
 python tools/ps2recomp/run_pipeline.py
 ```
 
-The pipeline uses `build/probe/`, compiles and executes one generated BT2 routine, and records the separate entry compilation blocker. No game content is required for the normal host target. All generated sources and probe binaries stay ignored.
+The pipeline uses `build/probe/`, executes a generated BT2 routine and the generated entry up to its first unsupported syscall, and records the actual execution blocker. No game content is required for the normal host target. All generated sources, guest images and probe binaries stay ignored.
 
 For an explicit Visual Studio 2022 x64 selection in a fresh build directory, configure with:
 

@@ -30,11 +30,19 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_compile_definitions(bt2-generated-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     enable_testing()
     add_test(NAME generated-bt2-probe COMMAND bt2-generated-probe)
-    # Diagnostic target: expose the first generated-code ABI blocker without breaking the host/probe.
-    # Start at entry: MSVC otherwise continues compiling thousands of files after the first ABI error.
-    add_library(bt2-generated-compile-check OBJECT EXCLUDE_FROM_ALL "${BT2_GENERATED_DIR}/FUN_00100008_0x100008.cpp")
-    target_include_directories(bt2-generated-compile-check PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-generated-compile-check PRIVATE cxx_std_20)
-    target_compile_options(bt2-generated-compile-check PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-generated-compile-check PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    add_executable(bt2-bootstrap-tests runtime/bootstrap_tests.cpp)
+    target_include_directories(bt2-bootstrap-tests PRIVATE runtime/probe_abi)
+    target_compile_features(bt2-bootstrap-tests PRIVATE cxx_std_20)
+    target_compile_options(bt2-bootstrap-tests PRIVATE /W4 /permissive- /utf-8)
+    add_test(NAME bootstrap-runtime COMMAND bt2-bootstrap-tests)
+    # Compile/link entry separately so future blockers do not break the independent host/probe.
+    add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp")
+    target_include_directories(bt2-entry-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
+    target_compile_features(bt2-entry-probe PRIVATE cxx_std_20)
+    target_compile_options(bt2-entry-probe PRIVATE /W4 /permissive- /utf-8)
+    target_compile_definitions(bt2-entry-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    add_test(NAME generated-entry-probe COMMAND bt2-entry-probe
+        "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/guest-memory.bin"
+        "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/entry-stop.json")
 endif()

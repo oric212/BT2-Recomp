@@ -47,7 +47,7 @@ Next: establish reviewed Ghidra function boundaries for the local executable, th
 - [x] Local provisional BT2 EE map and C++ generation.
 - [x] Isolated generated BT2 routine compiled, linked and executed.
 - [ ] Full generated-code/runtime integration.
-- [ ] Game entry point reached.
+- [x] Generated game entry reached (stops at SetupThread; no complete boot).
 - [ ] First rendered frame.
 - [ ] Title screen.
 - [ ] Main menu.
@@ -111,3 +111,15 @@ Next: trace the writer or copy operation that could populate the target before i
 - Entry compilation fails on missing `GPR_VEC`, `SET_GPR_VEC`, `ps2_paddu32` and broader context/runtime APIs. This is the actual next integration blocker. The game entry has not executed; the entire generated set has not compiled/linked.
 
 Next: extend the compatibility API enough to compile/link and attempt entry execution, then investigate only the paths that block it. Keep generated game output ignored and repeat the pipeline after each change.
+
+## 2026-10-03 — Generated entry execution to first syscall
+
+- Extended the authored bootstrap context and helpers required by emitted entry code: 128-bit GPR access/unsigned saturated lane addition, scalar writes, HI/LO/SA/FPR state, zero-operand FPU addition, and checked byte/quadword stores. Broader FPU, MMIO, TLB and scheduling behavior remains unsupported.
+- Prepared a bounded 32 MiB RAM image from validated PT_LOAD metadata, copying file bytes and zero-filling declared memory. Added bounds/overlap checks and ignored image provenance.
+- Added a deterministic compiler-facing entry copy that routes its one emitted direct tail call through a checked runtime hook. Original recompiler output remains unchanged; prepared retail-derived code stays ignored. No missing game function body was invented.
+- Entry compiled and linked with MSVC/C++20. Executed actual generated startup instructions, verified CPU state, and observed 43,120 quadword stores plus 15 byte stores clearing `[0x00387E80, 0x0043058F)`. The probe deliberately poisoned that uninitialized region to verify stores and checked its boundary bytes.
+- Stopped at unsupported SetupThread selector `0x3C`, resume PC `0x001001CC`, with arguments matching the earlier static review. Captured ignored `entry-stop.json`. No syscall return or guest stack was fabricated.
+- All 14 Python tooling tests and three CTests passed: original generated wrapper, synthetic bootstrap helpers, and entry-to-syscall execution. Generated entry retains C4702 unreachable-code warnings; generated sources were not manually edited.
+- The normal host remains independent. Game boot, SetupThread/SetupHeap implementation, deeper callees and full generated-set integration remain incomplete.
+
+Next: establish and implement SetupThread's observed sentinel/stack behavior, then repeat execution to discover the next blocker.

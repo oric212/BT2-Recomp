@@ -1,6 +1,6 @@
 """Automated provisional map -> generation -> probe build/run -> integration diagnostics.
 
-The probe executes one real BT2 routine; diagnostics do not claim a complete boot.
+Probes execute a real BT2 routine and entry up to a checked unsupported boundary.
 """
 
 import argparse
@@ -47,19 +47,27 @@ def main():
         run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_map.py")])
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_game.py"), "--candidate-map", str(folder / "candidates.csv")])
     verify_generated()
+    run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_runtime.py")])
     build = ROOT / "build/probe"
     run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON"], folder / "configure.log")
     run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
-    run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure"], folder / "probe-test.log")
+    run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
-    result = run(["cmake", "--build", str(build), "--config", "Debug", "--target", "bt2-generated-compile-check",
+    result = run(["cmake", "--build", str(build), "--config", "Debug", "--target", "bt2-entry-probe",
                   "--parallel", "1", "--", "/nodeReuse:false"], folder / "integration-build.log", check=False)
+    entry_stop = None
+    if result.returncode == 0:
+        run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "^generated-entry-probe$"], folder / "entry-test.log")
+        run([str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")])
+        entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
-        "broader_compile_exit_code": result.returncode, "boot_executed": False,
+        "entry_build_exit_code": result.returncode, "entry_stop": entry_stop, "game_booted": False,
         "integration_log": str(folder / "integration-build.log")}, indent=2) + "\n", encoding="utf-8")
-    print(f"Probe verified. Broader generated-code compilation exit code: {result.returncode}; inspect {folder / 'integration-build.log'}.")
+    print(f"Probes verified. Entry build exit code: {result.returncode}; inspect {folder / 'integration-build.log'}.")
     if result.returncode:
         print("Boot integration remains blocked; this diagnostic failure is recorded separately from the passing probe.")
+    elif entry_stop:
+        print(f"Entry stopped at syscall 0x{entry_stop['selector']:02X}; game boot remains blocked. See {folder / 'entry-stop.json'}.")
 
 
 if __name__ == "__main__":

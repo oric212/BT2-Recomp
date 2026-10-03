@@ -71,11 +71,15 @@ python tools/ps2recomp/run_pipeline.py
 python tools/ps2recomp/run_pipeline.py --reuse-generated
 ```
 
-The first command prepares the map, generates code, hashes all source/header output, builds the host and `bt2-generated-probe` with MSVC/C++20, runs CTest and the probe, and attempts entry compilation. Reuse verifies executable/map/tool-lock/recompiler/output hashes and file-set identity before building. Stages record logs under ignored `work/bt2-generation/`.
+The first command prepares the map, generates code, hashes all source/header output, prepares runtime input, builds the host and `bt2-generated-probe` with MSVC/C++20, runs tests, then builds and executes `bt2-entry-probe`. Reuse verifies executable/map/tool-lock/recompiler/output hashes and file-set identity before rebuilding. Stages record logs under ignored `work/bt2-generation/`.
 
 The probe registers and executes the actual generated `FUN_0032EEE0` from the broad generation set. It verifies selector/operation, syscall resume PC, return target and preserved register bits. Unsupported syscalls, cache modes, guest targets and returns throw errors. It records the cache request; it does not model caches, DMA, MMIO, graphics, or boot the game. No upstream runtime is linked.
 
-The diagnostic `bt2-generated-compile-check` target starts at entry to expose the first missing adapter APIs without compiling thousands of files after the same failure. Its nonzero result is reported in `pipeline-result.json` and `integration-build.log`; the pipeline's successful exit means the probe stages passed, not that boot integration passed. The normal host build remains independent.
+Entry preparation copies ELF loads into a bounded main-RAM image and creates an ignored compiler-facing entry source under `game/generated/bt2-runtime/`, routing emitted direct tail calls through runtime dispatch. The original generated set is unchanged. `runtime-preparation.json` records source/image hashes and hook count. Out-of-range guest memory, unaligned word/quadword accesses, unsupported dispatch and unsupported syscalls throw errors; backedges have an execution budget.
+
+The entry probe poisons its observed uninitialized zero-store interval, executes generated CPU initialization/zeroing, and verifies memory coverage and boundary bytes. It currently expects to stop at SetupThread (`0x3C`) and writes `entry-stop.json` with selector, PC, arguments and store counts. This verifies actual entry execution, not successful boot or a syscall implementation. FPU support is deliberately restricted to entry's zero operands.
+
+`bt2-entry-probe` is excluded from the default build and built explicitly by the pipeline. Its build result and execution stop are reported separately in `pipeline-result.json`, `integration-build.log` and `entry-test.log`; a successful pipeline result means the checked probes passed. The normal host build remains independent.
 
 ## Installed Ghidra analysis
 
