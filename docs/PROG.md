@@ -173,3 +173,14 @@ Next: implement the observed CreateSema syscall with explicit validated state, t
 - MSVC build/pipeline, three CTests and all 14 Python tooling tests passed. Synthetic semaphore tests cover state/IDs, ignored output fields, preserved upper bits, invalid count, unsupported attributes, parameter memory bounds/alignment and capacity exhaustion. Independent host runs; proprietary-derived files remain ignored.
 
 Next: integrate the reached `FUN_00338410` and repeat the execution-led loop. Game boot and retail BIOS equivalence remain incomplete.
+
+## 2026-10-03 — Generated registration path reaches FUN_003383C8
+
+- Linked/registered original ignored `FUN_00338410` and its reached wrapper `FUN_00338510`. Added FAST_READ32 as an alias to bounded aligned reads. No generated function bodies were changed or skipped.
+- First executed to SetSyscall selector `0x74`, resume `0x00338518`. Then implemented a bounded 256-entry registration table using pinned Play! `sc_SetSyscall`; PS2SDK declares SetSyscall void, so v0 is preserved. Reject out-of-range selectors, misaligned/out-of-RAM handlers. Custom handler execution remains explicitly unsupported, including overrides of built-in selectors; no fake invocation result.
+- Real generated code registered selector `0x83` -> `0x00338388` and `0x5A` -> `0x00338350`, values read from ELF-loaded words at `0x0036AB48..0x0036AB57`. Both generated wrappers returned.
+- Executed `FUN_00338410` prologue, eight additional doubleword saves, and call delay slots. SP=`0x01FFECD0`; saved RA=`0x00338538`. Total seven guest calls/five returns, two semaphore objects, ten doubleword and eight word stores.
+- Next observed unregistered target is neutral `FUN_003383C8`, source `0x00338464`, return PC `0x0033846C`, arguments `0x80000000`, `0x80080000`, `0x00338388`. No memory alias, mapping or handler purpose is inferred from those arguments alone.
+- MSVC pipeline/build, three CTests and all 14 Python tooling tests passed. Registration tests check state, preserved return register, invalid selector/address/alignment and unsupported invocation. CPU/zeroing/semaphore checks remain active. Independent host runs; proprietary output remains ignored.
+
+Next: compile/link/register the reached target and resolve only the compatibility behavior actually needed. Game boot remains incomplete.

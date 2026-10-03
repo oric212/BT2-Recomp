@@ -24,7 +24,7 @@ Update `PROG.md`, the single progress log, after each verified step. Keep `READM
 
 ## Repository workflow
 
-Current next step: add generated `FUN_00338410`, now reached after two successful CreateSema calls and nested returns, to the build/registration set. Compile, implement only missing APIs it requires, and execute to the next blocker. Semaphore waits/signals and scheduling remain unsupported until reached.
+Current next step: integrate reached generated `FUN_003383C8` and execute to its actual blocker. Its observed arguments are `0x80000000`, `0x80080000`, `0x00338388`; determine required memory/privileged behavior from emitted code and pinned references. SetSyscall registrations are recorded, but custom handler invocation remains unsupported.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

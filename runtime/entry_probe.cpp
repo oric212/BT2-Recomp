@@ -36,11 +36,13 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338520, FUN_00338520_0x338520);
         runtime.registerFunction(0x003382D0, FUN_003382D0_0x3382d0);
         runtime.registerFunction(0x0032EC60, FUN_0032EC60_0x32ec60);
+        runtime.registerFunction(0x00338410, FUN_00338410_0x338410);
+        runtime.registerFunction(0x00338510, FUN_00338510_0x338510);
         bool stopped = false;
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestBranch& stop) {
-            require(stop.target == 0x00338410 && stop.source_pc == 0x00338530 && stop.resume_pc == 0x00338538, "Unexpected entry dispatch boundary");
+            require(stop.target == 0x003383C8 && stop.source_pc == 0x00338464 && stop.resume_pc == 0x0033846C, "Unexpected entry dispatch boundary");
             stop_target = stop.target;
             stop_source = stop.source_pc;
             stop_resume = stop.resume_pc;
@@ -61,23 +63,26 @@ int main(int argc, char** argv) {
         require(runtime.thread_arguments == std::array<std::uint32_t, 5>{0x0038BDF0, 0xFFFFFFFF, 0x00100000, 0x0038B980, 0x00100250},
                 "SetupThread arguments differ from the reviewed entry");
         require(runtime.thread_initialized && runtime.initial_sp == 0x01FFED60
-                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - 16,
+                && runtime.stack_base == 0x01EFF000 && GPR_U32(&context, 29) == runtime.initial_sp - 144,
                 "SetupThread stack model was not applied");
         require(GPR_U32(&context, 28) == runtime.thread_arguments[0], "Unexpected gp after SetupThread");
         require(runtime.heap_initialized && runtime.heap_start == 0x0043058F
                 && runtime.heap_end == runtime.stack_base,
                 "Unexpected SetupHeap state or return");
-        require(runtime.guest_calls == 4 && runtime.returns == 3 && runtime.doubleword_writes == 2 && runtime.word_writes == 8
+        require(runtime.guest_calls == 7 && runtime.returns == 5 && runtime.doubleword_writes == 10 && runtime.word_writes == 8
                 && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0x001001F0,
                 "Generated callee did not save the caller return address");
-        const auto frame = runtime.initial_sp - 96;
-        require(args[0] == frame + 32 && runtime.read64(runtime.memory().data(), frame + 64) == 0x00338530,
-                "Nested frame or saved return incorrect");
-        for (const auto offset : {4u, 8u, 36u, 40u})
-            require(runtime.read32(runtime.memory().data(), frame + offset) == 1, "Unexpected parameter word");
-        require(runtime.read32(runtime.memory().data(), frame + 20) == 0x00383BF0
-                && runtime.read32(runtime.memory().data(), frame + 52) == 0x00383C00,
-                "Unexpected parameter pointers");
+        const auto frame = runtime.initial_sp - 144;
+        require(runtime.read64(runtime.memory().data(), frame + 112) == 0x00338538,
+                "Current frame did not save return address");
+        for (const auto offset : {0u, 16u, 32u, 48u, 64u, 80u, 96u})
+            require(runtime.read64(runtime.memory().data(), frame + offset) == 0,
+                    "Unexpected saved callee register");
+        require(runtime.syscall_registrations == 2 && runtime.syscall_handlers[0x83] == 0x00338388
+                && runtime.syscall_handlers[0x5A] == 0x00338350,
+                "Expected syscall registrations missing");
+        require(args[0] == 0x80000000 && args[1] == 0x80080000 && args[2] == 0x00338388,
+                "Unexpected reached guest call arguments");
         require(runtime.semaphores.size() == 2
                 && runtime.semaphores[0].count == 1 && runtime.semaphores[0].maximum == 1
                 && runtime.semaphores[0].option == 0x00383BF0
@@ -96,12 +101,13 @@ int main(int argc, char** argv) {
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
                << ",\"semaphores_created\":" << runtime.semaphores.size() << ",\"returns\":" << runtime.returns
+               << ",\"syscall_registrations\":" << runtime.syscall_registrations
                << ",\"word_writes\":" << runtime.word_writes
                << ",\"byte_writes\":" << runtime.byte_writes << ",\"game_booted\":false}\n";
         report.close();
         require(!report.fail(), "Entry stop report write failed");
         std::cout << "BT2 generated entry executed: CPU initialization and guest zeroing verified.\n"
-                  << "SetupThread/SetupHeap models applied; executed nested startup code; created two semaphore objects and returned; stopped at FUN_00338410.\n"
+                  << "SetupThread/SetupHeap models applied; executed nested startup code; created two semaphore objects and returned; executed FUN_00338410 prologue; registered two syscall handlers; stopped at FUN_003383C8.\n"
                   << "Empty launch arguments; retail BIOS comparison and game boot remain pending.\n";
         return 0;
     } catch (const std::exception& error) {

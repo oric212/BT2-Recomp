@@ -57,6 +57,19 @@ public:
 
     void handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
         const auto selector = static_cast<std::uint32_t>(context->r[3].low);
+        if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector])
+            throw UnsupportedSyscall(selector, context->pc); // Registered guest handlers require explicit execution support.
+        if (code == 0 && selector == 0x74) {
+            const auto number = static_cast<std::uint32_t>(context->r[4].low);
+            const auto address = static_cast<std::uint32_t>(context->r[5].low);
+            if (number >= syscall_handlers.size() || address % 4)
+                throw std::runtime_error("Unsupported SetSyscall registration");
+            if (address) checkMemory(rdram, address, 4);
+            syscall_handlers[number] = address;
+            ++syscall_registrations;
+            // PS2SDK declares void; preserve v0 rather than inventing a result.
+            return;
+        }
         if (code == 0 && selector == 0x3C) {
             // Bootstrap model follows pinned Play! sc_SetupThread; no scheduler yet.
             const auto stack = static_cast<std::uint32_t>(context->r[5].low);
@@ -215,6 +228,8 @@ public:
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
+    std::array<std::uint32_t, 256> syscall_handlers{};
+    unsigned syscall_registrations = 0;
     unsigned cache_requests = 0;
     unsigned returns = 0, guest_calls = 0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;

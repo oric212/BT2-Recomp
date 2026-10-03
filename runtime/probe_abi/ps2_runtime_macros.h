@@ -58,3 +58,5 @@ inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = v
 // Optional upstream diagnostic hook only; the following store performs validation.
 inline void ps2TraceGuestWrite(std::uint8_t*, std::uint32_t, unsigned, std::uint64_t,
                               std::uint64_t, const char*, R5900Context*) {}
+
+#define FAST_READ32(address) READ32(address)

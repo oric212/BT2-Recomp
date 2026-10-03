@@ -131,3 +131,7 @@ Generated `FUN_00338520` now executes its stack allocation and saves RA=`0x00100
 ### Executed semaphore creation and return paths
 
 Generated startup now stores CreateSema IDs 0 and 1 at `0x0036AB58` and `0x0036AB5C` under the bounded compatibility model. Both objects initialize count/max_count to 1, with option values `0x00383BF0` and `0x00383C00`. Three generated JR return paths complete, and the outer caller reaches JAL at `0x00338530` to neutral `FUN_00338410`, return PC `0x00338538`. No semantic name has been assigned to the enclosing functions. Wait/signal/scheduler behavior and retail BIOS equivalence remain unverified.
+
+### Executed SetSyscall registrations
+
+Pinned PS2SDK names selector `0x74` SetSyscall and declares a void result. Generated startup now records `0x83` -> `0x00338388` and `0x5A` -> `0x00338350` from loaded guest globals. Invocation of custom handlers remains unsupported. Execution next reaches `FUN_003383C8` from JAL `0x00338464`, return `0x0033846C`, with a0/a1/a2=`0x80000000`/`0x80080000`/`0x00338388`. Handler purposes and memory behavior remain unknown; no semantic function names assigned.
