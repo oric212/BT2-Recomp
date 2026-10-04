@@ -58,6 +58,9 @@ int main(int argc,char** argv) {
         for(auto byte:rt.sio2_transmit) {if(!first)report<<',';first=false;report<<unsigned(byte);}
         report<<"],\"sio2_parameters\":[";first=true;
         for(auto [address,value]:rt.sio2_parameters) {if(!first)report<<',';first=false;report<<"{\"address\":"<<address<<",\"value\":"<<value<<"}";}
+        report<<"],\"spu2_configuration\":[";first=true;
+        for(auto [address,value]:rt.spu2_configuration) {if(!first)report<<',';first=false;report<<"{\"address\":"<<address<<",\"value\":"<<value<<"}";}
+        report<<"],\"spu2_reset_status_reads\":"<<rt.spu2_reset_status_reads<<",\"spu2_pending_key_off\":["<<rt.spu2_pending_key_off[0]<<','<<rt.spu2_pending_key_off[1];
         report<<"],\"pc\":"<<rt.executing_pc<<",\"steps\":"<<rt.steps<<",\"blocked_address\":"<<rt.blocked_address<<",\"access_kind\":\""<<rt.access_kind<<"\",\"access_width\":"<<rt.access_width<<",\"access_value\":"<<rt.access_value<<",\"mapped_ranges_entered\":"<<rt.entries.size()<<",\"registered_libraries\":"<<rt.libraries.size()<<",\"imports\":[";
         for(unsigned n=0;n<rt.imports.size();++n){if(n)report<<',';report<<'\"'<<rt.imports[n]<<'\"';}report<<"],\"arguments\":["<<c.get(4)<<','<<c.get(5)<<','<<c.get(6)<<','<<c.get(7)<<"]}\n";
         std::cout<<"IOP diagnostic stopped: "<<diagnostic<<"; PC=0x"<<std::hex<<rt.executing_pc<<std::dec<<", native steps="<<rt.steps<<"\n";return 0;

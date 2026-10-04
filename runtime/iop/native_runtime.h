@@ -45,6 +45,9 @@ public:
     std::vector<std::string> kernel_messages,stdio_messages;
     std::uint32_t cdvd_interrupt_event=0;
     unsigned data_cache_flushes=0;
+    std::map<std::uint32_t,std::uint32_t> spu2_configuration;
+    std::array<std::uint32_t,2> spu2_pending_key_off{};
+    unsigned spu2_reset_status_reads=0;
     struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;
@@ -108,6 +111,13 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(size==2 && (p==0x1F900344 || p==0x1F900744)) {
+            const std::map<std::uint32_t,std::uint32_t> reset={{0x1F9007C0,0x8000},{0x1F9007C6,0x900},{0x1F9007C8,0x200},{0x1F9007CA,8},
+                {0x1F900760,0},{0x1F900762,0},{0x1F900788,0},{0x1F90078A,0},{0x1F9001B0,0},{0x1F9005B0,0},{0x1F90019A,0x8000},{0x1F90059A,0x8000}};
+            if(spu2_configuration!=reset || spu2_reset_status_reads>=2 || p!=(spu2_reset_status_reads?0x1F900744u:0x1F900344u))throw std::runtime_error("SPU2 reset status prerequisites differ");
+            ++spu2_reset_status_reads;return 0; // Direct local first-status checkpoint under this exact reset configuration.
+        }
+        if(size==2 && (p==0x1F90019A || p==0x1F90059A) && spu2_configuration.contains(p))return spu2_configuration.at(p);
         if((p==0x1F8010F0 || p==0x1F801570) && size==4) {
             if(!sound_bus.contains(0x1F801404) || !sound_bus.contains(0x1F80140C) || !dma_channels.contains(11) || !dma_channels.contains(12)
                 || !dma_channels.at(11).enabled || !dma_channels.at(12).enabled || dma_channels.at(11).priority!=3 || dma_channels.at(12).priority!=3)
@@ -133,6 +143,24 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(size==2 && (p==0x1F9001A8 || p==0x1F9001AA || p==0x1F9005A8 || p==0x1F9005AA || p==0x1F9002E0 || p==0x1F9002E2 || p==0x1F9006E0 || p==0x1F9006E2)) {
+            spu2_configuration[p]=value&0xFFFF;return; // Transfer/effects addresses only; no transfer completion or effects processing.
+        }
+        if(size==2 && (p==0x1F9001A4 || p==0x1F9001A6 || p==0x1F9005A4 || p==0x1F9005A6) && spu2_reset_status_reads>=2) {
+            const unsigned core=p>=0x1F900400,shift=(p&2)?16:0;
+            spu2_pending_key_off[core]|=(value<<shift)&0xFFFFFF;return; // Retain release command; no samples or completed envelopes claimed.
+        }
+        if(size==2 && value==0 && ((p>=0x1F900180 && p<=0x1F900196 && !(p&1))
+            || (p>=0x1F900580 && p<=0x1F900596 && !(p&1)))) {spu2_configuration[p]=0;return;}
+        if(size==2 && (((p==0x1F9001B0 || p==0x1F9005B0) && value==0)
+            || ((p==0x1F90019A || p==0x1F90059A) && (value==0 || value==0x8000)))) {
+            spu2_configuration[p]=static_cast<std::uint16_t>(value);return;
+        }
+        if(size==2 && value==0 && (p==0x1F900760 || p==0x1F900762 || p==0x1F900788 || p==0x1F90078A)) {spu2_configuration[p]=0;return;}
+        if(size==2 && ((p==0x1F9007C0 && (value==0 || value==0x8000)) || (p==0x1F9007C6 && value==0x900)
+            || (p==0x1F9007C8 && value==0x200) || (p==0x1F9007CA && value==8))) {
+            spu2_configuration[p]=static_cast<std::uint16_t>(value);return;
+        }
         if(size==4 && ((p==0x1F8010F0 && sound_bus.contains(p) && value==(sound_bus.at(p)|0x80000))
             || (p==0x1F801570 && sound_bus.contains(p) && value==(sound_bus.at(p)|8))
             || ((p==0x1F801014 || p==0x1F801414) && value==0x200B31E1))) {sound_bus[p]=value;return;}

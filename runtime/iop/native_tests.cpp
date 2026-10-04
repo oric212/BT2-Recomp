@@ -144,6 +144,25 @@ int main() {
         sound.write(0xBF8010F0,0x077FFF77,4);sound.write(0xBF801570,0x07BBFF7F,4);
         check(sound.read(0xBF8010F0,4)==0x077FFF77 && sound.read(0xBF801570,4)==0x07BBFF7F);
         refuses([&]{sound.read(0xBF8010F0,2);});
+        refuses([&]{sound.read(0xBF900344,2);});
+        refuses([&]{sound.write(0xBF9007C6,0x901,2);});
+        refuses([&]{sound.write(0xBF9001A4,1,2);});
+        for(const auto [address,value]:std::map<unsigned,unsigned>{{0x7C0,0x8000},{0x7C6,0x900},{0x7C8,0x200},{0x7CA,8},
+            {0x760,0},{0x762,0},{0x788,0},{0x78A,0},{0x1B0,0},{0x5B0,0},{0x19A,0x8000},{0x59A,0x8000}})sound.write(0xBF900000+address,value,2);
+        check(sound.read(0xBF900344,2)==0 && sound.read(0xBF900744,2)==0 && sound.spu2_reset_status_reads==2);
+        sound.write(0xBF9001A4,1,2);sound.write(0xBF9001A6,2,2);check(sound.spu2_pending_key_off[0]==0x20001);
+        sound.write(0xBF9001A8,0,2);sound.write(0xBF9001AA,0x2800,2);
+        refuses([&]{sound.read(0xBF900344,2);});refuses([&]{sound.write(0xBF9001AC,0x700,2);});
+        install_iop_kernel_providers(sound);sound.map(0x20000,std::vector<std::uint8_t>(16,0xAA));IopContext irq;
+        irq.set(4,36);irq.set(5,0x20000);check(sound.import("intrman",7,irq)==static_cast<unsigned>(-103) && sound.read(0x20000,4)==static_cast<unsigned>(-103));
+        check(sound.import("intrman",5,irq)==static_cast<unsigned>(-105));
+        sound.interrupts.emplace(36,IopRuntime::Interrupt{1,0x20000,0,true,0});
+        check(sound.import("intrman",7,irq)==0 && sound.read(0x20000,4)==36 && !sound.interrupts.at(36).enabled);
+        check(sound.import("intrman",5,irq)==0 && !sound.interrupts.contains(36));
+        irq.set(4,8);refuses([&]{sound.import("intrman",7,irq);});
+        irq.set(4,0x20004);irq.set(5,8);irq.set(2,0xBAD);check(sound.import("sysclib",17,irq)==0xBAD);
+        check(sound.read(0x20004,4)==0 && sound.read(0x20008,4)==0 && sound.read(0x2000C,4)==0xAAAAAAAA);
+        irq.set(4,0x2000C);refuses([&]{sound.import("sysclib",17,irq);});
         IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
         IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
         log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);

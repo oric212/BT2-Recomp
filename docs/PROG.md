@@ -4,15 +4,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 ## Current status
 
-The optional EE probe completes **twelve native IOP module loads**, now including CDVDSTM and SOUNDS. CDVDSTM owns its driver/semaphore and references a retained CDVD interrupt event; SOUNDS has a verified waiting RPC worker with stack-owned descriptors. CRI_ADXI executes startup diagnostics and enters LIBSD initialization, but has not completed residency. No displayed frame, audio playback or complete boot yet.
+The optional EE probe completes **twelve native IOP module loads**, now including CDVDSTM and SOUNDS. CDVDSTM owns its driver/semaphore and references a retained CDVD interrupt event; SOUNDS has a verified waiting RPC worker with stack-owned descriptors. CRI_ADXI executes startup diagnostics and LIBSD reset configuration/status polls, interrupt teardown and address setup, then reaches the first sound-data FIFO write. It has not completed residency. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **86/86 capture tests**, local CDVDSTM/SOUNDS code/data/object comparisons. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **88/88 capture tests**, independently verified local SPU2 status/interrupt captures and native reset/FIFO checkpoint. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-Pending **`cdrom0:\IRX\CRI_ADXI.IRX;1`** enters LIBSD export 4 (`sceSdInit`) and stops on a **16-bit SPU2 read at 0x1F9007C6**, owned native PC **0x91614**. Full checkpoint: **685 calls / 677 returns**, twelve acknowledged residents, **8,152 cumulative IOP instructions / 82 physical entry targets / ten waiting workers**. The pending CRI module is excluded from the resident count.
+Pending **`cdrom0:\IRX\CRI_ADXI.IRX;1`** enters LIBSD export 4 (`sceSdInit`) and stops on the first **16-bit sound-data FIFO write: 0x0700 to 0x1F9001AC**, native PC **0x940CC**. Full checkpoint: **685 calls / 677 returns**, twelve acknowledged residents, **16,244 cumulative IOP instructions / 87 physical entry targets / ten waiting workers**. CRI remains excluded from residents. Correction: the previous 0x91614 blocker was a SPDIF **write**, not a read.
 
-Next scope: plan bounded SPU2 initialization from reached code, pinned public/PCSX2 register behavior and direct local hardware evidence. Do not seed arbitrary ready values or assume audio playback from sound-library registration. [Disc-streaming startup plan](CDVD_STREAMING_PLAN.md): residency complete; sector reads/transfers still unimplemented. Vblank production, later controller commands, game assets and presentation remain incomplete.
+Next scope: sound RAM/FIFO transaction and completion evidence, following the [SPU2 initialization boundary](SPU2_INITIALIZATION_PLAN.md#verified-boundary). Reset status is limited to the two observed polls under exact configuration; no transfer completion or audio playback is supplied. [Disc-streaming startup plan](CDVD_STREAMING_PLAN.md): residency complete; sectors/transfers remain unimplemented. Vblank production, game assets and presentation remain incomplete.
 
 ## Key counts
 

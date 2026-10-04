@@ -314,6 +314,8 @@ def main():
     parser.add_argument('--disc', type=Path, help='Explicit user-local ISO mounted alongside the instrumented ELF.')
     parser.add_argument('--pad-poll-read-count',type=int,choices=[5,10],default=5)
     parser.add_argument('--capture-first-pad-poll',action='store_true',help='Instrument the first IOP FIFO receive after SIO2D return; isolated interpreter profile only.')
+    parser.add_argument('--capture-spu2-interrupts',action='store_true',help='Record three linked LIBSD interrupt disables after SOUNDS return.')
+    parser.add_argument('--capture-spu2-status',action='store_true',help='Terminal first LIBSD status read capture after SOUNDS return.')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -332,6 +334,8 @@ def main():
     folder = ROOT / 'work/pcsx2-capture'
     if args.capture_point != 'kernel-handler':
         folder = folder / (args.capture_point+"-pad-poll-"+str(args.pad_poll_read_count) if args.capture_first_pad_poll else args.capture_point)
+    if args.capture_spu2_interrupts:folder=folder.with_name(folder.name+'-spu2-interrupts')
+    if args.capture_spu2_status:folder=folder.with_name(folder.name+'-spu2-status')
     # The user's portable.ini overrides -datapath. Launch a local package copy
     # without that marker; never change the user's installation/profile.
     package = folder / 'package'
@@ -366,6 +370,9 @@ def main():
                 'SaveStateOnShutdown = false\nEnableDiscordPresence = false\n'
                 '[EmuCore/GS]\nRenderer = 11\n'
                 '[SPU2/Output]\nOutputModule = nullout\n')
+    if args.capture_spu2_status or args.capture_spu2_interrupts:
+        if args.capture_point!='sounds-module-after' or args.capture_first_pad_poll or (args.capture_spu2_status and args.capture_spu2_interrupts):raise ValueError('SPU2 status capture requires SOUNDS checkpoint without FIFO capture')
+        settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
     if args.capture_first_pad_poll:
         if args.capture_point!='sio2d-module-after':raise ValueError('First poll capture requires SIO2D return checkpoint')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
@@ -401,6 +408,14 @@ def main():
         log = (folder / 'pcsx2.log').read_text(encoding='utf-8', errors='replace')
         if f'DataRoot Directory: {profile}' not in log:
             raise ValueError('PCSX2 did not use the isolated data profile.')
+        if args.capture_spu2_interrupts:
+            from capture_spu2_interrupts import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
+        if args.capture_spu2_status:
+            from capture_spu2_status import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
         if args.capture_first_pad_poll:
             from capture_pad_poll import capture
             capture(reader,pointer,iop_rva,original,folder,address,args)
