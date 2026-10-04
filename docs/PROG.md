@@ -4,22 +4,23 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The generated probe consumes both startup GS clears, completes fresh SIF transport initialization, and now returns from post-reset CD initialization and media-mode setup. Validated epoch-owned replies run through the generated EE callback and semaphore cleanup. No displayed frame, native IOP execution or general disc backend is established.
+The generated probe consumes both startup GS clears and completes fresh SIF, CD/media-mode initialization, LOADFILE binding and its version query. It now submits the first real SIO2MAN module-load request. Validated replies execute the generated EE callback and cleanup; no module-load success is supplied.
 
-Latest verification: MSVC checkpoint pipeline, nine CTests, 79 capture tests and 43 recomp-tool tests. Local content, captures and generated code remain ignored.
+Latest verification: MSVC checkpoint pipeline, ten CTests, 82 capture tests, 11 IOP-tool tests and 43 recomp-tool tests. Local content, captures and generated/relocated code remain ignored.
 
 ## Current blocker and next step
 
-LOADFILE service bind: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB50`, requesting `0x80000006` for client `0x003ACC00` through fresh IOP buffer `0x1E640`. Full probe: **400 calls / 391 returns**. Old service bindings remain invalid; no loader reply or successful module load is supplied.
+Actual module load: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB50`; LOADFILE RPC 0 requests `cdrom0:\IRX\SIO2MAN.IRX;1` with no module arguments. Full probe: **433 calls / 425 returns**. Module entry/import effects must execute before success can be returned.
 
-Next: [LOADFILE and IOP module loading](LOADFILE_IOP_MODULE_PLAN.md). Establish the requested loader reply and module path, then plan module ownership, relocation/import resolution and execution from BT2 evidence.
+Next: [native IOP execution](IOP_NATIVE_EXECUTION_PLAN.md). The pinned PS2Recomp lacks BT3's R3000/import backend. Local IRX validation, provisional discovery and private relocation comparison work; native IOP context, dispatch, import providers and scheduling remain unimplemented.
 
 ## Key counts
 
-- **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **108** distinct functions entered / **103** completed across native probes (startup/helpers, not gameplay).
-- Added `FUN_00333B48` (completed), `FUN_00337C28`, `FUN_00337A00` and `FUN_00337228` (partial at loader bind). Existing CD/media helpers complete again. Counts describe startup helpers, not restored gameplay; entry/main remain partial.
-- Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No rendered/presented frame or complete game boot.
+- **7,262** locally generated EE functions; **7,271** raw generated C++/header files.
+- **111** distinct EE functions entered / **107** completed across native probes (startup/helpers, not gameplay).
+- This pass completed `FUN_00337228`, `FUN_00337328`, `FUN_00325098` and `FUN_00326270`. Module-load helpers, main and entry remain partial.
+- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **zero native IOP functions executed**.
+- Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No displayed frame or complete game boot.
 
 ## Milestones
 

@@ -4,6 +4,14 @@ from capture_ee import export_rva, instrument, TRAP, HANDLER, MARKER, capture_tr
 
 
 class CaptureTests(unittest.TestCase):
+    def test_loadfile_traps_do_not_overlap_the_caller(self):
+        for point,address,marker in [('loadfile-bind-after',0x337264,0xB737),('loadfile-version-after',0x3372A8,0xB738),('loadfile-module-before',0x337BDC,0xB739),('loadfile-module-after',0x337BE4,0xB73A)]:
+            actual,trap,value=capture_trap(point);words=struct.unpack('<8I',trap)
+            self.assertEqual((actual,value),(address,marker))
+            self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+            self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+            self.assertLessEqual(address+len(trap),0x337C28)
+
     def test_authored_trap_encodings(self):
         words = struct.unpack('<6I', TRAP)
         self.assertEqual(((words[0] & 0xffff) << 16) | (words[1] & 0xffff), MARKER)

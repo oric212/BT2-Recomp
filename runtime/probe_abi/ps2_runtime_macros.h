@@ -46,6 +46,21 @@ inline void SET_GPR_VEC(R5900Context* context, unsigned index, ProbeGpr value) {
 inline void SET_GPR_VEC(R5900Context* context, unsigned index, __m128i value) {
     SET_GPR_VEC(context, index, std::bit_cast<ProbeGpr>(value));
 }
+inline ProbeGpr PS2_PNOR(ProbeGpr left,ProbeGpr right) {
+    return {~(left.low|right.low),~(left.high|right.high)};
+}
+inline ProbeGpr PS2_PAND(ProbeGpr left,ProbeGpr right) {
+    return {left.low&right.low,left.high&right.high};
+}
+inline ProbeGpr PS2_PSUBB(ProbeGpr left,ProbeGpr right) {
+    auto a=std::bit_cast<std::array<std::uint8_t,16>>(left);
+    const auto b=std::bit_cast<std::array<std::uint8_t,16>>(right);
+    for(unsigned n=0;n<16;++n)a[n]=static_cast<std::uint8_t>(a[n]-b[n]);
+    return std::bit_cast<ProbeGpr>(a);
+}
+inline ProbeGpr PS2_PXOR(ProbeGpr left,ProbeGpr right) {
+    return {left.low^right.low,left.high^right.high};
+}
 inline ProbeGpr PS2_POR(ProbeGpr left,ProbeGpr right) {
     return {left.low|right.low,left.high|right.high};
 }
@@ -71,6 +86,7 @@ inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = v
 #define READ16(address) runtime->read16(rdram, (address))
 #define WRITE16(address, value) runtime->write16(rdram, (address), (value))
 #define WRITE8(address, value) runtime->write8(rdram, (address), (value))
+#define READ128(address) runtime->read128(rdram, (address))
 #define WRITE128(address, value) runtime->write128(rdram, (address), (value))
 #define READ32(address) runtime->Load32(rdram, ctx, (address))
 

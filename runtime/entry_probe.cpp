@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616 && capture.tellg()!=988 && capture.tellg()!=1124 && capture.tellg()!=1332 && capture.tellg()!=1464)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616 && capture.tellg()!=988 && capture.tellg()!=1124 && capture.tellg()!=1332 && capture.tellg()!=1464 && capture.tellg()!=1596)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -426,8 +426,8 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.post_cd.operations() && runtime.semaphore_waits == 5+runtime.post_cd.operations() && runtime.semaphore_signals == 6+runtime.post_cd.operations()+(runtime.post_cd.scmd_binds?1u:0u)
-                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.post_cd.operations())), "SCMD media-mode cleanup differs");
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations() && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations())), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -478,7 +478,7 @@ int main(int argc, char** argv) {
                     require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.post_cd.operations() && runtime.reset_smflag_writes == 1
+                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations() && runtime.reset_smflag_writes == 1
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
@@ -499,12 +499,25 @@ int main(int argc, char** argv) {
                             const std::array<std::array<std::uint32_t,3>,4> loader_targets{{
                                 {0x333B48,0x1003F8,0x100400},{0x337C28,0x10040C,0x100414},
                                 {0x337A00,0x337C34,0x337C3C},{0x337228,0x337A30,0x337A38}}};
-                            const bool loader_target=runtime.post_cd.scmd_supplied && runtime.post_cd.operations()==5
+                            const bool loader_target=runtime.post_cd.scmd_supplied && runtime.serviceOperations()==5
                                 && std::any_of(loader_targets.begin(),loader_targets.end(),[&](const auto& t){return stop_target==t[0] && stop_source==t[1] && stop_resume==t[2];});
                             const bool loader_stop=runtime.post_cd.scmd_supplied && !stop_target && stop_selector==0x77 && context.pc==0x32F028
                                 && runtime.guest_calls==400 && runtime.returns==391 && context.r[29].low==runtime.initial_sp-528
                                 && GPR_U32(&context,4)==runtime.initial_sp-528 && GPR_U32(&context,5)==1;
-                            require(cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
+                            const std::array<std::array<std::uint32_t,3>,3> loadfile_targets{{
+                                {0x337328,0x337A40,0x337A48},{0x325098,0x33735C,0x337364},{0x326270,0x337A68,0x337A70}}};
+                            const bool loadfile_helper=std::any_of(loadfile_targets.begin(),loadfile_targets.end(),[&](const auto& t){return stop_target==t[0] && stop_source==t[1] && stop_resume==t[2];});
+                            const bool loadfile_version_sema=!stop_target && stop_selector==0x40 && context.pc==0x32EC68 && runtime.post_loadfile.binds==1 && !runtime.post_loadfile.versions
+                                && runtime.guest_calls==411 && runtime.returns==404 && context.r[29].low==runtime.initial_sp-464;
+                            const bool loadfile_version_submit=!stop_target && stop_selector==0x77 && context.pc==0x32F028 && runtime.post_loadfile.binds==1 && !runtime.post_loadfile.versions
+                                && runtime.guest_calls==415 && runtime.returns==406 && context.r[29].low==runtime.initial_sp-608;
+                            const bool loadfile_module_sema=!stop_target && stop_selector==0x40 && context.pc==0x32EC68 && runtime.post_loadfile.versions==1
+                                && runtime.guest_calls==429 && runtime.returns==423 && context.r[29].low==runtime.initial_sp-384;
+                            const bool loadfile_module_submit=!stop_target && stop_selector==0x77 && context.pc==0x32F028 && runtime.post_loadfile.versions==1
+                                && runtime.guest_calls==433 && runtime.returns==425 && context.r[29].low==runtime.initial_sp-528 && GPR_U32(&context,4)==runtime.initial_sp-528 && GPR_U32(&context,5)==2;
+                            const bool loader_progress=runtime.post_loadfile.supplied && runtime.post_loadfile.binds==1 && runtime.post_cd.modes==1
+                                && (loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
+                            require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
                             require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
                                 && runtime.gif_dma.gs.packets==2 && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
                                 && runtime.gif_dma.qwc==0 && runtime.gif_dma.madr==runtime.initial_sp-48
@@ -518,14 +531,14 @@ int main(int argc, char** argv) {
                                 const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
                                 require(pixel.value==0 && pixel.known==UINT32_MAX,"Fresh SIF startup framebuffer edge differs");
                             }
-                            if(cd_stop || loader_target || loader_stop) {
+                            if(loader_progress || cd_stop || loader_target || loader_stop) {
                                 require(runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized && runtime.post_cd.binds==2 && runtime.post_cd.calls==1
                                     && runtime.read32(runtime.memory().data(),0x3A87A8)==0 && runtime.read32(runtime.memory().data(),0x3A87CC)==0x43388
                                     && runtime.read32(runtime.memory().data(),0x3A87BC)==0x441B8 && runtime.dmac_mask==0xA00000
                                     && runtime.dmac_handlers.size()==1 && runtime.dmac_enable_calls==2,
                                     "Fresh CD ownership/completion differs");
                             }
-                            if(loader_target || loader_stop) require(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1
+                            if(loader_progress || loader_target || loader_stop) require(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1
                                 && runtime.read32(runtime.memory().data(),0x369F40)==0 && runtime.read32(runtime.memory().data(),0x369F64)==0x434F0
                                 && runtime.read32(runtime.memory().data(),0x369F54)==0x439A8 && runtime.read32(runtime.memory().data(),0x3695C0)==1,
                                 "Fresh SCMD ownership/completion differs");
@@ -536,6 +549,17 @@ int main(int argc, char** argv) {
                                 for(unsigned n=0;n<4;++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==d[n],"LOADFILE descriptor differs");
                                 const std::array<std::uint32_t,9> p={64,0,0x80000009,0,5,0x203A97C0,7,0x3ACC00,0x80000006};
                                 for(unsigned n=0;n<9;++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==p[n],"LOADFILE request differs");
+                            }
+                            if(loadfile_module_submit) {
+                                require(runtime.semaphores.size()==8 && !runtime.semaphores[7].count && runtime.semaphores[7].maximum==1 && runtime.semaphores[7].option==0x3838E8,
+                                    "LOADFILE module semaphore differs");
+                                const std::array<std::uint32_t,8> descriptor={0x3ACA00,0x225B0,512,0,0x203A97C0,0x1E640,64,0x44};
+                                for(unsigned n=0;n<8;++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==descriptor[n],"LOADFILE module descriptor differs");
+                                const std::array<std::uint32_t,14> request={0x20040,0x225B0,0x8000000A,0,5,0x203A97C0,9,0x3ACC00,0,512,0x3ACA00,8,1,0x22568};
+                                for(unsigned n=0;n<14;++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==request[n],"LOADFILE module request differs");
+                                constexpr char path[]="cdrom0:\\IRX\\SIO2MAN.IRX;1";
+                                require(runtime.read32(runtime.memory().data(),0x3ACA00)==0 && std::memcmp(runtime.memory().data()+0x3ACA08,path,sizeof(path))==0,
+                                    "LOADFILE module path/arguments differ");
                             }
                             if(service_stop && !runtime.post_cd.supplied) {
                                 require(runtime.post_sif.submissions==2 && runtime.post_sif.sreg_responses==1
@@ -635,6 +659,7 @@ int main(int argc, char** argv) {
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
                 << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
                 << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
                 << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes
                 << ",\"post_sif_phase\":" << runtime.post_sif.phase
                 << ",\"post_sif_submissions\":" << runtime.post_sif.submissions

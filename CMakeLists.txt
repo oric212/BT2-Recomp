@@ -69,6 +69,12 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_compile_options(bt2-copy-handler-tests PRIVATE /W4 /permissive- /utf-8)
     target_compile_definitions(bt2-copy-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     add_test(NAME generated-copy-handler COMMAND bt2-copy-handler-tests)
+    add_executable(bt2-compare-bytes-tests runtime/compare_bytes_tests.cpp "${BT2_GENERATED_DIR}/FUN_00325098_0x325098.cpp" "${BT2_GENERATED_DIR}/FUN_00326270_0x326270.cpp")
+    target_include_directories(bt2-compare-bytes-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
+    target_compile_features(bt2-compare-bytes-tests PRIVATE cxx_std_20)
+    target_compile_options(bt2-compare-bytes-tests PRIVATE /W4 /permissive- /utf-8)
+    target_compile_definitions(bt2-compare-bytes-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    add_test(NAME generated-byte-comparison COMMAND bt2-compare-bytes-tests)
     # Independent response validation; no entry-path interrupt delivery.
     add_executable(bt2-rpc-bind-probe runtime/rpc_bind_probe.cpp
         "${BT2_GENERATED_DIR}/FUN_003322E8_0x3322e8.cpp"

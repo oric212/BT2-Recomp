@@ -43,7 +43,8 @@ def inspect(data):
             'limitations':'ROMDIR inventory and bounded ELF header metadata only; no import resolution or execution.'}
 
 
-def disc_image(iso):
+def disc_image(iso,filename=b'IOPRP300.IMG;1'):
+    if not filename or any(c not in b'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.;' for c in filename):raise ValueError('Unsupported local IRX filename')
     with iso.open('rb') as stream:
         length=iso.stat().st_size
         def read(offset,size):
@@ -61,7 +62,7 @@ def disc_image(iso):
         pvd=read(16*2048,2048)
         if pvd[:7]!=b'\x01CD001\x01' or pvd[128:132]!=b'\x00\x08\x08\x00':raise ValueError('Expected ISO9660.')
         record=pvd[156:156+pvd[156]]
-        for name,is_directory in ((b'IRX',True),(b'IOPRP300.IMG;1',False)):
+        for name,is_directory in ((b'IRX',True),(filename,False)):
             start,size=extent(record)
             if size>16*1024*1024:raise ValueError('Unreasonable directory.')
             directory=read(start,size);pos=0;matches=[]

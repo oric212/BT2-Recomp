@@ -34,5 +34,15 @@ int main() {
     reject([&]{cd.supply(missing_service);});check(!cd.supplied);
     cd.supply(service);check(cd.supplied && !cd.scmd_supplied && !cd.operations());
     reject([&]{cd.supply(service);});
+    PostResetLoadfile loader;
+    std::array<std::uint32_t,33> lf{};
+    lf[2]=0x80000008;lf[5]=0x203A97C0;lf[7]=0x3ACC00;lf[8]=0x80000009;lf[9]=0x22568;lf[10]=0x225B0;
+    lf[16]=0x400;lf[17]=0x3ACA00;lf[18]=0x80000008;lf[23]=0x3ACC00;lf[24]=0x8000000A;lf[32]=0x30303033;
+    auto lb=std::span(reinterpret_cast<const std::uint8_t*>(lf.data()),sizeof(lf));
+    reject([&]{loader.supply(lb.first(128));});check(!loader.supplied);
+    lf[9]=0x43388;reject([&]{loader.supply(lb);});check(!loader.supplied);
+    lf[9]=0x22568;lf[32]=0;reject([&]{loader.supply(lb);});check(!loader.supplied);
+    lf[32]=0x30303033;loader.supply(lb);check(loader.supplied && !loader.operations());
+    reject([&]{loader.supply(lb);});
     std::cout<<"Fresh SIF transport tests passed\n";
 }

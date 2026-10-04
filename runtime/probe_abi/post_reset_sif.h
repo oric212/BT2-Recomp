@@ -86,3 +86,22 @@ public:
     unsigned operations() const {return binds+calls+scmd_binds+modes;}
     std::array<std::uint8_t,340> replies{};
 };
+
+// Separate LOADFILE binding/version diagnostic; module loading is never acknowledged.
+class PostResetLoadfile {
+public:
+    void supply(std::span<const std::uint8_t> evidence) {
+        std::array<std::uint32_t,33> expected{};
+        expected[2]=0x80000008;expected[5]=0x203A97C0;expected[7]=0x3ACC00;
+        expected[8]=0x80000009;expected[9]=0x22568;expected[10]=0x225B0;
+        expected[16]=0x400;expected[17]=0x3ACA00;expected[18]=0x80000008;
+        expected[23]=0x3ACC00;expected[24]=0x8000000A;expected[32]=0x30303033;
+        if(supplied || evidence.size()!=sizeof(expected) || std::memcmp(evidence.data(),expected.data(),sizeof(expected)))
+            throw std::runtime_error("LOADFILE evidence differs");
+        std::copy(evidence.begin(),evidence.end(),replies.begin());supplied=true;
+    }
+    bool supplied=false;
+    unsigned binds=0,versions=0;
+    unsigned operations() const {return binds+versions;}
+    std::array<std::uint8_t,132> replies{};
+};

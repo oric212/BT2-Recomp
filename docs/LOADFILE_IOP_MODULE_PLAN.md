@@ -17,3 +17,7 @@ Pinned public PS2SDK loadfile.c identifies 0x80000006 as LOADFILE and separates 
 5. Continue through actual requests and entry blockers until the next distinct subsystem or evidence limit. Test malformed module/bounds/lifetime cases and reached native execution, update progress/history, commit and push.
 
 No native IOP reboot, full IOP emulator, displayed frame or complete game boot is established. The existing service adapter is scoped evidence delivery, not a replacement for module execution.
+
+## Toolchain audit and next implementation scope
+
+Fresh LOADFILE bind/version evidence and the first module path are now established. The first local IRX has a bounded provisional map and relocation comparison against the reference loaded module. The pinned recompiler lacks the R3000/import backend described by BT3. Follow [native IOP execution](IOP_NATIVE_EXECUTION_PLAN.md) for that new architecture scope; do not acknowledge module loading from the captured result alone.

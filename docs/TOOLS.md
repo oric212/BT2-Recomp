@@ -382,3 +382,15 @@ Append `--post-sif-captures work/pcsx2-capture` to the pipeline after `--gif-syn
 Capture `post-cd-bind-after`, `post-cd-bind-success`, `post-cd-after`, `post-scmd-bind-success` and `post-mmode-after` with the existing local PCSX2/BIOS/disc paths. Successful-bind traps use an authored conditional stub in a separate load record at 0x01000000: earlier helpers resume their displaced branch and conditional delay slot; later helpers halt only at the selected ownership/success condition. Captures, appended segments and patched executables stay ignored. ReadProcessMemory remains the only process-memory operation.
 
 Append `--post-cd-captures work/pcsx2-capture` after `--post-sif-captures` and its prerequisites. `verify_post_cd.py` validates identities, trap/stub/prefix, RAM hashes, reference environment, fresh service/client/queue ownership and returned values. A 208-byte CD extension yields a 1332-byte diagnostic prefix; adding 132 SCMD bytes yields the full 1464-byte bundle. Epoch-owned callbacks deliver the verified replies; no native IOP boot, module execution or general disc access is implemented.
+
+## LOADFILE and local IRX inspection
+
+`tools/capture_ee/capture_ee.py` provides disc-backed `loadfile-bind-after`, `loadfile-version-after`, `loadfile-module-before` and `loadfile-module-after` checkpoints. Short traps preserve the earlier execution and do not overlap the module caller. `tools/capture_ee/verify_loadfile.py` validates the bind/version reply bundle and the first module path. Add `--loadfile-captures work/pcsx2-capture` to the checkpoint pipeline after `--post-cd-captures`.
+
+Inspect a provided module without executing it:
+
+```powershell
+python tools/iop/inspect_irx.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/iop/sio2man.json
+```
+
+Optional `--base 0x4BF30 --iop-capture work/pcsx2-capture/loadfile-module-after/capture.json` prepares a private relocated image and compares module ownership, relocation words and code ranges against that recorded scenario. The explicit base is reference evidence for this capture, not a native allocator address. Output/maps/images must stay in ignored `work/` or `game_data/`. No imports or module entries are executed.

@@ -352,5 +352,12 @@
     "role": "Public PSMCT32/PSMZ24 page, block and pixel addressing, depth XOR and 24-bit preservation. Authored bit placement and transactional scoped sprite operation; no reference implementation copied. Unknown VRAM bits remain unknown. Independent BT2 checkpoints establish first transfer polling and idle VU status. The second observed same-form packet reuses the bounded logical DMA sequence; no physical timing or presentation claimed. Reached CSR reset initializes drawing-register defaults (including SCANMSK/FBA); VRAM is not cleared."
   },
   "post_reset_sif_role": "Pinned public command INIT_CMD opt 0/1 and SET_SREG layout/order, separate transport lifetime. Local before/after captures establish buffer ownership and response. Authored nonzero logical submission tokens; no native IOP execution or renewed service validity.",
-  "post_reset_service_role": "Public RPC_END bind/client/semaphore semantics and LOADFILE service identity. Fresh BT2 captures establish epoch-owned CD/SCMD replies and results; generated EE callback executes. One logical null-bind retry with bounded guest loop; no native IOP scheduling or general disc/module backend. No implementation copied."
+  "post_reset_service_role": "Public RPC_END bind/client/semaphore semantics and LOADFILE service identity. Fresh BT2 captures establish epoch-owned CD/SCMD replies and results; generated EE callback executes. One logical null-bind retry with bounded guest loop; no native IOP scheduling or general disc/module backend. No implementation copied.",
+  "loadfile_iop_tooling": {
+    "ps2sdk_revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "irx_header_sha256": "2afc986bdf65970f599f635ed3c5c73353f8ed6a83f2ca186c285c927bdddff7",
+    "bt3_revision": "e22a34beb564e2d0f32bd60b02f0a95d9645ddcc",
+    "irx_discovery_sha256": "83465ff5c1a6e167fa5e6fe8ef485784ad09f034c05e026e3114c70f5d41e1c0",
+    "role": "Public import/export layout and discovery ideas. Authored bounded inspector and private placement/relocation compare actual local disc/capture evidence. No implementations copied or native module success supplied. Pinned PS2Recomp lacks BT3 R3000/import backend."
+  }
 }
