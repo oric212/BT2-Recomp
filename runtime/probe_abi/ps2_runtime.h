@@ -127,6 +127,13 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x77 && sif_dma_submissions == 4 && scmd_mmode_supplied_) {
+            receiveScmdMmode(rdram,context); return;
+        }
+        if (code == 0 && selector == 0x77 && sif_dma_submissions == 3 && scmd_bind_supplied_) {
+            receiveScmdBind(rdram, context);
+            return;
+        }
         if (code == 0 && selector == 0x77 && sif_dma_submissions == 2 && cd_init_supplied_) {
             receiveFirstCdInit(rdram, context);
             return;
@@ -282,6 +289,27 @@ public:
             context->r[2].low = id;
             return;
         }
+        if (code == 0 && selector == 0x17) {
+            // Reached SIF shutdown: toggle only the recorded channel-5 mask bit.
+            if (context->r[4].low != 5 || scmd_mmode_calls != 1 || dmac_handlers.size() != 1)
+                throw UnsupportedSyscall(selector, context->pc);
+            const auto bit = 0x10000u << 5;
+            const bool changed = (dmac_mask & bit) != 0;
+            dmac_mask &= ~bit;
+            ++dmac_disable_calls;
+            context->r[2].low = changed ? 1 : 0;
+            return;
+        }
+        if (code == 0 && selector == 0x13) {
+            // Sole registered dormant handler; no dispatch or wait queue exists.
+            if (context->r[4].low != 5 || context->r[5].low != 1 || dmac_disable_calls != 1
+                    || dmac_mask != 0x800000 || dmac_handlers.size() != 1
+                    || dmac_handlers[0].channel != 5 || dmac_handler_order != std::vector<std::uint32_t>{1})
+                throw UnsupportedSyscall(selector, context->pc);
+            dmac_handlers.clear(); dmac_handler_order.clear(); ++dmac_removals;
+            context->r[2].low = 0; // Remaining handlers on this channel.
+            return;
+        }
         if (code == 0 && selector == 0x16) {
             // Captured mask bits only. No status acknowledgements, DMA or interrupt delivery.
             if (context->r[4].low != 5 || dma_status_reads != 1 || dma5_control_reads != 1
@@ -393,7 +421,13 @@ public:
                 && address == initial_sp - 304 && maximum == 1
                 && initial == (cd_semaphores_created == 3 ? 0u : 1u)
                 && option == 0x3825B8 + cd_semaphores_created * 16;
-            if (attributes != 0 && !rpc_call_sema && !cd_sema) {
+            const bool scmd_sema = scmd_bind_supplied_ && cd_semaphores_created == 4 && !scmd_bind_calls
+                && semaphores.size() == 7 && address == initial_sp - 288 && maximum == 1
+                && initial == 0 && option == 0x3838D8 && attributes == 2;
+            const bool mmode_sema = scmd_mmode_supplied_ && scmd_bind_calls == 1 && !scmd_mmode_calls
+                && semaphores.size() == 7 && address == initial_sp - 304 && maximum == 1
+                && initial == 0 && option == 0x3838E8 && attributes == 0x370000;
+            if (attributes != 0 && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -428,8 +462,12 @@ public:
                 && semaphore_deletions == 0 && semaphores[id].option == 0x3838D8;
             const bool cd_cleanup = cd_init_calls == 1 && semaphore_waits == 3
                 && semaphore_deletions == 1 && semaphores[id].option == 0x3838E8;
-            if (id != 3 || semaphores.size() != 4 || semaphores[3].count != 0
-                    || semaphores[3].maximum != 1 || (!bind_cleanup && !cd_cleanup))
+            const bool scmd_cleanup = scmd_bind_calls == 1 && semaphore_waits == 4 && semaphore_deletions == 2
+                && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838D8;
+            const bool mmode_cleanup = scmd_mmode_calls == 1 && semaphore_waits == 5 && semaphore_deletions == 3
+                && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838E8;
+            if (semaphores[id].count != 0 || semaphores[id].maximum != 1
+                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -735,6 +773,21 @@ public:
         std::copy_n(bundle.begin(), 88, cd_init_bundle_.begin());
         cd_init_supplied_ = true;
     }
+    void supplyScmdBind(std::span<const std::uint8_t> bundle) {
+        const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
+            0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184)
+                || std::memcmp(bundle.data(), expected.data(), 88))
+            throw std::runtime_error("Invalid SCMD bind checkpoint");
+        if (bundle.size() == 184) {
+            const std::array<std::uint32_t,24> mmode{0,1,0,0,0x370000,0x3838E8,
+                0x400,0x3695C0,0x80000008,0,0,0,0,0x369F40,0x8000000A,0,0,0,0,0,0,0,2,0};
+            if(std::memcmp(bundle.data()+88,mmode.data(),96)) throw std::runtime_error("Invalid media-mode checkpoint");
+            std::copy_n(bundle.data()+112,64,scmd_mmode_reply_.data());scmd_mmode_supplied_=true;
+        }
+        std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
+    }
+    unsigned scmd_bind_calls = 0, scmd_mmode_calls = 0;
     unsigned semaphore_polls = 0;
     unsigned cd_init_calls = 0, cd_init_context_preservations = 0, cd_semaphores_created = 0;
     unsigned sif_bind_callbacks = 0;
@@ -769,7 +822,7 @@ public:
     struct DmacHandler { std::uint32_t channel, address, arg, gp; };
     std::vector<DmacHandler> dmac_handlers;
     std::vector<std::uint32_t> dmac_handler_order;
-    std::uint32_t dmac_mask = 0, dmac_enable_calls = 0;
+    std::uint32_t dmac_mask = 0, dmac_enable_calls = 0, dmac_disable_calls = 0, dmac_removals = 0;
 
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
     void Store32(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint32_t value) {
@@ -905,7 +958,9 @@ private:
         ++sif_dma_submissions;
         context->r[2].low = 0x801;
     }
-    void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context) {
+    void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
+                       std::uint32_t client = 0x3A87A8, unsigned semaphore = 3,
+                       std::uint32_t server = 0x3F570, std::uint32_t buffer = 0x3FB20) {
         std::array<std::uint8_t, sizeof(R5900Context)> saved_cpu;
         std::memcpy(saved_cpu.data(), context, saved_cpu.size());
         auto callback = *context;
@@ -931,9 +986,9 @@ private:
         }
         rpc_end_callback_active_ = false;
         std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
-        if (callback.r[29].low != context->r[29].low || semaphores[3].count != 1
-                || read32(rdram, 0x3A87A8) != 0 || read32(rdram, 0x3A87CC) != 0x3F570
-                || read32(rdram, 0x3A87BC) != 0x3FB20 || read32(rdram, 0x3A97D0) != 4
+        if (callback.r[29].low != context->r[29].low || semaphores[semaphore].count != 1
+                || read32(rdram, client) != 0 || read32(rdram, client + 36) != server
+                || read32(rdram, client + 20) != buffer || read32(rdram, 0x3A97D0) != 4
                 || read32(rdram, 0x3A97D8) != 0)
             throw std::runtime_error("Generated RPC_END effects differ from capture");
         if (std::memcmp(saved_cpu.data(), context, saved_cpu.size()))
@@ -972,6 +1027,52 @@ private:
         ++sif_dma_submissions;
         context->r[2].low = 0x902;
     }
+    void receiveScmdBind(std::uint8_t* rdram, R5900Context* context) {
+        if (scmd_bind_calls || cd_init_calls != 1 || cd_semaphores_created != 4
+                || context->r[4].low != initial_sp - 432 || context->r[29].low != context->r[4].low
+                || context->r[5].low != 1 || semaphores.size() != 8 || semaphores[7].count != 0
+                || semaphores[7].maximum != 1 || semaphores[7].option != 0x3838D8
+                || read32(rdram,0x369F40) != 0x203A97C0 || read32(rdram,0x369F44) != 4
+                || read32(rdram,0x369F48) != 7)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,4> descriptor{0x203A97C0,0x19600,64,0x44};
+        const std::array<std::uint32_t,16> request{64,0,0x80000009,0,5,0x203A97C0,4,0x369F40,
+            0x80000593,4,0x3695C0,16,1,0x3F570,0,0};
+        for (unsigned i=0;i<4;++i) if(read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+i*4)!=descriptor[i])
+            throw UnsupportedSyscall(0x77,context->pc);
+        for (unsigned i=0;i<16;++i) if(read32(rdram,0x3A97C0+i*4)!=request[i])
+            throw UnsupportedSyscall(0x77,context->pc);
+        std::copy_n(memory_.data()+0x3A97C0,64,sif_iop_.data()+0x19600); sif_iop_[0x19600]=0;
+        std::copy(scmd_reply_.begin(),scmd_reply_.end(),memory_.begin()+0x3A94C0);
+        deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
+        ++scmd_bind_calls; ++sif_dma_submissions;
+        // Authored positive logical submission handle; not a captured hardware DMA ID.
+        // The synchronous bind consumes only the sign before waiting on its semaphore.
+        context->r[2].low=1;
+    }
+    void receiveScmdMmode(std::uint8_t* rdram,R5900Context* context) {
+        if(scmd_mmode_calls || scmd_bind_calls!=1 || semaphore_deletions!=3 || semaphores.size()!=8
+            || semaphores[7].count!=0 || semaphores[7].maximum!=1 || semaphores[7].option!=0x3838E8
+            || context->r[4].low!=initial_sp-448 || context->r[29].low!=context->r[4].low || context->r[5].low!=2
+            || read32(rdram,0x369A00)!=2 || read32(rdram,0x369F40)!=0x203A97C0
+            || read32(rdram,0x369F44)!=5 || read32(rdram,0x369F48)!=7
+            || read32(rdram,0x369F5C)!=0 || read32(rdram,0x369F60)!=0)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,8> descriptors{0x369A00,0x3F6D8,4,0,0x203A97C0,0x19600,64,0x44};
+        const std::array<std::uint32_t,16> request{0x440,0x3F6D8,0x8000000A,0,5,0x203A97C0,5,0x369F40,34,4,0x3695C0,4,1,0x3F690,0,0};
+        for(unsigned i=0;i<8;++i)if(read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+i*4)!=descriptors[i])throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned i=0;i<16;++i)if(read32(rdram,0x3A97C0+i*4)!=request[i])throw UnsupportedSyscall(0x77,context->pc);
+        std::copy_n(memory_.data()+0x369A00,4,sif_iop_.data()+0x3F6D8);
+        std::copy_n(memory_.data()+0x3A97C0,64,sif_iop_.data()+0x19600);sif_iop_[0x19600]=0;
+        std::copy(scmd_mmode_reply_.begin(),scmd_mmode_reply_.end(),memory_.begin()+0x3A94C0);
+        std::fill_n(memory_.data()+0x3695C0,4,0);
+        deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
+        ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
+    }
+    bool scmd_mmode_supplied_ = false;
+    std::array<std::uint8_t,64> scmd_mmode_reply_{};
+    bool scmd_bind_supplied_ = false;
+    std::array<std::uint8_t,64> scmd_reply_{};
     bool cd_init_supplied_ = false, cd_semaphores_supplied_ = false;
     std::array<std::uint8_t, 88> cd_init_bundle_{};
     bool sif_call_sema_supplied_ = false;

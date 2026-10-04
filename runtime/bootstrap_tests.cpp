@@ -920,6 +920,30 @@ int main() {
         cache_context.r[4].low = 2;
         reject([&] { cache.handleSyscall(nullptr, &cache_context, 1); });
         require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
+        PS2Runtime shutdown;
+        R5900Context shutdown_context{};
+        shutdown_context.r[3].low = 0x17; shutdown_context.r[4].low = 5;
+        shutdown_context.r[2].high = 0x1122334455667788ULL;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        shutdown.scmd_mmode_calls = 1;
+        shutdown.dmac_handlers.push_back({5, 0x331DF0, 0, 0x38BDF0});
+        shutdown.dmac_handler_order.push_back(1); shutdown.dmac_mask = 0xA00000;
+        shutdown_context.r[4].low = 4;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        require(shutdown.dmac_mask == 0xA00000 && shutdown.dmac_disable_calls == 0);
+        shutdown_context.r[4].low = 5;
+        shutdown.handleSyscall(nullptr, &shutdown_context, 0);
+        require(shutdown.dmac_mask == 0x800000 && shutdown_context.r[2].low == 1
+                && shutdown_context.r[2].high == 0x1122334455667788ULL);
+        shutdown_context.r[3].low = 0x13; shutdown_context.r[5].low = 2;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        require(shutdown.dmac_handlers.size() == 1 && shutdown.dmac_removals == 0);
+        shutdown_context.r[5].low = 1;
+        shutdown.handleSyscall(nullptr, &shutdown_context, 0);
+        require(shutdown.dmac_handlers.empty() && shutdown.dmac_handler_order.empty()
+                && shutdown.dmac_removals == 1 && shutdown_context.r[2].low == 0
+                && shutdown_context.r[2].high == 0x1122334455667788ULL);
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
         PS2Runtime zero_checkpoint;
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
         zero_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));

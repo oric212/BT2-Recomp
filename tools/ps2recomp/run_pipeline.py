@@ -220,6 +220,8 @@ def main():
     parser.add_argument('--rpc-call-sema-capture', type=Path, help='Checked first RPC call semaphore result; requires bind response capture.')
     parser.add_argument('--cd-init-capture', type=Path, help='Checked first mode-0 CD initialization completion; requires bind/call-semaphore inputs.')
     parser.add_argument('--cd-semaphores-capture', type=Path, help='Checked four CD semaphore results; requires CD-init completion.')
+    parser.add_argument('--scmd-bind-capture', type=Path, help='Checked second CD service bind; requires CD semaphore checkpoint.')
+    parser.add_argument('--scmd-mmode-capture', type=Path, help='Checked mode-2 media-mode call completion; requires SCMD bind.')
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -261,6 +263,22 @@ def main():
                 raise ValueError('CD-init and semaphore reference environments differ.')
             cd_init = cd_init[0] + cd_semaphores[0], cd_init[1]
 
+    scmd_bind = None
+    if args.scmd_bind_capture:
+        if not cd_semaphores:
+            parser.error('--scmd-bind-capture requires --cd-semaphores-capture')
+        from verify_scmd_bind import verify as verify_scmd_bind
+        scmd_bind = verify_scmd_bind(args.scmd_bind_capture)
+        if any(scmd_bind[1][key] != cd_init[1][key] for key in ('pcsx2_sha256','bios_sha256')):
+            raise ValueError('SCMD bind reference environment differs.')
+    scmd_mmode = None
+    if args.scmd_mmode_capture:
+        if not scmd_bind: parser.error('--scmd-mmode-capture requires --scmd-bind-capture')
+        from verify_scmd_bind import verify_mmode
+        scmd_mmode = verify_mmode(args.scmd_mmode_capture)
+        if any(scmd_mmode[1][key] != scmd_bind[1][key] for key in ('pcsx2_sha256','bios_sha256')):
+            raise ValueError('Media-mode reference environment differs.')
+        scmd_bind = scmd_bind[0]+scmd_mmode[0], scmd_bind[1]
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -371,9 +389,15 @@ def main():
             bundle = folder / 'cd-init.bin'
             bundle.write_bytes(cd_init[0])
             entry_command.append(str(bundle))
+        if scmd_bind:
+            bundle = folder / 'scmd-bind.bin'
+            bundle.write_bytes(scmd_bind[0])
+            entry_command.append(str(bundle))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "scmd_mmode_provenance": scmd_mmode[1] if scmd_mmode else None,
+        "scmd_bind_provenance": scmd_bind[1] if scmd_bind else None,
         "cd_semaphores_provenance": cd_semaphores[1] if cd_semaphores else None,
         "cd_init_provenance": cd_init[1] if cd_init else None,
         "rpc_call_semaphore_provenance": rpc_call_sema[1] if rpc_call_sema else None,

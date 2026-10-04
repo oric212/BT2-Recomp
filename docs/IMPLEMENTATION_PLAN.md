@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: capture and validate the reached next RPC bind's semaphore result and actual service reply. The first CD-init mode-0 call, cleanup, four CD semaphores and command-handler setup now return natively using checked local evidence. Automatic selection can link reached exact mapped entries with ignored source/map provenance receipts. Keep general IOP execution, disc access and interrupt scheduling unsupported until established by evidence. Continue through multiple blockers per pass; current CreateSema boundary and counts are in PROG.md.
+Current next step: establish the reached SifStopDma and subsequent reset lifecycle before extending the runtime. Checked CD-init and synchronous-command binds, mode-2 media-mode completion, semaphore cleanup and SIF handler shutdown now return. The standalone media-mode reply is 0 and establishes no disc readiness. Preserve checkpoint provenance, caller CPU/stack isolation and all earlier boundaries; keep general IOP execution and reset unsupported until verified.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

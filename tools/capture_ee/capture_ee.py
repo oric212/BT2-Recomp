@@ -29,14 +29,16 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
 def capture_trap(point):
     if point == 'kernel-handler':
         return HANDLER, TRAP, 0xB702
-    if point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores'):
+    if point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores', 'scmd-bind-after', 'scmd-mmode-after'):
         # SifSetDma boundary or caller resumed after first/change-address or bind submission.
         address, marker = {'sif-dma-before': (0x331D44, 0xB70C),
                            'sif-dma-after': (0x331D4C, 0xB70D),
                            'sif-bind-after': (0x33284C, 0xB70F),
                            'rpc-call-sema': (0x332AD0, 0xB710),
                            'cd-init-after': (0x332B0C, 0xB711),
-                           'cd-semaphores': (0x31EE6C, 0xB712)}[point]
+                           'cd-semaphores': (0x31EE6C, 0xB712),
+                           'scmd-bind-after': (0x31F78C, 0xB713),
+                           'scmd-mmode-after': (0x32050C, 0xB714)}[point]
         words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF1D0008,
                  0x34190000 | marker, 0xAF190000,
                  0x08000000 | ((address + 24) >> 2), 0]
@@ -194,7 +196,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores', 'scmd-bind-after', 'scmd-mmode-after'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -202,7 +204,7 @@ def main():
     executable = args.pcsx2.resolve()
     exe_data = executable.read_bytes()
     rva = export_rva(exe_data, 'EEmem')
-    capture_iop = args.capture_point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'cd-init-after')
+    capture_iop = args.capture_point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after')
     iop_rva = export_rva(exe_data, 'IOPmem') if capture_iop else None
     source = ROOT / 'rom/SLUS_214.41'
     original = source.read_bytes()
@@ -285,7 +287,7 @@ def main():
             sp, = struct.unpack_from('<I', data, MARKER + 8)
             if sp > len(data) - 16 or reader.read(pointer + sp, 16) != data[sp:sp + 16]:
                 raise ValueError('SIF DMA descriptor changed during capture.')
-            packet_address, packet_size = (0x3A97C0, 64) if args.capture_point in ('sif-bind-after', 'cd-init-after') else (0x3A9580, 20)
+            packet_address, packet_size = (0x3A97C0, 64) if args.capture_point in ('sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after') else (0x3A9580, 20)
             if reader.read(pointer + packet_address, packet_size) != data[packet_address:packet_address + packet_size]:
                 raise ValueError('SIF packet changed during capture.')
         if args.capture_point in ('rpc-call-sema', 'cd-semaphores'):
@@ -297,8 +299,10 @@ def main():
         if args.capture_point == 'cd-semaphores':
             if reader.read(pointer + 0x3683E8, 12) != data[0x3683E8:0x3683F4]:
                 raise ValueError('CD semaphore IDs changed during capture.')
-        if args.capture_point in ('sif-bind-after', 'cd-init-after'):
+        if args.capture_point in ('sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after'):
             ranges = ((MARKER, 12), (0x3A94C0, 64), (0x3A87A8, 40), (0x3A95C0, 13 * 12))
+            if args.capture_point in ('scmd-bind-after', 'scmd-mmode-after'):
+                ranges += ((0x369F40, 40), (0x3695C0,4), (0x369A00,4))
             if args.capture_point == 'cd-init-after':
                 ranges += ((0x3695C0, 16), (0x3A8800, 4))
             for start, size in ranges:
@@ -314,10 +318,17 @@ def main():
                 raise ValueError('IOP memory is not allocated.')
             iop_data = reader.read(iop_pointer, 2 * 1024 * 1024)
             time.sleep(0.1)
-            receive_size = 64 if args.capture_point in ('sif-bind-after', 'cd-init-after') else 20
-            for start, size in ((0x19600, receive_size), (0x196C0, 12)) + (((0x3F570, 68), (0x3F558, 12)) if args.capture_point in ('sif-bind-after', 'cd-init-after') else ()) + (((0x3FB20, 16),) if args.capture_point == 'cd-init-after' else ()):
+            receive_size = 64 if args.capture_point in ('sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after') else 20
+            for start, size in ((0x19600, receive_size), (0x196C0, 12)) + (((0x3F570, 68), (0x3F558, 12)) if args.capture_point in ('sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after') else ()) + (((0x3FB20, 16),) if args.capture_point == 'cd-init-after' else ()):
                 if reader.read(iop_pointer + start, size) != iop_data[start:start + size]:
                     raise ValueError('IOP receive packet/table changed during capture.')
+            if args.capture_point in ('scmd-bind-after','scmd-mmode-after'):
+                server = struct.unpack_from('<I', data, 0x369F64)[0]
+                if not server or server > len(iop_data) - 68 or reader.read(iop_pointer + server, 68) != iop_data[server:server + 68]:
+                    raise ValueError('SCMD service changed during capture.')
+                buffer = struct.unpack_from('<I', iop_data, server + 8)[0]
+                if buffer > len(iop_data) - 4 or reader.read(iop_pointer + buffer,4) != iop_data[buffer:buffer+4] or reader.read(iop_pointer+0x3F648,68) != iop_data[0x3F648:0x3F68C]:
+                    raise ValueError('SCMD buffer/queue changed during capture.')
             (folder / 'iop-ram.bin').write_bytes(iop_data)
         dump = folder / 'ee-ram.bin'
         dump.write_bytes(data)
@@ -347,7 +358,7 @@ def main():
                     'observed_sif_dma_result': struct.unpack_from('<I', data, MARKER + 4)[0] if capture_iop else None,
                     'observed_sif_dma_sp': struct.unpack_from('<I', data, MARKER + 8)[0] if capture_iop else None,
                     'original_osd_config': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'osd-readback' else None,
-                    'limitations': ('Instrumented standalone ELF boot; semaphore descriptor/publication/IDs stable in two reads; no scheduler or attribute semantics established.' if args.capture_point == 'cd-semaphores' else 'Instrumented standalone ELF boot; CD-init request/reply/client/data and IOP service windows stable in two reads; no disc mounted or hardware timing established.' if args.capture_point == 'cd-init-after' else 'Instrumented standalone ELF boot; semaphore descriptor/publication stable in two reads; kernel and IOP remain live.' if args.capture_point == 'rpc-call-sema' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
+                    'limitations': ('Instrumented standalone ELF with no disc; second bind/media-mode request/reply/client and server windows stable twice, semaphore inferred from completed client and residual descriptor; no timing or hardware DMA result established.' if args.capture_point in ('scmd-bind-after','scmd-mmode-after') else 'Instrumented standalone ELF boot; semaphore descriptor/publication/IDs stable in two reads; no scheduler or attribute semantics established.' if args.capture_point == 'cd-semaphores' else 'Instrumented standalone ELF boot; CD-init request/reply/client/data and IOP service windows stable in two reads; no disc mounted or hardware timing established.' if args.capture_point == 'cd-init-after' else 'Instrumented standalone ELF boot; semaphore descriptor/publication stable in two reads; kernel and IOP remain live.' if args.capture_point == 'rpc-call-sema' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')
     finally:

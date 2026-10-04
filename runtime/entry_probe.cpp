@@ -22,7 +22,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
@@ -268,6 +268,14 @@ int main(int argc, char** argv) {
             throw std::runtime_error("OSD readback requires generated startup kernel payload");
 #endif
         }
+        if (argc >= 18) {
+            std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184)) throw std::runtime_error("Invalid SCMD bundle size");
+            std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
+                throw std::runtime_error("Invalid SCMD bind bundle size");
+            runtime.supplyScmdBind(bundle);
+        }
         bool stopped = false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
@@ -343,7 +351,7 @@ int main(int argc, char** argv) {
             stop_handler = stop.handler;
             stopped = true;
         }
-        if (cd_mode) {
+        if (cd_mode && argc < 18) {
             require(stopped && !stop_handler && (stop_target || (stop_selector == 0x40 && context.pc == 0x32EC68)),
                     "CD continuation did not reach a checked boundary");
             require(runtime.cd_init_calls == 1 && runtime.cd_init_context_preservations == 1
@@ -387,6 +395,51 @@ int main(int argc, char** argv) {
             report << "]}\n";
             std::cout << "CD-init continuation report written.\n";
             return 0;
+        }
+        if (argc >= 18) {
+            require(stopped && !stop_handler && runtime.scmd_bind_calls == 1 && runtime.cd_init_calls == 1
+                    && runtime.semaphores.size() == 7, "SCMD continuation state differs");
+            if (!runtime.scmd_mmode_calls) {
+                require(!stop_target && stop_selector == 0x40 && context.pc == 0x32EC68
+                        && runtime.guest_calls == 190 && runtime.returns == 185
+                        && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
+                        "SCMD call-semaphore boundary differs");
+            } else {
+                require(runtime.semaphore_deletions == 4 && runtime.semaphore_waits == 5 && runtime.semaphore_signals == 6
+                        && runtime.sif_dma_submissions == 5, "SCMD media-mode cleanup differs");
+                if (stop_target) {
+                    const std::array<std::array<std::uint32_t,2>,9> reached{{
+                        {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
+                        {0x32F810,0x331B10},{0x32E9D0,0x32F840},{0x32E990,0x331B20},
+                        {0x337F88,0x33824C},{0x33A3F0,0x337FA4},{0x32EF30,0x337FB8}}};
+                    require(std::any_of(reached.begin(),reached.end(),[&](const auto& entry) {
+                        return entry[0] == stop_target && entry[1] == stop_source && stop_resume == stop_source + 8;
+                    }), "Unexpected SCMD mapped-entry boundary");
+                } else require(stop_selector == 0x6B && context.pc == 0x32EF38
+                    && runtime.guest_calls == 214 && runtime.returns == 209
+                    && context.r[29].low == runtime.initial_sp - 224 && GPR_U32(&context,4) == 1
+                    && runtime.dmac_disable_calls == 1 && runtime.dmac_removals == 1
+                    && runtime.dmac_mask == 0x800000 && runtime.dmac_handlers.empty()
+                    && runtime.read32(runtime.memory().data(),0x36AA90) == 0
+                    && runtime.read32(runtime.memory().data(),0x36AA8C) == 0,
+                    "SIF shutdown and DMA-stop boundary differs");
+            }
+            std::ofstream report(argv[2]);
+            if (!report) throw std::runtime_error("Could not write SCMD report");
+            report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
+                << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
+                << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls << ",\"returns\":" << runtime.returns
+                << ",\"words\":" << runtime.word_writes << ",\"doublewords\":" << runtime.doubleword_writes
+                << ",\"bytes\":" << runtime.byte_writes << ",\"quads\":" << runtime.quadword_writes
+                << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
+                << ",\"deletions\":" << runtime.semaphore_deletions << ",\"dma_disables\":" << runtime.dmac_disable_calls
+                << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls
+                << ",\"sp\":" << context.r[29].low << ",\"scmd_binds\":" << runtime.scmd_bind_calls << ",\"arguments\":[" << GPR_U32(&context,4) << "," << GPR_U32(&context,5) << "]"
+                << ",\"descriptor_words\":[";
+            for(unsigned i=0;i<((stop_selector==0x40 || stop_selector==0x77)?8u:0u);++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4);
+            report << "],\"packet_words\":[";
+            for(unsigned i=0;i<16;++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3A97C0+i*4);
+            report << "]}\n"; return 0;
         }
         if (bind_mode) {
             require(stopped && !stop_target && !stop_handler && runtime.sif_bind_callbacks == 1

@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated map/recompilation pipeline work locally. Generated startup now completes the first CD-init mode-0 RPC using a validated local reply checkpoint, returns through cleanup and CD semaphore/command-handler setup, then enters the next service bind. This is bounded startup compatibility; complete boot, disc access and gameplay remain incomplete.
+The C++20 host and automated recompilation pipeline work locally. Checked startup now completes the CD-init and CD synchronous-command binds, replays the observed mode-2 media-mode reply, returns to main, and shuts down the SIF handler/mask before entering the next startup path. This is bounded checkpoint-supported compatibility; complete boot, IOP reset, disc loading and gameplay remain incomplete.
 
-Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests and 24 capture-tool tests passed. Game files, BIOS, captures, generated sources and automatic binding selections remain ignored. Retail revision is confirmed; function boundaries remain provisional.
+Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests and 30 capture-tool tests passed. Proprietary files, captures, generated code and automatic binding selections stay ignored. Retail revision is confirmed; function boundaries remain provisional.
 
 ## Current blocker and next step
 
-The next generated RPC bind reaches CreateSema (`0x40`), resume `0x0032EC68`, SP `0x01FFEC40`. Descriptor: `[0x00370000,1,0,0,2,0x003838D8]`. The previous first-bind evidence does not establish this new call's semaphore result or service reply.
+Generated `FUN_0032EF30` stops at SifStopDma (`0x6B`), resume `0x0032EF38`, SP `0x01FFEC80`, a0=1, inside the next path through `FUN_00338158` / `FUN_00337F88`. SIF DMA channel 5 is disabled and its sole dormant handler removed; no IOP reset has been performed.
 
-Next: capture this reached bind's semaphore and request/reply effects locally, validate the actual service identity and queue, then rerun. No general CD service or disc result is fabricated.
+Next: establish the reached DMA-stop/reset lifecycle from local kernel/PCSX2 evidence and public ABI, then continue. The captured standalone media-mode reply is 0; it does not prove media readiness or disc access.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **76** distinct functions entered / **72** completed across native probes (startup/helpers, not gameplay).
-- This pass completes `FUN_00332970`, `FUN_0031F8B0`, `FUN_0031EDB0`, `FUN_0031F010` and `FUN_0032ECB0`. Entry, `FUN_00100388`, `FUN_00320488` and `FUN_0031F6A8` remain partial. Previously completed helpers can stop on new inputs.
+- **85** distinct functions entered / **80** completed across native probes (startup/helpers, not gameplay).
+- This pass completes eight additional functions, including the previous partial CD helpers. Entry, `FUN_00100388`, `FUN_00338158`, `FUN_00337F88` and `FUN_0032EF30` remain partial. Previously completed helpers can stop on new inputs.
 
 ## Milestones
 
