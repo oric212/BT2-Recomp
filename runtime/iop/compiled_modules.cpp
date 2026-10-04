@@ -5,6 +5,14 @@
 #include "dbcman_native.h"
 #include "sio2d_native.h"
 #include "ds2ud_native.h"
+#include "libsd_native.h"
+#include "sdrdrv_native.h"
+#include "modhsyn_native.h"
+#include "modsesq2_native.h"
+void bt2_iop_modsesq2(IopRuntime&,IopContext&);
+void bt2_iop_modhsyn(IopRuntime&,IopContext&);
+void bt2_iop_sdrdrv(IopRuntime&,IopContext&);
+void bt2_iop_libsd(IopRuntime&,IopContext&);
 void bt2_iop_ds2ud(IopRuntime&,IopContext&);
 void bt2_iop_sio2d(IopRuntime&,IopContext&);
 void bt2_iop_dbcman(IopRuntime&,IopContext&);
@@ -110,5 +118,33 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
                     throw std::runtime_error("Native DS2U_D start-phase wait differs");
                 if(field==0x2480 && (t.waiting || t.ready))throw std::runtime_error("Disconnected-port DS2U_D worker is not dormant");
             }
+        }}, {"cdrom0:\\IRX\\LIBSD.IRX;1",iop_libsd_base,iop_libsd_entry,iop_libsd_gp,iop_libsd_image,
+        iop_libsd_export_bounds,bt2_iop_libsd,[](const IopRuntime& rt) {
+            const auto& library=rt.libraries.at("libsd");
+            if(library.version!=0x105 || library.table!=iop_libsd_base || library.gp!=iop_libsd_gp || rt.threads.size()!=9 || rt.events.size()!=4 || rt.semaphores.size()!=6)
+                throw std::runtime_error("Native LIBSD resident objects differ");
+            const std::map<std::uint32_t,std::uint32_t> expected={{0x1F801404,0xBF900000},{0x1F80140C,0xBF900800},
+                {0x1F8010F0,0x077FFF77},{0x1F801570,0x07BBFF7F},{0x1F801014,0x200B31E1},{0x1F801414,0x200B31E1}};
+            if(rt.sound_bus!=expected || !rt.cpu_interrupts_enabled)throw std::runtime_error("Native LIBSD bus state differs");
+        }}, {"cdrom0:\\IRX\\SDRDRV.IRX;1",iop_sdrdrv_base,iop_sdrdrv_entry,iop_sdrdrv_gp,iop_sdrdrv_image,
+        iop_sdrdrv_export_bounds,bt2_iop_sdrdrv,[](const IopRuntime& rt) {
+            if(rt.threads.size()!=10 || rt.events.size()!=4 || rt.semaphores.size()!=6 || rt.rpc_servers.size()!=6)
+                throw std::runtime_error("Native SDRDRV resident objects differ");
+            std::uint32_t id;std::memcpy(&id,rt.ram.data()+iop_sdrdrv_base+0x14C8,4);const auto& t=rt.threads.at(id);
+            if(t.entry!=iop_sdrdrv_base+0x4E0 || t.gp!=iop_sdrdrv_gp || t.priority!=24 || t.stacksize!=0x800
+                || !t.waiting || t.wait_rpc!=iop_sdrdrv_base+0x15C0 || t.wait_event)
+                throw std::runtime_error("Native SDRDRV RPC worker differs");
+        }}, {"cdrom0:\\IRX\\MODHSYN.IRX;1",iop_modhsyn_base,iop_modhsyn_entry,iop_modhsyn_gp,iop_modhsyn_image,
+        iop_modhsyn_export_bounds,bt2_iop_modhsyn,[](const IopRuntime& rt) {
+            const auto& lib=rt.libraries.at("modhsyn");
+            if(lib.version!=0x104 || lib.table!=iop_modhsyn_base+0xBC90 || lib.gp!=iop_modhsyn_gp
+                || rt.threads.size()!=10 || rt.events.size()!=4 || rt.semaphores.size()!=6)
+                throw std::runtime_error("Native MODHSYN resident registration differs");
+        }}, {"cdrom0:\\IRX\\MODSESQ2.IRX;1",iop_modsesq2_base,iop_modsesq2_entry,iop_modsesq2_gp,iop_modsesq2_image,
+        iop_modsesq2_export_bounds,bt2_iop_modsesq2,[](const IopRuntime& rt) {
+            const auto& lib=rt.libraries.at("modsesq2");
+            if(lib.version!=0x101 || lib.table!=iop_modsesq2_base+0x39D0 || lib.gp!=iop_modsesq2_gp
+                || rt.threads.size()!=10 || rt.events.size()!=4 || rt.semaphores.size()!=6)
+                throw std::runtime_error("Native MODSESQ2 resident registration differs");
         }}};
 }

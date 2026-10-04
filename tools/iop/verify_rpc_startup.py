@@ -5,6 +5,10 @@ from inspect_irx import inspect,relocate
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'capture_ee'))
 from capture_ee import EXPECTED_SHA,MARKER,capture_trap
 PROFILES={
+ 'modsesq2':{'base':0x9A930,'owned':0xD0000,'text':0x3B00,'result':0,'workers':[],'semaphores':[]},
+ 'modhsyn':{'base':0x8A330,'owned':0xB0000,'text':0xBE60,'result':0,'workers':[],'semaphores':[],'uninitialized_tail':bytes.fromhex('0d40')},
+ 'sdrdrv':{'base':0x88630,'owned':0xA0000,'text':0x1330,'result':2,'workers':[(0x14C8,0x15C0)],'semaphores':[]},
+ 'libsd':{'base':0x82C30,'owned':0x90000,'text':0x4890,'result':0,'workers':[],'semaphores':[]},
  'sio2d':{'base':0x7D630,'owned':0x70000,'text':0x1B20,'result':0,'workers':[(0x1BE8,None)],'semaphores':[0x1BEC,0x1BF0],'live':[0x1BD8]},
  'mcserv':{'base':0x74430,'owned':0x50000,'text':0x1240,'result':2,'workers':[(0x36D8,0x36E0)],'semaphores':[]},
  'dbcman':{'base':0x77C30,'owned':0x60000,'text':0x22A0,'result':0,'workers':[(0x2EF8+n*4,0x2D80+n*24) for n in range(4)],'semaphores':[0x2770]},
@@ -53,12 +57,19 @@ def verify(profile,native,ram,metadata,iop,ee,module):
         require(s is not None and s['attr']==word(iop,p+4) and s['count']==word(iop,p+24) and s['maximum']==word(iop,p+28),'Native semaphore differs')
         ids[field]=id
     for offset in range(config['text'],report['memory_size'],4):
+        if offset+4>report['memory_size']:
+            size=report['memory_size']-offset
+            tail=iop[base+offset:base+offset+size]
+            if 'uninitialized_tail' in config:
+                require(tail==config['uninitialized_tail'] and ram[owned+offset:owned+offset+size]==bytes(size),'Guarded untouched allocator tail differs')
+            else:require(ram[owned+offset:owned+offset+size]==tail,'Module data tail differs')
+            continue
         a=word(ram,owned+offset);b=word(iop,base+offset)
         if offset in config.get('live',[]):continue
         if offset in ids:b=ids[offset]
         elif a!=b and owned<=a<owned+report['memory_size'] and base<=b<base+report['memory_size']:b=b-base+owned
         require(a==b,'Normalized module data/BSS differs at '+hex(offset))
-    return {'verified':'Relocated code, normalized data/BSS and guarded worker ownership/parameters/wait state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers']),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'excluded_live_words':{hex(o):{'native':word(ram,owned+o),'reference':word(iop,base+o)} for o in config.get('live',[])},'limitations':'Vblank phase/timing and excluded live counter are not validated. Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
+    return {'verified':'Relocated code, normalized data/BSS and guarded worker ownership/parameters/wait state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers']),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'excluded_uninitialized_tail_bytes':len(config.get('uninitialized_tail',b'')),'excluded_live_words':{hex(o):{'native':word(ram,owned+o),'reference':word(iop,base+o)} for o in config.get('live',[])},'limitations':'Vblank phase/timing, excluded live counter and reported untouched allocator-tail bytes are not validated. Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--profile',choices=PROFILES,required=True)
     for key in ('native','reference','module','output'):p.add_argument('--'+key,type=Path,required=True)

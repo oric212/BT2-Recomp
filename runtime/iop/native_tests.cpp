@@ -132,6 +132,20 @@ int main() {
         }
         check(handled==2 && device.threads.at(1).context.get(29)==0x100F0);
         host.set(4,thread_id);host.set(5,0x20040);check(kernel.import("thbase",22,host)==0 && kernel.read(0x20048,4)==4 && kernel.read(0x2004C,4)==worker.entry && kernel.read(0x20064,4)==4);
+        IopRuntime sound;
+        auto refuses=[&](auto operation){bool failed=false;try{operation();}catch(const std::runtime_error&){failed=true;}check(failed);};
+        refuses([&]{sound.read(0xBF8010F0,4);});
+        sound.write(0xBF801404,0xBF900000,4);sound.write(0xBF80140C,0xBF900800,4);
+        refuses([&]{sound.read(0xBF8010F0,4);});
+        for(unsigned channel:{11u,12u}) {auto& dma=sound.dma_channels[channel];dma.priority=3;dma.enabled=true;}
+        check(sound.read(0xBF8010F0,4)==0x0777FF77 && sound.read(0xBF801570,4)==0x07BBFF77);
+        refuses([&]{sound.write(0xBF8010F0,0,4);});
+        sound.write(0xBF8010F0,0x077FFF77,4);sound.write(0xBF801570,0x07BBFF7F,4);
+        check(sound.read(0xBF8010F0,4)==0x077FFF77 && sound.read(0xBF801570,4)==0x07BBFF7F);
+        refuses([&]{sound.read(0xBF8010F0,2);});
+        IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
+        IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
+        log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

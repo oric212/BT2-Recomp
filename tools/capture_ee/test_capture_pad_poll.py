@@ -13,3 +13,12 @@ class PadHookTests(unittest.TestCase):
             branch=words.index(0x15200003)
             self.assertEqual(words[branch+4],0x8FA30000)
             self.assertEqual(words[branch+2],0x1000FFFF)
+
+    def test_dma_register_addresses(self):
+        words=struct.unpack('<'+str(len(hook())//4)+'I',hook())
+        for offset in (0x10F0,0x1570):
+            i=words.index(0x8D290000|offset)
+            self.assertEqual(words[i-1],0x3C09BF80)
+        for offset in (0x8268,0x8280):
+            i=words.index(0x8D290000|offset)
+            self.assertEqual(words[i-1],0x3C09BF81)

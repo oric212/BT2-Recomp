@@ -460,7 +460,7 @@ python tools/iop/generate_native.py rom/IRX/DS2U_D.IRX --disc "rom/Dragon Ball Z
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/ds2ud-stop.json --ds2ud
 ```
 
-The SIO2D checker guards identity, trap, result, relocated code, normalized data/BSS, Vblank waiter and semaphore ownership. Offset 0x1BD8 is an explicitly unvalidated live counter, reported separately; non-end Vblank phase bits are not compared. DS2U_D generation has 40 provisional ranges / 25 imports and is linked into the optional native targets. Its current FIFO stop is not resident completion. All generated code, captures, images and reports stay ignored.
+The SIO2D checker guards identity, trap, result, relocated code, normalized data/BSS, Vblank waiter and semaphore ownership. Offset 0x1BD8 is an explicitly unvalidated live counter, reported separately; non-end Vblank phase bits are not compared. DS2U_D generation has 40 provisional ranges / 25 imports and is linked into the optional native targets. Its resident entry and two initial polls now complete; later controller packets remain unsupported. All generated code, captures, images and reports stay ignored.
 
 ## Direct first-controller poll capture
 
@@ -471,3 +471,20 @@ python tools/iop/verify_ds2ud_startup.py --native work/iop/ds2ud-stop.json --ref
 ```
 
 The verifier compares the resident return, relocated code, worker ownership/parameters/Vblank-start wait/dormant state and guarded direct first two poll publications. It does not equate live DS2U_D data/BSS across Vblank phases. Regenerate each local native IRX after the backend update: generated module dispatch now returns to the owned service on cross-module jumps, which preserves the actual callback PC/RA/context rather than treating the other module as an unmapped local target.
+
+
+## Sound-module startup probes
+
+The optional native targets now require these additional locally generated sources before configuration/build:
+
+```powershell
+python tools/iop/generate_native.py rom/IRX/LIBSD.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x90000 --symbol bt2_iop_libsd --prefix iop_libsd --output work/iop/libsd_native.cpp
+python tools/iop/generate_native.py rom/IRX/SDRDRV.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xA0000 --symbol bt2_iop_sdrdrv --prefix iop_sdrdrv --output work/iop/sdrdrv_native.cpp
+python tools/iop/generate_native.py rom/IRX/MODHSYN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xB0000 --symbol bt2_iop_modhsyn --prefix iop_modhsyn --output work/iop/modhsyn_native.cpp
+python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xD0000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/modsesq2-stop.json --modsesq2
+```
+
+Stages `--libsd`, `--sdrdrv`, `--modhsyn`, `--modsesq2` load all earlier modules in observed order. Capture points and `verify_rpc_startup.py --profile` names are respectively `libsd-module-after`/`libsd`, `sdrdrv-module-after`/`sdrdrv`, `modhsyn-module-after`/`modhsyn`, `modsesq2-module-after`/`modsesq2`. Use the explicit local PCSX2/BIOS/disc capture command and the checker's existing native/reference/module/output arguments. Resident validation does not establish playback or successful sound RPC requests. MODHSYN's final two untouched allocator-fill bytes are explicitly guarded/excluded in the comparison.
+
+The direct initial poll publication now includes DPCR1/2, using BF80 for their positive 16-bit offsets. Regenerate that scoped capture after the hook update before running the DS2U_D comparison; its hook/hash and seven published register words must match.

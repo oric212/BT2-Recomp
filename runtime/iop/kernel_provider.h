@@ -2,6 +2,17 @@
 #include "native_runtime.h"
 
 inline void install_iop_kernel_providers(IopRuntime& rt) {
+    rt.providers[{"sysmem",14}]=[](IopRuntime& memory,IopContext& c) {
+        // No Kprintf callback is installed: SDK returns zero. Retain reached literal diagnostics.
+        std::string message;
+        for(unsigned i=0;i<1024;++i) {
+            const auto ch=memory.read(c.get(4)+i,1);
+            if(!ch) {memory.kernel_messages.push_back(message);return 0u;}
+            if(ch=='%')throw std::runtime_error("Formatted IOP Kprintf unsupported");
+            message.push_back(static_cast<char>(ch));
+        }
+        throw std::runtime_error("Unterminated IOP Kprintf message");
+    };
     rt.providers[{"thevent",4}]=[](IopRuntime& memory,IopContext& c) {
         const auto p=c.get(4);memory.check(IopRuntime::physical(p),12);
         const IopRuntime::Event event{memory.read(p,4),memory.read(p+4,4),memory.read(p+8,4)};

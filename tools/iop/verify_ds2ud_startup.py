@@ -35,7 +35,7 @@ def verify(native,ram,metadata,iop,ee,module,poll,polldata):
     require(polldata[CODE:CODE+len(hook(count))]==hook(count) and poll['hook_sha256']==hashlib.sha256(hook(count)).hexdigest(),'Poll hook differs')
     require(polldata[HOOK:HOOK+8]==struct.pack('<2I',0x08000000|(CODE>>2),0) and word(polldata,SCRATCH)==count,'Poll publication differs')
     reply=list(polldata[SCRATCH+4:SCRATCH+4+count]);require(reply==poll['reply']==[255,65,90,255,255]+[255]*5,'Observed poll replies differ')
-    require(poll['registers']==dict(zip(['control','command_status','port_status','fifo_status','irq_status'],struct.unpack_from('<5I',polldata,SCRATCH+0x20)))=={'control':0x3BD,'command_status':0x2D100,'port_status':15,'fifo_status':0,'irq_status':0},'Poll registers differ')
+    require(poll['registers']==dict(zip(['control','command_status','port_status','fifo_status','irq_status','dma_control_1','dma_control_2'],struct.unpack_from('<7I',polldata,SCRATCH+0x20)))=={'control':0x3BD,'command_status':0x2D100,'port_status':15,'fifo_status':0,'irq_status':0,'dma_control_1':0x0777FF77,'dma_control_2':0x07BBFF77},'Poll registers differ')
     return {'verified':'Resident return, relocated code, owned worker parameters/start wait/dormant state and direct first two poll evidence','module_sha256':report['sha256'],'limitations':'Live DS2U_D data/BSS evolves under Vblank and is not equated. Input is scoped to initial digital/no-buttons port 0 and disconnected port 1; physical timing, later controller commands and gameplay are not validated.'}
 
 def main():

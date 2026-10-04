@@ -9,8 +9,8 @@ def hook(count=5):
     words=[0x27BDFFF0,0xAFA30000,0xAFA80004,0xAFA90008,
            0x3C02BF81,0x90428264,0,0x3C03001D,0x8C680000,0,
            0x00684821,0xA1220004,0x25080001,0xAC680000]
-    for offset,publication in [(0x8268,0x20),(0x826C,0x24),(0x8270,0x28),(0x8274,0x2C),(0x8280,0x30)]:
-        words += [0x3C09BF81,0x8D290000|offset,0,0xAC690000|publication]
+    for offset,publication in [(0x8268,0x20),(0x826C,0x24),(0x8270,0x28),(0x8274,0x2C),(0x8280,0x30),(0x10F0,0x34),(0x1570,0x38)]:
+        words += [0x3C09BF81 if offset>=0x8000 else 0x3C09BF80,0x8D290000|offset,0,0xAC690000|publication]
     words += [0x2D090000|count,0x15200003,0,0x1000FFFF,0,
               0x8FA30000,0x8FA80004,0x8FA90008,0x27BD0010,0x03E00008,0]
 
@@ -48,13 +48,13 @@ def capture(reader,ee_pointer,iop_rva,original,folder,address,args):
             time.sleep(.02)
         else:raise TimeoutError('Requested FIFO replies not reached')
         time.sleep(.1)
-        ram=reader.read(iop_pointer,2*1024*1024);publication=ram[SCRATCH:SCRATCH+0x34]
-        if reader.read(iop_pointer+SCRATCH,0x34)!=publication:raise ValueError('FIFO publication changed')
+        ram=reader.read(iop_pointer,2*1024*1024);publication=ram[SCRATCH:SCRATCH+0x3C]
+        if reader.read(iop_pointer+SCRATCH,0x3C)!=publication:raise ValueError('FIFO publication changed')
         if ram[HOOK:HOOK+8]!=trampoline or ram[CODE:CODE+len(hook(args.pad_poll_read_count))]!=hook(args.pad_poll_read_count):raise ValueError('IOP hook changed')
         ee=reader.read(ee_pointer,32*1024*1024)
         (folder/'pad-poll-iop.bin').write_bytes(ram);(folder/'pad-poll-ee.bin').write_bytes(ee)
         with args.disc.open('rb') as disc_stream:disc_sha=hashlib.file_digest(disc_stream,'sha256').hexdigest()
-        metadata={'capture':'first SIO2 FIFO reads after SIO2D return','read_count':args.pad_poll_read_count,'reply':list(publication[4:4+args.pad_poll_read_count]),'registers':dict(zip(['control','command_status','port_status','fifo_status','irq_status'],struct.unpack_from('<5I',publication,0x20))),
+        metadata={'capture':'first SIO2 FIFO reads after SIO2D return','read_count':args.pad_poll_read_count,'reply':list(publication[4:4+args.pad_poll_read_count]),'registers':dict(zip(['control','command_status','port_status','fifo_status','irq_status','dma_control_1','dma_control_2'],struct.unpack_from('<7I',publication,0x20))),
                   'iop_sha256':hashlib.sha256(ram).hexdigest(),'ee_sha256':hashlib.sha256(ee).hexdigest(),
                   'source_sha256':hashlib.sha256(original).hexdigest(),'hook_sha256':hashlib.sha256(hook(args.pad_poll_read_count)).hexdigest(),
                   'disc_sha256':disc_sha,

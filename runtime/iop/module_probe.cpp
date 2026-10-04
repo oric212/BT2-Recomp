@@ -8,9 +8,9 @@
 void bt2_iop_module(IopRuntime&,IopContext&);
 int main(int argc,char** argv) {
     const std::string mode=argc==4?argv[3]:"";
-    const std::vector<std::string> modes={"","--mcman","--mcserv","--dbcman","--sio2d","--ds2ud"};
+    const std::vector<std::string> modes={"","--mcman","--mcserv","--dbcman","--sio2d","--ds2ud","--libsd","--sdrdrv","--modhsyn","--modsesq2"};
     const auto selected=std::find(modes.begin(),modes.end(),mode);
-    if((argc!=3 && argc!=4) || selected==modes.end()){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman|--sio2d|--ds2ud]\n";return 1;}
+    if((argc!=3 && argc!=4) || selected==modes.end()){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman|--sio2d|--ds2ud|--libsd|--sdrdrv|--modhsyn|--modsesq2]\n";return 1;}
     const auto stage=selected-modes.begin();
     if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
         std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
@@ -28,6 +28,10 @@ int main(int argc,char** argv) {
         if(stage>=3)service.load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");
         if(stage>=4)service.load(1,"cdrom0:\\IRX\\SIO2D.IRX;1");
         if(stage>=5)service.load(1,"cdrom0:\\IRX\\DS2U_D.IRX;1");
+        if(stage>=6)service.load(1,"cdrom0:\\IRX\\LIBSD.IRX;1");
+        if(stage>=7)service.load(1,"cdrom0:\\IRX\\SDRDRV.IRX;1");
+        if(stage>=8)service.load(1,"cdrom0:\\IRX\\MODHSYN.IRX;1");
+        if(stage>=9)service.load(1,"cdrom0:\\IRX\\MODSESQ2.IRX;1");
         entry_returned=true;diagnostic="Scoped resident effects validated; transfers remain unvalidated";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}

@@ -42,6 +42,7 @@ public:
     std::vector<std::uint8_t> ram=std::vector<std::uint8_t>(ram_size);
     std::vector<std::pair<std::uint32_t,std::uint32_t>> ranges;
     std::map<std::pair<std::string,unsigned>,Provider> providers;
+    std::vector<std::string> kernel_messages;
     struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;
@@ -82,6 +83,7 @@ public:
     bool sio2_irq_status_known=false;
     std::uint32_t sio2_control=0;
     unsigned sio2_reset_writes=0;
+    std::map<std::uint32_t,std::uint32_t> sound_bus;
     std::map<std::uint32_t,std::uint32_t> sio2_parameters;
     std::vector<std::uint8_t> sio2_transmit,sio2_receive;
     unsigned sio2_receive_cursor=0;
@@ -104,6 +106,13 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if((p==0x1F8010F0 || p==0x1F801570) && size==4) {
+            if(!sound_bus.contains(0x1F801404) || !sound_bus.contains(0x1F80140C) || !dma_channels.contains(11) || !dma_channels.contains(12)
+                || !dma_channels.at(11).enabled || !dma_channels.at(12).enabled || dma_channels.at(11).priority!=3 || dma_channels.at(12).priority!=3)
+                throw std::runtime_error("Sound DMA checkpoint prerequisites differ");
+            if(!sound_bus.contains(p))sound_bus[p]=p==0x1F8010F0?0x0777FF77:0x07BBFF77;
+            return sound_bus.at(p); // Guarded pre-LIBSD diagnostic checkpoint, not arbitrary hardware reset state.
+        }
         if(p==0x1F808280 && size==4 && sio2_irq_status_known)return sio2_irq_status;
         if(p==0x1F80826C && size==4 && !sio2_receive.empty())return sio2_command_status;
         if(p==0x1F808270 && size==4 && !sio2_receive.empty())return 0xF;
@@ -122,6 +131,10 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(size==4 && ((p==0x1F8010F0 && sound_bus.contains(p) && value==(sound_bus.at(p)|0x80000))
+            || (p==0x1F801570 && sound_bus.contains(p) && value==(sound_bus.at(p)|8))
+            || ((p==0x1F801014 || p==0x1F801414) && value==0x200B31E1))) {sound_bus[p]=value;return;}
+        if(size==4 && ((p==0x1F801404 && value==0xBF900000) || (p==0x1F80140C && value==0xBF900800))) {sound_bus[p]=value;return;}
         if(p==0x1F808260 && size==1) {
             const auto command=sio2_parameters.find(0x1F808200);
             if(command==sio2_parameters.end())throw std::runtime_error("SIO2 transmit without owned command");
