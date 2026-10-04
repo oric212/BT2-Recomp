@@ -61,7 +61,7 @@ def emit(image,base,ranges,imports=(),seeds=(),symbol='bt2_iop_module'):
     lines=['#include "native_runtime.h"']
     for bucket,body in sorted(bodies.items()):
         lines += [f'static void {symbol}_{bucket}(IopRuntime& rt,IopContext& c) {{',f'while(c.pc!=IopRuntime::sentinel && ((IopRuntime::physical(c.pc)-{base}u)>>12)=={bucket}u) {{','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc));',f'switch(IopRuntime::physical(c.pc)-{base}u) {{',*body,'default: throw std::runtime_error("Unmapped native IOP target");','}','}','}']
-    lines += [f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {',f'switch((IopRuntime::physical(c.pc)-{base}u)>>12) {{']
+    lines += [f'void {symbol}(IopRuntime& rt,IopContext& c) {{',f'while(c.pc!=IopRuntime::sentinel && IopRuntime::physical(c.pc)>={base}u && IopRuntime::physical(c.pc)<{base+len(image)}u) {{',f'switch((IopRuntime::physical(c.pc)-{base}u)>>12) {{']
     for bucket in sorted(bodies):lines.append(f'case {bucket}u: {symbol}_{bucket}(rt,c);break;')
     lines += ['default: rt.tick(c);throw std::runtime_error("Unmapped native IOP target");','}','}','}']
     return '\n'.join(lines)+'\n'

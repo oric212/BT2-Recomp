@@ -461,3 +461,13 @@ build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/ds2ud-s
 ```
 
 The SIO2D checker guards identity, trap, result, relocated code, normalized data/BSS, Vblank waiter and semaphore ownership. Offset 0x1BD8 is an explicitly unvalidated live counter, reported separately; non-end Vblank phase bits are not compared. DS2U_D generation has 40 provisional ranges / 25 imports and is linked into the optional native targets. Its current FIFO stop is not resident completion. All generated code, captures, images and reports stay ignored.
+
+## Direct first-controller poll capture
+
+Use the existing explicit local PCSX2/BIOS/disc capture command with `--capture-point sio2d-module-after --capture-first-pad-poll --pad-poll-read-count 10`. This uses a separate isolated interpreter profile under `work/pcsx2-capture/sio2d-module-after-pad-poll-10/`. Count 5 captures only the first port. The transient process hook resumes the restored EE setup, reads real FIFO bytes once, publishes reply/control/status and halts the IOP worker after the requested read count. It does not freeze other workers or validate physical timing. Regular `ds2ud-module-after` captures the unique EE caller return at 0x1004B4 / marker B73F.
+
+```powershell
+python tools/iop/verify_ds2ud_startup.py --native work/iop/ds2ud-stop.json --reference work/pcsx2-capture/ds2ud-module-after/capture.json --module rom/IRX/DS2U_D.IRX --poll work/pcsx2-capture/sio2d-module-after-pad-poll-10/pad-poll.json --output work/iop/ds2ud-validation.json
+```
+
+The verifier compares the resident return, relocated code, worker ownership/parameters/Vblank-start wait/dormant state and guarded direct first two poll publications. It does not equate live DS2U_D data/BSS across Vblank phases. Regenerate each local native IRX after the backend update: generated module dispatch now returns to the owned service on cross-module jumps, which preserves the actual callback PC/RA/context rather than treating the other module as an unmapped local target.

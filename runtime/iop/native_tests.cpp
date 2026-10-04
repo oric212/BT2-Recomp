@@ -4,8 +4,9 @@
 #include "ioman_provider.h"
 #include "vblank_provider.h"
 #include <iostream>
+#include <source_location>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
-void check(bool v) {if(!v)throw std::runtime_error("IOP synthetic result differs");}
+void check(bool v,const std::source_location where=std::source_location::current()) {if(!v)throw std::runtime_error("IOP synthetic result differs at line "+std::to_string(where.line()));}
 int main() {
     try {
         IopRuntime rt;rt.map(0x20000,std::vector<std::uint8_t>(32));
@@ -113,6 +114,24 @@ int main() {
         request.set(4,0x20060);request.set(5,0x20068);request.set(6,0);install_iop_kernel_providers(io);
         check(io.import("sysclib",29,request)==0);request.set(6,2);check(iop_signed(io.import("sysclib",29,request))>0);
         request.set(5,0x20060);check(io.import("sysclib",29,request)==0);
+        IopRuntime device;device.map(0x10000,std::vector<std::uint8_t>(0x100));
+        IopRuntime::Thread dt{};dt.context.set(29,0x100F0);device.threads.emplace(1,dt);device.current_thread=1;
+        device.interrupts.emplace(17,IopRuntime::Interrupt{1,0x10000,0x10080,true,0x18000});
+        unsigned handled=0;device.execute=[&](IopRuntime& m,IopContext& irq) {
+            check(m.in_interrupt && m.read(0xBF808280,4)==1 && irq.get(4)==0x10080 && irq.get(28)==0x18000);
+            m.write(0xBF808280,1,4);irq.pc=IopRuntime::sentinel;++handled;
+        };
+        for(unsigned port=0;port<2;++port) {
+            device.write(0xBF808200,0x140540|port,4);device.write(0xBF808240+port*8,0xFFC00505,4);device.write(0xBF808244+port*8,0x20014,4);
+            for(unsigned byte:{1u,0x42u,0u,0u,0u})device.write(0xBF808260,byte,1);
+            device.write(0xBF808268,0x3BD,4);check(!device.in_interrupt && !device.sio2_irq_status);
+            check(device.read(0xBF80826C,4)==(port?0x2D100u:0x1100u));
+            const auto expected=port?std::vector<unsigned>(5,255):std::vector<unsigned>{255,65,90,255,255};
+            for(auto byte:expected)check(device.read(0xBF808264,1)==byte);
+            rejected=false;try{device.read(0xBF808264,1);}catch(const std::runtime_error&){rejected=true;}check(rejected);
+        }
+        check(handled==2 && device.threads.at(1).context.get(29)==0x100F0);
+        host.set(4,thread_id);host.set(5,0x20040);check(kernel.import("thbase",22,host)==0 && kernel.read(0x20048,4)==4 && kernel.read(0x2004C,4)==worker.entry && kernel.read(0x20064,4)==4);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

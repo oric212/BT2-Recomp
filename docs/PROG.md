@@ -4,22 +4,22 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The optional EE probe completes **five native IOP module loads**: SIO2MAN, MCMAN, MCSERV, DBCMAN and SIO2D. Driver init and RPC worker startup execute as compiled native code. SIO2D parks on an owned Vblank event. DS2U_D now wakes the actual SIO2MAN worker, which reaches its first device transfer; six other workers remain waiting. Two startup GS clears execute; no displayed game frame or complete boot yet.
+The optional EE probe completes **six native IOP module loads**: SIO2MAN, MCMAN, MCSERV, DBCMAN, SIO2D and DS2U_D. Both initial controller polls execute through the native SIO2 interrupt/receive path. Port 0 uses the locally verified digital/no-buttons startup profile; port 1 is disconnected. Eight workers remain waiting, including DS2U_D's connected-port worker on Vblank-start. No displayed game frame or complete boot yet.
 
-Latest verification: full MSVC checkpoint pipeline, **14/14 CTests**, **11/11 IOP tooling tests**, **83/83 capture tests** and normalized local startup comparisons for all five resident modules. Proprietary content, captures and generated code remain ignored.
+Latest verification: MSVC build, **14/14 CTests**, **11/11 IOP tooling tests**, **85/85 capture tests**, scoped DS2U_D resident/worker comparison and direct local captures of both first poll replies/status. Proprietary content, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-DS2U_D calls registered native SIO2D/SIO2MAN exports, acquires an available semaphore, copies owned data and wakes SIO2MAN through real event state. The worker stops at **0x10148**, writing byte **1** to the SIO2 transmit FIFO **0x1F808260**. No device response or transfer completion is supplied. EE checkpoint: **538 calls / 530 returns**, five acknowledged residents, **4,168 cumulative IOP instructions / 44 physical entry targets**. DS2U_D remains pending.
+EE LOADFILE requests **`cdrom0:\IRX\LIBSD.IRX;1`**, which has no compiled native definition yet. Checkpoint: **559 calls / 551 returns**, six acknowledged residents, **7,491 cumulative IOP instructions / 64 physical entry targets**. The earlier FIFO blocker is resolved for the two observed startup polls; later controller/configuration packets are unsupported.
 
-Next scope: establish the observed SIO2 transfer packet, device configuration, response and completion ordering before implementing the controller/device protocol. [SIO2 limits and next scope](SIO2_BRINGUP_PLAN.md), [Vblank timing](IOP_VBLANK_PLAN.md). Vblank timing/resumption and a displayed frame remain incomplete.
+Next scope: inspect/generate LIBSD and establish a bounded SPU2/sound initialization plan from reached code, public SDK/PCSX2 behavior and local reference evidence. Do not substitute a successful load or implement full audio before its actual blockers. [SIO2 scope](SIO2_BRINGUP_PLAN.md), [Vblank timing](IOP_VBLANK_PLAN.md). A Vblank producer, later controller commands, asset loading and presentation remain incomplete.
 
 ## Key counts
 
 - **7,262** locally generated EE functions; **7,271** raw generated C++/header files.
 - **111** distinct EE functions entered / **107** completed at the last measured unique-count checkpoint across native probes (startup/helpers, not gameplay).
-- Five EE module-load helper paths now complete; updated distinct EE totals have not been measured. Main and entry remain partial.
-- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **six native IOP entry targets entered at its initial resident checkpoint**, with one worker parked then (now active at the transfer blocker). MCMAN: 167 provisional ranges / 35 imports; resident result 2 validated against a local reference return and normalized startup data/BSS. MCSERV and DBCMAN resident entries/worker waits are validated; SIO2D resident entry and Vblank wait are validated locally. DS2U_D: 40 provisional ranges / 25 imports; entry remains partial. These startup counts do not represent working gameplay functions.
+- Six EE module-load helper paths now complete; updated distinct EE totals have not been measured. Main and entry remain partial.
+- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **six native IOP entry targets entered at its initial resident checkpoint**, with one worker parked then (now active at the transfer blocker). MCMAN: 167 provisional ranges / 35 imports; resident result 2 validated against a local reference return and normalized startup data/BSS. MCSERV and DBCMAN resident entries/worker waits are validated; SIO2D resident entry and Vblank wait are validated locally. DS2U_D: 40 provisional ranges / 25 imports; resident return and owned worker start/dormant state are verified. Live controller data/BSS is not equated across Vblank phases. These startup counts do not represent working gameplay functions.
 - Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No displayed frame or complete game boot.
 
 ## Milestones

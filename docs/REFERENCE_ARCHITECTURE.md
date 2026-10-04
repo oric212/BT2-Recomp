@@ -122,3 +122,7 @@ Pinned VBLANK ordinal 5 is WaitVblankEnd (not handler registration). vblank.c im
 ### Native exports, event wake and SIO2 transfer scope
 
 Consulted pinned SDK thsemap.c/thsemap.h (WaitSema ordinal 8 consumes a positive count), sysclib.h (memcpy ordinal 12), thevent.c/thevent.h (SetEventFlag 6, ClearEventFlag 8, FIFO satisfaction, result publication, CLEAR and ready dispatch), and VBLANK source for absent-end waiting. Adapted scoped owned state and compiled export dispatch with retained registration GP; no default success or source implementation copied. Pinned PCSX2 Sio2.cpp and IopHwWrite.cpp establish retained control and command/port register writes, and the reached byte FIFO boundary. No controller replies, timing or interrupt completion are inferred from those configuration writes.
+
+### Scoped first controller polls and cross-module callbacks
+
+Consulted pinned PCSX2 Sio2.cpp, SioTypes.h, IopHwWrite.cpp and PadDualshock2.cpp for queued packet boundaries, control START/IRQ behavior, status and digital poll response. Direct local first-five/first-ten FIFO captures independently validate BT2's actual initial polls and status. The authored model supports only those observed initial profiles. Native IRQ execution, checked cross-module callback dispatch, owned ReferThreadStatus (PS2SDK thbase.h/thbase.c ordinal 22) and WaitVblankStart (vblank ordinal 4) adapt the previously consulted module/scheduler structure. No implementation copied or later controller/audio behavior inferred.

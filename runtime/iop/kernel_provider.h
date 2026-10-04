@@ -38,7 +38,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(irq!=17 || mode>3 || handler%4 || memory.interrupts.contains(irq))
             throw std::runtime_error("Unsupported IOP interrupt registration");
         memory.check(IopRuntime::physical(handler),4);
-        memory.entry_targets.insert(handler);memory.interrupts.emplace(irq,IopRuntime::Interrupt{mode,handler,arg,false});return 0u;
+        memory.entry_targets.insert(handler);memory.interrupts.emplace(irq,IopRuntime::Interrupt{mode,handler,arg,false,c.get(28)});return 0u;
     };
     rt.providers[{"intrman",6}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.interrupts.find(c.get(4));
@@ -62,6 +62,11 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if((sem.attr!=0 && sem.attr!=1) || sem.maximum==0 || sem.maximum>INT32_MAX || sem.count>sem.maximum)
             throw std::runtime_error("Unsupported IOP semaphore parameters");
         const auto id=memory.next_semaphore++;memory.semaphores.emplace(id,sem);return id;
+    };
+    rt.providers[{"thsemap",6}]=[](IopRuntime& memory,IopContext& c) {
+        const auto found=memory.semaphores.find(c.get(4));
+        if(found==memory.semaphores.end() || found->second.count>=found->second.maximum)throw std::runtime_error("Invalid IOP semaphore signal");
+        ++found->second.count;return 0u; // Zero-count suspension/wait queues remain unsupported.
     };
     rt.providers[{"thsemap",8}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.semaphores.find(c.get(4));
@@ -102,6 +107,10 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         }
         return 0u;
     };
+    rt.providers[{"thevent",7}]=[](IopRuntime& memory,IopContext& c) {
+        if(!memory.in_interrupt)throw std::runtime_error("IOP interrupt event set outside interrupt");
+        return memory.providers.at({"thevent",6})(memory,c);
+    };
     rt.providers[{"thevent",8}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.events.find(c.get(4));
         if(found==memory.events.end())throw std::runtime_error("Unknown IOP event clear");
@@ -133,6 +142,17 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             throw std::runtime_error("Multiple waiters on single IOP event");
         auto& t=thread->second;t.waiting=true;t.ready=false;t.wait_event=c.get(4);t.wait_bits=bits;t.wait_mode=mode;t.wait_result=result;t.wait_order=++memory.next_wait_order;
         throw IopYield{};
+    };
+    rt.providers[{"thbase",22}]=[](IopRuntime& memory,IopContext& c) {
+        const auto id=c.get(4)?c.get(4):memory.current_thread;
+        const auto found=memory.threads.find(id);
+        if(found==memory.threads.end() || memory.in_interrupt)throw std::runtime_error("Unsupported IOP thread status query");
+        const auto& t=found->second;const auto p=c.get(5);memory.check(IopRuntime::physical(p),68);
+        const auto state=memory.current_thread==id?1u:t.waiting?4u:t.ready?2u:16u;
+        const std::array<std::uint32_t,17> info={t.attr,t.option,state,t.entry,t.stack,t.stacksize,t.gp,t.priority,state==16?0u:t.priority,
+            t.waiting?(t.wait_event?4u:t.wait_rpc?1u:0u):0u,t.waiting?t.wait_event:0u,0,0,0,0,0,0};
+        for(unsigned n=0;n<info.size();++n)memory.write(p+n*4,info[n],4);
+        return 0u;
     };
     rt.providers[{"thbase",6}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.threads.find(c.get(4));

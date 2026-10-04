@@ -25,9 +25,14 @@ public:
         install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);
         install_iop_sif_rpc_provider(runtime);install_iop_vblank_provider(runtime);
         runtime.execute=[this](IopRuntime& rt,IopContext& c){
-            rt.check(IopRuntime::physical(c.pc),4);
-            for(const auto& module:definitions_)if(IopRuntime::physical(c.pc)>=module.base && IopRuntime::physical(c.pc)<module.base+module.image.size()) {module.execute(rt,c);return;}
-            throw std::runtime_error("Unmapped native IOP module dispatch");
+            while(c.pc!=IopRuntime::sentinel) {
+                rt.check(IopRuntime::physical(c.pc),4);
+                const auto before=c.pc;bool dispatched=false;
+                for(const auto& module:definitions_)if(IopRuntime::physical(c.pc)>=module.base && IopRuntime::physical(c.pc)<module.base+module.image.size()) {
+                    module.execute(rt,c);dispatched=true;break;
+                }
+                if(!dispatched || c.pc==before)throw std::runtime_error("Unmapped or stalled native IOP module dispatch");
+            }
         };
     }
     NativeIopService(const NativeIopService&)=delete;
@@ -46,7 +51,7 @@ public:
             runtime.write(0x1FE000,0x1FE100,4);runtime.write(0x1FE004,0,4);
             entry={};entry.pc=found->entry;entry.set(28,found->gp);entry.set(29,0x1FFF00);
             entry.set(31,IopRuntime::sentinel);entry.set(4,1);entry.set(5,0x1FE000);
-            found->execute(runtime,entry);
+            runtime.execute(runtime,entry);
             if(entry.pc!=IopRuntime::sentinel || (entry.get(2)!=0 && entry.get(2)!=2))throw std::runtime_error("IOP module did not return resident completion: "+std::to_string(entry.get(2)));
             found->validate(runtime);
             const Resident resident{next_id_++,entry.get(2)};residents.emplace(std::string(path),resident);return resident;

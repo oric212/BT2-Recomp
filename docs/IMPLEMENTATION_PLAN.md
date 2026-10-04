@@ -49,7 +49,7 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 
 ## Repository workflow
 
-Current next step: investigate [the reached SIO2 device transfer scope](SIO2_BRINGUP_PLAN.md). Five native resident modules complete EE loads; DS2U_D wakes SIO2MAN to its first FIFO write. SIO2D remains parked on an owned Vblank event without a timing producer. Native IOMAN and RPC startup are implemented/validated within their documented limits. Continue at subsystem scale toward asset loading, draw submission and presentation.
+Current next step: inspect/generate the requested LIBSD module and plan scoped sound/SPU2 initialization. Six native residents now complete EE loads. [SIO2 startup polls](SIO2_BRINGUP_PLAN.md) and DS2U_D startup are verified; connected-port workers remain parked on owned Vblank events without a timing producer. Continue at subsystem scale toward asset loading, draw submission and presentation.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

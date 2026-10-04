@@ -99,5 +99,16 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
                 if(sem.attr || sem.count!=1 || sem.maximum!=64)throw std::runtime_error("Native SIO2D semaphore differs");
             }
         }}, {"cdrom0:\\IRX\\DS2U_D.IRX;1",iop_ds2ud_base,iop_ds2ud_entry,iop_ds2ud_gp,iop_ds2ud_image,
-        iop_ds2ud_export_bounds,bt2_iop_ds2ud,[](const IopRuntime&) {throw std::runtime_error("Native DS2U_D effects require validation");}}};
+        iop_ds2ud_export_bounds,bt2_iop_ds2ud,[](const IopRuntime& rt) {
+            if(rt.threads.size()!=9 || rt.events.size()!=4 || rt.semaphores.size()!=6 || rt.in_interrupt || rt.sio2_irq_status)
+                throw std::runtime_error("Native DS2U_D resident objects differ");
+            for(unsigned field:{0x22C4u,0x2480u}) {
+                std::uint32_t id;std::memcpy(&id,rt.ram.data()+iop_ds2ud_base+field,4);const auto& t=rt.threads.at(id);
+                if(t.entry!=iop_ds2ud_base+0x1DC || t.gp!=iop_ds2ud_gp || t.priority!=46 || t.stacksize!=0x800)
+                    throw std::runtime_error("Native DS2U_D worker parameters differ");
+                if(field==0x22C4 && (!t.waiting || t.wait_event!=rt.vblank_event || t.wait_bits!=1 || t.wait_mode!=1))
+                    throw std::runtime_error("Native DS2U_D start-phase wait differs");
+                if(field==0x2480 && (t.waiting || t.ready))throw std::runtime_error("Disconnected-port DS2U_D worker is not dormant");
+            }
+        }}};
 }

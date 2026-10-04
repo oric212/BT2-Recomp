@@ -20,8 +20,9 @@ int main() {
         rt.write32(rt.memory().data(),0x3ACA00,0);rt.prior_iop_services_valid=true;stop();check(!rt.native_iop);rt.prior_iop_services_valid=false;rt.iop_epoch=2;stop();check(!rt.native_iop);rt.iop_epoch=1;
         rt.native_iop=std::make_shared<NativeIopService>(1,bt2_compiled_iop_modules());
         rt.native_iop->load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");rt.native_iop->load(1,"cdrom0:\\IRX\\MCMAN.IRX;1");rt.native_iop->attachEeTransport(1);rt.native_iop->load(1,"cdrom0:\\IRX\\MCSERV.IRX;1");rt.native_iop->load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");rt.native_iop->load(1,"cdrom0:\\IRX\\SIO2D.IRX;1");rt.native_module_loads=5;
+        rt.native_iop->runtime.providers.erase({"thbase",22});
         const auto prior=std::vector<std::uint8_t>(rt.memory().begin(),rt.memory().end());stop();
-        check(rt.native_module_loads==5 && rt.native_iop->residents.size()==5 && rt.native_iop_error=="Unimplemented IOP memory/hardware access");
+        check(rt.native_module_loads==5 && rt.native_iop->residents.size()==5 && rt.native_iop_error=="Unresolved IOP import: thbase:22");
         check(rt.semaphores[7].count==0 && c.r[2].low==0xABCD && std::equal(prior.begin(),prior.end(),rt.memory().begin()));
         std::cout<<"Malformed/stale requests and failed native loads leave EE packet, result and semaphore pending.\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

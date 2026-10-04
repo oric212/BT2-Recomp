@@ -47,6 +47,10 @@ int main(int argc,char** argv) {
         for(const auto& [id,e]:rt.interrupts) {if(!first)report<<',';first=false;report<<"{\"irq\":"<<id<<",\"mode\":"<<e.mode<<",\"handler\":"<<e.handler<<",\"argument\":"<<e.argument<<",\"enabled\":"<<(e.enabled?"true":"false")<<"}";}
         report<<"],\"dma_channels\":[";first=true;
         for(const auto& [id,e]:rt.dma_channels) {if(!first)report<<',';first=false;report<<"{\"channel\":"<<id<<",\"priority\":"<<e.priority<<",\"enabled\":"<<(e.enabled?"true":"false")<<"}";}
+        report<<"],\"sio2_transmit\":[";first=true;
+        for(auto byte:rt.sio2_transmit) {if(!first)report<<',';first=false;report<<unsigned(byte);}
+        report<<"],\"sio2_parameters\":[";first=true;
+        for(auto [address,value]:rt.sio2_parameters) {if(!first)report<<',';first=false;report<<"{\"address\":"<<address<<",\"value\":"<<value<<"}";}
         report<<"],\"pc\":"<<rt.executing_pc<<",\"steps\":"<<rt.steps<<",\"blocked_address\":"<<rt.blocked_address<<",\"access_kind\":\""<<rt.access_kind<<"\",\"access_width\":"<<rt.access_width<<",\"access_value\":"<<rt.access_value<<",\"mapped_ranges_entered\":"<<rt.entries.size()<<",\"registered_libraries\":"<<rt.libraries.size()<<",\"imports\":[";
         for(unsigned n=0;n<rt.imports.size();++n){if(n)report<<',';report<<'\"'<<rt.imports[n]<<'\"';}report<<"],\"arguments\":["<<c.get(4)<<','<<c.get(5)<<','<<c.get(6)<<','<<c.get(7)<<"]}\n";
         std::cout<<"IOP diagnostic stopped: "<<diagnostic<<"; PC=0x"<<std::hex<<rt.executing_pc<<std::dec<<", native steps="<<rt.steps<<"\n";return 0;

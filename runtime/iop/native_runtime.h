@@ -56,7 +56,7 @@ public:
     std::uint32_t rpc_queue_head=0,rpc_queue_tail=0;
     std::map<std::uint32_t,RpcServer> rpc_servers;
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
-    struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;};
+    struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;std::uint32_t gp=0;};
     std::map<unsigned,Interrupt> interrupts;
     struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;};
     std::map<unsigned,Thread> threads;
@@ -77,10 +77,15 @@ public:
     std::set<std::uint32_t> entries,entry_targets;
     std::vector<std::string> imports;
     std::uint32_t executing_pc=0,blocked_address=0;
-    bool sio2_control_known=false;
+    bool sio2_control_known=false,in_interrupt=false;
+    std::uint32_t sio2_irq_status=0;
+    bool sio2_irq_status_known=false;
     std::uint32_t sio2_control=0;
     unsigned sio2_reset_writes=0;
     std::map<std::uint32_t,std::uint32_t> sio2_parameters;
+    std::vector<std::uint8_t> sio2_transmit,sio2_receive;
+    unsigned sio2_receive_cursor=0;
+    std::uint32_t sio2_command_status=0;
     unsigned steps=0,access_width=0;
     std::uint32_t access_value=0;
     std::string access_kind;
@@ -99,6 +104,14 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(p==0x1F808280 && size==4 && sio2_irq_status_known)return sio2_irq_status;
+        if(p==0x1F80826C && size==4 && !sio2_receive.empty())return sio2_command_status;
+        if(p==0x1F808270 && size==4 && !sio2_receive.empty())return 0xF;
+        if(p==0x1F808274 && size==4 && !sio2_receive.empty())return 0;
+        if(p==0x1F808264 && size==1) {
+            if(sio2_receive_cursor>=sio2_receive.size())throw std::runtime_error("SIO2 receive without validated reply");
+            return sio2_receive[sio2_receive_cursor++];
+        }
         if(p==0x1F808268 && size==4 && sio2_control_known)return sio2_control;
         if(size==4 && sio2_parameters.contains(p))return sio2_parameters.at(p);
         check(p,size);
@@ -109,8 +122,43 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(p==0x1F808260 && size==1) {
+            const auto command=sio2_parameters.find(0x1F808200);
+            if(command==sio2_parameters.end())throw std::runtime_error("SIO2 transmit without owned command");
+            const auto length=(command->second>>8)&0x1FF;
+            if(!length || sio2_transmit.size()>=length)throw std::runtime_error("SIO2 transmit length/state unsupported");
+            sio2_transmit.push_back(static_cast<std::uint8_t>(value));
+            if(sio2_transmit.size()==length) {
+                const auto port=command->second&1;
+                if((command->second&~1u)!=0x140540 || sio2_transmit!=std::vector<std::uint8_t>({1,0x42,0,0,0})
+                    || sio2_parameters.at(0x1F808240+port*8)!=0xFFC00505 || sio2_parameters.at(0x1F808244+port*8)!=0x20014)
+                    throw std::runtime_error("Unsupported SIO2 device packet/configuration");
+                sio2_receive=port?std::vector<std::uint8_t>(5,0xFF):std::vector<std::uint8_t>({0xFF,0x41,0x5A,0xFF,0xFF});
+                sio2_command_status=port?0x2D100:0x1100;sio2_receive_cursor=0;
+            }
+            return;
+        }
         if(p>=0x1F808200 && p<0x1F808260 && p%4==0 && size==4) {
+            if(p==0x1F808200 && !sio2_transmit.empty()) {
+                if(sio2_receive_cursor!=sio2_receive.size())throw std::runtime_error("SIO2 command reset with unread reply");
+                sio2_transmit.clear();sio2_receive.clear();sio2_receive_cursor=0;
+            }
             sio2_parameters[p]=value;return; // Command/port configuration only; no transfer/device reply.
+        }
+        if(p==0x1F808280 && size==4 && sio2_irq_status_known) {sio2_irq_status&=~value;return;}
+        if(p==0x1F808268 && size==4 && value==0x3BD) {
+            const auto irq=interrupts.find(17);
+            if(sio2_receive.size()!=5 || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
+                throw std::runtime_error("Unsupported SIO2 transfer completion state");
+            sio2_control=value;sio2_control_known=true;sio2_irq_status=1;sio2_irq_status_known=true;
+            IopContext callback=threads.at(current_thread).context;callback.pc=irq->second.handler;
+            callback.branch_pending=false;callback.delay_instruction=false;callback.load_register=0;
+            callback.set(4,irq->second.argument);callback.set(28,irq->second.gp);callback.set(31,sentinel);
+            in_interrupt=true;cpu_interrupts_enabled=false;
+            try {execute(*this,callback);in_interrupt=false;cpu_interrupts_enabled=true;}
+            catch(...) {in_interrupt=false;cpu_interrupts_enabled=true;throw;}
+            if(callback.pc!=sentinel)throw std::runtime_error("Native SIO2 interrupt did not return");
+            return;
         }
         if(p==0x1F808268 && size==4 && value==0x3BC) {
             sio2_control=value;sio2_control_known=true;++sio2_reset_writes;return;
