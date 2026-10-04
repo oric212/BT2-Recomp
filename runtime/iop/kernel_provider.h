@@ -2,6 +2,27 @@
 #include "native_runtime.h"
 
 inline void install_iop_kernel_providers(IopRuntime& rt) {
+    rt.providers[{"stdio",4}]=[](IopRuntime& memory,IopContext& c) {
+        auto string=[&](std::uint32_t p) {
+            std::string value;
+            for(unsigned i=0;i<1024;++i) {const auto ch=memory.read(p+i,1);if(!ch)return value;value.push_back(static_cast<char>(ch));}
+            throw std::runtime_error("Unterminated IOP printf string");
+        };
+        const auto format=string(c.get(4));std::string output;unsigned argument=5;
+        for(unsigned i=0;i<format.size();++i) {
+            if(format[i]!='%')output.push_back(format[i]);
+            else {
+                if(++i==format.size())throw std::runtime_error("Incomplete IOP printf conversion");
+                if(format[i]=='%')output.push_back('%');
+                else if(format[i]=='s' && argument<=7)output+=string(c.get(argument++));
+                else if(format[i]=='d' && argument<=7)output+=std::to_string(iop_signed(c.get(argument++)));
+                else throw std::runtime_error("Unsupported IOP printf conversion");
+            }
+            if(output.size()>4096)throw std::runtime_error("IOP printf output exceeds diagnostic bound");
+        }
+        memory.stdio_messages.push_back(output);return static_cast<std::uint32_t>(output.size());
+    };
+
     rt.providers[{"sysmem",14}]=[](IopRuntime& memory,IopContext& c) {
         // No Kprintf callback is installed: SDK returns zero. Retain reached literal diagnostics.
         std::string message;

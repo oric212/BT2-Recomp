@@ -4,6 +4,12 @@
 // Scoped first-library registration. Existing clients/version replacement are
 // deliberately unsupported; no captured kernel addresses are imported.
 inline void install_iop_library_provider(IopRuntime& rt) {
+    rt.providers[{"loadcore",5}]=[](IopRuntime& memory,IopContext& c) {
+        ++memory.data_cache_flushes;
+        // Native owned RAM has no separate data cache; writes are immediately coherent.
+        return c.get(2); // FlushDcache is void, not a fabricated success return.
+    };
+
     rt.providers[{"loadcore",6}]=[](IopRuntime& memory,IopContext& c) {
         const auto table=c.get(4);
         const auto bound=memory.export_bounds.find(table);

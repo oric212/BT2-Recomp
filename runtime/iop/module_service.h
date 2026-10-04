@@ -4,6 +4,7 @@
 #include "ioman_provider.h"
 #include "sif_rpc_provider.h"
 #include "vblank_provider.h"
+#include "cdvd_provider.h"
 #include <string_view>
 
 struct NativeIopModule {
@@ -23,7 +24,7 @@ public:
         runtime.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
         runtime.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
         install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);
-        install_iop_sif_rpc_provider(runtime);install_iop_vblank_provider(runtime);
+        install_iop_sif_rpc_provider(runtime);install_iop_vblank_provider(runtime);install_iop_cdvd_provider(runtime);
         runtime.execute=[this](IopRuntime& rt,IopContext& c){
             while(c.pc!=IopRuntime::sentinel) {
                 rt.check(IopRuntime::physical(c.pc),4);

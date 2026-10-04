@@ -29,7 +29,13 @@ int main() {
         const auto sdrdrv=service.load(1,"cdrom0:\\IRX\\SDRDRV.IRX;1");check(sdrdrv.id==8 && sdrdrv.result==2 && service.runtime.steps==7797);
         const auto modhsyn=service.load(1,"cdrom0:\\IRX\\MODHSYN.IRX;1");check(modhsyn.id==9 && modhsyn.result==0 && service.runtime.steps==7817);
         const auto modsesq2=service.load(1,"cdrom0:\\IRX\\MODSESQ2.IRX;1");check(modsesq2.id==10 && modsesq2.result==0 && service.runtime.steps==7856);
-        unsigned waiting=0;for(const auto& [id,t]:service.runtime.threads)if(t.waiting)++waiting;check(waiting==9);
+        const auto cdvdstm=service.load(1,"cdrom0:\\IRX\\CDVDSTM.IRX;1");check(cdvdstm.id==11 && cdvdstm.result==2 && service.runtime.steps==7906);
+        const auto sounds=service.load(1,"cdrom0:\\IRX\\SOUNDS.IRX;1");check(sounds.id==12 && sounds.result==0 && service.runtime.steps==7978);
+        unsigned waiting=0;for(const auto& [id,t]:service.runtime.threads)if(t.waiting)++waiting;check(waiting==10);
+
+        rejected([&]{service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");});
+        check(service.residents.size()==12 && service.runtime.executing_pc==0x91614 && service.runtime.steps==8152);
+        rejected([&]{service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");});check(service.runtime.steps==8152);
 
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;

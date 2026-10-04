@@ -42,7 +42,9 @@ public:
     std::vector<std::uint8_t> ram=std::vector<std::uint8_t>(ram_size);
     std::vector<std::pair<std::uint32_t,std::uint32_t>> ranges;
     std::map<std::pair<std::string,unsigned>,Provider> providers;
-    std::vector<std::string> kernel_messages;
+    std::vector<std::string> kernel_messages,stdio_messages;
+    std::uint32_t cdvd_interrupt_event=0;
+    unsigned data_cache_flushes=0;
     struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;

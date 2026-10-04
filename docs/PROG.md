@@ -1,26 +1,27 @@
 # Current progress
 
-Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04.
+Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05.
 
 ## Current status
 
-The optional EE probe completes **ten native IOP module loads**: SIO2MAN, MCMAN, MCSERV, DBCMAN, SIO2D, DS2U_D, LIBSD, SDRDRV, MODHSYN and MODSESQ2. The four sound-module resident entries now match local reference checkpoints; SDRDRV's RPC worker is parked. Initial controller polls remain verified. No displayed game frame, audio playback or complete boot yet.
+The optional EE probe completes **twelve native IOP module loads**, now including CDVDSTM and SOUNDS. CDVDSTM owns its driver/semaphore and references a retained CDVD interrupt event; SOUNDS has a verified waiting RPC worker with stack-owned descriptors. CRI_ADXI executes startup diagnostics and enters LIBSD initialization, but has not completed residency. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC build, **14/14 CTests**, **11/11 IOP tooling tests**, **86/86 capture tests**, four sound-module comparisons and DS2U_D/direct initial poll comparison. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **86/86 capture tests**, local CDVDSTM/SOUNDS code/data/object comparisons. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-EE LOADFILE requests **`cdrom0:\IRX\CDVDSTM.IRX;1`**, the disc-streaming driver, without a compiled native definition. Checkpoint: **643 calls / 635 returns**, ten acknowledged residents, **7,856 cumulative IOP instructions / 72 physical entry targets / nine waiting workers**.
+Pending **`cdrom0:\IRX\CRI_ADXI.IRX;1`** enters LIBSD export 4 (`sceSdInit`) and stops on a **16-bit SPU2 read at 0x1F9007C6**, owned native PC **0x91614**. Full checkpoint: **685 calls / 677 returns**, twelve acknowledged residents, **8,152 cumulative IOP instructions / 82 physical entry targets / ten waiting workers**. The pending CRI module is excluded from the resident count.
 
-Next scope: establish a bounded CDVDSTM/disc-streaming plan from its reached entry, public behavior and local captures, then generate/link/run it. This is a new subsystem boundary; sound registration does not establish SPU2 voice/RAM/DMA behavior or successful sound RPC processing. A Vblank producer, later controller commands, asset loading and presentation remain incomplete. [SIO2 scope](SIO2_BRINGUP_PLAN.md), [Vblank timing](IOP_VBLANK_PLAN.md).
+Next scope: plan bounded SPU2 initialization from reached code, pinned public/PCSX2 register behavior and direct local hardware evidence. Do not seed arbitrary ready values or assume audio playback from sound-library registration. [Disc-streaming startup plan](CDVD_STREAMING_PLAN.md): residency complete; sector reads/transfers still unimplemented. Vblank production, later controller commands, game assets and presentation remain incomplete.
 
 ## Key counts
 
 - **7,262** locally generated EE functions; **7,271** raw generated C++/header files.
 - **111** distinct EE functions entered / **107** completed at the last measured unique-count checkpoint across native probes (startup/helpers, not gameplay).
-- Ten EE module-load helper paths now complete; updated distinct EE totals have not been measured. Main and entry remain partial.
+- Twelve EE module-load helper paths now complete; updated distinct EE totals have not been measured. Main and entry remain partial.
 - SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **six native IOP entry targets entered at its initial resident checkpoint**, with one worker parked then (now active at the transfer blocker). MCMAN: 167 provisional ranges / 35 imports; resident result 2 validated against a local reference return and normalized startup data/BSS. MCSERV and DBCMAN resident entries/worker waits are validated; SIO2D resident entry and Vblank wait are validated locally. DS2U_D: 40 provisional ranges / 25 imports; resident return and owned worker start/dormant state are verified. Live controller data/BSS is not equated across Vblank phases. These startup counts do not represent working gameplay functions.
 - Added sound maps: LIBSD **57 ranges / 19 imports**, SDRDRV **7 / 52**, MODHSYN **174 / 24**, MODSESQ2 **46 / 9**. These are provisional discovery counts, not restored gameplay functions. Their resident startup paths work; substantive sound processing remains unverified.
+- CDVDSTM **14 ranges / 34 imports** and SOUNDS **14 / 35** have verified resident startup. CRI_ADXI **217 / 45** is generated/linked and partially executing; these provisional map counts do not indicate functioning audio/streaming.
 - Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No displayed frame or complete game boot.
 
 ## Milestones

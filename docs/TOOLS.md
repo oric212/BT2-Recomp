@@ -488,3 +488,17 @@ build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/modsesq
 Stages `--libsd`, `--sdrdrv`, `--modhsyn`, `--modsesq2` load all earlier modules in observed order. Capture points and `verify_rpc_startup.py --profile` names are respectively `libsd-module-after`/`libsd`, `sdrdrv-module-after`/`sdrdrv`, `modhsyn-module-after`/`modhsyn`, `modsesq2-module-after`/`modsesq2`. Use the explicit local PCSX2/BIOS/disc capture command and the checker's existing native/reference/module/output arguments. Resident validation does not establish playback or successful sound RPC requests. MODHSYN's final two untouched allocator-fill bytes are explicitly guarded/excluded in the comparison.
 
 The direct initial poll publication now includes DPCR1/2, using BF80 for their positive 16-bit offsets. Regenerate that scoped capture after the hook update before running the DS2U_D comparison; its hook/hash and seven published register words must match.
+
+
+## Disc-streaming and sound-service startup probes
+
+Generate these supplied local sources before building the optional native targets:
+
+```powershell
+python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xE0000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
+python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xF0000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
+python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x110000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/cri-adxi-stop.json --cri-adxi
+```
+
+Ordered stages `--cdvdstm` and `--sounds` complete residency; `--cri-adxi` currently stops at SPU2 hardware initialization. Local capture points `cdvdstm-module-after` and `sounds-module-after` have generalized checker profiles `cdvdstm` and `sounds`. Reports now include each thread's owned stack base. The CDVDSTM check normalizes its external event after guarded object-state comparison; SOUNDS checks the stack-owned queue/server and tagged reference worker. These checks do not establish successful sectors, sound RPC requests or playback.

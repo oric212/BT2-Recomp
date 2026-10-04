@@ -3,6 +3,7 @@
 #include "kernel_provider.h"
 #include "ioman_provider.h"
 #include "vblank_provider.h"
+#include "cdvd_provider.h"
 #include <iostream>
 #include <source_location>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
@@ -146,6 +147,19 @@ int main() {
         IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
         IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
         log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);
+        IopRuntime disc;install_iop_cdvd_provider(disc);IopContext query;query.set(4,0xFFFFFFF5);query.set(5,0xFFFFFFFF);
+        refuses([&]{disc.import("cdvdman",50,query);});check(disc.events.empty());
+        disc.sif_transport_attached=true;disc.rpc_initialized=true;
+        const auto cd_event=disc.import("cdvdman",50,query);
+        check(cd_event==disc.cdvd_interrupt_event && disc.events.size()==1 && disc.events.at(cd_event).attr==2
+            && disc.events.at(cd_event).option==2 && disc.events.at(cd_event).bits==0x29);
+        check(disc.import("cdvdman",50,query)==cd_event && disc.events.size()==1);
+        query.set(4,0xFFFFFFFF);refuses([&]{disc.import("cdvdman",50,query);});check(disc.events.size()==1);
+        IopRuntime print;print.map(0x20000,std::vector<std::uint8_t>{'%','s',' ','%','d',' ','%','%',0,'o','k',0,'%','x',0});install_iop_kernel_providers(print);
+        IopContext message;message.set(4,0x20000);message.set(5,0x20009);message.set(6,static_cast<std::uint32_t>(-39));
+        check(print.import("stdio",4,message)==8 && print.stdio_messages==std::vector<std::string>{"ok -39 %"});
+        message.set(4,0x2000C);refuses([&]{print.import("stdio",4,message);});check(print.stdio_messages.size()==1);
+        install_iop_library_provider(print);message.set(2,0xBAD);check(print.import("loadcore",5,message)==0xBAD && print.data_cache_flushes==1);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

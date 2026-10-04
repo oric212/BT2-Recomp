@@ -5,6 +5,8 @@ from inspect_irx import inspect,relocate
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'capture_ee'))
 from capture_ee import EXPECTED_SHA,MARKER,capture_trap
 PROFILES={
+ 'sounds':{'base':0xA3430,'owned':0xF0000,'text':0x23C0,'result':0,'workers':[],'semaphores':[],'queue_worker':(0x284,0x1F1578)},
+ 'cdvdstm':{'base':0x9E730,'owned':0xE0000,'text':0x4280,'result':2,'workers':[],'semaphores':[0x4784],'events':[0x4788]},
  'modsesq2':{'base':0x9A930,'owned':0xD0000,'text':0x3B00,'result':0,'workers':[],'semaphores':[]},
  'modhsyn':{'base':0x8A330,'owned':0xB0000,'text':0xBE60,'result':0,'workers':[],'semaphores':[],'uninitialized_tail':bytes.fromhex('0d40')},
  'sdrdrv':{'base':0x88630,'owned':0xA0000,'text':0x1330,'result':2,'workers':[(0x14C8,0x15C0)],'semaphores':[]},
@@ -51,10 +53,33 @@ def verify(profile,native,ram,metadata,iop,ee,module):
             require(t['rpc_queue']==owned+queue and not t['event'] and word(iop,p+20)==1,'RPC worker sleep/queue differs')
             require(word(iop,base+queue)==word(iop,base+field),'Reference queue thread differs')
             ids[field]=ids[queue]=id
+    if 'queue_worker' in config:
+        entry_offset,rq=config['queue_worker']
+        candidates=[t for t in native['threads'] if t['entry']==owned+entry_offset]
+        require(len(candidates)==1,'Native stack RPC worker differs');t=candidates[0]
+        p=record(word(iop,rq),0x7F01)
+        require(t['waiting'] and t['rpc_queue'] and not t['event'] and word(iop,p+20)==1 and word(iop,p+4)&255==4,'Stack RPC worker wait differs')
+        require(t['entry']==word(iop,p+48)-base+owned and t['gp']==word(iop,p+60)-base+owned and t['priority']==word(iop,p+4)>>16 and t['stacksize']==word(iop,p+56) and t['attr']==word(iop,p+64),'Stack RPC worker parameters differ')
+        nq=t['rpc_queue'];rs=word(iop,p+52);ns=t['stack'];size=t['stacksize']
+        require(nq-ns==rq-rs and 0<=nq-ns<size-24,'Stack RPC queue placement differs')
+        require(word(ram,nq)==t['id'] and word(iop,rq)>0,'Stack RPC queue owner differs')
+        def normalize(value):
+            if base<=value<base+report['memory_size']:return value-base+owned
+            if rs<=value<rs+size:return value-rs+ns
+            return value
+        for off in (4,8,12,16):require(word(ram,nq+off)==normalize(word(iop,rq+off)),'Stack RPC queue state differs')
+        nd=word(ram,nq+8);rd=word(iop,rq+8)
+        require(ns<=nd<ns+size-68 and rs<=rd<rs+size-68,'Stack RPC server ownership differs')
+        for off in (0,4,8,16,20,56,60,64):require(word(ram,nd+off)==normalize(word(iop,rd+off)),'Stack RPC server fields differ')
     semaphores={s['id']:s for s in native['semaphore_objects']}
     for field in config['semaphores']:
         p=record(word(iop,base+field),0x7F02);id=word(ram,owned+field);s=semaphores.get(id)
         require(s is not None and s['attr']==word(iop,p+4) and s['count']==word(iop,p+24) and s['maximum']==word(iop,p+28),'Native semaphore differs')
+        ids[field]=id
+    for field in config.get('events',[]):
+        p=record(word(iop,base+field),0x7F03);id=word(ram,owned+field)
+        event=next((e for e in native['event_objects'] if e['id']==id),None)
+        require(event is not None and event['attr']==word(iop,p+4) and event['option']==word(iop,p+8) and event['bits']==word(iop,p+24),'Native external event differs')
         ids[field]=id
     for offset in range(config['text'],report['memory_size'],4):
         if offset+4>report['memory_size']:
@@ -69,7 +94,7 @@ def verify(profile,native,ram,metadata,iop,ee,module):
         if offset in ids:b=ids[offset]
         elif a!=b and owned<=a<owned+report['memory_size'] and base<=b<base+report['memory_size']:b=b-base+owned
         require(a==b,'Normalized module data/BSS differs at '+hex(offset))
-    return {'verified':'Relocated code, normalized data/BSS and guarded worker ownership/parameters/wait state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers']),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'excluded_uninitialized_tail_bytes':len(config.get('uninitialized_tail',b'')),'excluded_live_words':{hex(o):{'native':word(ram,owned+o),'reference':word(iop,base+o)} for o in config.get('live',[])},'limitations':'Vblank phase/timing, excluded live counter and reported untouched allocator-tail bytes are not validated. Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
+    return {'verified':'Relocated code, normalized data/BSS and guarded worker ownership/parameters/wait state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers'])+int('queue_worker' in config),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'excluded_uninitialized_tail_bytes':len(config.get('uninitialized_tail',b'')),'excluded_live_words':{hex(o):{'native':word(ram,owned+o),'reference':word(iop,base+o)} for o in config.get('live',[])},'limitations':'Vblank phase/timing, excluded live counter and reported untouched allocator-tail bytes are not validated. Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--profile',choices=PROFILES,required=True)
     for key in ('native','reference','module','output'):p.add_argument('--'+key,type=Path,required=True)

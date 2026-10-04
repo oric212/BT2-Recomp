@@ -8,9 +8,9 @@
 void bt2_iop_module(IopRuntime&,IopContext&);
 int main(int argc,char** argv) {
     const std::string mode=argc==4?argv[3]:"";
-    const std::vector<std::string> modes={"","--mcman","--mcserv","--dbcman","--sio2d","--ds2ud","--libsd","--sdrdrv","--modhsyn","--modsesq2"};
+    const std::vector<std::string> modes={"","--mcman","--mcserv","--dbcman","--sio2d","--ds2ud","--libsd","--sdrdrv","--modhsyn","--modsesq2","--cdvdstm","--sounds","--cri-adxi"};
     const auto selected=std::find(modes.begin(),modes.end(),mode);
-    if((argc!=3 && argc!=4) || selected==modes.end()){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman|--sio2d|--ds2ud|--libsd|--sdrdrv|--modhsyn|--modsesq2]\n";return 1;}
+    if((argc!=3 && argc!=4) || selected==modes.end()){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman|--sio2d|--ds2ud|--libsd|--sdrdrv|--modhsyn|--modsesq2|--cdvdstm|--sounds|--cri-adxi]\n";return 1;}
     const auto stage=selected-modes.begin();
     if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
         std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
@@ -32,6 +32,9 @@ int main(int argc,char** argv) {
         if(stage>=7)service.load(1,"cdrom0:\\IRX\\SDRDRV.IRX;1");
         if(stage>=8)service.load(1,"cdrom0:\\IRX\\MODHSYN.IRX;1");
         if(stage>=9)service.load(1,"cdrom0:\\IRX\\MODSESQ2.IRX;1");
+        if(stage>=10)service.load(1,"cdrom0:\\IRX\\CDVDSTM.IRX;1");
+        if(stage>=11)service.load(1,"cdrom0:\\IRX\\SOUNDS.IRX;1");
+        if(stage>=12)service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");
         entry_returned=true;diagnostic="Scoped resident effects validated; transfers remain unvalidated";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}
@@ -42,7 +45,7 @@ int main(int argc,char** argv) {
         if(!memory){std::cerr<<"Cannot write private IOP memory\n";return 1;}
         std::ofstream report(argv[2]);if(!report){std::cerr<<"Cannot write IOP report\n";return 1;}report<<"{\"entry_returned\":"<<(entry_returned?"true":"false")<<",\"entry_result\":"<<c.get(2)<<",\"sio2_control_known\":"<<(rt.sio2_control_known?"true":"false")<<",\"sio2_control\":"<<rt.sio2_control<<",\"events\":"<<rt.events.size()<<",\"semaphores\":"<<rt.semaphores.size()<<",\"threads\":[";
         bool first_thread=true;
-        for(const auto& [id,t]:rt.threads) {if(!first_thread)report<<',';first_thread=false;report<<"{\"id\":"<<id<<",\"entry\":"<<t.entry<<",\"pc\":"<<t.context.pc<<",\"waiting\":"<<(t.waiting?"true":"false")<<",\"event\":"<<t.wait_event<<",\"bits\":"<<t.wait_bits<<",\"mode\":"<<t.wait_mode<<",\"result\":"<<t.wait_result<<",\"rpc_queue\":"<<t.wait_rpc<<",\"priority\":"<<t.priority<<",\"stacksize\":"<<t.stacksize<<",\"attr\":"<<t.attr<<",\"option\":"<<t.option<<",\"gp\":"<<t.gp<<"}";}
+        for(const auto& [id,t]:rt.threads) {if(!first_thread)report<<',';first_thread=false;report<<"{\"id\":"<<id<<",\"entry\":"<<t.entry<<",\"pc\":"<<t.context.pc<<",\"waiting\":"<<(t.waiting?"true":"false")<<",\"event\":"<<t.wait_event<<",\"bits\":"<<t.wait_bits<<",\"mode\":"<<t.wait_mode<<",\"result\":"<<t.wait_result<<",\"rpc_queue\":"<<t.wait_rpc<<",\"priority\":"<<t.priority<<",\"stack\":"<<t.stack<<",\"stacksize\":"<<t.stacksize<<",\"attr\":"<<t.attr<<",\"option\":"<<t.option<<",\"gp\":"<<t.gp<<"}";}
         report<<"],\"event_objects\":[";bool first=true;
         for(const auto& [id,e]:rt.events) {if(!first)report<<',';first=false;report<<"{\"id\":"<<id<<",\"attr\":"<<e.attr<<",\"option\":"<<e.option<<",\"bits\":"<<e.bits<<"}";}
         report<<"],\"semaphore_objects\":[";first=true;

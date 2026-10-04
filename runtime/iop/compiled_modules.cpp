@@ -9,6 +9,12 @@
 #include "sdrdrv_native.h"
 #include "modhsyn_native.h"
 #include "modsesq2_native.h"
+#include "cdvdstm_native.h"
+#include "sounds_native.h"
+#include "cri_adxi_native.h"
+void bt2_iop_cri_adxi(IopRuntime&,IopContext&);
+void bt2_iop_sounds(IopRuntime&,IopContext&);
+void bt2_iop_cdvdstm(IopRuntime&,IopContext&);
 void bt2_iop_modsesq2(IopRuntime&,IopContext&);
 void bt2_iop_modhsyn(IopRuntime&,IopContext&);
 void bt2_iop_sdrdrv(IopRuntime&,IopContext&);
@@ -146,5 +152,30 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
             if(lib.version!=0x101 || lib.table!=iop_modsesq2_base+0x39D0 || lib.gp!=iop_modsesq2_gp
                 || rt.threads.size()!=10 || rt.events.size()!=4 || rt.semaphores.size()!=6)
                 throw std::runtime_error("Native MODSESQ2 resident registration differs");
-        }}};
+        }}, {"cdrom0:\\IRX\\CDVDSTM.IRX;1",iop_cdvdstm_base,iop_cdvdstm_entry,iop_cdvdstm_gp,iop_cdvdstm_image,
+        iop_cdvdstm_export_bounds,bt2_iop_cdvdstm,[](const IopRuntime& rt) {
+            const auto& lib=rt.libraries.at("cdvdstm");
+            if(lib.version!=0x101 || lib.table!=iop_cdvdstm_base+0x4010 || lib.gp!=iop_cdvdstm_gp
+                || rt.threads.size()!=10 || rt.events.size()!=5 || rt.semaphores.size()!=7)
+                throw std::runtime_error("Native CDVDSTM resident objects differ");
+            std::uint32_t sem,event;std::memcpy(&sem,rt.ram.data()+iop_cdvdstm_base+0x4784,4);
+            std::memcpy(&event,rt.ram.data()+iop_cdvdstm_base+0x4788,4);
+            const auto& semaphore=rt.semaphores.at(sem);const auto& flag=rt.events.at(event);
+            if(semaphore.attr!=1 || semaphore.option || semaphore.count!=1 || semaphore.maximum!=1
+                || event!=rt.cdvd_interrupt_event || flag.attr!=2 || flag.option!=2 || flag.bits!=0x29)
+                throw std::runtime_error("Native CDVDSTM synchronization differs");
+            const auto driver=std::find_if(rt.drivers.begin(),rt.drivers.end(),[](const auto& d){return d.name=="cdrom_stm";});
+            if(driver==rt.drivers.end() || driver->gp!=iop_cdvdstm_gp || driver->descriptor!=iop_cdvdstm_base+0x4720 || driver->operations!=iop_cdvdstm_base+0x46B4)throw std::runtime_error("Native CDVDSTM driver differs");
+        }}, {"cdrom0:\\IRX\\SOUNDS.IRX;1",iop_sounds_base,iop_sounds_entry,iop_sounds_gp,iop_sounds_image,
+        iop_sounds_export_bounds,bt2_iop_sounds,[](const IopRuntime& rt) {
+            if(rt.threads.size()!=11 || rt.events.size()!=5 || rt.semaphores.size()!=7 || rt.rpc_servers.size()!=7)
+                throw std::runtime_error("Native SOUNDS resident objects differ");
+            const auto& server=rt.rpc_servers.at(0x02000004);const auto& queue=rt.rpc_queues.at(server.queue);
+            const auto& worker=rt.threads.at(queue.thread);
+            if(worker.entry!=iop_sounds_base+0x284 || worker.gp!=iop_sounds_gp || worker.priority!=29 || worker.stacksize!=0x1000
+                || !worker.waiting || worker.wait_rpc!=server.queue || server.queue!=worker.stack+0xF78 || worker.wait_event
+                || server.descriptor!=worker.stack+0xF90 || server.handler!=iop_sounds_base+0xB0 || server.buffer!=iop_sounds_base+0x116E0)
+                throw std::runtime_error("Native SOUNDS RPC worker differs");
+        }}, {"cdrom0:\\IRX\\CRI_ADXI.IRX;1",iop_cri_adxi_base,iop_cri_adxi_entry,iop_cri_adxi_gp,iop_cri_adxi_image,
+        iop_cri_adxi_export_bounds,bt2_iop_cri_adxi,[](const IopRuntime&) {throw std::runtime_error("Native CRI_ADXI effects require validation");}}};
 }
