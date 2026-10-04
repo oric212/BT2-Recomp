@@ -5,6 +5,7 @@ from inspect_irx import inspect,relocate
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'capture_ee'))
 from capture_ee import EXPECTED_SHA,MARKER,capture_trap
 PROFILES={
+ 'cri-adxi':{'base':0xB7F30,'owned':0x110000,'text':0xC670,'result':2,'workers':[(0xDE18,None),(0xDE1C,0xED80)],'semaphores':[]},
  'sounds':{'base':0xA3430,'owned':0xF0000,'text':0x23C0,'result':0,'workers':[],'semaphores':[],'queue_worker':(0x284,0x1F1578)},
  'cdvdstm':{'base':0x9E730,'owned':0xE0000,'text':0x4280,'result':2,'workers':[],'semaphores':[0x4784],'events':[0x4788]},
  'modsesq2':{'base':0x9A930,'owned':0xD0000,'text':0x3B00,'result':0,'workers':[],'semaphores':[]},

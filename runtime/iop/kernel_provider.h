@@ -70,16 +70,16 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if((irq!=17 && irq!=9 && irq!=36 && irq!=40) || mode>3 || handler%4 || memory.interrupts.contains(irq))
             throw std::runtime_error("Unsupported IOP interrupt registration");
         memory.check(IopRuntime::physical(handler),4);
-        memory.entry_targets.insert(handler);memory.interrupts.emplace(irq,IopRuntime::Interrupt{mode,handler,arg,false,c.get(28)});return 0u;
+        memory.entry_targets.insert(handler);memory.interrupts.emplace(irq,IopRuntime::Interrupt{mode,handler,arg,memory.enabled_interrupts.contains(irq),c.get(28)});return 0u;
     };
     rt.providers[{"intrman",7}]=[](IopRuntime& memory,IopContext& c) {
         const auto irq=c.get(4);
         if(irq!=9 && irq!=36 && irq!=40)throw std::runtime_error("Unsupported IOP interrupt disable");
         const auto found=memory.interrupts.find(irq);
-        const bool enabled=found!=memory.interrupts.end() && found->second.enabled;
+        const bool enabled=memory.enabled_interrupts.contains(irq) || (found!=memory.interrupts.end() && found->second.enabled);
         const auto result=enabled?irq:static_cast<std::uint32_t>(-103);
         if(c.get(5))memory.write(c.get(5),result,4);
-        if(found!=memory.interrupts.end())found->second.enabled=false;
+        memory.enabled_interrupts.erase(irq);if(found!=memory.interrupts.end())found->second.enabled=false;
         return enabled?0u:static_cast<std::uint32_t>(-103);
     };
     rt.providers[{"intrman",5}]=[](IopRuntime& memory,IopContext& c) {
@@ -92,8 +92,9 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
     };
     rt.providers[{"intrman",6}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.interrupts.find(c.get(4));
-        if(found==memory.interrupts.end())throw std::runtime_error("Enable of unregistered IOP interrupt");
-        found->second.enabled=true;return 0u;
+        const auto irq=c.get(4);
+        if(irq!=9 && irq!=17 && irq!=36 && irq!=40)throw std::runtime_error("Unsupported IOP interrupt enable");
+        memory.enabled_interrupts.insert(irq);if(found!=memory.interrupts.end())found->second.enabled=true;return 0u;
     };
     rt.providers[{"dmacman",33}]=[](IopRuntime& memory,IopContext& c) {
         const auto channel=c.get(4);
@@ -206,13 +207,31 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
     };
     rt.providers[{"thbase",6}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.threads.find(c.get(4));
-        if(found==memory.threads.end() || found->second.ready || found->second.waiting || !memory.execute || memory.current_thread)
+        if(found==memory.threads.end() || found->second.ready || found->second.waiting || !memory.execute)
             throw std::runtime_error("Unsupported IOP thread start");
-        auto& t=found->second;t.ready=true;t.context.pc=t.entry;t.context.set(4,c.get(5));
+        const auto parent=memory.current_thread;
+        if(parent && found->second.priority<memory.threads.at(parent).priority)
+            throw std::runtime_error("Higher-priority nested IOP start needs preemption");
+        auto& t=found->second;t.context={};t.ready=true;t.context.pc=t.entry;t.context.set(4,c.get(5));
         t.context.set(28,t.gp);t.context.set(29,t.stack+t.stacksize-0x20);t.context.set(30,t.context.get(29));t.context.set(31,IopRuntime::sentinel);
+        if(parent)return 0u; // Lower/equal priority child stays ready until the current worker blocks.
         memory.current_thread=found->first;
         try {memory.execute(memory,t.context);memory.current_thread=0;throw std::runtime_error("Unexpected IOP thread completion");}
-        catch(const IopYield&) {memory.current_thread=0;return 0u;}
+        catch(const IopYield&) {
+            memory.current_thread=0;
+            for(;;) {
+                auto next=memory.threads.end();
+                for(auto candidate=memory.threads.begin();candidate!=memory.threads.end();++candidate)
+                    if(candidate->second.ready && !candidate->second.waiting
+                        && (next==memory.threads.end() || candidate->second.priority<next->second.priority))next=candidate;
+                if(next==memory.threads.end())break;
+                memory.current_thread=next->first;
+                try {memory.execute(memory,next->second.context);memory.current_thread=0;throw std::runtime_error("Unexpected deferred IOP thread completion");}
+                catch(const IopYield&) {memory.current_thread=0;}
+                catch(...) {memory.current_thread=0;throw;}
+            }
+            return 0u;
+        }
         catch(...) {memory.current_thread=0;throw;}
     };
     for(unsigned ordinal:{4u,5u})rt.providers[{"secrman",ordinal}]=[ordinal](IopRuntime& memory,IopContext& c) {
@@ -222,6 +241,13 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         return c.get(2); // Callback setter is void; authentication remains unsupported.
     };
 
+    rt.providers[{"sysclib",11}]=[](IopRuntime& memory,IopContext& c) {
+        const auto count=c.get(6),a=IopRuntime::physical(c.get(4)),b=IopRuntime::physical(c.get(5));
+        if(count) {memory.check(a,count);memory.check(b,count);}
+        for(std::uint32_t n=0;n<count;++n)if(memory.ram[a+n]!=memory.ram[b+n])
+            return static_cast<std::uint32_t>(int(memory.ram[a+n])-int(memory.ram[b+n]));
+        return 0u;
+    };
     rt.providers[{"sysclib",12}]=[](IopRuntime& memory,IopContext& c) {
         const auto destination=c.get(4),source=c.get(5),count=c.get(6);
         const auto d=IopRuntime::physical(destination),s=IopRuntime::physical(source);

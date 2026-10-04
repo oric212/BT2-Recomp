@@ -56,3 +56,8 @@ Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
 Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.
+
+
+### Current subsystem handoff
+
+Bounded LIBSD initialization and CRI_ADXI residency are verified; thirteen native module loads complete. Follow [file I/O startup](FILE_IO_STARTUP_PLAN.md) from the actual server 0x80000003 bind boundary toward asset loading. Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.

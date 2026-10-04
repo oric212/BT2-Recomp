@@ -33,12 +33,12 @@ int main() {
         const auto sounds=service.load(1,"cdrom0:\\IRX\\SOUNDS.IRX;1");check(sounds.id==12 && sounds.result==0 && service.runtime.steps==7978);
         unsigned waiting=0;for(const auto& [id,t]:service.runtime.threads)if(t.waiting)++waiting;check(waiting==10);
 
-        rejected([&]{service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");});
-        check(service.residents.size()==12 && service.runtime.executing_pc==0x940CC && service.runtime.steps==16244);
-        rejected([&]{service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");});check(service.runtime.steps==16244);
-
+        const auto cri=service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");
+        check(cri.id==13 && cri.result==2 && service.residents.size()==13 && service.runtime.steps==30839);
+        rejected([&]{service.load(1,"cdrom0:\\IRX\\CRI_ADXI.IRX;1");});check(service.runtime.steps==30839);
         check(service.runtime.spu2_reset_status_reads==2 && service.runtime.spu2_pending_key_off==std::array<std::uint32_t,2>{0xFFFFFF,0xFFFFFF});
-        check(service.runtime.interrupts.size()==1 && service.runtime.blocked_address==0x1F9001AC);
+        check(service.runtime.spu2_io_transfer_completed && service.runtime.spu2_sound_ram.size()==8 && service.runtime.native_export_results.at("libsd:4")==0);
+        check(service.runtime.interrupts.size()==4 && service.runtime.abi_read_only_words.size()==3);
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

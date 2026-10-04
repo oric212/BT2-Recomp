@@ -46,8 +46,15 @@ public:
     std::uint32_t cdvd_interrupt_event=0;
     unsigned data_cache_flushes=0;
     std::map<std::uint32_t,std::uint32_t> spu2_configuration;
-    std::array<std::uint32_t,2> spu2_pending_key_off{};
-    unsigned spu2_reset_status_reads=0;
+    std::set<unsigned> enabled_interrupts;
+    std::array<std::uint32_t,2> spu2_pending_key_off{},spu2_pending_key_on{};
+    unsigned spu2_reset_status_reads=0,spu2_fifo_halfwords=0,spu2_io_status_reads=0;
+    std::map<std::uint32_t,std::uint16_t> spu2_sound_ram;
+    struct Spu2Readback {std::uint16_t value;std::uint64_t instruction;};
+    std::map<std::uint32_t,Spu2Readback> spu2_command_readbacks;
+    bool spu2_io_transfer_completed=false;
+    std::map<std::string,std::uint32_t> native_export_results;
+    std::map<std::uint32_t,std::uint32_t> abi_read_only_words;
     struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;
@@ -111,13 +118,27 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(size==4 && abi_read_only_words.contains(p))return abi_read_only_words.at(p);
         if(size==2 && (p==0x1F900344 || p==0x1F900744)) {
+            if(p==0x1F900344 && spu2_fifo_halfwords==8 && !spu2_io_status_reads && spu2_configuration.at(0x1F90019A)==0x8010
+                && spu2_configuration.at(0x1F9001A8)==0 && spu2_configuration.at(0x1F9001AA)==0x2808) {
+                ++spu2_io_status_reads;return 0x80; // Actual first I/O poll: data stored, busy bit 0x400 clear.
+            }
             const std::map<std::uint32_t,std::uint32_t> reset={{0x1F9007C0,0x8000},{0x1F9007C6,0x900},{0x1F9007C8,0x200},{0x1F9007CA,8},
                 {0x1F900760,0},{0x1F900762,0},{0x1F900788,0},{0x1F90078A,0},{0x1F9001B0,0},{0x1F9005B0,0},{0x1F90019A,0x8000},{0x1F90059A,0x8000}};
             if(spu2_configuration!=reset || spu2_reset_status_reads>=2 || p!=(spu2_reset_status_reads?0x1F900744u:0x1F900344u))throw std::runtime_error("SPU2 reset status prerequisites differ");
             ++spu2_reset_status_reads;return 0; // Direct local first-status checkpoint under this exact reset configuration.
         }
-        if(size==2 && (p==0x1F90019A || p==0x1F90059A) && spu2_configuration.contains(p))return spu2_configuration.at(p);
+        if(size==2 && spu2_command_readbacks.contains(p)) {
+            const auto record=spu2_command_readbacks.at(p);
+            if(steps>record.instruction+1)throw std::runtime_error("Late SPU2 dynamic register readback unsupported");
+            spu2_command_readbacks.erase(p);return record.value; // One observed immediate readback; no clocked voice-state read.
+        }
+        if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_configuration.contains(p)) {
+            const auto offset=(p-0x1F900000)&0x3FF;
+            if((p>=0x1F900760 && p<=0x1F900796) || (offset>=0x1C0 && offset<0x2E0 && (offset-0x1C0)%12<=2) || offset==0x19A || (offset<0x180 && (offset%16==0 || offset%16==2 || offset%16==4 || offset%16==6 || offset%16==8)))
+                return spu2_configuration.at(p); // Retained parameter register readback, no dynamic ENVX/status defaults.
+        }
         if((p==0x1F8010F0 || p==0x1F801570) && size==4) {
             if(!sound_bus.contains(0x1F801404) || !sound_bus.contains(0x1F80140C) || !dma_channels.contains(11) || !dma_channels.contains(12)
                 || !dma_channels.at(11).enabled || !dma_channels.at(12).enabled || dma_channels.at(11).priority!=3 || dma_channels.at(12).priority!=3)
@@ -143,12 +164,54 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_io_transfer_completed) {
+            const auto offset=(p-0x1F900000)&0x3FF;
+            const bool routing=offset>=0x188 && offset<=0x196 && !(offset&1) && value==((offset&2)?0xFFu:0xFFFFu);
+            const bool core=(offset==0x19A && (value==0xC000 || value==0xC001));
+            const bool effects_end=offset==0x33C && value==(p<0x1F900400?0xEu:0xFu);
+            const bool volume=((p>=0x1F900760 && p<=0x1F90076E) || (p>=0x1F900788 && p<=0x1F900796)) && !(p&1)
+                && (value==0 || ((p==0x1F900760 || p==0x1F900762 || p==0x1F900788 || p==0x1F90078A) && value==0x3FFF) || ((p==0x1F900790 || p==0x1F900792) && value==0x7FFF));
+            if(routing || core || effects_end || volume || (p==0x1F9007C0 && value==0xC032)
+                || (offset==0x198 && value==(p<0x1F900400?0xFF0u:0xFFCu))) {spu2_configuration[p]=value;return;}
+            const bool parameter=offset<0x180 && !(offset&1) && ((offset%16==4 && value==0x3FFF)
+                || ((offset%16==0 || offset%16==2 || offset%16==6 || offset%16==8) && value==0));
+            const bool start=offset>=0x1C0 && offset<0x2E0 && (((offset-0x1C0)%12==0 && value==0)
+                || ((offset-0x1C0)%12==2 && value==0x2800));
+            if(parameter || start || ((offset==0x340 || offset==0x342) && value==0)) {
+                spu2_configuration[p]=value;if(offset==0x340 || offset==0x342)spu2_command_readbacks[p]={0,steps};return;
+            }
+            if(offset==0x1A0 || offset==0x1A2) {
+                const unsigned core=p>=0x1F900400,shift=(offset&2)?16:0;
+                // Retain a command only for the initialized zero-volume voices. No samples/ADSR advancement.
+                for(unsigned voice=0;voice<24;++voice)for(unsigned side=0;side<2;++side)
+                    if(!spu2_configuration.contains(0x1F900000+core*0x400+voice*16+side*2)
+                        || spu2_configuration.at(0x1F900000+core*0x400+voice*16+side*2)!=0)
+                        throw std::runtime_error("SPU2 voice activation without muted initialization unsupported");
+                spu2_pending_key_on[core]|=(value<<shift)&0xFFFFFF;spu2_command_readbacks[p]={static_cast<std::uint16_t>(value),steps};return;
+            }
+        }
+        if(size==2 && p==0x1F9001AC) {
+            if(enabled_interrupts.contains(9) || enabled_interrupts.contains(36) || enabled_interrupts.contains(40) || spu2_reset_status_reads!=2 || spu2_fifo_halfwords>=8 || spu2_configuration.at(0x1F90019A)!=0x8000
+                || spu2_configuration.at(0x1F9001B0)!=0 || spu2_configuration.at(0x1F90059A)!=0x8000)
+                throw std::runtime_error("Unsupported SPU2 direct transfer state");
+            const auto sound_address=(spu2_configuration.at(0x1F9001A8)<<16)|spu2_configuration.at(0x1F9001AA);
+            if(sound_address!=0x2800+spu2_fifo_halfwords)throw std::runtime_error("SPU2 initialization destination differs");
+            spu2_sound_ram[sound_address]=static_cast<std::uint16_t>(value);++spu2_fifo_halfwords;
+            const auto next=(sound_address+1)&0xFFFFF;spu2_configuration[0x1F9001A8]=next>>16;spu2_configuration[0x1F9001AA]=next&0xFFFF;
+            return;
+        }
+        if(size==2 && p==0x1F90019A && value==0x8010 && spu2_fifo_halfwords==8 && !spu2_io_status_reads) {
+            spu2_configuration[p]=value;return;
+        }
+        if(size==2 && p==0x1F90019A && value==0x8000 && spu2_io_status_reads==1)spu2_io_transfer_completed=true;
         if(size==2 && (p==0x1F9001A8 || p==0x1F9001AA || p==0x1F9005A8 || p==0x1F9005AA || p==0x1F9002E0 || p==0x1F9002E2 || p==0x1F9006E0 || p==0x1F9006E2)) {
             spu2_configuration[p]=value&0xFFFF;return; // Transfer/effects addresses only; no transfer completion or effects processing.
         }
         if(size==2 && (p==0x1F9001A4 || p==0x1F9001A6 || p==0x1F9005A4 || p==0x1F9005A6) && spu2_reset_status_reads>=2) {
             const unsigned core=p>=0x1F900400,shift=(p&2)?16:0;
-            spu2_pending_key_off[core]|=(value<<shift)&0xFFFFFF;return; // Retain release command; no samples or completed envelopes claimed.
+            spu2_pending_key_off[core]|=(value<<shift)&0xFFFFFF;
+            if(spu2_io_transfer_completed) {spu2_pending_key_on[core]&=~((value<<shift)&0xFFFFFF);spu2_command_readbacks[p]={static_cast<std::uint16_t>(value),steps};}
+            return; // Retain release command; no samples or completed envelopes claimed.
         }
         if(size==2 && value==0 && ((p>=0x1F900180 && p<=0x1F900196 && !(p&1))
             || (p>=0x1F900580 && p<=0x1F900596 && !(p&1)))) {spu2_configuration[p]=0;return;}
@@ -228,6 +291,7 @@ public:
             if(callee.pc!=sentinel)throw std::runtime_error("Native IOP export did not return");
             const auto ra=c.get(31),gp=c.get(28);c.r=callee.r;c.set(31,ra);c.set(28,gp);c.hi=callee.hi;c.lo=callee.lo;
             c.load_register=callee.load_register;c.load_value=callee.load_value;
+            native_export_results[key.first+":"+std::to_string(ordinal)]=callee.get(2);
             return callee.get(2);
         }
         return found->second(*this,c);

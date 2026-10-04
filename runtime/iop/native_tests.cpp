@@ -152,7 +152,20 @@ int main() {
         check(sound.read(0xBF900344,2)==0 && sound.read(0xBF900744,2)==0 && sound.spu2_reset_status_reads==2);
         sound.write(0xBF9001A4,1,2);sound.write(0xBF9001A6,2,2);check(sound.spu2_pending_key_off[0]==0x20001);
         sound.write(0xBF9001A8,0,2);sound.write(0xBF9001AA,0x2800,2);
-        refuses([&]{sound.read(0xBF900344,2);});refuses([&]{sound.write(0xBF9001AC,0x700,2);});
+        refuses([&]{sound.read(0xBF900344,2);});refuses([&]{sound.write(0xBF90019A,0x8010,2);});
+        sound.enabled_interrupts.insert(36);refuses([&]{sound.write(0xBF9001AC,1,2);});sound.enabled_interrupts.erase(36);
+        for(unsigned i=0;i<8;++i)sound.write(0xBF9001AC,0x1234+i,2);
+        check(sound.spu2_fifo_halfwords==8 && sound.spu2_configuration.at(0x1F9001AA)==0x2808);
+        for(unsigned i=0;i<8;++i)check(sound.spu2_sound_ram.at(0x2800+i)==0x1234+i);
+        refuses([&]{sound.write(0xBF9001AC,0,2);});refuses([&]{sound.write(0xBF9001AC,0,4);});
+        sound.write(0xBF90019A,0x8010,2);check(sound.read(0xBF900344,2)==0x80);
+        refuses([&]{sound.read(0xBF900344,2);});sound.write(0xBF90019A,0x8000,2);check(sound.spu2_io_transfer_completed);
+        refuses([&]{sound.write(0xBF9001A0,1,2);});
+        for(unsigned voice=0;voice<24;++voice)for(unsigned side=0;side<2;++side)sound.write(0xBF900000+voice*16+side*2,0,2);
+        sound.write(0xBF9001A0,1,2);check(sound.read(0xBF9001A0,2)==1);refuses([&]{sound.read(0xBF9001A0,2);});
+        sound.write(0xBF9001A0,2,2);sound.steps+=2;refuses([&]{sound.read(0xBF9001A0,2);});
+        sound.write(0xBF900342,0,2);check(sound.read(0xBF900342,2)==0);refuses([&]{sound.read(0xBF900342,2);});
+        refuses([&]{sound.read(0xBF90000A,2);});
         install_iop_kernel_providers(sound);sound.map(0x20000,std::vector<std::uint8_t>(16,0xAA));IopContext irq;
         irq.set(4,36);irq.set(5,0x20000);check(sound.import("intrman",7,irq)==static_cast<unsigned>(-103) && sound.read(0x20000,4)==static_cast<unsigned>(-103));
         check(sound.import("intrman",5,irq)==static_cast<unsigned>(-105));
@@ -163,6 +176,27 @@ int main() {
         irq.set(4,0x20004);irq.set(5,8);irq.set(2,0xBAD);check(sound.import("sysclib",17,irq)==0xBAD);
         check(sound.read(0x20004,4)==0 && sound.read(0x20008,4)==0 && sound.read(0x2000C,4)==0xAAAAAAAA);
         irq.set(4,0x2000C);refuses([&]{sound.import("sysclib",17,irq);});
+        irq.set(4,40);check(sound.import("intrman",6,irq)==0 && sound.enabled_interrupts.contains(40) && !sound.interrupts.contains(40));
+        irq.set(5,1);irq.set(6,0x20000);irq.set(7,0);check(sound.import("intrman",4,irq)==0 && sound.interrupts.at(40).enabled);
+        irq.set(5,0x20000);check(sound.import("intrman",7,irq)==0 && !sound.enabled_interrupts.contains(40));
+        sound.write(0x20004,0x01000100,4);sound.write(0x20008,0x02000100,4);
+        irq.set(4,0x20004);irq.set(5,0x20008);irq.set(6,4);check(iop_signed(sound.import("sysclib",11,irq))<0);
+        irq.set(6,3);check(sound.import("sysclib",11,irq)==0);irq.set(4,0);irq.set(5,0);irq.set(6,0);check(sound.import("sysclib",11,irq)==0);
+        irq.set(4,0x2000C);irq.set(6,8);refuses([&]{sound.import("sysclib",11,irq);});
+        sound.abi_read_only_words={{0,0},{4,0},{8,0}};check(sound.read(0,4)==0 && sound.read(8,4)==0);
+        refuses([&]{sound.write(0,0,4);});refuses([&]{sound.read(12,4);});refuses([&]{sound.read(0,1);});
+        IopRuntime scheduling;install_iop_kernel_providers(scheduling);
+        scheduling.threads.emplace(1,IopRuntime::Thread{0,0,0x100,0x1000,0x100,39,0x800,{}});
+        scheduling.threads.emplace(2,IopRuntime::Thread{0,0,0x200,0x2000,0x100,48,0x900,{}});
+        std::vector<unsigned> order;scheduling.execute=[&](IopRuntime& m,IopContext& context) {
+            if(m.current_thread==1) {
+                order.push_back(1);IopContext start;start.set(4,2);start.set(5,0xAABB);
+                check(m.import("thbase",6,start)==0 && order.size()==1 && m.current_thread==1 && m.threads.at(2).ready);
+                order.push_back(3);check(context.get(28)==0x800 && context.get(29)==0x10E0);
+            } else {order.push_back(2);check(context.get(4)==0xAABB && context.get(28)==0x900 && context.get(29)==0x20E0);}
+            auto& thread=m.threads.at(m.current_thread);thread.waiting=true;thread.ready=false;throw IopYield{};
+        };
+        IopContext start;start.set(4,1);check(scheduling.import("thbase",6,start)==0 && order==std::vector<unsigned>{1,3,2} && !scheduling.current_thread);
         IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
         IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
         log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);

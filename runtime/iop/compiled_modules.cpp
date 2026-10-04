@@ -177,5 +177,27 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
                 || server.descriptor!=worker.stack+0xF90 || server.handler!=iop_sounds_base+0xB0 || server.buffer!=iop_sounds_base+0x116E0)
                 throw std::runtime_error("Native SOUNDS RPC worker differs");
         }}, {"cdrom0:\\IRX\\CRI_ADXI.IRX;1",iop_cri_adxi_base,iop_cri_adxi_entry,iop_cri_adxi_gp,iop_cri_adxi_image,
-        iop_cri_adxi_export_bounds,bt2_iop_cri_adxi,[](const IopRuntime&) {throw std::runtime_error("Native CRI_ADXI effects require validation");}}};
+        [](IopRuntime& rt) {
+            iop_cri_adxi_export_bounds(rt);
+            // Guarded local CRI startup capture: three read-only words at 0/4/8 are zero.
+            // This is a BT2 startup ABI profile, not general BIOS/kernel RAM ownership.
+            for(unsigned address:{0u,4u,8u})rt.abi_read_only_words.emplace(address,0);
+        },bt2_iop_cri_adxi,[](const IopRuntime& rt) {
+            if(rt.threads.size()!=13 || rt.events.size()!=7 || rt.semaphores.size()!=7 || rt.rpc_servers.size()!=8
+                || rt.native_export_results.at("libsd:4")!=0 || !rt.spu2_io_transfer_completed || rt.spu2_fifo_halfwords!=8 || rt.spu2_io_status_reads!=1)
+                throw std::runtime_error("Native CRI_ADXI resident effects differ");
+            std::uint32_t parent,child;std::memcpy(&parent,rt.ram.data()+iop_cri_adxi_base+0xDE18,4);std::memcpy(&child,rt.ram.data()+iop_cri_adxi_base+0xDE1C,4);
+            const auto& waiter=rt.threads.at(parent);const auto& worker=rt.threads.at(child);const auto& queue=rt.rpc_queues.at(iop_cri_adxi_base+0xED80);
+            if(waiter.entry!=iop_cri_adxi_base+0x88 || waiter.gp!=iop_cri_adxi_gp || waiter.priority!=39 || waiter.stacksize!=0x800
+                || !waiter.waiting || waiter.ready || waiter.wait_event!=rt.vblank_event || waiter.wait_bits!=4 || waiter.wait_mode!=1 || waiter.wait_result || waiter.wait_rpc
+                || worker.entry!=iop_cri_adxi_base+0x7D4 || worker.gp!=iop_cri_adxi_gp || worker.priority!=48 || worker.stacksize!=0x800
+                || !worker.waiting || worker.ready || worker.wait_event || worker.wait_rpc!=iop_cri_adxi_base+0xED80 || queue.thread!=child || queue.servers.size()!=1)
+                throw std::runtime_error("Native CRI_ADXI workers differ");
+            const auto& server=rt.rpc_servers.at(0x90000200);
+            if(server.queue!=iop_cri_adxi_base+0xED80 || server.descriptor!=iop_cri_adxi_base+0xED30
+                || server.handler!=iop_cri_adxi_base+0x720 || server.buffer!=iop_cri_adxi_base+0xE7C0 || server.gp!=iop_cri_adxi_gp)
+                throw std::runtime_error("Native CRI_ADXI RPC server differs");
+            for(unsigned irq:{9u,36u,40u})if(!rt.enabled_interrupts.contains(irq) || !rt.interrupts.at(irq).enabled || rt.interrupts.at(irq).gp!=iop_libsd_gp)
+                throw std::runtime_error("Native LIBSD IRQ ownership differs");
+        }}};
 }

@@ -501,4 +501,20 @@ python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc "rom/Dragon Ball
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/cri-adxi-stop.json --cri-adxi
 ```
 
-Ordered stages `--cdvdstm` and `--sounds` complete residency; `--cri-adxi` currently stops at SPU2 hardware initialization. Local capture points `cdvdstm-module-after` and `sounds-module-after` have generalized checker profiles `cdvdstm` and `sounds`. Reports now include each thread's owned stack base. The CDVDSTM check normalizes its external event after guarded object-state comparison; SOUNDS checks the stack-owned queue/server and tagged reference worker. These checks do not establish successful sectors, sound RPC requests or playback.
+Ordered stages `--cdvdstm` and `--sounds` complete residency; `--cri-adxi` completes validated resident startup. Local capture points `cdvdstm-module-after` and `sounds-module-after` have generalized checker profiles `cdvdstm` and `sounds`. Reports now include each thread's owned stack base. The CDVDSTM check normalizes its external event after guarded object-state comparison; SOUNDS checks the stack-owned queue/server and tagged reference worker. These checks do not establish successful sectors, sound RPC requests or playback.
+
+
+## Bounded LIBSD transfer and CRI residency checks
+
+Use the explicit local PCSX2/BIOS/disc capture arguments with `--capture-point sounds-module-after` and exactly one of `--capture-spu2-transfer`, `--capture-spu2-key-readback on`, `--capture-spu2-key-readback off`, `--capture-spu2-initialized`, or `--capture-cri-low-read`. Each has a separate ignored isolated interpreter profile. Hooks guard original instructions/scratch fill, publish actual operands/results and terminate; they do not resume normal execution after the terminal publication. Transfer destination verification uses a terminal diagnostic read DMA after preserving the original poll, not native game DMA.
+
+Capture `cri-adxi-module-after` separately for the resident return, then run:
+
+```powershell
+python tools/capture_ee/verify_spu2_transfer.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/iop/verify_rpc_startup.py --profile cri-adxi --native work/iop/cri-adxi-stop.json --reference work/pcsx2-capture/cri-adxi-module-after/capture.json --module rom/IRX/CRI_ADXI.IRX --output work/iop/cri-adxi-validation.json
+```
+
+The first comparison uses ignored `work/iop/libsd-initialized-native.json` at the post-init/pre-master-volume boundary plus the final native module report. It verifies provenance/hook/publication, eight transferred halfwords, 394 stable configuration values, immediate key readbacks and the three read-only low ABI words. Four dynamic ENDX registers are excluded; playback/general DMA is not verified. The CRI comparison includes all normalized module data/BSS without exclusions and both workers.
+
+After `expand_startup.py` selects a newly reached EE entry, run `python tools/ps2recomp/prepare_runtime.py` before reconfiguring CMake. This preserves raw generated output and prepares the selected runtime source with checked deterministic routing and hash receipts.

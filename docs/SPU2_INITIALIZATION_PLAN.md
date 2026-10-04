@@ -13,6 +13,13 @@ All local captures, instrumented binaries and generated retail-derived source re
 
 ## Verified boundary
 
-Reset configuration, the two observed status polls, release-command retention, modulation clears, IRQ teardown, descriptor clearing and effects/transfer address setup execute. Pending CRI_ADXI remains nonresident. First data-FIFO write: halfword 0x0700 to 0x1F9001AC at PC 0x940CC.
+The earlier first-FIFO boundary at 0x940CC is resolved. Eight halfwords are stored in owned sound RAM at word addresses 0x2800..0x2807, TSA advances to 0x2808, and the captured first status poll returns 0x80. LIBSD returns 0 after voice/core configuration; 394 stable configuration registers match an independent initialized reference snapshot. Dynamic ENDX values are excluded from that comparison, with only explicit immediate clear readbacks supported.
 
-The next scope needs a sound RAM transaction model: capture the reached FIFO sequence, ATTR transfer-mode transition, status/completion and destination bytes; compare those with PCSX2 handling before accepting the initialization transfer. Later DMA, IRQ delivery and voice execution remain distinct unverified behavior. This document does not establish completion semantics for them.
+CRI_ADXI returns resident result 2. Relocated code, complete normalized data/BSS and its Vblank/RPC workers match a local return capture. No sample processing, general sound transfers, IRQ delivery or audio playback is established. Startup now reaches the separate [file I/O RPC boundary](FILE_IO_STARTUP_PLAN.md).
+
+## Sound RAM transaction pass
+
+1. Capture the first reached I/O-mode status poll after the eight FIFO halfwords; publish original status/ATTR/TSA and compare source with terminal diagnostic destination readback.
+2. Adapt documented halfword memory storage and TSA advancement under disabled IRQ/ADMA prerequisites. Keep sound RAM owned separately from IOP RAM. Unsupported modes/IRQs/transfers fail.
+3. Validate the I/O-mode transition and reached status against capture; return completion state only from an accepted transaction, not arbitrary readiness.
+4. Continue through voice/core register setup, IRQ registration and later startup where reference behavior and local evidence permit. Validate pending module residency before acknowledging it. Test/update history/commit/push at pass end.
