@@ -394,3 +394,19 @@ python tools/iop/inspect_irx.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - 
 ```
 
 Optional `--base 0x4BF30 --iop-capture work/pcsx2-capture/loadfile-module-after/capture.json` prepares a private relocated image and compares module ownership, relocation words and code ranges against that recorded scenario. The explicit base is reference evidence for this capture, not a native allocator address. Output/maps/images must stay in ignored `work/` or `game_data/`. No imports or module entries are executed.
+
+## Isolated native IOP diagnostic
+
+With your local disc/module already provided:
+
+```powershell
+python tools/iop/generate_native.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/iop/sio2man_native.cpp
+cmake -S . -B build/probe -DBT2_BUILD_IOP_PROBE=ON
+cmake --build build/probe --config Debug --target bt2-iop-tests bt2-iop-probe
+build/probe/Debug/bt2-iop-tests.exe
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/native-stop.json
+```
+
+The authored standalone MIPS-I translator emits native instruction expressions and checked import dispatch. It is separate from the pinned EE PS2Recomp pipeline. Outputs, relocation images and provenance remain under ignored work/iop/. CMake also generates authored synthetic programs locally. No game code is needed in the repository.
+
+The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: 44 instructions, three mapped ranges entered, one registered library, write 0x3BC/width 4 blocked at 0x1F808268. The isolated probe is not yet connected to the EE LOADFILE adapter.

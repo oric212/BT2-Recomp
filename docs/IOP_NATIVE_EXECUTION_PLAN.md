@@ -29,3 +29,11 @@ LOADFILE bind and version query can be validated independently. A successful mod
 - Local reference module entry/return, registration and thread effects match a recorded scenario.
 - Full EE checkpoint pipeline and earlier GS/SIF/CD assertions still pass.
 - Update current progress and history, review authored-only staging, commit and push.
+
+## Execution checkpoint: 2026-10-04
+
+Steps 1-4 now have an isolated authored prototype: separate 32-bit context, checked owned RAM, static C++ emission, delayed branches/loads, HI/LO, unaligned pairs and explicit import dispatch. It does not modify or claim R3000 support in upstream PS2Recomp. Synthetic compiled programs pass; unsupported instructions, targets, memory and imports stop explicitly. This is a diagnostic backend, not a general emulator or cycle-accurate IOP.
+
+SIO2MAN runs at an owned base of 0x10000, with its relocated GP, argc 1 and argv containing the requested path (public modload startup convention). The private memory image must equal the image associated with compiled source. The first loadcore:6 call retains bounded exports/version in owned library state and applies the first-library linkage mutation; duplicate/version replacement and existing-client linking remain unsupported.
+
+The next boundary is step 6's separate SIO2 hardware/IRQ scope: PC 0x10008 writes 0x3BC to physical 0x1F808268 after 44 instructions and three provisional range entries. Public PCSX2 identifies this value as SIO2MAN_RESET. No hardware write or module success was fabricated. Before implementing that scope, establish its reset/register ownership, gather before/after observations around reached accesses, and design retained IRQ/event/thread state. A plain register array or always-ready status is insufficient evidence for transfer completion. Then continue the actual entry imports and scheduled callbacks, keeping the EE LOADFILE request pending until effects are validated.

@@ -63,7 +63,7 @@ def inspect(data):
             excluded.append((address,pos))
             while slots and slots[-1]==0:slots.pop()
             if any(v%4 or v>=end for v in slots):raise ValueError('Invalid IRX export pointer')
-            exports.append({'library':library,'version':ver,'slots':slots,'trailing_zero_ordinals_unknown':True})
+            exports.append({'address':address,'library':library,'version':ver,'slots':slots,'trailing_zero_ordinals_unknown':True})
     relocations=[];counts={};seen=set()
     for s in sections:
         if s[1]!=9:continue

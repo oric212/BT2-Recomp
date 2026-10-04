@@ -188,3 +188,22 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/guest-memory.bin"
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/entry-stop.json")
 endif()
+
+option(BT2_BUILD_IOP_PROBE "Build isolated locally generated MIPS-I module probe" OFF)
+if(BT2_BUILD_IOP_PROBE)
+    enable_testing()
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp")
+        message(FATAL_ERROR "Generate the local module with tools/iop/generate_native.py first.")
+    endif()
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/synthetic_native.cpp"
+        COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/iop/make_synthetic.py"
+        DEPENDS tools/iop/make_synthetic.py tools/iop/generate_native.py)
+    add_executable(bt2-iop-tests runtime/iop/native_tests.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/synthetic_native.cpp")
+    add_executable(bt2-iop-probe runtime/iop/module_probe.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp")
+    foreach(bt2_iop_target bt2-iop-tests bt2-iop-probe)
+        target_include_directories(${bt2_iop_target} PRIVATE runtime/iop "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
+        target_compile_features(${bt2_iop_target} PRIVATE cxx_std_20)
+        target_compile_options(${bt2_iop_target} PRIVATE /W4 /permissive- /utf-8)
+    endforeach()
+    add_test(NAME native-iop-synthetic COMMAND bt2-iop-tests)
+endif()
