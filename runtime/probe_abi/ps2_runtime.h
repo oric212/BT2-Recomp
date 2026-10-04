@@ -217,6 +217,18 @@ public:
             sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
             return;
         }
+        if(code==0 && selector==0x71 && gs_imr_supplied_) {
+            if(gs_csr_reads!=1 || gs_imr_writes || context->pc!=0x32EFA8 || context->r[4].low!=0xFF00
+                    || context->r[29].low!=initial_sp-688 || context->r[31].low!=0x30FE6C)
+                throw UnsupportedSyscall(selector,context->pc);
+            gs_imr=0xFF00;++gs_imr_writes;context->r[2].low=0xFF00;return;
+        }
+        if(code==0 && selector==2 && gs_crt_supplied_) {
+            if(gs_imr_writes!=1 || gs_crt_calls || context->pc!=0x32E868 || context->r[4].low!=1
+                    || context->r[5].low!=2 || context->r[6].low!=1 || context->r[29].low!=initial_sp-608
+                    || context->r[31].low!=0x100274)throw UnsupportedSyscall(selector,context->pc);
+            gs_crt_request={1,2,1};++gs_crt_calls;context->r[2].low=0;return;
+        }
         if (code == 0 && selector == 0x7A && iop_reset_pending && reset_ready_supplied_) {
             if(reset_ready_checkpoint_reads || reset_clear_writes!=4 || context->pc!=0x32F078
                     || context->r[4].low!=4 || context->r[29].low!=initial_sp-48
@@ -639,6 +651,16 @@ public:
         ++byte_writes;
     }
 
+    std::uint16_t read16(std::uint8_t* rdram,std::uint32_t address) const {
+        checkMemory(rdram,address,2);
+        if(address%2)throw std::runtime_error("Unsupported unaligned halfword load");
+        std::uint16_t value;std::memcpy(&value,memory_.data()+address,2);return value;
+    }
+    void write16(std::uint8_t* rdram,std::uint32_t address,std::uint16_t value) {
+        checkMemory(rdram,address,2);
+        if(address%2)throw std::runtime_error("Unsupported unaligned halfword store");
+        std::memcpy(memory_.data()+address,&value,2);++halfword_writes;
+    }
     void write128(std::uint8_t* rdram, std::uint32_t address, const ProbeGpr& value) {
         checkMemory(rdram, address, sizeof(value));
         if (address % 16) throw std::runtime_error("Unsupported unaligned quadword store");
@@ -839,7 +861,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -868,14 +890,32 @@ public:
             if(std::memcmp(bundle.data()+204,completion.data(),20))throw std::runtime_error("Invalid reboot submission/clear checkpoints");
             reset_submission_supplied_=true;
         }
-        if(bundle.size()==228) {
+        if(bundle.size()>=228) {
             std::uint32_t bit;std::memcpy(&bit,bundle.data()+224,4);
             if(bit!=0x40000)throw std::runtime_error("Invalid ready-bit checkpoint");
             reset_ready_supplied_=true;
         }
+        if(bundle.size()>=236) {
+            std::uint64_t csr;std::memcpy(&csr,bundle.data()+228,8);
+            if(csr!=0x551B4000)throw std::runtime_error("Invalid GS CSR checkpoint");
+            gs_csr_supplied_=true;
+        }
+        if(bundle.size()>=244) {
+            std::uint64_t result;std::memcpy(&result,bundle.data()+236,8);
+            if(result!=0xFF00)throw std::runtime_error("Invalid GS IMR checkpoint");
+            gs_imr_supplied_=true;
+        }
+        if(bundle.size()==252) {
+            std::uint64_t result;std::memcpy(&result,bundle.data()+244,8);
+            if(result)throw std::runtime_error("Invalid GS CRT checkpoint");
+            gs_crt_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
+    unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
+    std::uint32_t gs_imr=0;
+    std::array<std::uint32_t,3> gs_crt_request{};
     unsigned iop_epoch=0, reset_clear_writes=0, reset_ready_checkpoint_reads=0;
     std::uint32_t reset_rpcinit=1, reset_subaddr=0x19600;
     unsigned sif_stop_calls = 0, sif_reset_subaddr_reads = 0, reset_smflag_writes = 0;
@@ -919,6 +959,25 @@ public:
     std::uint32_t dmac_mask = 0, dmac_enable_calls = 0, dmac_disable_calls = 0, dmac_removals = 0;
 
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
+    void handleBreak(std::uint8_t*,R5900Context*) {
+        throw std::runtime_error("Unsupported guest BREAK instruction");
+    }
+    void Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
+        checkMemory(rdram,0,0);
+        if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
+                || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
+            throw UnsupportedGuestMemory(address,8);
+        // Reached reset accepted only with matching reference readback evidence.
+        // No native reset of unimplemented GS/GIF/renderer state is claimed.
+        ++gs_csr_reset_writes;
+    }
+    std::uint64_t Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        checkMemory(rdram,0,0);
+        if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes!=1 || gs_csr_reads
+                || context->pc!=0x30FE50 || context->r[29].low!=initial_sp-688)
+            throw UnsupportedGuestMemory(address,8);
+        ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
+    }
     void Store32(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint32_t value) {
         write32(rdram, address, value);
     }
@@ -1015,6 +1074,7 @@ public:
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;
+    std::uint64_t halfword_writes=0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
@@ -1163,6 +1223,7 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
+    bool gs_csr_supplied_=false,gs_imr_supplied_=false,gs_crt_supplied_=false;
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;

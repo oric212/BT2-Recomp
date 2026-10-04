@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The native checkpoint probe now passes the post-reboot readiness bit test, completes two more helpers and reaches a graphics setup boundary. The ready bit is an explicit local reference checkpoint replay; native IOP boot/service execution and complete game startup remain incomplete.
+The checkpoint probe now completes initial GS reset/mask/CRT setup and several generated RAM setup helpers. It reaches an interrupt acknowledgement/event-wait boundary. GS readbacks and syscall returns remain explicit local reference checkpoints; native video timing, IOP execution and rendering remain incomplete.
 
-Latest verification: MSVC full checkpoint build/pipeline and seven CTests passed; 42 capture-tool tests passed. Earlier 42 recomp-tool/five IOP-inventory tests remain the last verification for unchanged tools. Proprietary content, captures, generated code and automatic bindings remain ignored.
+Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 46 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
 
 ## Current blocker and next step
 
-Mapped call to `FUN_0030FDC0` from `0x0010026C`, resume `0x00100274`, SP `0x01FFEB00`. Its generated code includes 64-bit GS register access at `0x12001000`; this new subsystem needs [the scoped GS bring-up plan](GS_BRINGUP_PLAN.md).
+A 32-bit write of `4` to INTC_STAT `0x1000F000` at `0x0032F10C`, SP `0x01FFEAD0`, in `FUN_0032F0F0`. The routine subsequently waits for bit `4` to become set again, then acknowledges it again. Separate disc-backed captures reach the completed wait and later CSR field read.
 
-Next: link the reached GS setup entries and capture the actual register/syscall requirements. Implement only verified behavior. IOP reset/service lifetime remains pending in the native model; its observed ready bit cannot establish native IOP execution.
+Next: implement [the interrupt/video-timing plan](GS_INTERRUPT_TIMING_PLAN.md). Preserve event acknowledgement and ordering; returning the written value would incorrectly bypass synchronization. Full DMA, renderer and IOP service execution remain unsupported.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **89** distinct functions entered / **86** completed across native probes (startup/helpers, not gameplay).
-- This pass completes previous partial `FUN_00338108` and newly linked `FUN_0032F0E0`; enters `FUN_00100258`. Entry, `FUN_00100388` and `FUN_00100258` remain partial. The reached GS helper is not yet entered.
+- **100** distinct functions entered / **95** completed across native probes (startup/helpers, not gameplay).
+- This pass enters 11 functions and completes nine. Entry, `FUN_00100388`, `FUN_00100258`, `FUN_003104B0` and `FUN_0032F0F0` remain partial. No rendered frame or complete game boot.
 
 ## Milestones
 

@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -288,8 +288,12 @@ int main(int argc, char** argv) {
             stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
         }
         catch (const UnsupportedGuestMemory& stop) {
-            if (dma5_mode) throw;
-            if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
+            if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
+            if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
+                (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
+                || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C),
+                "Unexpected GS continuation memory boundary");
+            else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
                     && context.pc == 0x003319EC && runtime.dma_status_reads == 1,
                     "Unexpected DMA channel control boundary");
             else if (osd_readback_mode) require(stop.address == 0x1000E010 && stop.size == 4
@@ -461,14 +465,26 @@ int main(int argc, char** argv) {
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
-                        require(runtime.reset_ready_checkpoint_reads==1 && stop_selector==0
-                            && ((stop_target==0x32F0E0 && stop_source==0x338128 && stop_resume==0x338130
-                                && runtime.guest_calls==224 && runtime.returns==221 && context.r[29].low==runtime.initial_sp-48)
-                            || (stop_target==0x100258 && stop_source==0x1003D8 && stop_resume==0x1003E0
-                                && runtime.guest_calls==227 && runtime.returns==225 && context.r[29].low==runtime.initial_sp-32)
-                            || (stop_target==0x30FDC0 && stop_source==0x10026C && stop_resume==0x100274
-                                && runtime.guest_calls==228 && runtime.returns==225 && context.r[29].low==runtime.initial_sp-608)),
-                            "Checked ready continuation boundary differs");
+                        require(runtime.reset_ready_checkpoint_reads==1 && !stop_target,
+                                "Unexpected ready continuation target/replay");
+                        if(!runtime.gs_csr_reset_writes) require(stop_address==0x12001000 && stop_size==8
+                            && context.pc==0x30FE44 && runtime.guest_calls==230 && runtime.returns==226
+                            && context.r[29].low==runtime.initial_sp-688 && !runtime.halfword_writes,
+                            "First GS reset boundary differs");
+                        else if(!runtime.gs_imr_writes) require(runtime.gs_csr_reads==1 && stop_selector==0x71
+                            && context.pc==0x32EFA8 && runtime.guest_calls==231 && runtime.returns==226
+                            && context.r[29].low==runtime.initial_sp-688 && runtime.halfword_writes==3,
+                            "GS IMR boundary differs");
+                        else if(!runtime.gs_crt_calls) require(stop_selector==2 && context.pc==0x32E868
+                            && runtime.guest_calls==231 && runtime.returns==227
+                            && context.r[29].low==runtime.initial_sp-608 && runtime.halfword_writes==4,
+                            "GS CRT boundary differs");
+                        else require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1
+                            && runtime.gs_crt_calls==1 && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1}
+                            && stop_address==0x1000F000 && stop_size==4 && context.pc==0x32F10C
+                            && runtime.guest_calls==252 && runtime.returns==247 && context.r[29].low==runtime.initial_sp-656
+                            && runtime.halfword_writes==4 && GPR_U32(&context,4)==4,
+                            "GS interrupt acknowledgement boundary differs");
                     } else
                     require((stop_target == 0x338108 && stop_source == 0x1003C8 && stop_resume == 0x1003D0
                                 && runtime.guest_calls == 222 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 32)
@@ -490,6 +506,10 @@ int main(int argc, char** argv) {
                 << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"reset_subaddr_reads\":" << runtime.sif_reset_subaddr_reads
                 << ",\"smflag_writes\":" << runtime.reset_smflag_writes
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
+                << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
+                << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"gs_csr_reads\":" << runtime.gs_csr_reads
+                << ",\"memory_address\":" << stop_address << ",\"memory_size\":" << stop_size
                 << ",\"reset_ready_checkpoint_reads\":" << runtime.reset_ready_checkpoint_reads
                 << ",\"iop_reset_pending\":" << (runtime.iop_reset_pending ? "true" : "false")
                 << ",\"prior_iop_services_valid\":" << (runtime.prior_iop_services_valid ? "true" : "false")

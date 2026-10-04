@@ -14,6 +14,6 @@ class StartupExpansionTests(unittest.TestCase):
 
     def test_neutral_bindings_and_source_selection(self):
         cmake, header = render([0x1000, 0x2000])
-        self.assertIn('${BT2_GENERATED_DIR}/FUN_00001000_0x1000.cpp', cmake)
+        self.assertIn('${BT2_GENERATED_DIR}/../bt2-runtime/FUN_00001000_0x1000.cpp', cmake)
         self.assertIn('runtime.registerFunction(0x00002000, FUN_00002000_0x2000);', header)
         self.assertNotIn('game_data', cmake)

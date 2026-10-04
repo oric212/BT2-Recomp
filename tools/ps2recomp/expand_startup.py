@@ -15,7 +15,7 @@ FOLDER = ROOT / 'work/bt2-generation'
 def render(addresses):
     names = [f'FUN_{address:08X}_0x{address:x}' for address in addresses]
     cmake = 'target_sources(bt2-entry-probe PRIVATE\n' + ''.join(
-        f'    "${{BT2_GENERATED_DIR}}/{name}.cpp"\n' for name in names) + ')\n'
+        f'    "${{BT2_GENERATED_DIR}}/../bt2-runtime/{name}.cpp"\n' for name in names) + ')\n'
     header = '#pragma once\ninline void registerExtraStartup(PS2Runtime& runtime) {\n' + ''.join(
         f'    runtime.registerFunction(0x{address:08X}, {name});\n'
         for address, name in zip(addresses, names)) + '}\n'

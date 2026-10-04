@@ -340,3 +340,11 @@ Append `--reset-submission-captures work/pcsx2-capture` to the full pipeline aft
 Capture `reset-ready` with the explicit local `--disc`, PCSX2 and BIOS arguments above. The eight-word trap preserves the not-ready return path and publishes the 0x40000 mask only after the original conditional selects the ready branch. It does not publish the entire SMFLAG value. EE publication is checked twice; the fresh two-MiB IOP RAM dump is live diagnostic data, not atomically frozen or fully stable.
 
 Append `--reset-ready-capture work/pcsx2-capture/reset-ready/capture.json` after the submission-chain inputs. The verifier checks the original ready-test prefix digest, trap/publication, both RAM hashes, sizes and matching disc/PCSX2/BIOS. The native probe replays only the tested bit for this exact one-shot caller; it keeps IOP boot pending and old services invalid. Omit the ready input to retain the prior SifGetReg boundary.
+
+### GS startup checkpoints
+
+Use capture points `gs-csr-reset`, `gs-imr-after`, `gs-crt-after` with the explicit local disc/PCSX2/BIOS arguments. Publications retain a 64-bit value at marker+8 and SP at marker+16. Pipeline flags `--gs-csr-capture`, `--gs-imr-capture`, `--gs-crt-capture` require the preceding checkpoint. The verifier checks preceding instruction digests, trap/publication, RAM hash and matching disc/PCSX2/BIOS. Omit each input to preserve its unsupported boundary.
+
+Diagnostic points `gs-intc-after` and `gs-csr-field` capture the completed interrupt wait and subsequent field read. `verify_gs.verify(..., ready_manifest, point)` validates them; they are not runtime replay inputs. Do not interpret independent snapshots as a continuous event trace.
+
+Selected extra entries now compile from ignored prepared sources. `prepare_runtime.py` routes emitted direct tail calls uniformly through checked dispatch, records raw/prepared hashes, and retains unchanged file timestamps. Original generated sources remain untouched.

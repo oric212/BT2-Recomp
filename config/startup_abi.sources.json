@@ -240,5 +240,24 @@
     "kernel_stop_size": 44,
     "kernel_stop_sha256": "6a47c4cee303ef9916bbf8229e556dcd2f84ccdd054239b4c10f3a6dadecb19e",
     "role": "Local BIOS implementation plus explicit PCSX2 stop/query/SMFLAG captures, not copied code. Reached SIF2 CHCR/QWC clear returns zero; SUBADDR remains 0x19600; first EE SMFLAG write clears selected 0x40000 bits and returns observed readback 0x30000 (later bit-clear captures disambiguate post-write readback). Pinned Play SifSetReg zero return is not used. No active DMA cancellation or IOP reboot completion modeled."
+  },
+  "gs_bootstrap_reference": {
+    "pcsx2": {
+      "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+      "path": "pcsx2/GS.cpp",
+      "sha256": "cbbbe9c635b2e43c5cb2f531d221c4bf28a3d4ed290f246301e06b633628195c"
+    },
+    "play": {
+      "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+      "path": "Source/ee/PS2OS.cpp",
+      "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+    },
+    "role": "Public CSR reset and GS syscall ABI guidance only. Local disc-backed captures establish CSR readback 0x551B4000, GsPutIMR return 0xFF00 and CRT return zero. Play syscall implementations do not establish those return values; native probe requires explicit matching checkpoints. Records only the reached reset/mask/CRT requests; no native GS reset, interrupts, timing or rendering implemented.",
+    "hardware_map": {
+      "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+      "path": "pcsx2/Hw.h",
+      "sha256": "9ea638423ac95123f644e9287a1453d6c48ebc8886dcd0d10fca058bf88b8ee0",
+      "role": "INTC_STAT 0x1000F000; DMAC_CTRL 0x1000E000. No event or DMA semantics inferred from register-address identity alone."
+    }
   }
 }

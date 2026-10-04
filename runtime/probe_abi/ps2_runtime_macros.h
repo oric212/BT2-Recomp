@@ -46,6 +46,9 @@ inline void SET_GPR_VEC(R5900Context* context, unsigned index, ProbeGpr value) {
 inline void SET_GPR_VEC(R5900Context* context, unsigned index, __m128i value) {
     SET_GPR_VEC(context, index, std::bit_cast<ProbeGpr>(value));
 }
+inline ProbeGpr PS2_POR(ProbeGpr left,ProbeGpr right) {
+    return {left.low|right.low,left.high|right.high};
+}
 inline ProbeGpr PS2_PCPYLD(ProbeGpr left, ProbeGpr right) {
     return {right.low, left.low};
 }
@@ -65,6 +68,8 @@ inline float FPU_ADD_S(float left, float right) {
 }
 inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = value; }
 
+#define READ16(address) runtime->read16(rdram, (address))
+#define WRITE16(address, value) runtime->write16(rdram, (address), (value))
 #define WRITE8(address, value) runtime->write8(rdram, (address), (value))
 #define WRITE128(address, value) runtime->write128(rdram, (address), (value))
 #define READ32(address) runtime->read32(rdram, (address))

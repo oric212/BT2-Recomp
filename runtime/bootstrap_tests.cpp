@@ -55,6 +55,25 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 int main() {
     try {
         {
+            PS2Runtime widths;std::vector<std::uint8_t> image(PS2Runtime::ram_size,0xA5);
+            widths.loadMemory(image);auto* ram=widths.memory().data();R5900Context ctx{};
+            widths.write16(ram,2,0x1234);
+            require(widths.read16(ram,2)==0x1234);
+            reject([&]{(void)widths.read16(ram,3);});
+            reject([&]{(void)widths.read16(ram,PS2Runtime::ram_size-1);});
+            const auto bits=PS2_POR({0x0123456789ABCDEF,0xF00000000000000F},{0xFEDCBA9876543210,0x000000000000FFF0});
+            require(bits.low==UINT64_MAX && bits.high==0xF00000000000FFFF);
+            require(ram[1]==0xA5 && ram[2]==0x34 && ram[3]==0x12 && ram[4]==0xA5 && widths.halfword_writes==1);
+            reject([&]{widths.write16(ram,3,0);});
+            reject([&]{widths.write16(ram,PS2Runtime::ram_size-1,0);});
+            reject([&]{widths.write16(ram,0x12001000,0);});
+            reject([&]{widths.handleBreak(ram,&ctx);});
+            reject([&]{widths.Store64(ram,&ctx,0x12001000,0x200);});
+            reject([&]{(void)widths.Load64(ram,&ctx,0x12001000);});
+            require(widths.halfword_writes==1 && widths.gs_csr_reads==0 && widths.gs_csr_reset_writes==0);
+        }
+
+        {
             PS2Runtime sif;
             std::vector<std::uint8_t> sif_image(PS2Runtime::ram_size);
             sif.loadMemory(sif_image);

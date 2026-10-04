@@ -11,6 +11,11 @@ import re
 from run_pipeline import ROOT, verify_generated
 
 
+def write_prepared(path,text):
+    if not path.exists() or path.read_text(encoding='utf-8')!=text:
+        path.write_text(text,encoding='utf-8')
+
+
 def route_tail_calls(source):
     pattern = r"\bFUN_[0-9A-Fa-f]{8}_0x([0-9A-Fa-f]+)\(rdram, ctx, runtime\); return;"
     return re.subn(pattern, lambda match:
@@ -65,11 +70,21 @@ def main():
         if count != expected_count:
             raise ValueError(f"Unexpected emitted tail call count in {filename}; review changed output.")
         destination = patched / source.name
-        destination.write_text(text, encoding="utf-8")
+        write_prepared(destination,text)
         prepared_sources.append({"source": filename,
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "prepared_sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
             "tail_dispatch_hooks": count})
+    # Every actually selected extra entry gets the same deterministic tail routing.
+    # Preserve raw generation and record hashes; no handwritten per-function stub list.
+    from expand_startup import verify_extra
+    for address in verify_extra():
+        source=ROOT/'game/generated/bt2'/f'FUN_{address:08X}_0x{address:x}.cpp'
+        text,count=route_tail_calls(source.read_text(encoding='utf-8'))
+        destination=patched/source.name
+        write_prepared(destination,text)
+        prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

@@ -228,6 +228,9 @@ def main():
     parser.add_argument('--reset-smflag-after-capture', type=Path)
     parser.add_argument('--reset-submission-captures', type=Path, help='Mounted-disc reboot submission/clear capture folder.')
     parser.add_argument('--reset-ready-capture',type=Path,help='Disc-backed ready-branch bit checkpoint; requires submission chain.')
+    parser.add_argument('--gs-csr-capture',type=Path,help='Explicit GS reset/readback checkpoint; requires ready checkpoint.')
+    parser.add_argument('--gs-imr-capture',type=Path)
+    parser.add_argument('--gs-crt-capture',type=Path)
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -331,6 +334,21 @@ def main():
         from verify_sif_reset import verify_ready
         reset_ready=verify_ready(args.reset_ready_capture,reset_submission[1])
         scmd_bind=scmd_bind[0]+reset_ready[0],scmd_bind[1]
+    gs_csr=None
+    if args.gs_csr_capture:
+        if not reset_ready:parser.error('GS checkpoint requires ready evidence')
+        from verify_gs import verify as verify_gs
+        gs_csr=verify_gs(args.gs_csr_capture,reset_ready[1])
+        scmd_bind=scmd_bind[0]+gs_csr[0],scmd_bind[1]
+    gs_imr=gs_crt=None
+    if args.gs_imr_capture:
+        if not gs_csr:parser.error('GS IMR requires CSR checkpoint')
+        gs_imr=verify_gs(args.gs_imr_capture,gs_csr[1],'gs-imr-after')
+        scmd_bind=scmd_bind[0]+gs_imr[0],scmd_bind[1]
+    if args.gs_crt_capture:
+        if not gs_imr:parser.error('GS CRT requires IMR checkpoint')
+        gs_crt=verify_gs(args.gs_crt_capture,gs_imr[1],'gs-crt-after')
+        scmd_bind=scmd_bind[0]+gs_crt[0],scmd_bind[1]
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -448,6 +466,9 @@ def main():
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "gs_imr_provenance": gs_imr[1] if gs_imr else None,
+        "gs_crt_provenance": gs_crt[1] if gs_crt else None,
+        "gs_csr_provenance": gs_csr[1] if gs_csr else None,
         "reset_ready_provenance": reset_ready[1] if reset_ready else None,
         "iop_image_provenance": image_report,
         "reset_submission_provenance": reset_submission[1] if reset_submission else None,

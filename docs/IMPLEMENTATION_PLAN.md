@@ -38,7 +38,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: follow [the scoped GS bring-up plan](GS_BRINGUP_PLAN.md) from the reached FUN_0030FDC0 call. A disc-backed ready-branch checkpoint now permits an explicit one-shot replay of the tested IOP readiness bit; this is not native IOP execution or complete reset/service implementation. Preserve the separate pending IOP lifetime and reject unsupported new service behavior.
+Current next step: follow [the interrupt/video-timing plan](GS_INTERRUPT_TIMING_PLAN.md) at INTC_STAT acknowledgement in FUN_0032F0F0. Initial GS setup now returns using explicit local checkpoints and generated RAM helpers execute. Actual event timing, rendering and IOP execution remain unimplemented; retain strict unsupported boundaries.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 
