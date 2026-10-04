@@ -15,3 +15,9 @@ Pinned public VBLANK source implements WaitVblankEnd as an OR wait on the module
 5. Add tests for absent event, wait/resume ordering, phase/reset ownership and callback failure. Rerun the full startup path toward asset loading/drawing/presentation. Card/controller/authentication and physical transfers remain separate evidence scopes when reached.
 
 Evidence: pinned PS2SDK [vblank.h](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/vblank/include/vblank.h) and [vblank.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/vblank/src/vblank.c). [SIO2 limits](SIO2_BRINGUP_PLAN.md), [reference architecture](REFERENCE_ARCHITECTURE.md).
+
+## Validated startup parking (2026-10-04)
+
+SIO2D now returns resident result 0 with its native worker parked at WaitVblankEnd, mask 4 / OR mode 1, on an owned attribute-2 event initialized to zero. No Vblank phase is generated. Local unique-caller capture at 0x100494 validates result, relocated code, normalized data/BSS, worker parameters/wait and two semaphore objects. The live worker counter at module offset 0x1BD8 is explicitly excluded (native 0/reference 9); native/reference event bits 0/8 both lack the end bit, but their phase/timing is not equivalent.
+
+Owned event set/clear can resume a satisfied worker from its saved import; result bits are published and CLEAR is applied before execution, with a retained satisfaction token. This is tested synchronization, not a Vblank producer. No physical or logical video clock is connected. Nested event wake and suspension inside native export calls remain rejected. Current execution instead reaches the SIO2 device transfer boundary during DS2U_D startup.

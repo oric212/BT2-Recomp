@@ -4,6 +4,8 @@
 #include "mcserv_native.h"
 #include "dbcman_native.h"
 #include "sio2d_native.h"
+#include "ds2ud_native.h"
+void bt2_iop_ds2ud(IopRuntime&,IopContext&);
 void bt2_iop_sio2d(IopRuntime&,IopContext&);
 void bt2_iop_dbcman(IopRuntime&,IopContext&);
 void bt2_iop_mcserv(IopRuntime&,IopContext&);
@@ -83,5 +85,19 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
             const auto& sem=rt.semaphores.at(handle);
             if(sem.attr || sem.count!=1 || sem.maximum!=64)throw std::runtime_error("Native DBCMAN semaphore differs");
         }}, {"cdrom0:\\IRX\\SIO2D.IRX;1",iop_sio2d_base,iop_sio2d_entry,iop_sio2d_gp,iop_sio2d_image,
-        iop_sio2d_export_bounds,bt2_iop_sio2d,[](const IopRuntime&) {throw std::runtime_error("Native SIO2D effects require validation");}}};
+        iop_sio2d_export_bounds,bt2_iop_sio2d,[](const IopRuntime& rt) {
+            const auto lib=rt.libraries.find("sio2d");
+            if(lib==rt.libraries.end() || lib->second.version!=0x203 || rt.threads.size()!=7 || rt.semaphores.size()!=6 || rt.events.size()!=2 || !rt.vblank_event)
+                throw std::runtime_error("Native SIO2D resident objects differ");
+            std::uint32_t id;std::memcpy(&id,rt.ram.data()+iop_sio2d_base+0x1BE8,4);
+            const auto& t=rt.threads.at(id);const auto& event=rt.events.at(rt.vblank_event);
+            if(!t.waiting || t.ready || t.entry!=iop_sio2d_base+0xAE4 || t.gp!=iop_sio2d_gp || t.priority!=46 || t.stacksize!=0x600
+                || t.wait_event!=rt.vblank_event || t.wait_bits!=4 || t.wait_mode!=1 || event.attr!=2 || event.bits)
+                throw std::runtime_error("Native SIO2D Vblank waiter differs");
+            for(unsigned offset:{0x1BECu,0x1BF0u}) {
+                std::uint32_t handle;std::memcpy(&handle,rt.ram.data()+iop_sio2d_base+offset,4);const auto& sem=rt.semaphores.at(handle);
+                if(sem.attr || sem.count!=1 || sem.maximum!=64)throw std::runtime_error("Native SIO2D semaphore differs");
+            }
+        }}, {"cdrom0:\\IRX\\DS2U_D.IRX;1",iop_ds2ud_base,iop_ds2ud_entry,iop_ds2ud_gp,iop_ds2ud_image,
+        iop_ds2ud_export_bounds,bt2_iop_ds2ud,[](const IopRuntime&) {throw std::runtime_error("Native DS2U_D effects require validation");}}};
 }

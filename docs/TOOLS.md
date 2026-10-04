@@ -448,3 +448,16 @@ python tools/iop/verify_rpc_startup.py --profile dbcman --native work/iop/dbcman
 ```
 
 The checker guards identity/hash/trap, resident result, module ownership/text extent, relocated code, full normalized data/BSS, queue thread identity and reference worker sleep/parameters. Native kernel handles and module-local address values are normalized. Opaque options, physical timing/DMA and real RPC requests remain unvalidated. The four completed module entries do not represent complete device functionality.
+
+## SIO2D startup and DS2U_D native generation
+
+Capture `sio2d-module-after` with the explicit local PCSX2/BIOS/disc arguments. The unique EE caller trap is 0x100494, marker B73E. Compare the scoped startup and generate the next supplied IRX locally:
+
+```powershell
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/sio2d-stop.json --sio2d
+python tools/iop/verify_rpc_startup.py --profile sio2d --native work/iop/sio2d-stop.json --reference work/pcsx2-capture/sio2d-module-after/capture.json --module rom/IRX/SIO2D.IRX --output work/iop/sio2d-validation.json
+python tools/iop/generate_native.py rom/IRX/DS2U_D.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x80000 --symbol bt2_iop_ds2ud --prefix iop_ds2ud --output work/iop/ds2ud_native.cpp
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/ds2ud-stop.json --ds2ud
+```
+
+The SIO2D checker guards identity, trap, result, relocated code, normalized data/BSS, Vblank waiter and semaphore ownership. Offset 0x1BD8 is an explicitly unvalidated live counter, reported separately; non-end Vblank phase bits are not compared. DS2U_D generation has 40 provisional ranges / 25 imports and is linked into the optional native targets. Its current FIFO stop is not resident completion. All generated code, captures, images and reports stay ignored.

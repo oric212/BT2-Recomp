@@ -63,11 +63,62 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             throw std::runtime_error("Unsupported IOP semaphore parameters");
         const auto id=memory.next_semaphore++;memory.semaphores.emplace(id,sem);return id;
     };
+    rt.providers[{"thsemap",8}]=[](IopRuntime& memory,IopContext& c) {
+        const auto found=memory.semaphores.find(c.get(4));
+        if(found==memory.semaphores.end())throw std::runtime_error("Unknown IOP semaphore wait");
+        if(!memory.cpu_interrupts_enabled)throw std::runtime_error("IOP semaphore wait with interrupts disabled");
+        if(!found->second.count)throw std::runtime_error("IOP semaphore suspension requires retained native call frames");
+        --found->second.count;return 0u;
+    };
+    rt.providers[{"thevent",6}]=[](IopRuntime& memory,IopContext& c) {
+        const auto found=memory.events.find(c.get(4));
+        if(found==memory.events.end())throw std::runtime_error("Unknown IOP event set");
+        if(!c.get(5))return 0u;
+        auto bits=found->second.bits|c.get(5);
+        std::vector<unsigned> ordered;
+        for(const auto& [id,t]:memory.threads)if(t.waiting && t.wait_event==c.get(4))ordered.push_back(id);
+        std::stable_sort(ordered.begin(),ordered.end(),[&](unsigned a,unsigned b){return memory.threads.at(a).wait_order<memory.threads.at(b).wait_order;});
+        std::vector<unsigned> wake;
+        for(auto id:ordered) {
+            auto& t=memory.threads.at(id);const auto shared=bits&t.wait_bits;
+            if(!((t.wait_mode&1)?shared!=0:shared==t.wait_bits))continue;
+            if(memory.current_thread || !memory.execute)throw std::runtime_error("Nested IOP event wake unsupported");
+            if(t.wait_result)memory.check(IopRuntime::physical(t.wait_result),4);
+            wake.push_back(id);if(t.wait_mode&0x10)bits=0;
+        }
+        found->second.bits|=c.get(5);
+        for(auto id:wake) {
+            auto& t=memory.threads.at(id);
+            if(t.wait_result)memory.write(t.wait_result,found->second.bits,4);
+            if(t.wait_mode&0x10)found->second.bits=0;
+            t.waiting=false;t.ready=true;t.wait_satisfied=true;
+        }
+        std::stable_sort(wake.begin(),wake.end(),[&](unsigned a,unsigned b){return memory.threads.at(a).priority<memory.threads.at(b).priority;});
+        for(auto id:wake) {
+            memory.current_thread=id;
+            try {memory.execute(memory,memory.threads.at(id).context);memory.current_thread=0;throw std::runtime_error("Unexpected IOP worker completion");}
+            catch(const IopYield&) {memory.current_thread=0;}
+            catch(...) {memory.current_thread=0;throw;}
+        }
+        return 0u;
+    };
+    rt.providers[{"thevent",8}]=[](IopRuntime& memory,IopContext& c) {
+        const auto found=memory.events.find(c.get(4));
+        if(found==memory.events.end())throw std::runtime_error("Unknown IOP event clear");
+        found->second.bits&=c.get(5);return 0u;
+    };
     rt.providers[{"thevent",10}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.events.find(c.get(4));
         const auto bits=c.get(5),mode=c.get(6),result=c.get(7);
         if(found==memory.events.end() || !bits || (mode&~0x11u))throw std::runtime_error("Invalid IOP event wait");
         if(result)memory.check(IopRuntime::physical(result),4);
+        const auto owner=memory.threads.find(memory.current_thread);
+        if(owner!=memory.threads.end() && owner->second.wait_satisfied) {
+            auto& t=owner->second;
+            if(t.wait_event!=c.get(4) || t.wait_bits!=bits || t.wait_mode!=mode || t.wait_result!=result)
+                throw std::runtime_error("IOP satisfied wait context differs");
+            t.wait_satisfied=false;t.wait_event=0;return 0u;
+        }
         auto& event=found->second;const auto shared=event.bits&bits;
         if((mode&1)?shared!=0:shared==bits) {
             if(result)memory.write(result,event.bits,4);
@@ -80,7 +131,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(thread==memory.threads.end())throw std::runtime_error("IOP event wait outside owned thread");
         for(const auto& [id,t]:memory.threads)if(t.waiting && t.wait_event==c.get(4) && id!=memory.current_thread && event.attr==0)
             throw std::runtime_error("Multiple waiters on single IOP event");
-        auto& t=thread->second;t.waiting=true;t.ready=false;t.wait_event=c.get(4);t.wait_bits=bits;t.wait_mode=mode;t.wait_result=result;
+        auto& t=thread->second;t.waiting=true;t.ready=false;t.wait_event=c.get(4);t.wait_bits=bits;t.wait_mode=mode;t.wait_result=result;t.wait_order=++memory.next_wait_order;
         throw IopYield{};
     };
     rt.providers[{"thbase",6}]=[](IopRuntime& memory,IopContext& c) {
@@ -99,6 +150,17 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(handler) {if(handler%4)throw std::runtime_error("Unaligned native security callback");memory.check(IopRuntime::physical(handler),4);}
         memory.security_handlers[ordinal]=handler;if(handler)memory.entry_targets.insert(handler);
         return c.get(2); // Callback setter is void; authentication remains unsupported.
+    };
+
+    rt.providers[{"sysclib",12}]=[](IopRuntime& memory,IopContext& c) {
+        const auto destination=c.get(4),source=c.get(5),count=c.get(6);
+        const auto d=IopRuntime::physical(destination),s=IopRuntime::physical(source);
+        if(count) {
+            memory.check(d,count);memory.check(s,count);
+            if(d<s+count && s<d+count)throw std::runtime_error("Overlapping IOP memcpy unsupported");
+            std::memcpy(memory.ram.data()+d,memory.ram.data()+s,count);
+        }
+        return destination;
     };
 
     rt.providers[{"sysclib",14}]=[](IopRuntime& memory,IopContext& c) {

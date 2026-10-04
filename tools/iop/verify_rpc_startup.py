@@ -5,6 +5,7 @@ from inspect_irx import inspect,relocate
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'capture_ee'))
 from capture_ee import EXPECTED_SHA,MARKER,capture_trap
 PROFILES={
+ 'sio2d':{'base':0x7D630,'owned':0x70000,'text':0x1B20,'result':0,'workers':[(0x1BE8,None)],'semaphores':[0x1BEC,0x1BF0],'live':[0x1BD8]},
  'mcserv':{'base':0x74430,'owned':0x50000,'text':0x1240,'result':2,'workers':[(0x36D8,0x36E0)],'semaphores':[]},
  'dbcman':{'base':0x77C30,'owned':0x60000,'text':0x22A0,'result':0,'workers':[(0x2EF8+n*4,0x2D80+n*24) for n in range(4)],'semaphores':[0x2770]},
 }
@@ -31,11 +32,21 @@ def verify(profile,native,ram,metadata,iop,ee,module):
         return p
     for field,queue in config['workers']:
         p=record(word(iop,base+field),0x7F01);id=word(ram,owned+field);t=threads.get(id)
-        require(t is not None and t['waiting'] and t['rpc_queue']==owned+queue and not t['event'],'Native RPC worker ownership differs')
-        require((word(iop,p+4)&255)==4 and word(iop,p+20)==1,'Reference worker sleep differs')
+        require(t is not None and t['waiting'],'Native worker ownership differs')
         require(t['entry']-owned==word(iop,p+48)-base and t['gp']-owned==word(iop,p+60)-base and t['priority']==word(iop,p+4)>>16 and t['stacksize']==word(iop,p+56) and t['attr']==word(iop,p+64),'Native worker parameters differ')
-        require(word(iop,base+queue)==word(iop,base+field),'Reference queue thread differs')
-        ids[field]=ids[queue]=id
+        require((word(iop,p+4)&255)==4,'Reference worker wait state differs')
+        if queue is None:
+            require(not t['rpc_queue'] and t['event'] and t['bits']==4 and t['mode']==1 and not t['result'],'Native Vblank wait differs')
+            require(word(iop,p+20)==4 and word(iop,p+32)==4 and word(iop,p+36)&0xffff==1,'Reference Vblank wait differs')
+            ep=word(iop,p+24)+8
+            require(ep<=len(iop)-32 and word(iop,ep)&0xffff==0x7F03,'Reference event record differs')
+            event=next((e for e in native['event_objects'] if e['id']==t['event']),None)
+            require(event is not None and event['attr']==word(iop,ep+4)==2 and not event['bits']&4 and not word(iop,ep+24)&4,'Vblank event/end absence differs')
+            ids[field]=id
+        else:
+            require(t['rpc_queue']==owned+queue and not t['event'] and word(iop,p+20)==1,'RPC worker sleep/queue differs')
+            require(word(iop,base+queue)==word(iop,base+field),'Reference queue thread differs')
+            ids[field]=ids[queue]=id
     semaphores={s['id']:s for s in native['semaphore_objects']}
     for field in config['semaphores']:
         p=record(word(iop,base+field),0x7F02);id=word(ram,owned+field);s=semaphores.get(id)
@@ -43,10 +54,11 @@ def verify(profile,native,ram,metadata,iop,ee,module):
         ids[field]=id
     for offset in range(config['text'],report['memory_size'],4):
         a=word(ram,owned+offset);b=word(iop,base+offset)
+        if offset in config.get('live',[]):continue
         if offset in ids:b=ids[offset]
         elif a!=b and owned<=a<owned+report['memory_size'] and base<=b<base+report['memory_size']:b=b-base+owned
         require(a==b,'Normalized module data/BSS differs at '+hex(offset))
-    return {'verified':'Relocated code, normalized full data/BSS and native RPC worker ownership/parameters with guarded reference sleep state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers']),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'limitations':'Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
+    return {'verified':'Relocated code, normalized data/BSS and guarded worker ownership/parameters/wait state','module_sha256':report['sha256'],'entry_result':config['result'],'workers':len(config['workers']),'reference_iop_sha256':metadata['iop_capture_sha256'],'native_ram_sha256':hashlib.sha256(ram).hexdigest(),'excluded_live_words':{hex(o):{'native':word(ram,owned+o),'reference':word(iop,base+o)} for o in config.get('live',[])},'limitations':'Vblank phase/timing and excluded live counter are not validated. Scenario-specific kernel layout/base. Full IOP RAM is live; opaque options, physical timing/DMA and RPC request processing are not validated.'}
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--profile',choices=PROFILES,required=True)
     for key in ('native','reference','module','output'):p.add_argument('--'+key,type=Path,required=True)

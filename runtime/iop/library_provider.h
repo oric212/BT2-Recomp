@@ -18,7 +18,7 @@ inline void install_iop_library_provider(IopRuntime& rt) {
         }
         if(name.empty() || memory.libraries.contains(name))
             throw std::runtime_error("IOP duplicate/version registration unsupported");
-        IopRuntime::Library library{table,memory.read(table+8,2),{}};
+        IopRuntime::Library library{table,memory.read(table+8,2),{},c.get(28)};
         for(unsigned n=0;n<bound->second;++n) {
             const auto target=memory.read(table+20+n*4,4);
             if(target) {if(target%4)throw std::runtime_error("Unaligned IOP export");memory.check(IopRuntime::physical(target),4);}

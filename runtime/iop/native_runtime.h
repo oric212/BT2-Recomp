@@ -58,8 +58,9 @@ public:
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;};
     std::map<unsigned,Thread> threads;
+    std::uint64_t next_wait_order=0;
     unsigned next_thread=0x20001,current_thread=0;
     std::function<void(IopRuntime&,IopContext&)> execute;
     std::uint32_t stack_cursor=0x1E0000;
@@ -68,8 +69,8 @@ public:
     unsigned next_semaphore=0x30001;
     struct Event {std::uint32_t attr,option,bits;};
     std::map<unsigned,Event> events;
-    unsigned next_event=0x10001;
-    struct Library {std::uint32_t table; unsigned version; std::vector<std::uint32_t> slots;};
+    unsigned next_event=0x10001,vblank_event=0;
+    struct Library {std::uint32_t table; unsigned version; std::vector<std::uint32_t> slots; std::uint32_t gp=0;};
     std::map<std::string,Library> libraries;
     std::map<std::uint32_t,unsigned> export_bounds;
     std::uint32_t library_head=0;
@@ -79,6 +80,7 @@ public:
     bool sio2_control_known=false;
     std::uint32_t sio2_control=0;
     unsigned sio2_reset_writes=0;
+    std::map<std::uint32_t,std::uint32_t> sio2_parameters;
     unsigned steps=0,access_width=0;
     std::uint32_t access_value=0;
     std::string access_kind;
@@ -96,7 +98,10 @@ public:
     std::uint32_t read(std::uint32_t address,unsigned size) {
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
-        const auto p=physical(address);check(p,size);
+        const auto p=physical(address);
+        if(p==0x1F808268 && size==4 && sio2_control_known)return sio2_control;
+        if(size==4 && sio2_parameters.contains(p))return sio2_parameters.at(p);
+        check(p,size);
         if((size==2 && p%2) || (size==4 && p%4))throw std::runtime_error("Unaligned IOP load");
         std::uint32_t value=0;std::memcpy(&value,ram.data()+p,size);return value;
     }
@@ -104,6 +109,9 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(p>=0x1F808200 && p<0x1F808260 && p%4==0 && size==4) {
+            sio2_parameters[p]=value;return; // Command/port configuration only; no transfer/device reply.
+        }
         if(p==0x1F808268 && size==4 && value==0x3BC) {
             sio2_control=value;sio2_control_known=true;++sio2_reset_writes;return;
         }
@@ -116,7 +124,21 @@ public:
         const auto key=std::make_pair(std::string(library),ordinal);
         imports.push_back(key.first+":"+std::to_string(ordinal));
         const auto found=providers.find(key);
-        if(found==providers.end())throw std::runtime_error("Unresolved IOP import: "+imports.back());
+        if(found==providers.end()) {
+            const auto library_entry=libraries.find(library);
+            if(library_entry==libraries.end() || ordinal>=library_entry->second.slots.size() || !library_entry->second.slots[ordinal] || !execute)
+                throw std::runtime_error("Unresolved IOP import: "+imports.back());
+            if(c.load_register || c.branch_pending)throw std::runtime_error("Pending CPU state at native IOP export call unsupported");
+            const auto target=library_entry->second.slots[ordinal];check(physical(target),4);
+            IopContext callee=c;callee.pc=target;callee.delay_instruction=false;callee.set(28,library_entry->second.gp);callee.set(31,sentinel);
+            entry_targets.insert(target);
+            try {execute(*this,callee);}
+            catch(const IopYield&) {throw std::runtime_error("Native IOP export suspension requires retained call frames");}
+            if(callee.pc!=sentinel)throw std::runtime_error("Native IOP export did not return");
+            const auto ra=c.get(31),gp=c.get(28);c.r=callee.r;c.set(31,ra);c.set(28,gp);c.hi=callee.hi;c.lo=callee.lo;
+            c.load_register=callee.load_register;c.load_value=callee.load_value;
+            return callee.get(2);
+        }
         return found->second(*this,c);
     }
 };

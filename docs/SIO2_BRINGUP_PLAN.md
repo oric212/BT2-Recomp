@@ -18,3 +18,11 @@ Public PS2SDK supplies event/semaphore/thread parameter layouts, first thread st
 ## Continue from here
 
 Follow [the EE LOADFILE lifetime bridge plan](IOP_LOADFILE_BRIDGE_PLAN.md) to connect the completed entry and retained worker. Then gather reached SIO2 accesses/requests and before/after state. Implement only observed control, command, FIFO, DMA and IRQ behavior with explicit known/unknown fields. Resume waiting native threads only when a real modeled event satisfies their masks. Validate transfer results against local captures before acknowledging completion. Controller/memory-card protocol work is a separate scope when actually reached.
+
+## Reached device-transfer boundary (2026-10-04)
+
+DS2U_D executes registered compiled exports using the registering module GP. Its startup acquires a positive semaphore count, copies owned RAM, sets/clears real event flags and resumes the actual SIO2MAN worker. That worker reads its previously written control value and writes command/port configuration. These values are retained without producing a device response. At native PC 0x10148 it writes byte 1 to 0x1F808260 (SIO2 transmit FIFO); the write remains unsupported. Five residents are acknowledged, DS2U_D remains pending, and six other workers wait. Current SIO2MAN state is active, so the earlier parked startup snapshot is historical.
+
+This is a new device/protocol scope beyond module initialization. Before accepting FIFO traffic, establish the complete observed packet and configured port/device, command queue lengths, transmit/receive ownership, and completion ordering from local evidence. Consult pinned PCSX2 Sio2.cpp/IopHwWrite.cpp and BT3 runtime structure. Choose the bounded device model needed by this actual startup request, retaining unknown fields rather than default replies. Validate response bytes and native event/IRQ/return effects against local reference evidence before completing DS2U_D. Do not equate a retained configuration write with a completed transfer.
+
+Current scheduling is cooperative and scoped: FIFO event-wait satisfaction, priority order among woken threads and actual saved-context execution. Nested worker wakes, blocking native-export call frames, general preemption, device responses, SIO2 DMA/IRQ completion and Vblank timing remain unsupported.

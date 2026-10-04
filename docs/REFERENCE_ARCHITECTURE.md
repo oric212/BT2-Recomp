@@ -118,3 +118,7 @@ Pinned [sifman.h](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f0602
 Consulted pinned PS2SDK sifman.c/sifman.h, IOP sifrpc.c/sifcmd.h and common sifrpc-common.h for initialized-flag queries, idempotent RPC init, 24-byte queue / 68-byte server descriptors, list linkage and empty-queue sleep. Authored compatibility providers attach to the validated fresh EE epoch and retain actual compiled worker contexts. MCSERV/DBCMAN startup is compared against separate local unique-caller captures; no physical SIF transfer or successful client request is implied.
 
 Pinned VBLANK ordinal 5 is WaitVblankEnd (not handler registration). vblank.c implements an OR wait on an end-event flag. The reached SIO2D worker requires an owned event/phase producer; no immediate-success result is justified. See [Vblank timing scope](IOP_VBLANK_PLAN.md).
+
+### Native exports, event wake and SIO2 transfer scope
+
+Consulted pinned SDK thsemap.c/thsemap.h (WaitSema ordinal 8 consumes a positive count), sysclib.h (memcpy ordinal 12), thevent.c/thevent.h (SetEventFlag 6, ClearEventFlag 8, FIFO satisfaction, result publication, CLEAR and ready dispatch), and VBLANK source for absent-end waiting. Adapted scoped owned state and compiled export dispatch with retained registration GP; no default success or source implementation copied. Pinned PCSX2 Sio2.cpp and IopHwWrite.cpp establish retained control and command/port register writes, and the reached byte FIFO boundary. No controller replies, timing or interrupt completion are inferred from those configuration writes.

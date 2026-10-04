@@ -22,6 +22,8 @@ void PS2Runtime::receiveNativeModule(std::uint8_t* rdram,R5900Context* context) 
         catch(const std::exception& e) {
             native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;
             native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());
+            native_iop_waiters=0;
+            for(const auto& [thread_id,thread]:native_iop->runtime.threads)if(thread.waiting)++native_iop_waiters;
             throw UnsupportedSyscall(0x77,context->pc);
         }
         native_iop_pc=native_iop->runtime.executing_pc;native_iop_steps=native_iop->runtime.steps;

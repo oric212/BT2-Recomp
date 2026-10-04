@@ -7,7 +7,11 @@
 #include <iostream>
 void bt2_iop_module(IopRuntime&,IopContext&);
 int main(int argc,char** argv) {
-    if(argc!=3 && !(argc==4 && (std::string(argv[3])=="--mcman" || std::string(argv[3])=="--mcserv" || std::string(argv[3])=="--dbcman"))){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman]\n";return 1;}
+    const std::string mode=argc==4?argv[3]:"";
+    const std::vector<std::string> modes={"","--mcman","--mcserv","--dbcman","--sio2d","--ds2ud"};
+    const auto selected=std::find(modes.begin(),modes.end(),mode);
+    if((argc!=3 && argc!=4) || selected==modes.end()){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman|--sio2d|--ds2ud]\n";return 1;}
+    const auto stage=selected-modes.begin();
     if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
         std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
     }
@@ -18,7 +22,13 @@ int main(int argc,char** argv) {
         if(!stream || stream.tellg()!=iop_module_size)throw std::runtime_error("IOP private image size differs");
         std::vector<std::uint8_t> image(iop_module_size);stream.seekg(0);stream.read(reinterpret_cast<char*>(image.data()),image.size());
         if(!stream || !std::equal(image.begin(),image.end(),iop_expected_image.begin()))throw std::runtime_error("IOP image differs from generated source");
-        service.load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");if(argc==4)service.load(1,"cdrom0:\\IRX\\MCMAN.IRX;1");if(argc==4 && (std::string(argv[3])=="--mcserv" || std::string(argv[3])=="--dbcman")) {service.attachEeTransport(1);service.load(1,"cdrom0:\\IRX\\MCSERV.IRX;1");}if(argc==4 && std::string(argv[3])=="--dbcman")service.load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");entry_returned=true;diagnostic="Scoped resident effects validated; transfers remain unvalidated";
+        service.load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");
+        if(stage>=1)service.load(1,"cdrom0:\\IRX\\MCMAN.IRX;1");
+        if(stage>=2) {service.attachEeTransport(1);service.load(1,"cdrom0:\\IRX\\MCSERV.IRX;1");}
+        if(stage>=3)service.load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");
+        if(stage>=4)service.load(1,"cdrom0:\\IRX\\SIO2D.IRX;1");
+        if(stage>=5)service.load(1,"cdrom0:\\IRX\\DS2U_D.IRX;1");
+        entry_returned=true;diagnostic="Scoped resident effects validated; transfers remain unvalidated";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}
         diagnostic=e.what();entry_returned=c.pc==IopRuntime::sentinel;

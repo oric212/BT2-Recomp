@@ -2,6 +2,7 @@
 #include "library_provider.h"
 #include "kernel_provider.h"
 #include "ioman_provider.h"
+#include "vblank_provider.h"
 #include <iostream>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
 void check(bool v) {if(!v)throw std::runtime_error("IOP synthetic result differs");}
@@ -32,6 +33,10 @@ int main() {
         check(iop_sub(0x80000000,0x80000000)==0);
         rejected=false;try{iop_sub(0,0x80000000);}catch(const std::runtime_error&){rejected=true;}check(rejected);
         rejected=false;try{rt.read(0x20000,8);}catch(const std::runtime_error&){rejected=true;}check(rejected);
+        rt.map(0x10000,std::vector<std::uint8_t>(0x1020));rt.execute=bt2_iop_synthetic;
+        rt.libraries.emplace("authored",IopRuntime::Library{0,1,{0x10300},0x18000});
+        c=context(0);c.set(28,0x28000);c.set(31,0x12340);
+        check(rt.import("authored",0,c)==17 && c.get(6)==0x18000 && c.get(28)==0x28000 && c.get(31)==0x12340 && c.pc==0x10000);
         IopRuntime libraries;libraries.map(0x30000,std::vector<std::uint8_t>(64));
         libraries.export_bounds[0x30000]=3;
         libraries.write(0x30000,0x41C00000,4);libraries.write(0x30008,0x101,2);
@@ -54,7 +59,8 @@ int main() {
         const auto parked=worker.context;rejected=false;try{kernel.import("thbase",6,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && worker.context.pc==parked.pc);
         kernel.events.at(event_id).bits=12;kernel.current_thread=thread_id;bt2_iop_synthetic(kernel,worker.context);kernel.current_thread=0;
         check(!worker.waiting && worker.context.pc==IopRuntime::sentinel && worker.context.get(3)==9 && kernel.read(0x20000,4)==12 && kernel.events.at(event_id).bits==0);
-        kernel.write(0xBF808268,0x3BC,4);check(kernel.sio2_control_known && kernel.sio2_control==0x3BC);
+        kernel.write(0xBF808268,0x3BC,4);check(kernel.sio2_control_known && kernel.sio2_control==0x3BC && kernel.read(0xBF808268,4)==0x3BC);
+        kernel.write(0xBF808240,0xFFC00505,4);check(kernel.read(0xBF808240,4)==0xFFC00505);
         rejected=false;try{kernel.write(0xBF808268,0x3BD,4);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.sio2_control==0x3BC);
         host.set(4,0x20010);check(kernel.import("intrman",17,host)==0 && kernel.read(0x20010,4)==1 && !kernel.cpu_interrupts_enabled);
         host.set(4,1);check(kernel.import("intrman",18,host)==0 && kernel.cpu_interrupts_enabled);
@@ -68,6 +74,27 @@ int main() {
         host.set(4,0x101C1);rejected=false;try{kernel.import("secrman",4,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.security_handlers.at(4)==0x101C0);
         host.set(4,0x20040);kernel.write(0x20040,1,4);kernel.write(0x20048,1,4);kernel.write(0x2004C,2,4);
         const auto semaphore=kernel.import("thsemap",4,host);check(semaphore!=event_id && semaphore!=thread_id && kernel.semaphores.at(semaphore).attr==1);
+        host.set(4,semaphore);check(kernel.import("thsemap",8,host)==0 && kernel.semaphores.at(semaphore).count==0);
+        rejected=false;try{kernel.import("thsemap",8,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && !kernel.semaphores.at(semaphore).count);
+        install_iop_vblank_provider(kernel);kernel.current_thread=thread_id;host.set(2,42);
+        const auto registers=host.r;bool yielded=false;try{kernel.import("vblank",5,host);}catch(const IopYield&){yielded=true;}
+        kernel.current_thread=0;check(yielded && host.r==registers && worker.waiting && worker.wait_event==kernel.vblank_event && worker.wait_bits==4 && worker.wait_mode==1 && !kernel.events.at(kernel.vblank_event).bits);
+        worker.wait_mode=0x11;worker.wait_result=0x20000;
+        worker.context={};worker.context.set(4,kernel.vblank_event);worker.context.set(5,4);worker.context.set(6,0x11);worker.context.set(7,0x20000);
+        kernel.execute=[&](IopRuntime& m,IopContext& resume) {
+            check(m.read(0x20000,4)==4 && !m.events.at(kernel.vblank_event).bits);
+            check(m.import("thevent",10,resume)==0 && !worker.wait_satisfied && !worker.wait_event);
+            resume.set(5,0x10);m.import("thevent",10,resume);
+        };
+        host.set(4,kernel.vblank_event);host.set(5,4);check(kernel.import("thevent",6,host)==0 && worker.waiting && worker.wait_bits==0x10 && kernel.current_thread==0);
+        host.set(5,~4u);check(kernel.import("thevent",8,host)==0 && !kernel.events.at(kernel.vblank_event).bits);
+        libraries.execute=[](IopRuntime&,IopContext& export_context) {check(export_context.pc==0x30030 && export_context.get(28)==0x8760);export_context.set(6,export_context.get(28));export_context.set(2,17);export_context.pc=IopRuntime::sentinel;};
+        libraries.libraries.at("test").gp=0x8760;caller.pc=0x4560;caller.set(28,0x3450);caller.set(31,0x5670);caller.set(29,0x7890);
+        check(libraries.import("test",0,caller)==17 && caller.pc==0x4560 && caller.get(28)==0x3450 && caller.get(31)==0x5670 && caller.get(29)==0x7890 && caller.get(6)==0x8760);
+        rejected=false;try{libraries.import("test",1,caller);}catch(const std::runtime_error&){rejected=true;}check(rejected);
+        kernel.write(0x20080,0x12345678,4);host.set(4,0x20090);host.set(5,0x20080);host.set(6,4);
+        check(kernel.import("sysclib",12,host)==0x20090 && kernel.read(0x20090,4)==0x12345678);
+        prior=kernel.ram;host.set(4,0x20082);rejected=false;try{kernel.import("sysclib",12,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && prior==kernel.ram);
         IopRuntime io;io.map(0x10000,std::vector<std::uint8_t>(0x1000));io.map(0x20000,std::vector<std::uint8_t>(128));
         io.execute=bt2_iop_synthetic;install_iop_ioman_provider(io);IopContext request;request.pc=0x10044;request.set(4,0x20060);request.set(28,0x18000);request.set(29,0x20080);
         io.write(0x20060,'m',1);io.write(0x20061,'c',1);io.write(0x20068,'d',1);

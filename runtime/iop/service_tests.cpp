@@ -23,7 +23,8 @@ int main() {
         check(service.runtime.import("sifman",29,query)==1 && fresh.runtime.import("sifman",29,query)==0);
         const auto mcserv=service.load(1,"cdrom0:\\IRX\\MCSERV.IRX;1");check(mcserv.id==3 && mcserv.result==2 && service.runtime.steps==1464);
         const auto dbcman=service.load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");check(dbcman.id==4 && dbcman.result==0 && service.runtime.steps==2226);
-        rejected([&]{service.load(1,"cdrom0:\\IRX\\SIO2D.IRX;1");});check(service.residents.size()==4 && service.runtime.steps==3440);
+        const auto sio2d=service.load(1,"cdrom0:\\IRX\\SIO2D.IRX;1");check(sio2d.id==5 && sio2d.result==0 && service.runtime.steps==3459);
+        rejected([&]{service.load(1,"cdrom0:\\IRX\\DS2U_D.IRX;1");});check(service.residents.size()==5 && service.runtime.steps==4168);
         unsigned waiting=0;for(const auto& [id,t]:service.runtime.threads)if(t.waiting)++waiting;check(waiting==6);
 
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
