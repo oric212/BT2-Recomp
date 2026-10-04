@@ -218,6 +218,8 @@ def main():
     parser.add_argument('--sif-rpc-state-capture', type=Path, help='Explicit reached RPCINIT query result; requires first DMA receive captures.')
     parser.add_argument('--sif-bind-capture', type=Path, help='Checked first CD initialization bind reply; requires RPC state capture.')
     parser.add_argument('--rpc-call-sema-capture', type=Path, help='Checked first RPC call semaphore result; requires bind response capture.')
+    parser.add_argument('--cd-init-capture', type=Path, help='Checked first mode-0 CD initialization completion; requires bind/call-semaphore inputs.')
+    parser.add_argument('--cd-semaphores-capture', type=Path, help='Checked four CD semaphore results; requires CD-init completion.')
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -242,6 +244,23 @@ def main():
                 raise ValueError('RPC bind and call semaphore environment differ.')
             bundle += rpc_call_sema[0]
         sif_bind = bundle, bind_manifest
+    cd_init = None
+    cd_semaphores = None
+    if args.cd_semaphores_capture and not args.cd_init_capture:
+        parser.error('--cd-semaphores-capture requires --cd-init-capture')
+    if args.cd_init_capture:
+        if not sif_bind or not rpc_call_sema:
+            parser.error('--cd-init-capture requires bind and RPC call-semaphore captures')
+        from verify_cd_init import verify as verify_cd_init, verify_semaphores
+        cd_init = verify_cd_init(args.cd_init_capture)
+        if any(cd_init[1][key] != sif_bind[1][key] for key in ('pcsx2_sha256', 'bios_sha256')):
+            raise ValueError('CD-init and bind reference environments differ.')
+        if args.cd_semaphores_capture:
+            cd_semaphores = verify_semaphores(args.cd_semaphores_capture)
+            if any(cd_semaphores[1][key] != cd_init[1][key] for key in ('pcsx2_sha256', 'bios_sha256')):
+                raise ValueError('CD-init and semaphore reference environments differ.')
+            cd_init = cd_init[0] + cd_semaphores[0], cd_init[1]
+
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -283,6 +302,8 @@ def main():
         run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_map.py")])
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_game.py"), "--candidate-map", str(folder / "candidates.csv")])
     verify_generated()
+    from expand_startup import verify_extra
+    verify_extra()
     run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_runtime.py")])
     kernel_generation = None
     if timer_capture:
@@ -346,9 +367,15 @@ def main():
             bundle = folder / 'sif-bind.bin'
             bundle.write_bytes(sif_bind[0])
             entry_command.append(str(bundle))
+        if cd_init:
+            bundle = folder / 'cd-init.bin'
+            bundle.write_bytes(cd_init[0])
+            entry_command.append(str(bundle))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "cd_semaphores_provenance": cd_semaphores[1] if cd_semaphores else None,
+        "cd_init_provenance": cd_init[1] if cd_init else None,
         "rpc_call_semaphore_provenance": rpc_call_sema[1] if rpc_call_sema else None,
         "sif_bind_provenance": sif_bind[1] if sif_bind else None,
         "sif_rpc_provenance": sif_rpc[1] if sif_rpc else None,

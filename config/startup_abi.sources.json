@@ -226,13 +226,13 @@
         "sha256": "8aa32fefb2bdec70fc62f0ced3d902450febb02d94e15c9206ca995520bd01e0"
       }
     ],
-    "role": "ABI and service identity only; no public source copied/linked. CD_SERVER_INIT and sceSifRegisterRpc identify 0x80000592 as CD initialization. RPC_END bind response assigns server/buf/cbuf, invokes iSignalSema, frees pending packet. Local capture establishes retail pointers/effects. Negative syscall -0x43 is accepted only inside the scoped generated RPC_END callback; no hardware interrupt scheduler. Startup now also uses this generated callback in one checked synchronous logical bind delivery with complete caller CPU preservation and scratch-stack restoration. No hardware IRQ scheduling or CD service execution."
+    "role": "ABI and service identity only; no public source copied/linked. CD_SERVER_INIT and sceSifRegisterRpc identify 0x80000592 as CD initialization. RPC_END bind response assigns server/buf/cbuf, invokes iSignalSema, frees pending packet. Local capture establishes retail pointers/effects. Negative syscall -0x43 is accepted only inside the scoped generated RPC_END callback; no hardware interrupt scheduler. Startup now also uses this generated callback in one checked synchronous logical bind delivery with complete caller CPU preservation and scratch-stack restoration. No hardware IRQ scheduling or CD service execution. Extension: one checked standalone mode-0 CD-init request/reply checkpoint invokes generated RPC_END CALL handling; no general service execution or disc access."
   },
   "rpc_bind_cleanup_reference": {
     "repository": "https://github.com/jpd002/Play-",
     "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
-    "role": "sc_DeleteSema returns ID and frees it; invalid ID returns -1. Authored model deletes only the observed last semaphore 3 after bind signal/wait, without wait queues or rescheduling. sc_CreateSema reads initCount/maxCount/option, not unused attribute field. Pinned PS2SDK sceSifCallRpc also leaves attr uninitialized; only the exact first synchronous CD-init call descriptor permits its residual attr, gated by a local validated semaphore result capture. No general attribute semantics or syscall stack clearing."
+    "role": "sc_DeleteSema returns ID and frees it; invalid ID returns -1. Authored model deletes only the observed last semaphore 3 after bind signal/wait, without wait queues or rescheduling. sc_CreateSema reads initCount/maxCount/option, not unused attribute field. Pinned PS2SDK sceSifCallRpc also leaves attr uninitialized; only the exact first synchronous CD-init call descriptor permits its residual attr, gated by a local validated semaphore result capture. No general attribute semantics or syscall stack clearing. This pass also admits four exact captured CD semaphore descriptors and models sc_PollSema nonblocking invalid/empty/success behavior without queues or scheduling."
   }
 }

@@ -888,6 +888,19 @@ int main() {
         table_context.r[3].low = 0x55;
         reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
         require(table_registration.custom_syscall_calls == 0 && table_registration.syscall_registrations == 1);
+        PS2Runtime poll;
+        poll.semaphores.push_back({1, 1, 0});
+        R5900Context poll_context{};
+        poll_context.r[3].low = 0x45; poll_context.r[4].low = 0;
+        poll_context.r[2].high = 0x12345678;
+        poll.handleSyscall(nullptr, &poll_context, 0);
+        require(poll_context.r[2].low == 0 && poll.semaphores[0].count == 0);
+        poll.handleSyscall(nullptr, &poll_context, 0);
+        require(poll_context.r[2].low == UINT64_MAX && poll.semaphores[0].count == 0);
+        poll_context.r[4].low = 99;
+        poll.handleSyscall(nullptr, &poll_context, 0);
+        require(poll_context.r[2].low == UINT64_MAX && poll_context.r[2].high == 0x12345678
+                && poll.semaphore_polls == 3 && poll.semaphore_waits == 0 && poll.semaphore_signals == 0);
         PS2Runtime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;

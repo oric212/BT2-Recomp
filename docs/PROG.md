@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated map/recompilation pipeline work locally. Generated startup completes SIF initialization and its first CD initialization RPC bind using explicit PCSX2 checkpoints and bounded logical receive/response models. The generated response callback preserves the caller CPU and scratch stack, and binding consumes its signal and deletes its temporary semaphore. The next RPC call prepares real input/output descriptors. General DMA/IOP services, hardware interrupts, complete game boot and gameplay remain incomplete.
+The C++20 host and automated map/recompilation pipeline work locally. Generated startup now completes the first CD-init mode-0 RPC using a validated local reply checkpoint, returns through cleanup and CD semaphore/command-handler setup, then enters the next service bind. This is bounded startup compatibility; complete boot, disc access and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, seven CTests, 40 recomp tooling tests, 21 capture-tool tests and the isolated RPC_END probe passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests and 24 capture-tool tests passed. Game files, BIOS, captures, generated sources and automatic binding selections remain ignored. Retail revision is confirmed; function boundaries remain provisional.
 
 ## Current blocker and next step
 
-Generated `FUN_0032F020` stops at the third SifSetDma (`0x77`), resume PC `0x0032F028`. The first CD initialization RPC call (command `0x8000000A`, function number 0) submits two descriptors: four bytes at `0x003A8800` to service buffer `0x0003FB20`, then a 64-byte packet at `0x203A97C0` to `0x00019600`. Requested reply is 16 bytes at `0x003695C0`.
+The next generated RPC bind reaches CreateSema (`0x40`), resume `0x0032EC68`, SP `0x01FFEC40`. Descriptor: `[0x00370000,1,0,0,2,0x003838D8]`. The previous first-bind evidence does not establish this new call's semaphore result or service reply.
 
-Next: validate CD initialization service execution and reply effects against public source and local PCSX2 evidence. The bind completes natively; the service call remains unsupported. No CD status or disc result is fabricated.
+Next: capture this reached bind's semaphore and request/reply effects locally, validate the actual service identity and queue, then rerun. No general CD service or disc result is fabricated.
 
 ## Key counts
 
-- **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
-- **71** distinct functions entered across native probes.
-- **67** functions completed across probes; entry, `FUN_00100388`, `FUN_0031F8B0` and `FUN_00332970` remain partial. This pass completed the RPC bind helper and its newly linked semaphore-delete wrapper; the RPC call helper is entered but partial. Previously completed functions can be reached again and stop on new inputs. These are startup/helper paths, not working gameplay.
+- **7,262** locally generated functions; **7,271** raw generated C++/header files.
+- **76** distinct functions entered / **72** completed across native probes (startup/helpers, not gameplay).
+- This pass completes `FUN_00332970`, `FUN_0031F8B0`, `FUN_0031EDB0`, `FUN_0031F010` and `FUN_0032ECB0`. Entry, `FUN_00100388`, `FUN_00320488` and `FUN_0031F6A8` remain partial. Previously completed helpers can stop on new inputs.
 
 ## Milestones
 

@@ -127,6 +127,10 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x77 && sif_dma_submissions == 2 && cd_init_supplied_) {
+            receiveFirstCdInit(rdram, context);
+            return;
+        }
         if (code == 0 && selector == 0x77 && sif_dma_submissions == 1 && !sif_bind_iop_.empty()) {
             receiveFirstRpcBind(rdram, context);
             return;
@@ -384,10 +388,16 @@ public:
             const bool rpc_call_sema = sif_call_sema_supplied_ && sif_bind_callbacks == 1 && semaphore_deletions == 1
                 && semaphores.size() == 3 && address == initial_sp - 400
                 && maximum == 1 && initial == 0 && option == 0x3838E8;
-            if (attributes != 0 && !rpc_call_sema) {
+            const bool cd_sema = cd_semaphores_supplied_ && cd_init_calls == 1 && semaphore_deletions == 2
+                && cd_semaphores_created < 4 && semaphores.size() == 3 + cd_semaphores_created
+                && address == initial_sp - 304 && maximum == 1
+                && initial == (cd_semaphores_created == 3 ? 0u : 1u)
+                && option == 0x3825B8 + cd_semaphores_created * 16;
+            if (attributes != 0 && !rpc_call_sema && !cd_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
+            if (cd_sema) ++cd_semaphores_created;
             if (rpc_call_sema) { ++rpc_call_semaphores; rpc_call_sema_attributes = attributes; }
             if (!maximum || maximum > INT32_MAX || initial > maximum || semaphores.size() == 256) {
                 context->r[2].low = UINT64_MAX;
@@ -398,13 +408,28 @@ public:
             context->r[2].low = id;
             return;
         }
+        if (code == 0 && selector == 0x45) {
+            // Pinned nonblocking PollSema: never sleeps or reschedules.
+            const auto id = static_cast<std::uint32_t>(context->r[4].low);
+            ++semaphore_polls;
+            if (id >= semaphores.size() || semaphores[id].count == 0) {
+                context->r[2].low = UINT64_MAX;
+                return;
+            }
+            --semaphores[id].count;
+            context->r[2].low = id;
+            return;
+        }
         if (code == 0 && selector == 0x41) {
             const auto id = static_cast<std::uint32_t>(context->r[4].low);
             if (id >= semaphores.size()) { context->r[2].low = UINT64_MAX; return; }
             // Observed completed bind cleanup only, with no waiting threads.
+            const bool bind_cleanup = sif_bind_callbacks == 1 && semaphore_waits == 2
+                && semaphore_deletions == 0 && semaphores[id].option == 0x3838D8;
+            const bool cd_cleanup = cd_init_calls == 1 && semaphore_waits == 3
+                && semaphore_deletions == 1 && semaphores[id].option == 0x3838E8;
             if (id != 3 || semaphores.size() != 4 || semaphores[3].count != 0
-                    || semaphores[3].maximum != 1 || sif_bind_callbacks != 1
-                    || semaphore_waits != 2 || semaphore_deletions)
+                    || semaphores[3].maximum != 1 || (!bind_cleanup && !cd_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -693,6 +718,25 @@ public:
         sif_bind_iop_.assign(bundle.begin(), bundle.begin() + sif_iop_size);
         std::copy_n(bundle.data() + sif_iop_size, 64, sif_bind_reply_.data());
     }
+    void supplyCdInit(std::span<const std::uint8_t> bundle) {
+        if (sif_bind_iop_.empty() || !sif_call_sema_supplied_ || cd_init_supplied_ || (bundle.size() != 88 && bundle.size() != 128))
+            throw std::runtime_error("Invalid/repeated CD-init completion bundle");
+        const std::array<std::uint32_t, 22> expected{0, 0x902,
+            0x1000, 0x3695C0, 0x80000008, 0, 0, 0, 0, 0x3A87A8, 0x8000000A, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0};
+        if (std::memcmp(bundle.data(), expected.data(), 88))
+            throw std::runtime_error("CD-init captured mode/result/reply differs");
+        if (bundle.size() == 128) {
+            const std::array<std::uint32_t, 10> expected_semaphores{0x370000, 1, 0, 0, 0x370000, 0x3825E8, 3, 4, 5, 6};
+            if (std::memcmp(bundle.data() + 88, expected_semaphores.data(), 40))
+                throw std::runtime_error("CD semaphore setup checkpoint differs");
+            cd_semaphores_supplied_ = true;
+        }
+        std::copy_n(bundle.begin(), 88, cd_init_bundle_.begin());
+        cd_init_supplied_ = true;
+    }
+    unsigned semaphore_polls = 0;
+    unsigned cd_init_calls = 0, cd_init_context_preservations = 0, cd_semaphores_created = 0;
     unsigned sif_bind_callbacks = 0;
     unsigned sif_bind_context_preservations = 0;
     unsigned semaphore_deletions = 0;
@@ -855,6 +899,13 @@ private:
         std::copy_n(memory_.data() + 0x3A97C0, 64, sif_iop_.data() + 0x19600);
         sif_iop_[0x19600] = 0;
         std::copy(sif_bind_reply_.begin(), sif_bind_reply_.end(), memory_.begin() + 0x3A94C0);
+        deliverRpcEnd(rdram, context);
+        ++sif_bind_context_preservations;
+        ++sif_bind_callbacks;
+        ++sif_dma_submissions;
+        context->r[2].low = 0x801;
+    }
+    void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context) {
         std::array<std::uint8_t, sizeof(R5900Context)> saved_cpu;
         std::memcpy(saved_cpu.data(), context, saved_cpu.size());
         auto callback = *context;
@@ -887,11 +938,42 @@ private:
             throw std::runtime_error("Generated RPC_END effects differ from capture");
         if (std::memcmp(saved_cpu.data(), context, saved_cpu.size()))
             throw std::runtime_error("RPC_END changed interrupted CPU state");
-        ++sif_bind_context_preservations;
-        ++sif_bind_callbacks;
-        ++sif_dma_submissions;
-        context->r[2].low = 0x801;
     }
+    void receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context) {
+        if (cd_init_calls || sif_bind_callbacks != 1 || sif_dma_submissions != 2
+                || context->r[4].low != initial_sp - 544 || context->r[29].low != context->r[4].low
+                || context->r[5].low != 2 || data_cache_lines != 6 || semaphores.size() != 4
+                || semaphores[3].count != 0 || semaphores[3].maximum != 1
+                || semaphores[3].option != 0x3838E8 || read32(rdram, 0x3A8800) != 0
+                || read32(rdram, 0x3A87A8) != 0x203A97C0 || read32(rdram, 0x3A87AC) != 3
+                || read32(rdram, 0x3A87B0) != 3 || read32(rdram, 0x3A87C4) != 0
+                || read32(rdram, 0x3A87C8) != 0)
+            throw UnsupportedSyscall(0x77, context->pc);
+        const std::array<std::uint32_t, 8> descriptors{0x3A8800, 0x3FB20, 4, 0,
+            0x203A97C0, 0x19600, 64, 0x44};
+        const std::array<std::uint32_t, 16> request{0x440, 0x3FB20, 0x8000000A, 0,
+            5, 0x203A97C0, 3, 0x3A87A8, 0, 4, 0x3695C0, 16, 1, 0x3F570, 0, 0};
+        for (unsigned index = 0; index < descriptors.size(); ++index)
+            if (read32(rdram, static_cast<std::uint32_t>(context->r[4].low) + index * 4) != descriptors[index])
+                throw UnsupportedSyscall(0x77, context->pc);
+        for (unsigned index = 0; index < request.size(); ++index)
+            if (read32(rdram, 0x3A97C0 + index * 4) != request[index])
+                throw UnsupportedSyscall(0x77, context->pc);
+        // One explicit standalone-ELF mode-0 completion checkpoint. Does not
+        // execute retail IOP code, access a disc or provide general CD status.
+        std::copy_n(memory_.data() + 0x3A8800, 4, sif_iop_.data() + 0x3FB20);
+        std::copy_n(memory_.data() + 0x3A97C0, 64, sif_iop_.data() + 0x19600);
+        sif_iop_[0x19600] = 0;
+        std::copy_n(cd_init_bundle_.data() + 8, 64, memory_.data() + 0x3A94C0);
+        std::copy_n(cd_init_bundle_.data() + 72, 16, memory_.data() + 0x3695C0);
+        deliverRpcEnd(rdram, context);
+        ++cd_init_calls;
+        ++cd_init_context_preservations;
+        ++sif_dma_submissions;
+        context->r[2].low = 0x902;
+    }
+    bool cd_init_supplied_ = false, cd_semaphores_supplied_ = false;
+    std::array<std::uint8_t, 88> cd_init_bundle_{};
     bool sif_call_sema_supplied_ = false;
     std::vector<std::uint8_t> sif_bind_iop_;
     std::array<std::uint8_t, 64> sif_bind_reply_{};

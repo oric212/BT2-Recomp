@@ -7,6 +7,9 @@
 #ifdef BT2_STARTUP_KERNEL_PAYLOAD
 #include <bt2_startup_kernel_functions.h>
 #endif
+#ifdef BT2_EXTRA_STARTUP_BINDINGS
+#include <bt2_extra_startup.h>
+#endif
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -19,7 +22,8 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
@@ -165,6 +169,17 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("RPC bind bundle read failed");
             runtime.supplySifBind(bundle);
         }
+        if (cd_mode) {
+            std::ifstream capture(argv[16], std::ios::binary | std::ios::ate);
+            if (!capture || (capture.tellg() != 88 && capture.tellg() != 128)) throw std::runtime_error("Invalid CD-init bundle size");
+            std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(bundle.data()), bundle.size()))
+                throw std::runtime_error("Could not read CD-init bundle");
+            runtime.supplyCdInit(bundle);
+        }
+        runtime.registerFunction(0x31EDB0, FUN_0031EDB0_0x31edb0);
+        runtime.registerFunction(0x31F010, FUN_0031F010_0x31f010);
         runtime.registerFunction(0x332970, FUN_00332970_0x332970);
         runtime.registerFunction(0x32EC70, FUN_0032EC70_0x32ec70);
         runtime.registerFunction(0x3322E8, FUN_003322E8_0x3322e8);
@@ -234,6 +249,9 @@ int main(int argc, char** argv) {
         runtime.registerFunction(0x00338AD8, FUN_00338AD8_0x338ad8);
         runtime.registerFunction(0x00338268, FUN_00338268_0x338268);
         runtime.registerFunction(0x0032E950, FUN_0032E950_0x32e950);
+#ifdef BT2_EXTRA_STARTUP_BINDINGS
+        registerExtraStartup(runtime);
+#endif
         if (timer_mode) {
 #ifdef BT2_KERNEL_PAYLOAD
             runtime.registerKernelFunction(0x80076000, FUN_80076000_0x80076000,
@@ -324,6 +342,51 @@ int main(int argc, char** argv) {
             stop_selector = stop.selector;
             stop_handler = stop.handler;
             stopped = true;
+        }
+        if (cd_mode) {
+            require(stopped && !stop_handler && (stop_target || (stop_selector == 0x40 && context.pc == 0x32EC68)),
+                    "CD continuation did not reach a checked boundary");
+            require(runtime.cd_init_calls == 1 && runtime.cd_init_context_preservations == 1
+                    && runtime.sif_dma_submissions == 3 && runtime.semaphore_deletions == 2
+                    && runtime.semaphore_waits == 3 && runtime.semaphore_signals == 3,
+                    "CD-init callback or cleanup effects differ");
+            if (stop_target) {
+                const bool mapped_stop = (stop_target == 0x320488 && stop_source == 0x1003AC && stop_resume == 0x1003B4
+                        && runtime.guest_calls == 160 && runtime.returns == 158 && context.r[29].low == runtime.initial_sp - 32)
+                    || (stop_target == 0x31F6A8 && stop_source == 0x3204A8 && stop_resume == 0x3204B0
+                        && runtime.guest_calls == 161 && runtime.returns == 158 && context.r[29].low == runtime.initial_sp - 112)
+                    || (stop_target == 0x32ECB0 && stop_source == 0x31F6CC && stop_resume == 0x31F6D4
+                        && runtime.guest_calls == 163 && runtime.returns == 159 && context.r[29].low == runtime.initial_sp - 176);
+                require(mapped_stop && runtime.cd_semaphores_created == 4 && runtime.semaphores.size() == 7,
+                        "Reached mapped-entry boundary differs");
+            } else if (runtime.cd_semaphores_created) {
+                require(runtime.cd_semaphores_created == 4 && runtime.semaphores.size() == 7
+                        && runtime.semaphore_polls == 1 && runtime.guest_calls == 173 && runtime.returns == 167
+                        && context.r[29].low == runtime.initial_sp - 288,
+                        "CD setup and next bind progress differs");
+            } else require(runtime.semaphores.size() == 3 && context.r[29].low == runtime.initial_sp - 304,
+                           "CD semaphore checkpoint boundary differs");
+            std::ofstream report(argv[2]);
+            if (!report) throw std::runtime_error("Could not write CD continuation report");
+            report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc << ",\"selector\":" << stop_selector
+                << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
+                << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls
+                << ",\"returns\":" << runtime.returns << ",\"words\":" << runtime.word_writes
+                << ",\"doublewords\":" << runtime.doubleword_writes << ",\"bytes\":" << runtime.byte_writes
+                << ",\"quads\":" << runtime.quadword_writes << ",\"cache_lines\":" << runtime.data_cache_lines
+                << ",\"aliases\":" << runtime.uncached_word_accesses << ",\"byte_aliases\":" << runtime.uncached_byte_accesses
+                << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
+                << ",\"semas\":" << runtime.semaphores.size() << ",\"sp\":" << context.r[29].low
+                << ",\"lo\":" << context.lo << ",\"cd_init_calls\":" << runtime.cd_init_calls
+                << ",\"deletions\":" << runtime.semaphore_deletions
+                << ",\"polls\":" << runtime.semaphore_polls << ",\"cd_semaphores\":" << runtime.cd_semaphores_created
+                << ",\"arguments\":[" << GPR_U32(&context, 4) << "," << GPR_U32(&context, 5) << "]"
+                << ",\"descriptor_words\":[";
+            for (unsigned index = 0; index < (stop_target ? 0u : 6u); ++index)
+                report << (index ? "," : "") << runtime.read32(runtime.memory().data(), GPR_U32(&context, 4) + index * 4);
+            report << "]}\n";
+            std::cout << "CD-init continuation report written.\n";
+            return 0;
         }
         if (bind_mode) {
             require(stopped && !stop_target && !stop_handler && runtime.sif_bind_callbacks == 1

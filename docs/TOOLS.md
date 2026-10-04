@@ -312,3 +312,9 @@ Append `--sif-bind-capture work/pcsx2-capture/sif-bind-after/capture.json --rpc-
 Omit the bind input to retain the previous second-SifSetDma boundary. Omit only the call-semaphore input to retain the explicit CreateSema boundary in the RPC call. Public PS2SDK leaves that unused attribute field uninitialized; the adapter permits it only for this exact call descriptor with a checked checkpoint, and does not overwrite guest stack contents to match the capture. Full continuation reaches the third submission, with two descriptors and RPC function number 0.
 
 For standalone bundle preparation, `verify_rpc_bind.py` accepts `--call-sema-capture work/pcsx2-capture/rpc-call-sema/capture.json` in addition to `--run-probe`. The isolated callback probe remains useful independently; the entry pipeline now also supports bounded logical delivery.
+
+### Reached startup expansion and CD-init evidence
+
+`python tools/ps2recomp/expand_startup.py --report work/bt2-generation/entry-stop.json` selects a reached exact map entry, verifies generated provenance and writes ignored `extra-startup.cmake`, `bt2_extra_startup.h` and a hash receipt. Reconfigure/rebuild after selection. It rejects interior, duplicate, kernel or unmapped targets. Runtime behavior still requires evidence.
+
+The pipeline accepts `--cd-init-capture work/pcsx2-capture/cd-init-after/capture.json` after bind/call-semaphore inputs, and optionally `--cd-semaphores-capture work/pcsx2-capture/cd-semaphores/capture.json`. Capture points of those names are available in capture_ee.py. Validators check request/reply/descriptor effects, instrumentation and matching reference environments. Current full continuation uses three ignored selections (0x00320488, 0x0031F6A8, 0x0032ECB0); omit the semaphore checkpoint to retain the earlier setup boundary. No disc data is supplied by these captures.

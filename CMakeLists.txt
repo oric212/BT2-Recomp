@@ -135,11 +135,18 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${BT2_GENERATED_DIR}/FUN_0033A7C8_0x33a7c8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0033A800_0x33a800.cpp")
     target_sources(bt2-entry-probe PRIVATE
+        "${BT2_GENERATED_DIR}/FUN_0031EDB0_0x31edb0.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0031F010_0x31f010.cpp"
         "${BT2_GENERATED_DIR}/FUN_00332970_0x332970.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032EC70_0x32ec70.cpp"
         "${BT2_GENERATED_DIR}/FUN_003322E8_0x3322e8.cpp"
         "${BT2_GENERATED_DIR}/FUN_00332258_0x332258.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032EC90_0x32ec90.cpp")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/extra-startup.cmake")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/extra-startup.cmake")
+        target_include_directories(bt2-entry-probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation")
+        target_compile_definitions(bt2-entry-probe PRIVATE BT2_EXTRA_STARTUP_BINDINGS=1)
+    endif()
     option(BT2_BUILD_KERNEL_PAYLOAD "Link the scoped ignored copied-kernel entry" OFF)
     if(BT2_BUILD_KERNEL_PAYLOAD)
         set(BT2_KERNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-kernel-runtime")
