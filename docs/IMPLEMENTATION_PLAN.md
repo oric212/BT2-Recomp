@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: validate the local disc-backed IOPRP300 image and actual reboot receive/boot lifecycle at the pending SifSetDma command 0x80000003. DMA stop, post-stop SUBADDR query and first SMFLAG write now return using checked local evidence. No reset completion or new service state is established. Keep the new IOP boot lifetime separate from earlier CD snapshots.
+Current next step: collect fresh disc-backed IOP boot/service evidence at post-reboot SifGetReg(SMFLAG=4). Local IOPRP300 identity/inventory, reboot submission acknowledgement and four ordered register clears are validated; generated reset helpers return. No reset completion or new service state is established. Keep the pending IOP boot lifetime separate from earlier CD snapshots.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

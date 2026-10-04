@@ -142,6 +142,22 @@ public:
             receiveFirstRpcBind(rdram, context);
             return;
         }
+        if (code == 0 && selector == 0x77 && reset_submission_supplied_ && sif_dma_submissions == 5) {
+            if (iop_reset_pending || reset_smflag_writes != 1 || sif_reset_subaddr_reads != 1
+                    || context->r[4].low != initial_sp-224 || context->r[29].low != context->r[4].low
+                    || context->r[5].low != 1) throw UnsupportedSyscall(selector,context->pc);
+            const std::array<std::uint32_t,4> descriptor{0x3ACC40,0x19600,104,0x44};
+            const std::array<std::uint32_t,6> header{104,0,0x80000003,0,36,0};
+            for(unsigned i=0;i<4;++i) if(read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+i*4)!=descriptor[i])throw UnsupportedSyscall(selector,context->pc);
+            for(unsigned i=0;i<6;++i) if(read32(rdram,0x3ACC40+i*4)!=header[i])throw UnsupportedSyscall(selector,context->pc);
+            constexpr char path[]="rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1";
+            if(!std::equal(std::begin(path),std::end(path),memory_.begin()+0x3ACC58))throw UnsupportedSyscall(selector,context->pc);
+            // Submission acknowledgement only. Retain the request and invalidate
+            // old service lifetime; no receive, image execution or ready flag invented.
+            std::copy_n(memory_.data()+0x3ACC40,104,reset_request_.data());
+            iop_reset_pending=true; prior_iop_services_valid=false; ++iop_epoch;
+            ++sif_dma_submissions;context->r[2].low=0xE01;return;
+        }
         if (code == 0 && selector == 0x77) {
             if (sif_iop_.empty() || sif_dma_submissions || sif_command_reads != 1 || data_cache_lines != 1
                     || context->r[5].low != 1 || context->r[4].low > UINT32_MAX)
@@ -169,16 +185,26 @@ public:
             context->r[2].low = sif_dma_result_;
             return;
         }
+        if (code == 0 && selector == 0x79 && iop_reset_pending) {
+            const auto reg=static_cast<std::uint32_t>(context->r[4].low);
+            const auto value=static_cast<std::uint32_t>(context->r[5].low);
+            const std::array<std::uint32_t,4> regs{4,4,0x80000002,0x80000000};
+            const std::array<std::uint32_t,4> values{0x10000,0x20000,0,0};
+            if(!reset_submission_supplied_ || reset_clear_writes>=4 || reg!=regs[reset_clear_writes] || value!=values[reset_clear_writes]
+                    || context->r[29].low!=initial_sp-224)throw UnsupportedSyscall(selector,context->pc);
+            if(reset_clear_writes<2) { sif_smflag&=~value;context->r[2].low=sif_smflag; }
+            else { if(reset_clear_writes==2) reset_rpcinit=0;else reset_subaddr=0;context->r[2].low=0; }
+            ++reset_clear_writes;return;
+        }
         if (code == 0 && selector == 0x79 && sif_stop_calls) {
             if (!reset_smflag_supplied_ || reset_smflag_writes || sif_reset_subaddr_reads != 1
                     || context->r[4].low != 4 || context->r[5].low != 0x40000
                     || context->r[29].low != initial_sp - 224 || sif_smflag != 0x30000)
                 throw UnsupportedSyscall(selector, context->pc);
             // Captured kernel behavior: EE SMFLAG write clears selected bits,
-            // returning the prior value (different from the pinned Play! return).
-            const auto previous = sif_smflag;
+            // returning the readback value (different from the pinned Play! return).
             sif_smflag &= ~0x40000u; ++reset_smflag_writes;
-            context->r[2].low = previous;
+            context->r[2].low = sif_smflag;
             return;
         }
         if (code == 0 && selector == 0x6B) {
@@ -805,7 +831,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -824,13 +850,21 @@ public:
             if (subaddr!=0x19600) throw std::runtime_error("Reset SUBADDR checkpoint differs");
             sif_reset_subaddr_supplied_=true;
         }
-        if (bundle.size() == 204) {
+        if (bundle.size() >= 204) {
             const std::array<std::uint32_t,3> flags{0x30000,0x30000,0x30000};
             if (std::memcmp(bundle.data()+192,flags.data(),12)) throw std::runtime_error("Reset SMFLAG checkpoint differs");
             sif_smflag=0x30000; reset_smflag_supplied_=true;
         }
+        if(bundle.size()==224) {
+            const std::array<std::uint32_t,5> completion{0xE01,0x20000,0,0,0};
+            if(std::memcmp(bundle.data()+204,completion.data(),20))throw std::runtime_error("Invalid reboot submission/clear checkpoints");
+            reset_submission_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
+    bool iop_reset_pending=false, prior_iop_services_valid=true;
+    unsigned iop_epoch=0, reset_clear_writes=0;
+    std::uint32_t reset_rpcinit=1, reset_subaddr=0x19600;
     unsigned sif_stop_calls = 0, sif_reset_subaddr_reads = 0, reset_smflag_writes = 0;
     std::uint32_t sif_smflag = 0;
     std::uint32_t sif2_chcr = 0, sif2_qwc = 0;
@@ -1116,6 +1150,8 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
+    bool reset_submission_supplied_=false;
+    std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;
     bool scmd_mmode_supplied_ = false;
     std::array<std::uint8_t,64> scmd_mmode_reply_{};

@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -406,7 +406,7 @@ int main(int argc, char** argv) {
                         "SCMD call-semaphore boundary differs");
             } else {
                 require(runtime.semaphore_deletions == 4 && runtime.semaphore_waits == 5 && runtime.semaphore_signals == 6
-                        && runtime.sif_dma_submissions == 5, "SCMD media-mode cleanup differs");
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -426,7 +426,7 @@ int main(int argc, char** argv) {
             }
             if (runtime.sif_stop_calls) {
                 require(runtime.sif_stop_calls == 1 && runtime.sif2_chcr == 0 && runtime.sif2_qwc == 0
-                        && context.r[29].low == runtime.initial_sp - 224,
+                        && (runtime.iop_reset_pending || context.r[29].low == runtime.initial_sp - 224),
                         "SIF stop continuation state differs");
                 if (!runtime.sif_reset_subaddr_reads) {
                     require(!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
@@ -438,7 +438,7 @@ int main(int argc, char** argv) {
                                 && runtime.guest_calls == 216)
                             || (!stop_target && stop_selector == 0x79 && context.pc == 0x32F068
                                 && runtime.guest_calls == 217)), "First reset SMFLAG boundary differs");
-                } else {
+                } else if (!runtime.iop_reset_pending) {
                     require(runtime.reset_smflag_writes == 1 && runtime.sif_reset_subaddr_reads == 1
                             && runtime.sif_smflag == 0x30000 && !stop_target && stop_selector == 0x77
                             && context.pc == 0x32F028 && runtime.guest_calls == 218 && runtime.returns == 213
@@ -453,6 +453,18 @@ int main(int argc, char** argv) {
                     constexpr char boot_argument[] = "rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1";
                     require(std::equal(std::begin(boot_argument),std::end(boot_argument),runtime.memory().begin()+0x3ACC58),
                             "IOP reboot path differs");
+                } else {
+                    require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
+                            && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
+                            && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
+                            && runtime.sif_dma_submissions == 6 && runtime.reset_smflag_writes == 1
+                            && runtime.sif_reset_subaddr_reads == 1 && runtime.returns == 220,
+                            "Pending IOP reboot lifetime/register state differs");
+                    require((stop_target == 0x338108 && stop_source == 0x1003C8 && stop_resume == 0x1003D0
+                                && runtime.guest_calls == 222 && context.r[29].low == runtime.initial_sp - 32)
+                            || (!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
+                                && runtime.guest_calls == 224 && context.r[29].low == runtime.initial_sp - 48
+                                && GPR_U32(&context,4) == 4), "Post-reboot readiness boundary differs");
                 }
             }
             std::ofstream report(argv[2]);
@@ -467,6 +479,9 @@ int main(int argc, char** argv) {
                 << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls
                 << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"reset_subaddr_reads\":" << runtime.sif_reset_subaddr_reads
                 << ",\"smflag_writes\":" << runtime.reset_smflag_writes
+                << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
+                << ",\"iop_reset_pending\":" << (runtime.iop_reset_pending ? "true" : "false")
+                << ",\"prior_iop_services_valid\":" << (runtime.prior_iop_services_valid ? "true" : "false")
                 << ",\"sp\":" << context.r[29].low << ",\"scmd_binds\":" << runtime.scmd_bind_calls << ",\"arguments\":[" << GPR_U32(&context,4) << "," << GPR_U32(&context,5) << "]"
                 << ",\"descriptor_words\":[";
             for(unsigned i=0;i<((stop_selector==0x40 || stop_selector==0x77)?8u:0u);++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4);

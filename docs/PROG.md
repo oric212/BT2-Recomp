@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated recompilation pipeline work locally. Checked startup completes CD setup, SIF handler shutdown, bounded SIF2 stop, the post-stop command-buffer query and the first reset SMFLAG write. Generated code now prepares the real IOP reboot packet. Complete boot, IOP image loading/reset completion, disc access and gameplay remain incomplete.
+The C++20 host and automated recompilation pipeline work locally. Checked startup submits the real IOP reboot request, clears four reset registers and returns through two startup helpers. The local IOPRP300 image matches the disc. Complete IOP boot, disc services and gameplay remain incomplete.
 
-Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests and 36 capture-tool tests passed. Proprietary files, captures, generated code and automatic bindings remain ignored. Retail revision is confirmed; function boundaries remain provisional.
+Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests, 39 capture-tool tests and five IOP-inventory tests passed. Proprietary files, captures, generated code and automatic bindings remain ignored. Retail revision is confirmed; function boundaries remain provisional.
 
 ## Current blocker and next step
 
-SifSetDma (`0x77`) stops at resume `0x0032F028`, SP `0x01FFEC80`. Descriptor: `[0x003ACC40,0x00019600,104,0x44]`. Command `0x80000003` requests IOP reboot with `rom0:UDNL cdrom0:\IRX\IOPRP300.IMG;1`. The reboot has not been submitted or completed.
+Post-reboot SifGetReg(SMFLAG=4), selector `0x7A`, stops at `0x0032F078`, SP `0x01FFED30`, in `FUN_00338108`. The accepted request starts a separate pending IOP lifetime; old service state is invalidated. No reboot completion or ready flag is supplied.
 
-Next: consult the reference architecture first, validate the user's local IOP image and collect disc-backed reset/receive evidence. Establish a separate IOP boot/service lifetime; do not reuse the earlier CD snapshot or fabricate readiness.
+Next: consult the reference architecture and collect fresh disc-backed post-reset IOP boot/service evidence. Determine the ready transition and actual service/import requirements before implementing them; earlier CD snapshots cannot establish the new state.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **86** distinct functions entered / **82** completed across native probes (startup/helpers, not gameplay).
-- This pass completes previous partial `FUN_0032EF30` and newly linked `FUN_0032F060`. Entry, `FUN_00100388`, `FUN_00338158` and `FUN_00337F88` remain partial. Previously completed helpers can stop on new inputs.
+- **87** distinct functions entered / **84** completed across native probes (startup/helpers, not gameplay).
+- This pass completes previous partial `FUN_00337F88` and `FUN_00338158`; newly linked `FUN_00338108` reaches the readiness poll. Entry, `FUN_00100388` and `FUN_00338108` remain partial. Previously completed helpers can stop on new inputs.
 
 ## Milestones
 

@@ -322,3 +322,15 @@ The pipeline accepts `--cd-init-capture work/pcsx2-capture/cd-init-after/capture
 The next checked continuation adds `--scmd-bind-capture work/pcsx2-capture/scmd-bind-after/capture.json`, then optionally `--scmd-mmode-capture work/pcsx2-capture/scmd-mmode-after/capture.json`. It requires CD-init/semaphore evidence and matching reference environments. Omit media-mode evidence to retain its CreateSema boundary. Bindings for nine subsequent reached entries remain in the ignored selection receipt. The full path stops at SifStopDma; no IOP reset or disc load is claimed.
 
 Reset preparation adds `--sif-stop-capture`, then `--sif-reset-subaddr-capture`, then the paired `--reset-smflag-before-capture` / `--reset-smflag-after-capture` manifests from equally named capture folders. Each requires the previous evidence and matching reference environment. Stop/query and SMFLAG validators are in `tools/capture_ee/verify_sif_reset.py`. Omit each new input to preserve the earlier checked boundary. Full continuation stops before the disc-backed reboot submission; it supplies no IOPRP image or reset readiness.
+
+## Disc-backed reboot submission and local IOP inventory
+
+```powershell
+python tools/iop/inspect_image.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+```
+
+The tool compares the existing local `rom/IRX/IOPRP300.IMG` with its exact ISO9660 path and writes bounded ROMDIR/ELF-header inventory to ignored `work/iop/image.json`. It does not extract, load or execute modules.
+
+Use `capture_ee.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"` with existing PCSX2/BIOS arguments for each capture point: `reset-submit-after`, `reset-cmd-clear`, `reset-flags-after`, `reset-rpc-clear`, `reset-subaddr-clear`. Each launches an independently instrumented local ELF with that local disc mounted. Publications record the submission return and subsequent register clears; they are EE evidence, not post-reset IOP snapshots.
+
+Append `--reset-submission-captures work/pcsx2-capture` to the full pipeline after all reset-preparation inputs. It verifies image identity, capture hashes/traps/publications, packet/path, matching disc/PCSX2/BIOS and retains provenance in the ignored pipeline receipt. Omitting this new input preserves the pre-submission boundary. Earlier standalone checkpoints and these disc-backed observations remain separate experiments. The bounded runtime acknowledges the exact request, invalidates old service state and stops at the first boot-readiness poll; it does not execute IOP code or fabricate readiness.

@@ -51,3 +51,42 @@ class SmflagEvidenceTests(unittest.TestCase):
     def test_truncated_capture_rejected(self):
         with self.assertRaises(ValueError):
             verifier.validate_smflag_publication(self.fixture('reset-smflag-before')[:-1],'reset-smflag-before')
+
+
+class RebootSubmissionEvidenceTests(unittest.TestCase):
+    def check_chain(self, mutation=None):
+        from pathlib import Path
+        import json
+        points = [('reset-submit-after',0xE01,None),('reset-cmd-clear',0x20000,0x20000),
+                  ('reset-flags-after',0,0),('reset-rpc-clear',0,0),('reset-subaddr-clear',0,0)]
+        captures={}; manifests={}
+        for point,result,flag in points:
+            address,trap,marker=capture_trap(point)
+            ee=bytearray(32*1024*1024)
+            ee[address:address+len(trap)]=trap
+            struct.pack_into('<4I',ee,MARKER,marker,result,0x1FFEC80,flag or 0)
+            struct.pack_into('<6I',ee,0x3ACC40,104,0,0x80000003,0,36,0)
+            ee[0x3ACC58:0x3ACC7D]=b'rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1\0'
+            m={'source_elf_sha256':verifier.EXPECTED_SHA,'capture_point':point+': authored fixture',
+               'pcsx2_sha256':'authored-pcsx2','bios_sha256':'authored-bios','disc_sha256':'authored-disc',
+               'patch':{'address':address,'size':len(trap),'authored_words':list(struct.unpack('<'+str(len(trap)//4)+'I',trap)),
+                        'marker_address':MARKER,'marker_value':marker}}
+            if mutation:mutation(point,ee,m)
+            m['capture_sha256']=hashlib.sha256(ee).hexdigest()
+            captures[point]=ee;manifests[point]=m
+        with patch.object(Path,'read_text',lambda path,**kw:json.dumps(manifests[path.parent.name])), \
+             patch.object(Path,'read_bytes',lambda path:captures[path.parent.name]):
+            return verifier.verify_submission_chain(Path('authored'),{'disc_sha256':'authored-disc'})
+
+    def test_authored_chain(self):
+        self.assertEqual(self.check_chain()[0],struct.pack('<5I',0xE01,0x20000,0,0,0))
+
+    def test_wrong_disc_rejected(self):
+        def mutate(point,ee,m):
+            if point=='reset-submit-after':m['disc_sha256']='another-disc'
+        with self.assertRaises(ValueError):self.check_chain(mutate)
+
+    def test_wrong_flag_readback_rejected(self):
+        def mutate(point,ee,m):
+            if point=='reset-cmd-clear':struct.pack_into('<I',ee,MARKER+12,0x30000)
+        with self.assertRaises(ValueError):self.check_chain(mutate)
