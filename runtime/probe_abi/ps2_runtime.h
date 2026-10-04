@@ -139,6 +139,10 @@ public:
             context->pc = resume;
             return;
         }
+        if(code==0 && selector==0x77 && post_cd.supplied && post_sif.rpc_initialized && iop_epoch==1
+            && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
+        if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
+            && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
         if(code==0 && post_sif.supplied && gif_dma.completions==2 && iop_epoch==1) {
             if(selector==0x78 && post_sif.phase==2) {
                 post_sif.chain();return; // SDK declares void, retain v0.
@@ -545,7 +549,14 @@ public:
             // Same reached RPC helper as before reboot; attr remains unused stack residue.
             const bool fresh_bind_sema = post_sif.rpc_initialized && semaphores.size()==7
                 && address==initial_sp-320 && maximum==1 && initial==0 && option==0x3838D8;
-            if (attributes != 0 && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            const bool fresh_call_sema=post_cd.supplied && post_cd.binds==2 && !post_cd.calls && semaphores.size()==7
+                && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838E8;
+            const bool fresh_scmd_sema=post_cd.scmd_supplied && post_cd.calls==1 && semaphores.size()==7 && maximum==1 && initial==0
+                && ((!post_cd.scmd_binds && address==initial_sp-288 && option==0x3838D8)
+                    || (post_cd.scmd_binds==1 && !post_cd.modes && address==initial_sp-304 && option==0x3838E8));
+            const bool fresh_loader_bind_sema=post_cd.modes==1 && semaphores.size()==7
+                && address==initial_sp-384 && maximum==1 && initial==0 && option==0x3838D8;
+            if (attributes != 0 && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -584,8 +595,14 @@ public:
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838D8;
             const bool mmode_cleanup = scmd_mmode_calls == 1 && semaphore_waits == 5 && semaphore_deletions == 3
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838E8;
+            const bool fresh_cleanup=post_cd.supplied && id==7 && semaphores.size()==8
+                && semaphore_deletions==3+post_cd.operations()
+                && ((post_cd.binds && !post_cd.calls && semaphores[id].option==0x3838D8)
+                    || (post_cd.calls==1 && !post_cd.scmd_binds && semaphores[id].option==0x3838E8)
+                    || (post_cd.scmd_binds==1 && !post_cd.modes && semaphores[id].option==0x3838D8)
+                    || (post_cd.modes==1 && semaphores[id].option==0x3838E8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup))
+                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -904,7 +921,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988 && bundle.size() != 1124)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988 && bundle.size() != 1124 && bundle.size() != 1332 && bundle.size() != 1464)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -971,13 +988,15 @@ public:
                 throw std::runtime_error("GIF idle/staging/reference return evidence differs");
             gif_dma.supply(bundle.subspan(376,240));gif_dma_supplied_=true;
             if(bundle.size()>=988)gif_dma.supplySync(bundle.subspan(616,372));
-            if(bundle.size()==1124)post_sif.supply(bundle.subspan(988,136));
+            if(bundle.size()>=1124)post_sif.supply(bundle.subspan(988,136));
+            if(bundle.size()>=1332)post_cd.supply(bundle.subspan(1124));
         }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
     GifDmaStaging gif_dma;
     PostResetSif post_sif;
+    PostResetCd post_cd;
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1149,7 +1168,8 @@ public:
     }
 
     bool eeCheckpointDue() {
-        if (++checkpoints_ > 1000000) throw std::runtime_error("Bootstrap execution budget exceeded");
+        // One observed null-bind retry executes a 2^20+1-iteration guest loop.
+        if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u)) throw std::runtime_error("Bootstrap execution budget exceeded");
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
     }
 
@@ -1261,6 +1281,62 @@ private:
             throw std::runtime_error("Generated RPC_END effects differ from capture");
         if (std::memcmp(saved_cpu.data(), context, saved_cpu.size()))
             throw std::runtime_error("RPC_END changed interrupted CPU state");
+    }
+    void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
+        const bool bind=!post_cd.scmd_binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
+        if(context->r[29].low!=d || d!=initial_sp-(bind?432:448) || context->r[5].low!=(bind?1u:2u)
+            || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1
+            || semaphores[7].option!=(bind?0x3838D8u:0x3838E8u) || iop_epoch!=1 || prior_iop_services_valid)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,4> desc={0x203A97C0,0x1E640,64,0x44};
+        for(unsigned n=0;n<4;++n)if(read32(rdram,d+(bind?0:16)+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,9> request={bind?64u:0x440u,bind?0u:0x439A8u,bind?0x80000009u:0x8000000Au,0,5,0x203A97C0,bind?5u:6u,0x369F40,bind?0x80000593u:34u};
+        for(unsigned n=0;n<9;++n)if(read32(rdram,0x3A97C0+n*4)!=request[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,0x369F40)!=0x203A97C0 || read32(rdram,0x369F44)!=(bind?5u:6u) || read32(rdram,0x369F48)!=7)
+            throw UnsupportedSyscall(0x77,context->pc);
+        if(!bind) {
+            const std::array<std::uint32_t,4> payload={0x369A00,0x439A8,4,0};
+            const std::array<std::uint32_t,5> args={4,0x3695C0,4,1,0x434F0};
+            for(unsigned n=0;n<4;++n)if(read32(rdram,d+n*4)!=payload[n])throw UnsupportedSyscall(0x77,context->pc);
+            for(unsigned n=0;n<5;++n)if(read32(rdram,0x3A97C0+36+n*4)!=args[n])throw UnsupportedSyscall(0x77,context->pc);
+            if(read32(rdram,0x369A00)!=2)throw UnsupportedSyscall(0x77,context->pc);
+            write32(rdram,0x3695C0,1);
+        }
+        std::copy_n(post_cd.replies.data()+(bind?208:272),64,memory_.data()+0x3A94C0);
+        deliverRpcEnd(rdram,context,0x369F40,7,0x434F0,0x439A8);
+        if(bind)++post_cd.scmd_binds;else ++post_cd.modes;
+        ++sif_dma_submissions;context->r[2].low=0x20000+post_cd.operations();
+    }
+    void receiveFreshCd(std::uint8_t* rdram,R5900Context* context) {
+        const bool bind=post_cd.binds<2;
+        auto d=static_cast<std::uint32_t>(context->r[4].low);checkMemory(rdram,d,bind?16:32);
+        if(context->r[29].low!=d || d!=initial_sp-(bind?464:544) || static_cast<std::uint32_t>(context->r[5].low)!=(bind?1u:2u)
+            || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1
+            || semaphores[7].option!=(bind?0x3838D8u:0x3838E8u) || prior_iop_services_valid)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const unsigned packet_offset=bind?0u:16u;
+        const std::array<std::uint32_t,4> desc={0x203A97C0,0x1E640,64,0x44};
+        for(unsigned n=0;n<4;++n)if(read32(rdram,d+packet_offset+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+        const unsigned rpc_id=bind?2+post_cd.binds:4;
+        const std::array<std::uint32_t,9> request={bind?64u:0x440u,bind?0u:0x441B8u,bind?0x80000009u:0x8000000Au,0,5,0x203A97C0,rpc_id,0x3A87A8,bind?0x80000592u:0u};
+        for(unsigned n=0;n<request.size();++n)if(read32(rdram,0x3A97C0+n*4)!=request[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,0x3A87A8)!=0x203A97C0 || read32(rdram,0x3A87AC)!=rpc_id || read32(rdram,0x3A87B0)!=7)
+            throw UnsupportedSyscall(0x77,context->pc);
+        if(!bind) {
+            const std::array<std::uint32_t,4> payload={0x3A8800,0x441B8,4,0};
+            const std::array<std::uint32_t,5> args={4,0x3695C0,16,1,0x43388};
+            for(unsigned n=0;n<4;++n)if(read32(rdram,d+n*4)!=payload[n])throw UnsupportedSyscall(0x77,context->pc);
+            for(unsigned n=0;n<5;++n)if(read32(rdram,0x3A97C0+36+n*4)!=args[n])throw UnsupportedSyscall(0x77,context->pc);
+            if(read32(rdram,0x3A8800)!=0)throw UnsupportedSyscall(0x77,context->pc);
+            std::copy_n(post_cd.replies.data()+192,16,memory_.data()+0x3695C0);
+        }
+        const unsigned reply_offset=bind?post_cd.binds*64:128;
+        std::copy_n(post_cd.replies.data()+reply_offset,64,memory_.data()+0x3A94C0);
+        const bool bound=!bind || post_cd.binds==1;
+        deliverRpcEnd(rdram,context,0x3A87A8,7,bound?0x43388:0,bound?0x441B8:0);
+        if(bind)++post_cd.binds;else ++post_cd.calls;
+        ++sif_dma_submissions;
+        context->r[2].low=0x20000+post_cd.binds+post_cd.calls; // authored logical token
     }
     void receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context) {
         if (cd_init_calls || sif_bind_callbacks != 1 || sif_dma_submissions != 2

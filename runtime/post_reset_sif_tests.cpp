@@ -20,5 +20,19 @@ int main() {
     check(sif.get(0x80000002)==0);packet[0]=16;packet[3]=1;check(sif.submit(bytes.first(16))!=0);
     check(sif.sreg_responses==1 && sif.submissions==2);sif.set(0x80000002,1);
     check(sif.phase==14 && sif.rpc_initialized);reject([&]{sif.submit(bytes.first(16));});reject([&]{sif.get(0x80000002);});
+    PostResetCd cd;
+    std::array<std::uint32_t,52> replies{};
+    for(unsigned n : {0u,16u}) {replies[n+2]=0x80000008;replies[n+5]=0x203A97C0;replies[n+7]=0x3A87A8;replies[n+8]=0x80000009;}
+    replies[25]=0x43388;replies[26]=0x441B8;
+    replies[32]=0x1000;replies[33]=0x3695C0;replies[34]=0x80000008;replies[39]=0x3A87A8;replies[40]=0x8000000A;
+    replies[48]=1;replies[49]=replies[50]=0x225;
+    auto service=std::span(reinterpret_cast<const std::uint8_t*>(replies.data()),sizeof(replies));
+    reject([&]{cd.supply(service.first(204));});check(!cd.supplied);
+    replies[25]=0x3F570;reject([&]{cd.supply(service);});check(!cd.supplied);
+    replies[25]=0x43388;
+    std::array<std::uint8_t,340> missing_service{};std::copy(service.begin(),service.end(),missing_service.begin());
+    reject([&]{cd.supply(missing_service);});check(!cd.supplied);
+    cd.supply(service);check(cd.supplied && !cd.scmd_supplied && !cd.operations());
+    reject([&]{cd.supply(service);});
     std::cout<<"Fresh SIF transport tests passed\n";
 }

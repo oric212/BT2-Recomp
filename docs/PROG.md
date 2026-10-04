@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The generated probe consumes both startup GS clears and now completes the second SIF initialization after the IOP reboot. A separate transport lifetime installs the fresh command buffer and delivers the validated SET_SREG response. No displayed frame, native video clock or native IOP execution is established.
+The generated probe consumes both startup GS clears, completes fresh SIF transport initialization, and now returns from post-reset CD initialization and media-mode setup. Validated epoch-owned replies run through the generated EE callback and semaphore cleanup. No displayed frame, native IOP execution or general disc backend is established.
 
-Latest verification: MSVC checkpoint pipeline, nine CTests, 66 capture tests and 43 recomp-tool tests. Local content, captures and generated code remain ignored.
+Latest verification: MSVC checkpoint pipeline, nine CTests, 79 capture tests and 43 recomp-tool tests. Local content, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-Fresh RPC bind submission: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB90`, requesting service `0x80000592` through IOP buffer `0x1E640`. Full probe: **305 calls / 298 returns**. Old service bindings remain invalid; transport initialization does not establish service execution.
+LOADFILE service bind: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB50`, requesting `0x80000006` for client `0x003ACC00` through fresh IOP buffer `0x1E640`. Full probe: **400 calls / 391 returns**. Old service bindings remain invalid; no loader reply or successful module load is supplied.
 
-Next: [post-reset IOP service ownership and delivery](POST_RESET_IOP_SERVICES_PLAN.md). The fresh live capture contains a candidate service record at `0x43388`, while the old address contains code. Verify the new bind/reply and service lifetime before accepting responses.
+Next: [LOADFILE and IOP module loading](LOADFILE_IOP_MODULE_PLAN.md). Establish the requested loader reply and module path, then plan module ownership, relocation/import resolution and execution from BT2 evidence.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **104** distinct functions entered / **102** completed across native probes (startup/helpers, not gameplay).
-- This pass adds and completes `FUN_0032F040` and `FUN_00331840`; re-entered SIF initialization now returns. Counts describe startup helpers, not restored gameplay. Entry/main remain partial.
+- **108** distinct functions entered / **103** completed across native probes (startup/helpers, not gameplay).
+- Added `FUN_00333B48` (completed), `FUN_00337C28`, `FUN_00337A00` and `FUN_00337228` (partial at loader bind). Existing CD/media helpers complete again. Counts describe startup helpers, not restored gameplay; entry/main remain partial.
 - Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No rendered/presented frame or complete game boot.
 
 ## Milestones

@@ -34,6 +34,10 @@
     {
       "path": "iop/system/sifcmd/src/sifcmd.c",
       "sha256": "40f4956fa3500bdc82ce1b6e6da8f0c771faa81095da6e45958e3afbefbedc5e"
+    },
+    {
+      "path": "ee/kernel/src/loadfile.c",
+      "sha256": "5ab0dd152ca966fb23eb077176a998eb8b5280442f799a78b18c6575eef1996e"
     }
   ],
   "bootstrap_model_reference": {
@@ -347,5 +351,6 @@
     ],
     "role": "Public PSMCT32/PSMZ24 page, block and pixel addressing, depth XOR and 24-bit preservation. Authored bit placement and transactional scoped sprite operation; no reference implementation copied. Unknown VRAM bits remain unknown. Independent BT2 checkpoints establish first transfer polling and idle VU status. The second observed same-form packet reuses the bounded logical DMA sequence; no physical timing or presentation claimed. Reached CSR reset initializes drawing-register defaults (including SCANMSK/FBA); VRAM is not cleared."
   },
-  "post_reset_sif_role": "Pinned public command INIT_CMD opt 0/1 and SET_SREG layout/order, separate transport lifetime. Local before/after captures establish buffer ownership and response. Authored nonzero logical submission tokens; no native IOP execution or renewed service validity."
+  "post_reset_sif_role": "Pinned public command INIT_CMD opt 0/1 and SET_SREG layout/order, separate transport lifetime. Local before/after captures establish buffer ownership and response. Authored nonzero logical submission tokens; no native IOP execution or renewed service validity.",
+  "post_reset_service_role": "Public RPC_END bind/client/semaphore semantics and LOADFILE service identity. Fresh BT2 captures establish epoch-owned CD/SCMD replies and results; generated EE callback executes. One logical null-bind retry with bounded guest loop; no native IOP scheduling or general disc/module backend. No implementation copied."
 }

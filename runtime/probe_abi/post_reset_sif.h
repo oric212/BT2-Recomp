@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -57,4 +58,31 @@ public:
     bool supplied=false,rpc_initialized=false;
     unsigned phase=0,submissions=0,sreg_responses=0;
     std::uint32_t ee_receive_address=0;
+};
+
+// Diagnostic service ownership for epoch 1, independent of pre-reset clients.
+class PostResetCd {
+public:
+    void supply(std::span<const std::uint8_t> evidence) {
+        std::array<std::uint32_t,85> expected{};
+        for(unsigned n : {0u,16u}) {
+            expected[n+2]=0x80000008;expected[n+5]=0x203A97C0;
+            expected[n+7]=0x3A87A8;expected[n+8]=0x80000009;
+        }
+        expected[25]=0x43388;expected[26]=0x441B8;
+        expected[32]=0x1000;expected[33]=0x3695C0;expected[34]=0x80000008;
+        expected[39]=0x3A87A8;expected[40]=0x8000000A;
+        expected[48]=1;expected[49]=expected[50]=0x225;
+        expected[54]=0x80000008;expected[57]=0x203A97C0;expected[59]=0x369F40;expected[60]=0x80000009;
+        expected[61]=0x434F0;expected[62]=0x439A8;
+        expected[68]=0x400;expected[69]=0x3695C0;expected[70]=0x80000008;expected[75]=0x369F40;expected[76]=0x8000000A;expected[84]=1;
+        if(supplied || (evidence.size()!=208 && evidence.size()!=340) || std::memcmp(evidence.data(),expected.data(),evidence.size()))
+            throw std::runtime_error("Fresh CD evidence differs");
+        std::copy(evidence.begin(),evidence.end(),replies.begin());supplied=true;scmd_supplied=evidence.size()==340;
+    }
+    bool supplied=false;
+    bool scmd_supplied=false;
+    unsigned binds=0,calls=0,scmd_binds=0,modes=0;
+    unsigned operations() const {return binds+calls+scmd_binds+modes;}
+    std::array<std::uint8_t,340> replies{};
 };

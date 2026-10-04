@@ -26,9 +26,27 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
                    0xAF190000, 0x08000000 | ((HANDLER + 16) >> 2), 0)
 
 
+FRESH_BIND_STUB=0x01000000
+
+def fresh_bind_stub(success=False,scmd=False):
+    # Earlier invocation resumes displaced BGEZL with its conditional delay slot.
+    words=[0x3C1A003A,0x375A95A0,0x8F5A0000,0x3C1B0001,0x377BE640,0,0]
+    if success:
+        words += [0x3C1A0036 if scmd else 0x3C1A003A,0x375A9F64 if scmd else 0x375A87CC,0x8F5A0000,0,0]
+    words += [0x3C180038,0x37187E80,0xFF020008,0xAF1D0010,0x34190000|(0xB736 if scmd else (0xB734 if success else 0xB733)),0xAF190000]
+    loop=len(words); words += [0x08000000|((FRESH_BIND_STUB+loop*4)>>2),0]
+    early=len(words)
+    words += [0x04430003 if scmd else 0x04A30003,0x8E020024 if scmd else 0x8E220024,0x08000000|((0x31F794 if scmd else 0x31F990)>>2),0,0x08000000|((0x31F7DC if scmd else 0x31F9D4)>>2),0]
+    words[5]=0x175B0000|(early-6)
+    if success:words[10]=0x13400000|(early-11)
+    return struct.pack('<'+str(len(words))+'I',*words)
+
 def capture_trap(point):
-    if point in ('post-sif-before','post-sif-after'):
-        address,marker={'post-sif-before':(0x1003E0,0xB730),'post-sif-after':(0x1003E8,0xB731)}[point]
+    if point=='post-scmd-bind-success':return 0x31F78C,struct.pack('<2I',0x08000000|(FRESH_BIND_STUB>>2),0),0xB736
+    if point in ('post-cd-bind-after','post-cd-bind-success','post-scmd-bind-success'):
+        return 0x31F984,struct.pack('<2I',0x08000000|(FRESH_BIND_STUB>>2),0x0040282D),(0xB734 if point.endswith('success') else 0xB733)
+    if point in ('post-sif-before','post-sif-after','post-mmode-after','post-cd-after'):
+        address,marker={'post-sif-before':(0x1003E0,0xB730),'post-sif-after':(0x1003E8,0xB731),'post-cd-after':(0x1003F0,0xB732),'post-mmode-after':(0x1003F8,0xB735)}[point]
         # Unique caller after the GS helper; following startup is intentionally
         # replaced by the halt. Earlier shared SIF initialization remains intact.
         words=[0x3C180038,0x37187E80,0xFF020008,0xAF1D0010]
@@ -174,6 +192,16 @@ def instrument(data, point='kernel-handler'):
     offset = seg['file_offset'] + address - seg['virtual_address']
     patched = bytearray(data)
     patched[offset:offset + len(trap)] = trap
+    if point in ('post-cd-bind-after','post-cd-bind-success','post-scmd-bind-success'):
+        expected=struct.pack('<2I',0x04430013,0x8E020024) if point=='post-scmd-bind-success' else struct.pack('<3I',0x0040282D,0x04A30012,0x8E220024)
+        if data[offset:offset+len(expected)]!=expected:raise ValueError('Displaced bind branch differs')
+        phoff=struct.unpack_from('<I',data,28)[0]; phsize,count=struct.unpack_from('<HH',data,42)
+        empty=[phoff+n*phsize for n in range(count) if struct.unpack_from('<8I',data,phoff+n*phsize)[0]==1 and struct.unpack_from('<8I',data,phoff+n*phsize)[4:6]==(0,0)]
+        if len(empty)!=1:raise ValueError('Expected one unused ELF load record')
+        if any(x['virtual_address']<=FRESH_BIND_STUB<x['virtual_address']+x['memory_size'] for x in metadata['load_segments']):raise ValueError('Authored stub overlaps retail load')
+        file_offset=(len(patched)+4095)&~4095; stub=fresh_bind_stub(point.endswith('success'),point=='post-scmd-bind-success')
+        patched.extend(bytes(file_offset-len(patched))+stub)
+        struct.pack_into('<8I',patched,empty[0],1,file_offset,FRESH_BIND_STUB,FRESH_BIND_STUB,len(stub),len(stub),5,4096)
     return bytes(patched), offset
 
 
@@ -276,7 +304,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores', 'scmd-bind-after', 'scmd-mmode-after', 'sif-stop-after', 'sif-reset-subaddr', 'reset-smflag-before', 'reset-smflag-after', 'reset-submit-after', 'reset-flags-after', 'reset-rpc-clear', 'reset-subaddr-clear', 'reset-cmd-clear', 'reset-ready', 'gs-csr-reset', 'gs-imr-after', 'gs-crt-after', 'gs-intc-after', 'gs-csr-field', 'gs-intc-before', 'gs-intc-cleared', 'gs-intc-event', 'gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after', 'rpc-call-sema', 'cd-init-after', 'cd-semaphores', 'scmd-bind-after', 'scmd-mmode-after', 'sif-stop-after', 'sif-reset-subaddr', 'reset-smflag-before', 'reset-smflag-after', 'reset-submit-after', 'reset-flags-after', 'reset-rpc-clear', 'reset-subaddr-clear', 'reset-cmd-clear', 'reset-ready', 'gs-csr-reset', 'gs-imr-after', 'gs-crt-after', 'gs-intc-after', 'gs-csr-field', 'gs-intc-before', 'gs-intc-cleared', 'gs-intc-event', 'gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success'], default='kernel-handler')
     parser.add_argument('--disc', type=Path, help='Explicit user-local ISO mounted alongside the instrumented ELF.')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
@@ -286,8 +314,8 @@ def main():
     exe_data = executable.read_bytes()
     rva = export_rva(exe_data, 'EEmem')
     capture_iop = args.capture_point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'cd-init-after', 'scmd-bind-after', 'scmd-mmode-after')
-    capture_boot_iop = args.capture_point in ('reset-ready','post-sif-before','post-sif-after')
-    if (capture_boot_iop or args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after')) and not args.disc:parser.error('This capture point requires an explicit local disc')
+    capture_boot_iop = args.capture_point in ('reset-ready','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success')
+    if (capture_boot_iop or args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success')) and not args.disc:parser.error('This capture point requires an explicit local disc')
     iop_rva = export_rva(exe_data, 'IOPmem') if capture_iop or capture_boot_iop else None
     source = ROOT / 'rom/SLUS_214.41'
     original = source.read_bytes()
@@ -366,7 +394,7 @@ def main():
         if data[address:address + len(trap)] != trap:
             raise ValueError('EE RAM instrumentation does not match.')
         time.sleep(0.1)
-        if not capture_iop and args.capture_point not in ('sif-rpc-state', 'rpc-call-sema', 'cd-semaphores', 'sif-stop-after', 'sif-reset-subaddr', 'reset-smflag-before', 'reset-smflag-after', 'reset-submit-after', 'reset-flags-after', 'reset-rpc-clear', 'reset-subaddr-clear', 'reset-cmd-clear', 'reset-ready', 'gs-csr-reset', 'gs-imr-after', 'gs-crt-after', 'gs-intc-after', 'gs-csr-field', 'gs-intc-before', 'gs-intc-cleared', 'gs-intc-event', 'gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after') and reader.read(pointer, 0x80004) != data[:0x80004]:
+        if not capture_iop and args.capture_point not in ('sif-rpc-state', 'rpc-call-sema', 'cd-semaphores', 'sif-stop-after', 'sif-reset-subaddr', 'reset-smflag-before', 'reset-smflag-after', 'reset-submit-after', 'reset-flags-after', 'reset-rpc-clear', 'reset-subaddr-clear', 'reset-cmd-clear', 'reset-ready', 'gs-csr-reset', 'gs-imr-after', 'gs-crt-after', 'gs-intc-after', 'gs-csr-field', 'gs-intc-before', 'gs-intc-cleared', 'gs-intc-event', 'gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success') and reader.read(pointer, 0x80004) != data[:0x80004]:
             raise ValueError('Kernel prefix changed during capture.')
         if capture_iop:
             sp, = struct.unpack_from('<I', data, MARKER + 8)
@@ -400,10 +428,22 @@ def main():
             iop_pointer, = struct.unpack('<Q', reader.read(reader.base + iop_rva, 8))
             if not iop_pointer:raise ValueError('IOP memory is not allocated.')
             iop_data=reader.read(iop_pointer,2*1024*1024)
-            if args.capture_point in ('post-sif-before','post-sif-after'):
+            if args.capture_point in ('post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success'):
                 for start,size in ((0x1E640,20),(0x1E700,16)):
                     if reader.read(iop_pointer+start,size)!=iop_data[start:start+size]:
                         raise ValueError('Fresh SIF IOP mailbox/ownership changed.')
+            if args.capture_point in ('post-cd-after','post-cd-bind-after','post-cd-bind-success','post-mmode-after','post-scmd-bind-success'):
+                for start,size in ((0x1E640,64),(0x1E700,16),(0x43388,68),(0x43358,12),(0x441B8,16)):
+                    if reader.read(iop_pointer+start,size)!=iop_data[start:start+size]:raise ValueError('Fresh CD service state changed.')
+                for start,size in ((MARKER,44),(0x3A94C0,64),(0x3A97C0,64),(0x3A87A8,40),(0x3A8800,4),(0x3695C0,16)):
+                    if reader.read(pointer+start,size)!=data[start:start+size]:raise ValueError('Fresh CD response/client changed.')
+            if args.capture_point in ('post-mmode-after','post-scmd-bind-success'):
+                for start,size in ((0x369F40,40),(0x369A00,4)):
+                    if reader.read(pointer+start,size)!=data[start:start+size]:raise ValueError('Fresh SCMD client changed.')
+                server=struct.unpack_from('<I',data,0x369F64)[0]
+                if not server or server>len(iop_data)-68:raise ValueError('Fresh SCMD server bounds differ')
+                for start,size in ((server,68),(struct.unpack_from('<I',iop_data,server+8)[0],4)):
+                    if start>len(iop_data)-size or reader.read(iop_pointer+start,size)!=iop_data[start:start+size]:raise ValueError('Fresh SCMD ownership changed.')
             (folder / 'iop-ram.bin').write_bytes(iop_data)
             if reader.read(pointer+MARKER,12)!=data[MARKER:MARKER+12]:raise ValueError('Boot-ready publication changed.')
         if capture_iop:
@@ -436,11 +476,11 @@ def main():
             for start,size in ((MARKER,12),(0x3ACC40,104)):
                 if reader.read(pointer+start,size) != data[start:start+size]:
                     raise ValueError('Reboot submission publication/packet changed.')
-        if args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after') and reader.read(pointer+MARKER,24)!=data[MARKER:MARKER+24]:raise ValueError('GS CSR publication changed.')
+        if args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success') and reader.read(pointer+MARKER,24)!=data[MARKER:MARKER+24]:raise ValueError('GS CSR publication changed.')
         if args.capture_point in ('gif-sync-before','gif-sync-after','gif-sync-poll'):
             if reader.read(pointer+MARKER,44)!=data[MARKER:MARKER+44]:
                 raise ValueError('GIF synchronization publication changed.')
-        if args.capture_point in ('post-sif-before','post-sif-after'):
+        if args.capture_point in ('post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success'):
             for start,size in ((MARKER,44),(0x3A87A8,40),(0x3A94C0,64),(0x3A95C0,156),(0x3A9740,4)):
                 if reader.read(pointer+start,size)!=data[start:start+size]:raise ValueError('Post-reset SIF publication/table changed.')
         if args.capture_point=='gif-path-after':
@@ -466,6 +506,7 @@ def main():
                     'instrumented_elf_sha256': hashlib.sha256(patched).hexdigest(),
                     'capture_sha256': hashlib.sha256(data).hexdigest(),
                     'capture_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    'authored_extra_segment': {'address':FRESH_BIND_STUB,'words':list(struct.unpack('<'+str(len(fresh_bind_stub(args.capture_point.endswith('success'),args.capture_point=='post-scmd-bind-success'))//4)+'I',fresh_bind_stub(args.capture_point.endswith('success'),args.capture_point=='post-scmd-bind-success')))} if args.capture_point in ('post-cd-bind-after','post-cd-bind-success','post-scmd-bind-success') else None,
                     'patch': {'address': address, 'file_offset': offset, 'size': len(trap),
                               'authored_words': list(struct.unpack('<' + str(len(trap) // 4) + 'I', trap)),
                               'marker_address': MARKER, 'marker_value': marker},
@@ -486,7 +527,7 @@ def main():
                     'observed_sif_dma_result': struct.unpack_from('<I', data, MARKER + 4)[0] if capture_iop else None,
                     'observed_sif_dma_sp': struct.unpack_from('<I', data, MARKER + 8)[0] if capture_iop else None,
                     'original_osd_config': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'osd-readback' else None,
-                    'limitations': ('Post-GS disc-backed unique SIF caller; EE publication/table/SREG and selected IOP mailbox/ownership ranges stable twice. Full IOP RAM remains live; no native IOP boot or scheduling established.' if args.capture_point.startswith('post-sif-') else 'Disc-backed independent GIF checkpoint; register/return/SP publication stable twice. First source packet checked twice at gif-idle, second source packet checked twice at gif-path-after. No continuous timing, native transfer or presentation inferred.' if args.capture_point.startswith('gif-') else 'Disc-backed independent INTC point; status, mask, SP and preceding v0 publication stable twice. No continuous timing trace, native video clock or callback execution established.' if args.capture_point in ('gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after') else 'Disc-backed reached GS register/syscall return, 64-bit value and SP publication stable twice; no renderer or general GS state captured.' if args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after') else 'Disc-mounted ready-branch EE publication stable twice; post-reset IOP RAM is a live diagnostic snapshot, not atomically frozen or proven stable. No native IOP execution validated.' if capture_boot_iop else 'Instrumented ELF with explicit local disc when disc_sha256 is present; reboot submission publication/EE packet stable twice; no IOP image execution or reset-ready result inferred.' if args.capture_point == 'reset-submit-after' else 'Instrumented ELF with explicit local disc when disc_sha256 is present; register return/SP and direct SMFLAG readback publication stable twice; no post-reset IOP snapshot or boot completion established.' if args.capture_point in ('reset-flags-after','reset-rpc-clear','reset-subaddr-clear','reset-cmd-clear') else 'Standalone ELF; authored direct SMFLAG read before/after reached register write, publication stable twice; no reset completion established.' if args.capture_point in ('reset-smflag-before','reset-smflag-after','reset-flags-after','reset-rpc-clear','reset-subaddr-clear','reset-cmd-clear') else 'Standalone ELF; SifStopDma return/publication and kernel implementation windows stable twice; no active DMA cancellation or IOP reset captured.' if args.capture_point in ('sif-stop-after','sif-reset-subaddr') else 'Instrumented standalone ELF with no disc; second bind/media-mode request/reply/client and server windows stable twice, semaphore inferred from completed client and residual descriptor; no timing or hardware DMA result established.' if args.capture_point in ('scmd-bind-after','scmd-mmode-after') else 'Instrumented standalone ELF boot; semaphore descriptor/publication/IDs stable in two reads; no scheduler or attribute semantics established.' if args.capture_point == 'cd-semaphores' else 'Instrumented standalone ELF boot; CD-init request/reply/client/data and IOP service windows stable in two reads; no disc mounted or hardware timing established.' if args.capture_point == 'cd-init-after' else 'Instrumented standalone ELF boot; semaphore descriptor/publication stable in two reads; kernel and IOP remain live.' if args.capture_point == 'rpc-call-sema' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
+                    'limitations': ('Post-GS disc-backed unique SIF caller; EE publication/table/SREG and selected IOP mailbox/ownership ranges stable twice. Full IOP RAM remains live; no native IOP boot or scheduling established.' if args.capture_point.startswith('post-sif-') else 'Disc-backed independent GIF checkpoint; register/return/SP publication stable twice. First source packet checked twice at gif-idle, second source packet checked twice at gif-path-after. No continuous timing, native transfer or presentation inferred.' if args.capture_point.startswith('gif-') else 'Disc-backed independent INTC point; status, mask, SP and preceding v0 publication stable twice. No continuous timing trace, native video clock or callback execution established.' if args.capture_point in ('gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success') else 'Disc-backed reached GS register/syscall return, 64-bit value and SP publication stable twice; no renderer or general GS state captured.' if args.capture_point in ('gs-csr-reset','gs-imr-after','gs-crt-after','gs-intc-after','gs-csr-field','gs-intc-before','gs-intc-cleared','gs-intc-event','gs-intc-acknowledged','gif-idle','gif-qwc','gif-after','gif-sync-before','gif-sync-after','gif-sync-poll','gif-vu-idle','gif-path-after','post-sif-before','post-sif-after','post-scmd-bind-success','post-mmode-after','post-cd-after','post-cd-bind-after','post-cd-bind-success') else 'Disc-mounted ready-branch EE publication stable twice; post-reset IOP RAM is a live diagnostic snapshot, not atomically frozen or proven stable. No native IOP execution validated.' if capture_boot_iop else 'Instrumented ELF with explicit local disc when disc_sha256 is present; reboot submission publication/EE packet stable twice; no IOP image execution or reset-ready result inferred.' if args.capture_point == 'reset-submit-after' else 'Instrumented ELF with explicit local disc when disc_sha256 is present; register return/SP and direct SMFLAG readback publication stable twice; no post-reset IOP snapshot or boot completion established.' if args.capture_point in ('reset-flags-after','reset-rpc-clear','reset-subaddr-clear','reset-cmd-clear') else 'Standalone ELF; authored direct SMFLAG read before/after reached register write, publication stable twice; no reset completion established.' if args.capture_point in ('reset-smflag-before','reset-smflag-after','reset-flags-after','reset-rpc-clear','reset-subaddr-clear','reset-cmd-clear') else 'Standalone ELF; SifStopDma return/publication and kernel implementation windows stable twice; no active DMA cancellation or IOP reset captured.' if args.capture_point in ('sif-stop-after','sif-reset-subaddr') else 'Instrumented standalone ELF with no disc; second bind/media-mode request/reply/client and server windows stable twice, semaphore inferred from completed client and residual descriptor; no timing or hardware DMA result established.' if args.capture_point in ('scmd-bind-after','scmd-mmode-after') else 'Instrumented standalone ELF boot; semaphore descriptor/publication/IDs stable in two reads; no scheduler or attribute semantics established.' if args.capture_point == 'cd-semaphores' else 'Instrumented standalone ELF boot; CD-init request/reply/client/data and IOP service windows stable in two reads; no disc mounted or hardware timing established.' if args.capture_point == 'cd-init-after' else 'Instrumented standalone ELF boot; semaphore descriptor/publication stable in two reads; kernel and IOP remain live.' if args.capture_point == 'rpc-call-sema' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')
     finally:

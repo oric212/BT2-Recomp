@@ -17,3 +17,13 @@ Transport ownership is now fresh, but native reboot/module startup and service e
 5. Continue through actual CD initialization, subsequent bindings and module requests until the next distinct subsystem or evidence limit. Test, update current/history progress, commit and push.
 
 Display/presentation remains a separate incomplete scope. No title screen, gameplay or complete startup is claimed.
+
+## Completed diagnostic service scope (2026-10-04)
+
+Separate captures validate a null CD bind, a later successful CD bind, CD-init return, successful SCMD bind and media-mode return. Conditional shared-helper traps preserve the earlier invocation and the displaced branch/delay-slot behavior. Their authored extra ELF load segment remains local/ignored; process memory is only read.
+
+The epoch-owned adapter delivers one logical null reply, one successful reply and the observed calls through generated EE RPC_END callbacks. It validates request/descriptor/client/semaphore state and preserves interrupted CPU/stack state. One real guest retry loop executes; its 2^20+1 iterations need a bounded two-million checkpoint allowance for this evidence mode. Physical retry counts and timing are not replayed.
+
+CD service ownership is 0x43388 / buffer 0x441B8; SCMD ownership is 0x434F0 / buffer 0x439A8. CD init yields (1,0x225,0x225,0); mode 2 yields result 1. Old service pointers remain invalid, and no native IOP module or general disc backend is claimed.
+
+Continued through four additional mapped functions to service 0x80000006: 400 calls / 391 returns. The next distinct subsystem is [LOADFILE/module loading](LOADFILE_IOP_MODULE_PLAN.md), whose reply/execution is not fabricated.

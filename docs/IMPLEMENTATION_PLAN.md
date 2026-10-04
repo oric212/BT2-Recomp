@@ -42,7 +42,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: follow [post-reset IOP service ownership and delivery](POST_RESET_IOP_SERVICES_PLAN.md). Both GS clears and fresh SIF transport initialization return. The new bind to service 0x80000592 requires a separate service lifetime; old RPC addresses remain invalid. Display/presentation, video timing and native IOP execution remain incomplete.
+Current next step: follow [LOADFILE and IOP module loading](LOADFILE_IOP_MODULE_PLAN.md). Fresh CD initialization and media-mode setup return through validated epoch-owned diagnostic replies. The reached service 0x80000006 bind leads into a separate module-loader implementation scope; no loader success is supplied. Display/presentation, general disc I/O, video timing and native IOP execution remain incomplete.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

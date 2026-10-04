@@ -76,3 +76,9 @@ Pinned [GSDrawingEnvironment.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7
 Consulted pinned PS2SDK [EE sifcmd.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/sifcmd.c) and [IOP sifcmd.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/sifcmd/src/sifcmd.c) for INIT_CMD opt 0/1 and command ownership. Local BT2 before/after captures establish fresh buffer addresses and SET_SREG index 0/value 1. Source hashes/roles are in config/startup_abi.sources.json. No implementation copied.
 
 The separate diagnostic adapter completes transport initialization without executing an IOP boot or validating RPC services. BT3's native IOP module/import/scheduler separation guides the [new service ownership scope](POST_RESET_IOP_SERVICES_PLAN.md). Live IOP service records are evidence to validate against a fresh reply, not a reason to reuse old pointers.
+
+### Post-reset service replies and loader boundary
+
+Pinned public PS2SDK sifrpc.c/sifrpc-common.h establish synchronous bind/call headers, packet freeing, client pointers and semaphore signaling. BT2 captures independently validate a null CD bind, later successful bind, CD initialization, SCMD bind and mode-2 return. The authored epoch-owned adapter executes the generated EE RPC_END callback and keeps prior service state invalid; it does not execute native IOP service instructions or reproduce physical retry counts.
+
+Pinned [loadfile.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/loadfile.c) identifies the reached service 0x80000006 as LOADFILE. BT3's distinction between module mapping, relocation/import resolution, entry execution and scheduling guides [the loader plan](LOADFILE_IOP_MODULE_PLAN.md). Confirm our toolchain's actual capabilities and BT2 requests before implementation. Source hash is recorded in config/startup_abi.sources.json; no implementation copied.
