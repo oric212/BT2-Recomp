@@ -1,6 +1,6 @@
 # EE LOADFILE and native IOP lifetime bridge
 
-## Starting checkpoint
+## Starting checkpoint (historical)
 
 EE is paused at its real first LOADFILE RPC 0. An isolated native SIO2MAN instance now returns entry result 0 and retains its worker waiting for event bits 0x4155. Normalized startup effects match the local reference capture. This does not yet fulfill the pending EE request: no persistent native IOP instance is connected to that adapter.
 
@@ -16,3 +16,9 @@ EE is paused at its real first LOADFILE RPC 0. An isolated native SIO2MAN instan
 ## Limits
 
 The kernel provider is a scoped compatibility model, not a recompiled IOP boot. Entry return alone does not validate controller transfers or full scheduling. The [SIO2 scope](SIO2_BRINGUP_PLAN.md) keeps unsupported starts/status/FIFO/DMA/IRQ behavior explicit. Opaque reference kernel options and physical timing remain unverified.
+
+## Implemented checkpoint: 2026-10-04
+
+Shared NativeIopService owns epoch 1, module IDs, RAM, library/kernel state and retained worker contexts. The optional EE link executes compiled SIO2MAN in that instance, validates resident effects, returns owned module ID 1/result 0 and runs the generated RPC_END callback and semaphore/packet cleanup. No reference module ID or isolated report is replayed.
+
+The next actual request loads compiled MCMAN into the same instance at 0x20000. Reached callback setters, memset and priority semaphore creation execute; IOMAN DelDrv remains unsupported. Failed entry latches the service failure and leaves the EE request pending without response mutation. Tests cover ownership, malformed requests, failure isolation and retained SIO2MAN worker lifetime. Continue with the [IOMAN plan](IOP_IOMAN_DRIVER_PLAN.md).

@@ -47,28 +47,38 @@ def instruction(word,pc,base):
     return f'throw std::runtime_error("Unsupported IOP instruction at {pc:#x}");'
 
 def emit(image,base,ranges,imports=(),seeds=(),symbol='bt2_iop_module'):
-    lines=['#include "native_runtime.h"',f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc)-{base}u);','switch(IopRuntime::physical(c.pc)-'+str(base)+'u) {']
+    # Bounded native functions keep MSVC CFG/debug generation scalable for IRX.
+    bodies={}
     for lo,hi in ranges:
         for address in range(lo,hi,4):
-            if address in seeds:lines.append(f'case {address}u: {{rt.entries.insert({address}u);')
-            else:lines.append(f'case {address}u: {{')
-            word=struct.unpack_from('<I',image,address)[0];lines.append(instruction(word,base+address,base));lines.append('break;}')
+            body=bodies.setdefault(address>>12,[])
+            body.append(f'case {address}u: {{')
+            if address in seeds:body.append(f'rt.entries.insert({address}u);')
+            body.append(instruction(struct.unpack_from('<I',image,address)[0],base+address,base));body.append('break;}')
     for item in imports:
-        lines.extend([f'case {item["address"]}u: {{',f'const auto target=c.get(31);const auto result=rt.import({json.dumps(item["library"])},{item["ordinal"]},c);c.advance();c.set(2,result);c.pc=target;break;}}'])
-    lines+=['default: throw std::runtime_error("Unmapped native IOP target");','}','}','}']
+        body=bodies.setdefault(item['address']>>12,[])
+        body.extend([f'case {item["address"]}u: {{',f'const auto target=c.get(31);const auto result=rt.import({json.dumps(item["library"])},{item["ordinal"]},c);c.advance();c.set(2,result);c.pc=target;break;}}'])
+    lines=['#include "native_runtime.h"']
+    for bucket,body in sorted(bodies.items()):
+        lines += [f'static void {symbol}_{bucket}(IopRuntime& rt,IopContext& c) {{',f'while(c.pc!=IopRuntime::sentinel && ((IopRuntime::physical(c.pc)-{base}u)>>12)=={bucket}u) {{','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc)-{base}u);',f'switch(IopRuntime::physical(c.pc)-{base}u) {{',*body,'default: throw std::runtime_error("Unmapped native IOP target");','}','}','}']
+    lines += [f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {',f'switch((IopRuntime::physical(c.pc)-{base}u)>>12) {{']
+    for bucket in sorted(bodies):lines.append(f'case {bucket}u: {symbol}_{bucket}(rt,c);break;')
+    lines += ['default: rt.tick(c);throw std::runtime_error("Unmapped native IOP target");','}','}','}']
     return '\n'.join(lines)+'\n'
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('module',type=Path);parser.add_argument('--disc',type=Path,required=True);parser.add_argument('--base',type=lambda x:int(x,0),default=0x10000);parser.add_argument('--output',type=Path,required=True)
-    args=parser.parse_args();root=Path(__file__).resolve().parents[2];out=args.output.resolve()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('module',type=Path);parser.add_argument('--disc',type=Path,required=True);parser.add_argument('--base',type=lambda x:int(x,0),default=0x10000);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--symbol',default='bt2_iop_module');parser.add_argument('--prefix',default='iop_module')
+    args=parser.parse_args()
+    if not args.symbol.isidentifier() or not args.prefix.isidentifier() or not args.symbol.isascii() or not args.prefix.isascii():raise ValueError('Invalid native symbol/prefix')
+    root=Path(__file__).resolve().parents[2];out=args.output.resolve()
     if not out.is_relative_to(root/'work/iop'):raise ValueError('Native IRX output must stay under ignored work/iop/')
     data=args.module.read_bytes()
     if data!=disc_image(args.disc,(args.module.name.upper()+';1').encode()):raise ValueError('IRX/disc mismatch')
-    report=inspect(data);image=relocate(data,report,args.base);source=emit(image,args.base,report['code_ranges'],report['imports'],{r['start'] for r in report['provisional_functions']})
+    report=inspect(data);image=relocate(data,report,args.base);source=emit(image,args.base,report['code_ranges'],report['imports'],{r['start'] for r in report['provisional_functions']},symbol=args.symbol)
     out.parent.mkdir(parents=True,exist_ok=True);out.write_text(source,encoding='utf-8');out.with_suffix('.bin').write_bytes(image)
     exports='\n'.join(f'rt.export_bounds[{args.base+t["address"]}u]={len(t["slots"])}u;' for t in report['exports'])
     expected=','.join(str(v) for v in image)
-    out.with_suffix('.h').write_text(f'#pragma once\nconstexpr unsigned iop_module_base={args.base},iop_module_entry={args.base+report["entry"]},iop_module_gp={args.base+report["gp"]},iop_module_size={len(image)};\ninline constexpr std::array<unsigned char,{len(image)}> iop_expected_image={{{expected}}};\ninline void iop_export_bounds(IopRuntime& rt) {{{exports}}}\n',encoding='utf-8')
+    out.with_suffix('.h').write_text(f'#pragma once\nconstexpr unsigned {args.prefix}_base={args.base},{args.prefix}_entry={args.base+report["entry"]},{args.prefix}_gp={args.base+report["gp"]},{args.prefix}_size={len(image)};\ninline constexpr std::array<unsigned char,{len(image)}> {"iop_expected_image" if args.prefix=="iop_module" else args.prefix+"_image"}={{{expected}}};\ninline void {"iop_export_bounds" if args.prefix=="iop_module" else args.prefix+"_export_bounds"}(IopRuntime& rt) {{{exports}}}\n',encoding='utf-8')
     out.with_suffix('.json').write_text(json.dumps({'module_sha256':report['sha256'],'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'image_sha256':hashlib.sha256(image).hexdigest(),'base':args.base,'provisional_functions':len(report['provisional_functions']),'limitations':'Authored standalone MIPS-I backend, not upstream PS2Recomp. No IOP hardware, scheduler or automatic successful imports.'},indent=2)+'\n',encoding='utf-8')
     print('Generated native IOP source/image with explicit import dispatch; output remains ignored.')
 if __name__=='__main__':main()

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 
 namespace {
 void require(bool value, const char* message) {
@@ -515,8 +516,9 @@ int main(int argc, char** argv) {
                                 && runtime.guest_calls==429 && runtime.returns==423 && context.r[29].low==runtime.initial_sp-384;
                             const bool loadfile_module_submit=!stop_target && stop_selector==0x77 && context.pc==0x32F028 && runtime.post_loadfile.versions==1
                                 && runtime.guest_calls==433 && runtime.returns==425 && context.r[29].low==runtime.initial_sp-528 && GPR_U32(&context,4)==runtime.initial_sp-528 && GPR_U32(&context,5)==2;
+                            const bool native_loader_progress=runtime.native_module_loads>0 && runtime.post_loadfile.versions==1;
                             const bool loader_progress=runtime.post_loadfile.supplied && runtime.post_loadfile.binds==1 && runtime.post_cd.modes==1
-                                && (loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
+                                && (native_loader_progress || loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
                             require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
                             require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
                                 && runtime.gif_dma.gs.packets==2 && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
@@ -659,6 +661,11 @@ int main(int argc, char** argv) {
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
                 << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
                 << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"native_module_loads\":" << runtime.native_module_loads
+                << ",\"native_module_request\":" << std::quoted(runtime.native_module_request)
+                << ",\"native_iop_error\":" << std::quoted(runtime.native_iop_error)
+                << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
+                << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
                 << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
                 << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes
                 << ",\"post_sif_phase\":" << runtime.post_sif.phase

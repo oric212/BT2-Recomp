@@ -1,4 +1,4 @@
-#include "native_runtime.h"
+#include "module_service.h"
 #include "library_provider.h"
 #include "kernel_provider.h"
 #include "sio2man_native.h"
@@ -11,21 +11,14 @@ int main(int argc,char** argv) {
     if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
         std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
     }
-    IopRuntime rt;IopContext c;bool entry_returned=false;std::string diagnostic;
+    NativeIopService service(1,bt2_compiled_iop_modules());auto& rt=service.runtime;auto& c=service.entry;bool entry_returned=false;std::string diagnostic;
 
     try {
         std::ifstream stream(argv[1],std::ios::binary|std::ios::ate);
         if(!stream || stream.tellg()!=iop_module_size)throw std::runtime_error("IOP private image size differs");
         std::vector<std::uint8_t> image(iop_module_size);stream.seekg(0);stream.read(reinterpret_cast<char*>(image.data()),image.size());
         if(!stream || !std::equal(image.begin(),image.end(),iop_expected_image.begin()))throw std::runtime_error("IOP image differs from generated source");
-        rt.map(iop_module_base,image);rt.map(0x1FF000,std::vector<std::uint8_t>(0x1000));rt.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
-        constexpr char path[]="cdrom0:\\IRX\\SIO2MAN.IRX;1";
-        for(unsigned n=0;n<sizeof(path);++n)rt.write(0x1FE100+n,path[n],1);
-        rt.write(0x1FE000,0x1FE100,4);rt.write(0x1FE004,0,4);
-        c.pc=iop_module_entry;c.set(28,iop_module_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);c.set(4,1);c.set(5,0x1FE000);
-        iop_export_bounds(rt);install_iop_library_provider(rt);install_iop_kernel_providers(rt);
-        rt.execute=bt2_iop_module;
-        bt2_iop_module(rt,c);entry_returned=true;diagnostic="Module entry returned; effects require validation before EE LOADFILE success";
+        service.load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");entry_returned=true;diagnostic="Module entry returned; effects require validation before EE LOADFILE success";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}
         diagnostic=e.what();

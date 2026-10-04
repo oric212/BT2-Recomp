@@ -9,6 +9,8 @@ int main() {
         IopRuntime rt;rt.map(0x20000,std::vector<std::uint8_t>(32));
         auto context=[](unsigned offset){IopContext c;c.pc=0x10000+offset;c.set(31,IopRuntime::sentinel);c.set(8,IopRuntime::sentinel);return c;};
         auto c=context(0);bt2_iop_synthetic(rt,c);check(c.get(2)==7 && c.get(3)==9 && !c.get(0));
+        c=context(0xFF8);c.set(1,1);bt2_iop_synthetic(rt,c);check(c.get(2)==7 && c.get(3)==9);
+        c=context(0xFF8);bt2_iop_synthetic(rt,c);check(c.get(2)==99 && c.get(3)==9);
         rt.write(0x20000,0x1234,4);c=context(0x40);c.set(2,5);c.set(4,0x20000);bt2_iop_synthetic(rt,c);check(c.get(3)==6 && c.get(5)==0x1235);
         c=context(0x80);c.set(4,0x20000);bt2_iop_synthetic(rt,c);check(c.get(2)==9 && c.get(3)==9);
         c=context(0xA0);c.set(4,static_cast<std::uint32_t>(-7));c.set(5,3);bt2_iop_synthetic(rt,c);check(c.get(2)==static_cast<std::uint32_t>(-21) && c.get(3)==UINT32_MAX && c.get(6)==static_cast<std::uint32_t>(-2) && c.get(7)==UINT32_MAX);
@@ -56,6 +58,15 @@ int main() {
         host.set(4,0x20010);check(kernel.import("intrman",17,host)==0 && kernel.read(0x20010,4)==1 && !kernel.cpu_interrupts_enabled);
         host.set(4,1);check(kernel.import("intrman",18,host)==0 && kernel.cpu_interrupts_enabled);
         host.set(4,11);host.set(5,3);kernel.import("dmacman",33,host);kernel.import("dmacman",34,host);check(kernel.dma_channels.at(11).priority==3 && kernel.dma_channels.at(11).enabled);
+        host.set(4,0x20080);host.set(5,0xA7);host.set(6,12);auto prior=kernel.ram;
+        check(kernel.import("sysclib",14,host)==0x20080);
+        for(unsigned n=0;n<kernel.ram.size();++n)check(kernel.ram[n]==((n>=0x20080 && n<0x2008C)?std::uint8_t{0xA7}:prior[n]));
+        host.set(4,0x200F8);host.set(6,16);prior=kernel.ram;rejected=false;try{kernel.import("sysclib",14,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.ram==prior);
+        host.set(4,0x101C0);host.set(2,42);check(kernel.import("secrman",4,host)==42 && kernel.security_handlers.at(4)==0x101C0);
+        check(kernel.import("modload",13,host)==42 && kernel.kelf_path_handler==0x101C0);
+        host.set(4,0x101C1);rejected=false;try{kernel.import("secrman",4,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.security_handlers.at(4)==0x101C0);
+        host.set(4,0x20040);kernel.write(0x20040,1,4);kernel.write(0x20048,1,4);kernel.write(0x2004C,2,4);
+        const auto semaphore=kernel.import("thsemap",4,host);check(semaphore!=event_id && semaphore!=thread_id && kernel.semaphores.at(semaphore).attr==1);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -59,7 +59,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
     rt.providers[{"thsemap",4}]=[](IopRuntime& memory,IopContext& c) {
         const auto p=c.get(4);memory.check(IopRuntime::physical(p),16);
         const IopRuntime::Semaphore sem{memory.read(p,4),memory.read(p+4,4),memory.read(p+8,4),memory.read(p+12,4)};
-        if(sem.attr!=0 || sem.maximum==0 || sem.maximum>INT32_MAX || sem.count>sem.maximum)
+        if((sem.attr!=0 && sem.attr!=1) || sem.maximum==0 || sem.maximum>INT32_MAX || sem.count>sem.maximum)
             throw std::runtime_error("Unsupported IOP semaphore parameters");
         const auto id=memory.next_semaphore++;memory.semaphores.emplace(id,sem);return id;
     };
@@ -94,4 +94,23 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         catch(const IopYield&) {memory.current_thread=0;return 0u;}
         catch(...) {memory.current_thread=0;throw;}
     };
+    for(unsigned ordinal:{4u,5u})rt.providers[{"secrman",ordinal}]=[ordinal](IopRuntime& memory,IopContext& c) {
+        const auto handler=c.get(4);
+        if(handler) {if(handler%4)throw std::runtime_error("Unaligned native security callback");memory.check(IopRuntime::physical(handler),4);}
+        memory.security_handlers[ordinal]=handler;if(handler)memory.entry_targets.insert(handler);
+        return c.get(2); // Callback setter is void; authentication remains unsupported.
+    };
+
+    rt.providers[{"sysclib",14}]=[](IopRuntime& memory,IopContext& c) {
+        const auto destination=c.get(4),count=c.get(6);const auto p=IopRuntime::physical(destination);
+        if(count) {memory.check(p,count);std::fill_n(memory.ram.begin()+p,count,static_cast<std::uint8_t>(c.get(5)));}
+        return destination;
+    };
+
+    rt.providers[{"modload",13}]=[](IopRuntime& memory,IopContext& c) {
+        const auto handler=c.get(4);
+        if(handler) {if(handler%4)throw std::runtime_error("Unaligned KELF path callback");memory.check(IopRuntime::physical(handler),4);}
+        memory.kelf_path_handler=handler;if(handler)memory.entry_targets.insert(handler);return c.get(2);
+    };
+
 }

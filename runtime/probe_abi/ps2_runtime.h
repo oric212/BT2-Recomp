@@ -14,6 +14,10 @@
 #include "intc_checkpoint.h"
 #include "gif_dma_staging.h"
 #include "post_reset_sif.h"
+#ifdef BT2_NATIVE_IOP
+#include <memory>
+class NativeIopService;
+#endif
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
@@ -143,6 +147,11 @@ public:
             && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
+#ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && post_loadfile.versions==1 && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1) {
+            receiveNativeModule(rdram,context);return;
+        }
+#endif
         if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
             && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
         if(code==0 && post_sif.supplied && gif_dma.completions==2 && iop_epoch==1) {
@@ -197,6 +206,9 @@ public:
             // old service lifetime; no receive, image execution or ready flag invented.
             std::copy_n(memory_.data()+0x3ACC40,104,reset_request_.data());
             iop_reset_pending=true; prior_iop_services_valid=false; ++iop_epoch;
+#ifdef BT2_NATIVE_IOP
+            native_iop.reset();native_module_loads=0;
+#endif
             ++sif_dma_submissions;context->r[2].low=0xE01;return;
         }
         if (code == 0 && selector == 0x77) {
@@ -1010,7 +1022,14 @@ public:
     PostResetSif post_sif;
     PostResetCd post_cd;
     PostResetLoadfile post_loadfile;
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations();}
+    unsigned native_module_loads=0;
+    std::string native_module_request,native_iop_error;
+    unsigned native_iop_steps=0,native_iop_targets=0,native_iop_waiters=0;
+    std::uint32_t native_iop_pc=0;
+#ifdef BT2_NATIVE_IOP
+    std::shared_ptr<NativeIopService> native_iop;
+#endif
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1296,6 +1315,9 @@ private:
         if (std::memcmp(saved_cpu.data(), context, saved_cpu.size()))
             throw std::runtime_error("RPC_END changed interrupted CPU state");
     }
+#ifdef BT2_NATIVE_IOP
+    void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
+#endif
     void receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context) {
         const bool bind=!post_loadfile.binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
         if(context->r[29].low!=d || d!=initial_sp-(bind?528:608) || context->r[5].low!=1
@@ -1444,7 +1466,7 @@ private:
         std::copy_n(memory_.data()+0x369A00,4,sif_iop_.data()+0x3F6D8);
         std::copy_n(memory_.data()+0x3A97C0,64,sif_iop_.data()+0x19600);sif_iop_[0x19600]=0;
         std::copy(scmd_mmode_reply_.begin(),scmd_mmode_reply_.end(),memory_.begin()+0x3A94C0);
-        std::fill_n(memory_.data()+0x3695C0,4,0);
+        std::fill_n(memory_.data()+0x3695C0,4,std::uint8_t{0});
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }

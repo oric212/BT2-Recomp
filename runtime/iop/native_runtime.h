@@ -44,6 +44,8 @@ public:
     std::map<std::pair<std::string,unsigned>,Provider> providers;
     struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
+    std::map<unsigned,std::uint32_t> security_handlers;
+    std::uint32_t kelf_path_handler=0;
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;};
     std::map<unsigned,Interrupt> interrupts;
