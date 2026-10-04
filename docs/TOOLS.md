@@ -297,4 +297,18 @@ cmake --build build/probe --config Debug --target bt2-rpc-bind-probe
 python tools/capture_ee/verify_rpc_bind.py work/pcsx2-capture/sif-bind-after/capture.json --run-probe
 ```
 
-Use the existing generated-probe CMake configuration. The verifier checks the first CD initialization bind's request, registered IOP service/queue, reply, completed client and packet release. It writes the checked image and provenance to ignored `work/bt2-generation/`. The probe reconstructs only the explicit pending callback fixture and runs three original generated functions with strict returns. Negative interrupt-only SignalSema is scoped to this probe callback. This command does not advance the main entry probe or emulate interrupt delivery. Connect delivery with caller-context preservation next; CD initialization execution and disc access are separate future blockers.
+Use the existing generated-probe CMake configuration. The verifier checks the first CD initialization bind's request, registered IOP service/queue, reply, completed client and packet release. It writes the checked image and provenance to ignored `work/bt2-generation/`. The probe reconstructs only the explicit pending callback fixture and runs three original generated functions with strict returns. Negative interrupt-only SignalSema is scoped to this probe callback. This command validates the callback independently. The full pipeline below now connects bounded logical delivery with caller-context preservation; hardware interrupt timing, CD initialization execution and disc access remain incomplete.
+
+## Startup RPC bind delivery and first service-call checkpoint
+
+Capture the call semaphore boundary independently, after the first bind returns:
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point rpc-call-sema
+```
+
+Append `--sif-bind-capture work/pcsx2-capture/sif-bind-after/capture.json --rpc-call-sema-capture work/pcsx2-capture/rpc-call-sema/capture.json` to the full pipeline including all earlier RPC-state and paired DMA inputs. Hash/trap/publication, descriptor and reference-environment validation precede preparation of the ignored bind bundle. The bounded model accepts only the first captured bind, delivers the checked reply through the generated handler on a copied CPU context, restores its 64-byte scratch window, then lets generated code wait/delete its temporary semaphore and construct the first CD initialization call. Hardware DMA/interrupt timing and service execution are not implemented.
+
+Omit the bind input to retain the previous second-SifSetDma boundary. Omit only the call-semaphore input to retain the explicit CreateSema boundary in the RPC call. Public PS2SDK leaves that unused attribute field uninitialized; the adapter permits it only for this exact call descriptor with a checked checkpoint, and does not overwrite guest stack contents to match the capture. Full continuation reaches the third submission, with two descriptors and RPC function number 0.
+
+For standalone bundle preparation, `verify_rpc_bind.py` accepts `--call-sema-capture work/pcsx2-capture/rpc-call-sema/capture.json` in addition to `--run-probe`. The isolated callback probe remains useful independently; the entry pipeline now also supports bounded logical delivery.

@@ -127,6 +127,10 @@ public:
             context->pc = resume;
             return;
         }
+        if (code == 0 && selector == 0x77 && sif_dma_submissions == 1 && !sif_bind_iop_.empty()) {
+            receiveFirstRpcBind(rdram, context);
+            return;
+        }
         if (code == 0 && selector == 0x77) {
             if (sif_iop_.empty() || sif_dma_submissions || sif_command_reads != 1 || data_cache_lines != 1
                     || context->r[5].low != 1 || context->r[4].low > UINT32_MAX)
@@ -374,13 +378,36 @@ public:
             const auto initial = read32(rdram, address + 8);
             const auto attributes = read32(rdram, address + 16);
             const auto option = read32(rdram, address + 20);
-            if (attributes != 0) throw std::runtime_error("Unsupported semaphore attributes");
+            // PS2SDK synchronous RPC leaves attr uninitialized; the pinned Play!
+            // model reads count/max/option only. Permit this field solely for the
+            // reached first CD-init call, whose local BIOS capture returns ID 3.
+            const bool rpc_call_sema = sif_call_sema_supplied_ && sif_bind_callbacks == 1 && semaphore_deletions == 1
+                && semaphores.size() == 3 && address == initial_sp - 400
+                && maximum == 1 && initial == 0 && option == 0x3838E8;
+            if (attributes != 0 && !rpc_call_sema) {
+                if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
+                throw std::runtime_error("Unsupported semaphore attributes");
+            }
+            if (rpc_call_sema) { ++rpc_call_semaphores; rpc_call_sema_attributes = attributes; }
             if (!maximum || maximum > INT32_MAX || initial > maximum || semaphores.size() == 256) {
                 context->r[2].low = UINT64_MAX;
                 return;
             }
             const auto id = static_cast<std::uint32_t>(semaphores.size());
             semaphores.push_back({initial, maximum, option});
+            context->r[2].low = id;
+            return;
+        }
+        if (code == 0 && selector == 0x41) {
+            const auto id = static_cast<std::uint32_t>(context->r[4].low);
+            if (id >= semaphores.size()) { context->r[2].low = UINT64_MAX; return; }
+            // Observed completed bind cleanup only, with no waiting threads.
+            if (id != 3 || semaphores.size() != 4 || semaphores[3].count != 0
+                    || semaphores[3].maximum != 1 || sif_bind_callbacks != 1
+                    || semaphore_waits != 2 || semaphore_deletions)
+                throw UnsupportedSyscall(selector, context->pc);
+            semaphores.pop_back();
+            ++semaphore_deletions;
             context->r[2].low = id;
             return;
         }
@@ -646,6 +673,31 @@ public:
         sif_dma_result_ = result;
         sif_ee_receive_address = old_ee;
     }
+    void supplySifBind(std::span<const std::uint8_t> bundle) {
+        if (!sif_rpc_supplied_ || !sif_bind_iop_.empty() || (bundle.size() != sif_iop_size + 68 && bundle.size() != sif_iop_size + 96))
+            throw std::runtime_error("Invalid/repeated RPC bind capture bundle");
+        auto word = [&](std::size_t offset) { std::uint32_t value; std::memcpy(&value, bundle.data() + offset, 4); return value; };
+        const std::array<std::uint32_t, 16> reply{0, 0, 0x80000008, 0, 0, 0x203A97C0, 0,
+            0x3A87A8, 0x80000009, 0x3F570, 0x3FB20, 0, 0, 0, 0, 0};
+        if (word(sif_iop_size + 64) != 0x801 || word(0x3F570) != 0x80000592
+                || word(0x3F578) != 0x3FB20 || word(0x3F584) != 0
+                || word(0x3F5B0) != 0x3F558 || word(0x3F560) != 0x3F570
+                || std::memcmp(bundle.data() + sif_iop_size, reply.data(), 64))
+            throw std::runtime_error("RPC bind service/queue/response capture differs");
+        if (bundle.size() == sif_iop_size + 96) {
+            const std::array<std::uint32_t, 7> semaphore{0, 1, 0, 0, 0, 0x3838E8, 3};
+            if (std::memcmp(bundle.data() + sif_iop_size + 68, semaphore.data(), 28))
+                throw std::runtime_error("RPC call semaphore checkpoint differs");
+            sif_call_sema_supplied_ = true;
+        }
+        sif_bind_iop_.assign(bundle.begin(), bundle.begin() + sif_iop_size);
+        std::copy_n(bundle.data() + sif_iop_size, 64, sif_bind_reply_.data());
+    }
+    unsigned sif_bind_callbacks = 0;
+    unsigned sif_bind_context_preservations = 0;
+    unsigned semaphore_deletions = 0;
+    unsigned rpc_call_semaphores = 0;
+    std::uint32_t rpc_call_sema_attributes = 0;
     std::span<const std::uint8_t> sifIopMemory() const { return sif_iop_; }
     unsigned sif_dma_submissions = 0;
     std::uint32_t sif_ee_receive_address = 0;
@@ -776,6 +828,74 @@ public:
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
 private:
+    void receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
+        if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2
+                || context->r[4].low != initial_sp - 464 || context->r[5].low != 1
+                || context->r[29].low != context->r[4].low || rpc_end_callback_active_)
+            throw UnsupportedSyscall(0x77, context->pc);
+        const auto descriptor = static_cast<std::uint32_t>(context->r[4].low);
+        const std::array<std::uint32_t, 4> expected_descriptor{0x203A97C0, 0x19600, 64, 0x44};
+        const std::array<std::uint32_t, 16> request{64, 0, 0x80000009, 0, 5, 0x203A97C0, 2,
+            0x3A87A8, 0x80000592, 0, 0, 0, 0, 0, 0, 0};
+        for (unsigned index = 0; index < expected_descriptor.size(); ++index)
+            if (read32(rdram, descriptor + index * 4) != expected_descriptor[index])
+                throw UnsupportedSyscall(0x77, context->pc);
+        for (unsigned index = 0; index < request.size(); ++index)
+            if (read32(rdram, 0x3A97C0 + index * 4) != request[index])
+                throw UnsupportedSyscall(0x77, context->pc);
+        if (sif_ee_receive_address != 0x3A94C0 || read32(rdram, 0x3A87A8) != 0x203A97C0
+                || read32(rdram, 0x3A87AC) != 2 || read32(rdram, 0x3A87B0) != 3
+                || semaphores.size() != 4 || semaphores[3].count != 0 || semaphores[3].maximum != 1
+                || read32(rdram, 0x3A9620) != 0x3322E8 || read32(rdram, 0x3A9624) != 0x3AAFC0
+                || read32(rdram, 0x3A9628) != 0x38BDF0 || !functions_.contains(0x3322E8)
+                || !functions_.contains(0x332258) || !functions_.contains(0x32EC90))
+            throw UnsupportedSyscall(0x77, context->pc);
+        // One checked logical service lookup/response. No IOP instruction execution,
+        // hardware DMA padding, interrupt entry, cycles or general RPC scheduler.
+        std::copy_n(memory_.data() + 0x3A97C0, 64, sif_iop_.data() + 0x19600);
+        sif_iop_[0x19600] = 0;
+        std::copy(sif_bind_reply_.begin(), sif_bind_reply_.end(), memory_.begin() + 0x3A94C0);
+        std::array<std::uint8_t, sizeof(R5900Context)> saved_cpu;
+        std::memcpy(saved_cpu.data(), context, saved_cpu.size());
+        auto callback = *context;
+        callback.r[4].low = 0x3A94C0;
+        callback.r[5].low = 0x3AAFC0;
+        callback.r[28].low = 0x38BDF0;
+        constexpr std::uint32_t callback_return = 0xFFFFFFF8;
+        callback.r[31].low = callback_return;
+        // Verified handler uses a 64-byte frame below the caller SP. Preserve
+        // that scratch window and execute on a CPU copy, retaining every register.
+        const auto scratch = static_cast<std::uint32_t>(callback.r[29].low) - 64;
+        checkMemory(rdram, scratch, 64);
+        std::array<std::uint8_t, 64> saved_stack;
+        std::copy_n(memory_.data() + scratch, 64, saved_stack.data());
+        rpc_end_callback_active_ = true;
+        try {
+            dispatchGuestBranch(rdram, &callback, 0x3322E8, context->pc, callback_return,
+                GuestBranchKind::DirectCall, "checked logical RPC_END");
+        } catch (...) {
+            rpc_end_callback_active_ = false;
+            std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
+            throw;
+        }
+        rpc_end_callback_active_ = false;
+        std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
+        if (callback.r[29].low != context->r[29].low || semaphores[3].count != 1
+                || read32(rdram, 0x3A87A8) != 0 || read32(rdram, 0x3A87CC) != 0x3F570
+                || read32(rdram, 0x3A87BC) != 0x3FB20 || read32(rdram, 0x3A97D0) != 4
+                || read32(rdram, 0x3A97D8) != 0)
+            throw std::runtime_error("Generated RPC_END effects differ from capture");
+        if (std::memcmp(saved_cpu.data(), context, saved_cpu.size()))
+            throw std::runtime_error("RPC_END changed interrupted CPU state");
+        ++sif_bind_context_preservations;
+        ++sif_bind_callbacks;
+        ++sif_dma_submissions;
+        context->r[2].low = 0x801;
+    }
+    bool sif_call_sema_supplied_ = false;
+    std::vector<std::uint8_t> sif_bind_iop_;
+    std::array<std::uint8_t, 64> sif_bind_reply_{};
+
     std::vector<std::uint8_t> sif_iop_;
     std::uint32_t sif_dma_result_ = 0;
     bool sif_rpc_supplied_ = false;

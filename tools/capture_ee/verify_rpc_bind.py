@@ -63,17 +63,46 @@ def verify(path):
     return ee, manifest
 
 
+def verify_call_semaphore(path):
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    ee = path.with_name('ee-ram.bin').read_bytes()
+    address, trap, marker = capture_trap('rpc-call-sema')
+    patch = manifest['patch']
+    if (manifest['source_elf_sha256'] != EXPECTED_SHA
+            or not manifest['capture_point'].startswith('rpc-call-sema:')
+            or patch['address'] != address or patch['size'] != len(trap)
+            or patch['authored_words'] != list(struct.unpack('<8I', trap))
+            or patch['marker_address'] != MARKER or patch['marker_value'] != marker
+            or len(ee) != 32 * 1024 * 1024
+            or hashlib.sha256(ee).hexdigest() != manifest['capture_sha256']
+            or ee[address:address + len(trap)] != trap
+            or struct.unpack_from('<III', ee, MARKER) != (marker, 3, 0x1FFEBD0)
+            or struct.unpack_from('<6I', ee, 0x1FFEBD0) != (0, 1, 0, 0, 0, 0x3838E8)):
+        raise ValueError('RPC call semaphore capture differs.')
+    return ee[0x1FFEBD0:0x1FFEBD0 + 24] + struct.pack('<I', 3), manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('manifest', type=Path)
     parser.add_argument('--run-probe', action='store_true', help='Verify generated provenance and run the built isolated callback probe.')
+    parser.add_argument('--call-sema-capture', type=Path, help='Optional checked first RPC call semaphore result.')
     args = parser.parse_args()
     ee, manifest = verify(args.manifest)
     folder = ROOT / 'work/bt2-generation'
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'rpc-bind-callback.bin').write_bytes(ee)
+    iop = args.manifest.with_name('iop-ram.bin').read_bytes()
+    bundle = iop + ee[0x3A94C0:0x3A9500] + struct.pack('<I', 0x801)
+    call = verify_call_semaphore(args.call_sema_capture) if args.call_sema_capture else None
+    if call:
+        if any(call[1][key] != manifest[key] for key in ('pcsx2_sha256', 'bios_sha256')):
+            raise ValueError('RPC bind and call semaphore reference environment differ.')
+        bundle += call[0]
+    (folder / 'sif-bind.bin').write_bytes(bundle)
     (folder / 'rpc-bind-callback.json').write_text(json.dumps({
-        'provenance': manifest, 'service_id': '0x80000592',
+        'provenance': manifest, 'call_semaphore_provenance': call[1] if call else None,
+        'service_id': '0x80000592',
         'service_role': 'CD initialization (public PS2SDK registration)',
         'scope': 'Isolated generated RPC_END callback; no DMA or interrupt scheduling.'
     }, indent=2) + '\n', encoding='utf-8')

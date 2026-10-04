@@ -216,10 +216,32 @@ def main():
     parser.add_argument('--sif-dma-before-capture', type=Path, help='First SIF submission EE/IOP capture; requires matching after capture.')
     parser.add_argument('--sif-dma-after-capture', type=Path, help='First SIF return/receive capture; requires first-query capture.')
     parser.add_argument('--sif-rpc-state-capture', type=Path, help='Explicit reached RPCINIT query result; requires first DMA receive captures.')
+    parser.add_argument('--sif-bind-capture', type=Path, help='Checked first CD initialization bind reply; requires RPC state capture.')
+    parser.add_argument('--rpc-call-sema-capture', type=Path, help='Checked first RPC call semaphore result; requires bind response capture.')
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
     sif_rpc = verify_sif_capture(args.sif_rpc_state_capture, rpc=True) if args.sif_rpc_state_capture else None
+    rpc_call_sema = None
+    if args.rpc_call_sema_capture and not args.sif_bind_capture:
+        parser.error('--rpc-call-sema-capture requires --sif-bind-capture')
+    sif_bind = None
+    if args.sif_bind_capture:
+        if not sif_rpc:
+            parser.error('--sif-bind-capture requires --sif-rpc-state-capture')
+        sys.path.insert(0, str(ROOT / 'tools/capture_ee'))
+        from verify_rpc_bind import verify as verify_bind, verify_call_semaphore
+        bind_ee, bind_manifest = verify_bind(args.sif_bind_capture)
+        if any(bind_manifest[key] != sif_rpc[1][key] for key in ('pcsx2_sha256', 'bios_sha256')):
+            raise ValueError('RPC bind and query reference environment differ.')
+        bind_iop = args.sif_bind_capture.with_name('iop-ram.bin').read_bytes()
+        bundle = bind_iop + bind_ee[0x3A94C0:0x3A9500] + struct.pack('<I', 0x801)
+        if args.rpc_call_sema_capture:
+            rpc_call_sema = verify_call_semaphore(args.rpc_call_sema_capture)
+            if any(bind_manifest[key] != rpc_call_sema[1][key] for key in ('pcsx2_sha256', 'bios_sha256')):
+                raise ValueError('RPC bind and call semaphore environment differ.')
+            bundle += rpc_call_sema[0]
+        sif_bind = bundle, bind_manifest
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -320,9 +342,15 @@ def main():
             word_path = folder / 'sif-rpc-state.bin'
             word_path.write_bytes(struct.pack('<I', sif_rpc[0]))
             entry_command.append(str(word_path))
+        if sif_bind:
+            bundle = folder / 'sif-bind.bin'
+            bundle.write_bytes(sif_bind[0])
+            entry_command.append(str(bundle))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "rpc_call_semaphore_provenance": rpc_call_sema[1] if rpc_call_sema else None,
+        "sif_bind_provenance": sif_bind[1] if sif_bind else None,
         "sif_rpc_provenance": sif_rpc[1] if sif_rpc else None,
         "sif_dma_provenance": sif_dma[1] if sif_dma else None,
         "sif_command_provenance": sif_command[1] if sif_command else None,

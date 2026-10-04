@@ -20,6 +20,13 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
         self.assertEqual(words[7], 0)
 
+    def test_rpc_call_semaphore_capture_boundary(self):
+        address, trap, marker = capture_trap('rpc-call-sema')
+        words = struct.unpack('<8I', trap)
+        self.assertEqual((address, marker), (0x332AD0, 0xB710))
+        self.assertEqual(words[2:4], (0xAF020004, 0xAF1D0008))
+        self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
+
     def test_wrong_elf_rejected(self):
         with self.assertRaises(ValueError):
             instrument(bytes(52))

@@ -30,6 +30,27 @@ void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
                                 PS2Runtime::GuestBranchKind::TailJump, "synthetic tail");
 }
 
+void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    const auto return_address = ctx->r[31].low;
+    const auto sp = ctx->r[29].low;
+    ctx->r[3].low = 0xFFFFFFBD;
+    ctx->r[4].low = 3;
+    runtime->handleSyscall(ram, ctx, 0);
+    runtime->write32(ram, 0x3A87A8, 0);
+    runtime->write32(ram, 0x3A87CC, 0x3F570);
+    runtime->write32(ram, 0x3A87BC, 0x3FB20);
+    runtime->write32(ram, 0x3A97D0, 4);
+    runtime->write32(ram, 0x3A97D8, 0);
+    for (auto& reg : ctx->r) reg = {UINT64_MAX, UINT64_MAX};
+    for (auto& value : ctx->f) value = 123.0f;
+    ctx->hi = ctx->lo = ctx->hi1 = ctx->lo1 = UINT64_MAX;
+    ctx->cop0_status = ctx->fcr31 = UINT32_MAX;
+    std::fill_n(ram + sp - 64, 64, 0xCC);
+    ctx->r[29].low = sp;
+    ctx->r[31].low = return_address;
+    return_leaf(ram, ctx, runtime);
+}
+
 }
 int main() {
     try {
@@ -126,6 +147,62 @@ int main() {
             reject([&] { sif.read8(sif_ram, 0x22000000); });
             sif.dataCacheLine(sif_ram, 0x20000100);
             require(sif.uncached_byte_accesses == 2 && sif.data_cache_lines == 2);
+            // Authored hostile callback fixture checks interruption isolation,
+            // not the generated callback's implementation.
+            std::vector<std::uint8_t> bind_bundle(PS2Runtime::sif_iop_size + 96);
+            auto put = [&](std::size_t offset, std::uint32_t value) {
+                std::memcpy(bind_bundle.data() + offset, &value, 4);
+            };
+            const std::array<std::uint32_t, 16> reply{0, 0, 0x80000008, 0, 0, 0x203A97C0, 0,
+                0x3A87A8, 0x80000009, 0x3F570, 0x3FB20, 0, 0, 0, 0, 0};
+            std::memcpy(bind_bundle.data() + PS2Runtime::sif_iop_size, reply.data(), 64);
+            put(PS2Runtime::sif_iop_size + 64, 0x801);
+            put(0x3F570, 0x80000592); put(0x3F578, 0x3FB20);
+            put(0x3F5B0, 0x3F558); put(0x3F560, 0x3F570);
+            const std::array<std::uint32_t, 7> call_sema{0, 1, 0, 0, 0, 0x3838E8, 3};
+            std::memcpy(bind_bundle.data() + PS2Runtime::sif_iop_size + 68, call_sema.data(), 28);
+            put(0x3F560, 0);
+            reject([&] { sif.supplySifBind(bind_bundle); });
+            put(0x3F560, 0x3F570);
+            sif.supplySifBind(bind_bundle);
+            reject([&] { sif.supplySifBind(bind_bundle); });
+            sif.initial_sp = 0x1FFED60;
+            const auto frame = sif.initial_sp - 464;
+            const std::array<std::uint32_t, 4> bind_descriptor{0x203A97C0, 0x19600, 64, 0x44};
+            const std::array<std::uint32_t, 16> bind_packet{64, 0, 0x80000009, 0, 5, 0x203A97C0,
+                2, 0x3A87A8, 0x80000592, 0, 0, 0, 0, 0, 0, 0};
+            std::memcpy(sif_ram + frame, bind_descriptor.data(), 16);
+            std::memcpy(sif_ram + 0x3A97C0, bind_packet.data(), 64);
+            sif.write32(sif_ram, 0x3A87A8, 0x203A97C0);
+            sif.write32(sif_ram, 0x3A87AC, 2); sif.write32(sif_ram, 0x3A87B0, 3);
+            sif.write32(sif_ram, 0x3A9620, 0x3322E8);
+            sif.write32(sif_ram, 0x3A9624, 0x3AAFC0); sif.write32(sif_ram, 0x3A9628, 0x38BDF0);
+            sif.semaphores.resize(4); sif.semaphores[3] = {0, 1, 0x3838D8};
+            for (unsigned index = 0; index < 32; ++index) {
+                sif_context.r[index] = {0x1234567800000000ull + index, 0xABCDEF0010000000ull + index};
+                sif_context.f[index] = static_cast<float>(index);
+            }
+            sif_context.r[3].low = 0x77; sif_context.r[4].low = frame;
+            sif_context.r[5].low = 1; sif_context.r[29].low = frame;
+            sif_context.hi = 19; sif_context.lo = 23; sif_context.cop0_status = 0x1234;
+            sif_context.pc = 0x32F028;
+            const auto cpu_before = sif_context;
+            std::fill_n(sif_ram + frame - 64, 64, 0xA7);
+            const auto iop_before = std::vector<std::uint8_t>(sif.sifIopMemory().begin(), sif.sifIopMemory().end());
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Missing compiled handler.
+            require(sif.sif_bind_callbacks == 0 && sif.semaphores[3].count == 0
+                    && std::equal(iop_before.begin(), iop_before.end(), sif.sifIopMemory().begin()));
+            sif.registerFunction(0x3322E8, clobber_rpc_callback);
+            sif.registerFunction(0x332258, return_leaf); sif.registerFunction(0x32EC90, return_leaf);
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            auto expected_cpu = cpu_before; expected_cpu.r[2].low = 0x801;
+            require(std::memcmp(&expected_cpu, &sif_context, sizeof(R5900Context)) == 0
+                    && sif.sif_bind_callbacks == 1 && sif.sif_bind_context_preservations == 1
+                    && sif.sif_dma_submissions == 2 && sif.semaphores[3].count == 1
+                    && std::all_of(sif_ram + frame - 64, sif_ram + frame, [](auto value) { return value == 0xA7; }));
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Repeated/unknown transfer.
+            sif_context.r[3].low = 0xFFFFFFBD;
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Scope closed.
         }
         const auto left = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{UINT32_MAX, 0, 0x80000000, 1});
         const auto right = std::bit_cast<ProbeGpr>(std::array<std::uint32_t, 4>{1, 2, 0x80000000, 2});

@@ -19,7 +19,8 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
         const bool timer_mode = argc >= 5;
         const bool timer2_mode = argc >= 6;
@@ -153,6 +154,22 @@ int main(int argc, char** argv) {
         context.hi = context.lo = context.hi1 = context.lo1 = UINT64_MAX;
         context.fcr31 = context.sa = UINT32_MAX;
         context.f_acc = 1.0f;
+        if (bind_mode) {
+            std::ifstream capture(argv[15], std::ios::binary | std::ios::ate);
+            if (!capture || (capture.tellg() != PS2Runtime::sif_iop_size + 68
+                    && capture.tellg() != PS2Runtime::sif_iop_size + 96))
+                throw std::runtime_error("Invalid RPC bind capture bundle");
+            std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));
+            capture.seekg(0);
+            if (!capture.read(reinterpret_cast<char*>(bundle.data()), bundle.size()))
+                throw std::runtime_error("RPC bind bundle read failed");
+            runtime.supplySifBind(bundle);
+        }
+        runtime.registerFunction(0x332970, FUN_00332970_0x332970);
+        runtime.registerFunction(0x32EC70, FUN_0032EC70_0x32ec70);
+        runtime.registerFunction(0x3322E8, FUN_003322E8_0x3322e8);
+        runtime.registerFunction(0x332258, FUN_00332258_0x332258);
+        runtime.registerFunction(0x32EC90, FUN_0032EC90_0x32ec90);
         runtime.registerFunction(0x00100008, FUN_00100008_0x100008);
         runtime.registerFunction(0x00338520, FUN_00338520_0x338520);
         runtime.registerFunction(0x003382D0, FUN_003382D0_0x3382d0);
@@ -241,7 +258,8 @@ int main(int argc, char** argv) {
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestBranch& stop) {
             std::cerr << "Branch target/source/resume: " << std::hex << stop.target << "/" << stop.source_pc << "/" << stop.resume_pc << "\n";
-            throw;
+            if (!bind_mode) throw;
+            stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
         }
         catch (const UnsupportedGuestMemory& stop) {
             if (dma5_mode) throw;
@@ -269,7 +287,8 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
-            if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
+            if (bind_mode) std::cerr << "Syscall selector/handler/pc: " << std::hex << stop.selector << "/" << stop.handler << "/" << context.pc << "\n";
+            else if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 464
                     && GPR_U32(&context, 5) == 1 && runtime.sif_dma_submissions == 1 && runtime.sif_rpc_reads == 1,
                     "Unexpected first RPC bind submission boundary");
@@ -305,6 +324,80 @@ int main(int argc, char** argv) {
             stop_selector = stop.selector;
             stop_handler = stop.handler;
             stopped = true;
+        }
+        if (bind_mode) {
+            require(stopped && !stop_target && !stop_handler && runtime.sif_bind_callbacks == 1
+                    && runtime.sif_bind_context_preservations == 1 && runtime.sif_dma_submissions == 2
+                    && runtime.semaphore_waits == 2 && runtime.semaphore_signals == 2
+                    && runtime.semaphore_deletions == 1 && runtime.startup_zero_verified
+                    && runtime.syscall_registrations == 18 && runtime.custom_syscall_calls == 17
+                    && runtime.kernel_word_writes == 668 && runtime.kernel_dispatch_validations == 12
+                    && runtime.timer3_mode_reads == 1 && runtime.timer2_mode_reads == 2
+                    && runtime.timer2_mode_writes == 1 && runtime.intc_mask == 0x1802
+                    && runtime.dmac_mask == 0xA00000 && runtime.dmac_enable_calls == 1
+                    && runtime.dma_status_reads == 1 && runtime.dma5_control_reads == 1
+                    && runtime.sif_rpc_reads == 1 && runtime.sif_command_reads == 1,
+                    "RPC bind continuation prerequisites/effects differ");
+            require(runtime.read32(runtime.memory().data(), 0x3A87CC) == 0x3F570
+                    && runtime.read32(runtime.memory().data(), 0x3A87BC) == 0x3FB20
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 8) == 0x100240
+                    && runtime.read64(runtime.memory().data(), runtime.initial_sp - 16) == 0
+                    && std::equal(kernel_before.begin(), kernel_before.end(), runtime.kernelBaseline().begin()),
+                    "Bind response/persistent frame/kernel baseline differs");
+            if (stop_selector == 0x77) require(context.pc == 0x32F028 && GPR_U32(&context, 5) == 2
+                    && GPR_U32(&context, 4) == runtime.initial_sp - 544
+                    && GPR_U32(&context, 29) == runtime.initial_sp - 544
+                    && runtime.rpc_call_semaphores == 1 && runtime.semaphores.size() == 4
+                    && runtime.semaphores[3].count == 0 && runtime.semaphores[3].maximum == 1
+                    && runtime.semaphores[3].option == 0x3838E8
+                    && runtime.guest_calls == 146 && runtime.returns == 139
+                    && runtime.word_writes == 1133 && runtime.doubleword_writes == 131
+                    && runtime.byte_writes == 530 && runtime.quadword_writes == 43632
+                    && runtime.uncached_word_accesses == 30 && runtime.uncached_byte_accesses == 4
+                    && runtime.data_cache_lines == 6, "Unexpected first RPC call submission");
+            else require(stop_selector == 0x40 && context.pc == 0x32EC68
+                    && GPR_U32(&context, 4) == runtime.initial_sp - 400
+                    && runtime.rpc_call_semaphores == 0 && runtime.semaphores.size() == 3,
+                    "Unexpected RPC call semaphore checkpoint boundary");
+            if (stop_selector == 0x77) {
+                const std::array<std::uint32_t, 8> descriptors{0x3A8800, 0x3FB20, 4, 0,
+                    0x203A97C0, 0x19600, 64, 0x44};
+                const std::array<std::uint32_t, 16> packet{0x440, 0x3FB20, 0x8000000A, 0,
+                    5, 0x203A97C0, 3, 0x3A87A8, 0, 4, 0x3695C0, 16, 1, 0x3F570, 0, 0};
+                for (unsigned index = 0; index < descriptors.size(); ++index)
+                    require(runtime.read32(runtime.memory().data(), runtime.initial_sp - 544 + index * 4) == descriptors[index],
+                            "Pending first CD-init RPC descriptors differ");
+                for (unsigned index = 0; index < packet.size(); ++index)
+                    require(runtime.read32(runtime.memory().data(), 0x3A97C0 + index * 4) == packet[index],
+                            "Pending first CD-init RPC packet differs");
+            }
+            require(context.hi == 0 && context.lo == 144 && context.hi1 == 0 && context.lo1 == 0
+                    && context.cop0_status == 0x10000 && GPR_U32(&context, 28) == 0x38BDF0,
+                    "CPU state changed across RPC continuation");
+            std::ofstream report(argv[2]);
+            if (!report) throw std::runtime_error("Could not write bind continuation report");
+            report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc << ",\"selector\":" << stop_selector
+                << ",\"target\":" << stop_address << ",\"calls\":" << runtime.guest_calls
+                << ",\"returns\":" << runtime.returns << ",\"words\":" << runtime.word_writes
+                << ",\"doublewords\":" << runtime.doubleword_writes << ",\"bytes\":" << runtime.byte_writes
+                << ",\"quads\":" << runtime.quadword_writes << ",\"cache_lines\":" << runtime.data_cache_lines
+                << ",\"aliases\":" << runtime.uncached_word_accesses << ",\"byte_aliases\":" << runtime.uncached_byte_accesses
+                << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
+                << ",\"semas\":" << runtime.semaphores.size() << ",\"sp\":" << context.r[29].low
+                << ",\"lo\":" << context.lo << ",\"bind_callbacks\":" << runtime.sif_bind_callbacks
+                << ",\"bind_context_preservations\":" << runtime.sif_bind_context_preservations
+                << ",\"semaphore_deletions\":" << runtime.semaphore_deletions
+                << ",\"call_semaphore_unused_attr\":" << runtime.rpc_call_sema_attributes
+                << ",\"arguments\":[" << GPR_U32(&context, 4) << "," << GPR_U32(&context, 5) << "]"
+                << ",\"descriptor_words\":[";
+            for (unsigned index = 0; index < (stop_selector == 0x77 ? 8u : 6u); ++index)
+                report << (index ? "," : "") << runtime.read32(runtime.memory().data(), GPR_U32(&context, 4) + index * 4);
+            report << "],\"packet_words\":[";
+            for (unsigned index = 0; index < 16; ++index)
+                report << (index ? "," : "") << runtime.read32(runtime.memory().data(), 0x3A97C0 + index * 4);
+            report << "]}\n";
+            std::cout << "Generated RPC bind and cleanup returned; first CD-init RPC call reached a checked runtime boundary.\n";
+            return 0;
         }
         require(stopped, "Entry did not stop at the expected checked boundary");
         require(runtime.startup_zero_verified && runtime.startup_quadword_writes == (zero_end - zero_start) / 16

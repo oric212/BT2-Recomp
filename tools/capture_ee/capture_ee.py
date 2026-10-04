@@ -29,11 +29,12 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
 def capture_trap(point):
     if point == 'kernel-handler':
         return HANDLER, TRAP, 0xB702
-    if point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after'):
+    if point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after', 'rpc-call-sema'):
         # SifSetDma boundary or caller resumed after first/change-address or bind submission.
         address, marker = {'sif-dma-before': (0x331D44, 0xB70C),
                            'sif-dma-after': (0x331D4C, 0xB70D),
-                           'sif-bind-after': (0x33284C, 0xB70F)}[point]
+                           'sif-bind-after': (0x33284C, 0xB70F),
+                           'rpc-call-sema': (0x332AD0, 0xB710)}[point]
         words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF1D0008,
                  0x34190000 | marker, 0xAF190000,
                  0x08000000 | ((address + 24) >> 2), 0]
@@ -191,7 +192,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after', 'rpc-call-sema'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -276,7 +277,7 @@ def main():
         if data[address:address + len(trap)] != trap:
             raise ValueError('EE RAM instrumentation does not match.')
         time.sleep(0.1)
-        if not capture_iop and args.capture_point != 'sif-rpc-state' and reader.read(pointer, 0x80004) != data[:0x80004]:
+        if not capture_iop and args.capture_point not in ('sif-rpc-state', 'rpc-call-sema') and reader.read(pointer, 0x80004) != data[:0x80004]:
             raise ValueError('Kernel prefix changed during capture.')
         if capture_iop:
             sp, = struct.unpack_from('<I', data, MARKER + 8)
@@ -285,6 +286,12 @@ def main():
             packet_address, packet_size = (0x3A97C0, 64) if args.capture_point == 'sif-bind-after' else (0x3A9580, 20)
             if reader.read(pointer + packet_address, packet_size) != data[packet_address:packet_address + packet_size]:
                 raise ValueError('SIF packet changed during capture.')
+        if args.capture_point == 'rpc-call-sema':
+            sp, = struct.unpack_from('<I', data, MARKER + 8)
+            if sp > len(data) - 24 or reader.read(pointer + sp, 24) != data[sp:sp + 24]:
+                raise ValueError('RPC call semaphore descriptor changed during capture.')
+            if reader.read(pointer + MARKER, 12) != data[MARKER:MARKER + 12]:
+                raise ValueError('RPC call semaphore publication changed during capture.')
         if args.capture_point == 'sif-bind-after':
             for start, size in ((MARKER, 12), (0x3A94C0, 64), (0x3A87A8, 40), (0x3A95C0, 13 * 12)):
                 if reader.read(pointer + start, size) != data[start:start + size]:
@@ -332,7 +339,7 @@ def main():
                     'observed_sif_dma_result': struct.unpack_from('<I', data, MARKER + 4)[0] if capture_iop else None,
                     'observed_sif_dma_sp': struct.unpack_from('<I', data, MARKER + 8)[0] if capture_iop else None,
                     'original_osd_config': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'osd-readback' else None,
-                    'limitations': ('Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
+                    'limitations': ('Instrumented standalone ELF boot; semaphore descriptor/publication stable in two reads; kernel and IOP remain live.' if args.capture_point == 'rpc-call-sema' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')
     finally:

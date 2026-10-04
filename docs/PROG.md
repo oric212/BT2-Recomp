@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated map/recompilation pipeline work locally. Generated startup returns from its SIF initialization helper using explicit PCSX2 checkpoints and a bounded native CHANGE_SADDR receive model. The next path allocates a packet, creates a semaphore and prepares an RPC bind request. A separate generated RPC_END callback probe now matches a checked local CD initialization bind response. General DMA/IOP services, automatic callback delivery, complete game boot and gameplay remain incomplete.
+The C++20 host and automated map/recompilation pipeline work locally. Generated startup completes SIF initialization and its first CD initialization RPC bind using explicit PCSX2 checkpoints and bounded logical receive/response models. The generated response callback preserves the caller CPU and scratch stack, and binding consumes its signal and deletes its temporary semaphore. The next RPC call prepares real input/output descriptors. General DMA/IOP services, hardware interrupts, complete game boot and gameplay remain incomplete.
 
-Latest verification: MSVC build/pipeline, seven CTests, 40 recomp tooling tests, nineteen capture-tool tests and the isolated RPC_END probe passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
+Latest verification: MSVC build/pipeline, seven CTests, 40 recomp tooling tests, 21 capture-tool tests and the isolated RPC_END probe passed. Game files, BIOS, captures and proprietary-derived output remain ignored. Function boundaries are provisional; the retail revision is confirmed against official Redump disc checksums and the embedded executable.
 
 ## Current blocker and next step
 
-Generated `FUN_0032F020` stops at the second SifSetDma (`0x77`), resume PC `0x0032F028`. Pending RPC bind command `0x80000009` requests server ID `0x80000592`; descriptor source `0x203A97C0`, destination `0x00019600`, size 64, flags `0x44`.
+Generated `FUN_0032F020` stops at the third SifSetDma (`0x77`), resume PC `0x0032F028`. The first CD initialization RPC call (command `0x8000000A`, function number 0) submits two descriptors: four bytes at `0x003A8800` to service buffer `0x0003FB20`, then a 64-byte packet at `0x203A97C0` to `0x00019600`. Requested reply is 16 bytes at `0x003695C0`.
 
-Server `0x80000592` is the CD initialization service (public PS2SDK registration). Local capture validates the registered IOP server/queue, response and completed EE client. Next: connect the verified generated RPC_END callback to the bounded bind submission while preserving interrupted CPU/stack state. Automatic delivery is still unsupported; no CD service calls are implemented.
+Next: validate CD initialization service execution and reply effects against public source and local PCSX2 evidence. The bind completes natively; the service call remains unsupported. No CD status or disc result is fabricated.
 
 ## Key counts
 
 - **7,262** functions generated locally: 7,260 main ELF + two scoped kernel entries; **7,271** raw generated C++/header files.
-- **69** distinct functions entered across native probes.
-- **65** functions completed across probes; entry, `FUN_00100388`, `FUN_0031F8B0` and `FUN_00332790` remain partial. Three newly completed functions are the isolated RPC_END handler, interrupt semaphore wrapper and packet-release helper. Previously completed functions can be reached again and stop on new inputs. These are startup/helper paths, not working gameplay.
+- **71** distinct functions entered across native probes.
+- **67** functions completed across probes; entry, `FUN_00100388`, `FUN_0031F8B0` and `FUN_00332970` remain partial. This pass completed the RPC bind helper and its newly linked semaphore-delete wrapper; the RPC call helper is entered but partial. Previously completed functions can be reached again and stop on new inputs. These are startup/helper paths, not working gameplay.
 
 ## Milestones
 

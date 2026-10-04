@@ -1,6 +1,11 @@
 import struct
 import unittest
-from verify_rpc_bind import validate_state
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+from capture_ee import capture_trap, EXPECTED_SHA, MARKER, ROOT
+from verify_rpc_bind import validate_state, verify_call_semaphore
 
 
 class BindEvidenceTests(unittest.TestCase):
@@ -41,6 +46,36 @@ class BindEvidenceTests(unittest.TestCase):
     def test_wrong_sizes_rejected(self):
         with self.assertRaises(ValueError):
             validate_state(self.ee[:-1], self.iop)
+
+    def test_call_semaphore_provenance_and_descriptor(self):
+        address, trap, marker = capture_trap('rpc-call-sema')
+        self.ee[address:address + len(trap)] = trap
+        struct.pack_into('<III', self.ee, MARKER, marker, 3, 0x1FFEBD0)
+        struct.pack_into('<6I', self.ee, 0x1FFEBD0, 0, 1, 0, 0, 0, 0x3838E8)
+        manifest = {'source_elf_sha256': EXPECTED_SHA,
+                    'capture_point': 'rpc-call-sema: authored fixture',
+                    'capture_sha256': hashlib.sha256(self.ee).hexdigest(),
+                    'patch': {'address': address, 'size': len(trap),
+                              'authored_words': list(struct.unpack('<8I', trap)),
+                              'marker_address': MARKER, 'marker_value': marker}}
+        (ROOT / 'work').mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / 'work') as folder:
+            path = Path(folder) / 'capture.json'
+            dump = path.with_name('ee-ram.bin')
+            dump.write_bytes(self.ee)
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            self.assertEqual(struct.unpack('<7I', verify_call_semaphore(path)[0]),
+                             (0, 1, 0, 0, 0, 0x3838E8, 3))
+            manifest['capture_sha256'] = 'wrong'
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                verify_call_semaphore(path)
+            self.ee[0x1FFEBD0 + 20] ^= 1
+            manifest['capture_sha256'] = hashlib.sha256(self.ee).hexdigest()
+            dump.write_bytes(self.ee)
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                verify_call_semaphore(path)
 
 
 if __name__ == '__main__':

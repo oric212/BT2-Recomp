@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: connect the validated local CD initialization RPC bind response and three verified generated RPC_END functions to the bounded submission path, preserving the caller CPU/stack context. Service/queue/response evidence and isolated callback validation now work; automatic delivery and service execution remain unsupported. Preserve all earlier checkpoint boundaries, receive-effect validation and bounded uncached RAM access. Continue through multiple link/runtime blockers per pass until a new major subsystem or missing evidence prevents a safe change.
+Current next step: validate and implement only the reached first CD initialization RPC call, using reference service behavior and local reply evidence. The first bind and its generated RPC_END delivery/cleanup now return through the native startup path. Logical callback delivery preserves the complete caller CPU and its 64-byte scratch stack; hardware interrupt entry and general IOP services remain unsupported. Preserve all earlier checkpoint boundaries, receive-effect validation and bounded uncached RAM access. Continue through multiple link/runtime blockers per pass until a new major subsystem or missing evidence prevents a safe change.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
