@@ -12,14 +12,16 @@ Latest verification: MSVC EE checkpoint pipeline, 11 CTests (including new nativ
 
 Actual module load: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB50`; LOADFILE RPC 0 requests `cdrom0:\IRX\SIO2MAN.IRX;1` with no module arguments. Full probe: **433 calls / 425 returns**. Module entry/import effects must execute before success can be returned.
 
-An isolated authored MIPS-I backend now compiles and executes the local SIO2MAN entry, with owned IOP RAM and checked import dispatch. Library registration works. It stops after 44 native instructions at PC `0x00010008`: a 32-bit write of `0x3BC` to SIO2 control `0x1F808268`. This new hardware/IRQ scope needs a separate evidence-based plan before module completion. See [native IOP execution](IOP_NATIVE_EXECUTION_PLAN.md). Native scheduling and EE loader connection remain pending.
+The isolated native SIO2MAN entry now **returns result 0 after 151 instructions**. Owned event/semaphore/thread, IRQ registration and DMA setup work; its native thread yields at WaitEventFlag for mask `0x4155`. Normalized initialization effects match the local reference capture. Opaque options, transfer behavior and physical scheduling are not validated.
+
+Next: connect the persistent native IOP instance to the actual pending EE request using [the LOADFILE lifetime bridge plan](IOP_LOADFILE_BRIDGE_PLAN.md), then continue subsequent requests. [SIO2 scope and limits](SIO2_BRINGUP_PLAN.md). No module-success reply has been sent to EE.
 
 ## Key counts
 
 - **7,262** locally generated EE functions; **7,271** raw generated C++/header files.
 - **111** distinct EE functions entered / **107** completed across native probes (startup/helpers, not gameplay).
 - EE counts are unchanged this pass. Module-load helpers, main and entry remain partial.
-- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **three native IOP mapped ranges entered**, one owned library registered. Module entry has not completed; these are partial execution counts, not working gameplay functions.
+- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **six native IOP entry targets entered**, one resident module entry returned and one worker retained waiting. These startup counts do not represent working gameplay functions.
 - Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No displayed frame or complete game boot.
 
 ## Milestones

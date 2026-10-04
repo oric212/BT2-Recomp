@@ -409,4 +409,12 @@ build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/native-
 
 The authored standalone MIPS-I translator emits native instruction expressions and checked import dispatch. It is separate from the pinned EE PS2Recomp pipeline. Outputs, relocation images and provenance remain under ignored work/iop/. CMake also generates authored synthetic programs locally. No game code is needed in the repository.
 
-The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: 44 instructions, three mapped ranges entered, one registered library, write 0x3BC/width 4 blocked at 0x1F808268. The isolated probe is not yet connected to the EE LOADFILE adapter.
+The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: entry returned with result 0 after 151 instructions, six entry targets entered and one native worker waiting for event bits 0x4155. Reports and companion private RAM output must be directly under work/iop; run from the project root. The isolated probe is not yet connected to the EE LOADFILE adapter.
+
+Validate scoped native initialization against your recorded local checkpoint:
+
+```powershell
+python tools/iop/verify_native.py --native work/iop/native-stop.json --reference work/pcsx2-capture/loadfile-module-after/capture.json --module rom/IRX/SIO2MAN.IRX --output work/iop/startup-validation.json
+```
+
+The checker validates capture hashes/trap, module ownership/code, normalized BSS, semaphore/event state and native thread parameters/wait. It checks reached reset/DMA/IRQ state against the public behavior consulted. It does not equate opaque options or capture hardware MMIO, and does not complete EE LOADFILE. Runtime handles use separate event/semaphore/thread namespaces. Kernel record offsets are specific to this reference scenario.

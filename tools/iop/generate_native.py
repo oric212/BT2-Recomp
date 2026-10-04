@@ -47,7 +47,7 @@ def instruction(word,pc,base):
     return f'throw std::runtime_error("Unsupported IOP instruction at {pc:#x}");'
 
 def emit(image,base,ranges,imports=(),seeds=(),symbol='bt2_iop_module'):
-    lines=['#include "native_runtime.h"',f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {','rt.tick(c);','switch(IopRuntime::physical(c.pc)-'+str(base)+'u) {']
+    lines=['#include "native_runtime.h"',f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc)-{base}u);','switch(IopRuntime::physical(c.pc)-'+str(base)+'u) {']
     for lo,hi in ranges:
         for address in range(lo,hi,4):
             if address in seeds:lines.append(f'case {address}u: {{rt.entries.insert({address}u);')

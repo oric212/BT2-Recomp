@@ -42,7 +42,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: follow [native IOP execution](IOP_NATIVE_EXECUTION_PLAN.md). Fresh CD/media-mode initialization and LOADFILE bind/version query return through validated diagnostic replies. The actual first SIO2MAN module-load request is reached. Local IRX metadata, provisional mapping and private relocation comparison work, but our pinned recompiler lacks BT3's R3000/import backend. Implement that separate architecture scope before reporting module success; display/presentation, general disc I/O, video timing and native IOP execution remain incomplete.
+Current next step: follow [the EE/native IOP LOADFILE lifetime bridge](IOP_LOADFILE_BRIDGE_PLAN.md). Actual native SIO2MAN entry and its first worker now execute in an isolated owned runtime. Scoped startup effects match normalized reference evidence; connect that persistent runtime to the pending EE loader request before continuing later module loads. [Native IOP plan](IOP_NATIVE_EXECUTION_PLAN.md) and [SIO2 scope](SIO2_BRINGUP_PLAN.md) document remaining scheduling/transfer limits.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

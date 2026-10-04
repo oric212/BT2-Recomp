@@ -1,12 +1,18 @@
 #include "native_runtime.h"
 #include "library_provider.h"
+#include "kernel_provider.h"
 #include "sio2man_native.h"
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 void bt2_iop_module(IopRuntime&,IopContext&);
 int main(int argc,char** argv) {
     if(argc!=3){std::cerr<<"Usage: bt2-iop-probe private-image report.json\n";return 1;}
-    IopRuntime rt;IopContext c;
+    if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
+        std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
+    }
+    IopRuntime rt;IopContext c;bool entry_returned=false;std::string diagnostic;
+
     try {
         std::ifstream stream(argv[1],std::ios::binary|std::ios::ate);
         if(!stream || stream.tellg()!=iop_module_size)throw std::runtime_error("IOP private image size differs");
@@ -17,12 +23,29 @@ int main(int argc,char** argv) {
         for(unsigned n=0;n<sizeof(path);++n)rt.write(0x1FE100+n,path[n],1);
         rt.write(0x1FE000,0x1FE100,4);rt.write(0x1FE004,0,4);
         c.pc=iop_module_entry;c.set(28,iop_module_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);c.set(4,1);c.set(5,0x1FE000);
-        iop_export_bounds(rt);install_iop_library_provider(rt);
-        bt2_iop_module(rt,c);throw std::runtime_error("Unexpected module entry completion without validated effects");
+        iop_export_bounds(rt);install_iop_library_provider(rt);install_iop_kernel_providers(rt);
+        rt.execute=bt2_iop_module;
+        bt2_iop_module(rt,c);entry_returned=true;diagnostic="Module entry returned; effects require validation before EE LOADFILE success";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}
-        std::ofstream report(argv[2]);if(!report){std::cerr<<"Cannot write IOP report\n";return 1;}report<<"{\"pc\":"<<rt.executing_pc<<",\"steps\":"<<rt.steps<<",\"blocked_address\":"<<rt.blocked_address<<",\"access_kind\":\""<<rt.access_kind<<"\",\"access_width\":"<<rt.access_width<<",\"access_value\":"<<rt.access_value<<",\"mapped_ranges_entered\":"<<rt.entries.size()<<",\"registered_libraries\":"<<rt.libraries.size()<<",\"imports\":[";
+        diagnostic=e.what();
+    }
+    {
+        std::ofstream memory(std::string(argv[2])+".ram.bin",std::ios::binary);memory.write(reinterpret_cast<const char*>(rt.ram.data()),rt.ram.size());
+        if(!memory){std::cerr<<"Cannot write private IOP memory\n";return 1;}
+        std::ofstream report(argv[2]);if(!report){std::cerr<<"Cannot write IOP report\n";return 1;}report<<"{\"entry_returned\":"<<(entry_returned?"true":"false")<<",\"entry_result\":"<<c.get(2)<<",\"sio2_control_known\":"<<(rt.sio2_control_known?"true":"false")<<",\"sio2_control\":"<<rt.sio2_control<<",\"events\":"<<rt.events.size()<<",\"semaphores\":"<<rt.semaphores.size()<<",\"threads\":[";
+        bool first_thread=true;
+        for(const auto& [id,t]:rt.threads) {if(!first_thread)report<<',';first_thread=false;report<<"{\"id\":"<<id<<",\"entry\":"<<t.entry<<",\"pc\":"<<t.context.pc<<",\"waiting\":"<<(t.waiting?"true":"false")<<",\"event\":"<<t.wait_event<<",\"bits\":"<<t.wait_bits<<",\"mode\":"<<t.wait_mode<<",\"result\":"<<t.wait_result<<",\"priority\":"<<t.priority<<",\"stacksize\":"<<t.stacksize<<",\"attr\":"<<t.attr<<",\"option\":"<<t.option<<",\"gp\":"<<t.gp<<"}";}
+        report<<"],\"event_objects\":[";bool first=true;
+        for(const auto& [id,e]:rt.events) {if(!first)report<<',';first=false;report<<"{\"id\":"<<id<<",\"attr\":"<<e.attr<<",\"option\":"<<e.option<<",\"bits\":"<<e.bits<<"}";}
+        report<<"],\"semaphore_objects\":[";first=true;
+        for(const auto& [id,e]:rt.semaphores) {if(!first)report<<',';first=false;report<<"{\"id\":"<<id<<",\"attr\":"<<e.attr<<",\"option\":"<<e.option<<",\"count\":"<<e.count<<",\"maximum\":"<<e.maximum<<"}";}
+        report<<"],\"interrupts\":[";first=true;
+        for(const auto& [id,e]:rt.interrupts) {if(!first)report<<',';first=false;report<<"{\"irq\":"<<id<<",\"mode\":"<<e.mode<<",\"handler\":"<<e.handler<<",\"argument\":"<<e.argument<<",\"enabled\":"<<(e.enabled?"true":"false")<<"}";}
+        report<<"],\"dma_channels\":[";first=true;
+        for(const auto& [id,e]:rt.dma_channels) {if(!first)report<<',';first=false;report<<"{\"channel\":"<<id<<",\"priority\":"<<e.priority<<",\"enabled\":"<<(e.enabled?"true":"false")<<"}";}
+        report<<"],\"pc\":"<<rt.executing_pc<<",\"steps\":"<<rt.steps<<",\"blocked_address\":"<<rt.blocked_address<<",\"access_kind\":\""<<rt.access_kind<<"\",\"access_width\":"<<rt.access_width<<",\"access_value\":"<<rt.access_value<<",\"mapped_ranges_entered\":"<<rt.entries.size()<<",\"registered_libraries\":"<<rt.libraries.size()<<",\"imports\":[";
         for(unsigned n=0;n<rt.imports.size();++n){if(n)report<<',';report<<'\"'<<rt.imports[n]<<'\"';}report<<"],\"arguments\":["<<c.get(4)<<','<<c.get(5)<<','<<c.get(6)<<','<<c.get(7)<<"]}\n";
-        std::cout<<"IOP diagnostic stopped: "<<e.what()<<"; PC=0x"<<std::hex<<rt.executing_pc<<std::dec<<", native steps="<<rt.steps<<"\n";return 0;
+        std::cout<<"IOP diagnostic stopped: "<<diagnostic<<"; PC=0x"<<std::hex<<rt.executing_pc<<std::dec<<", native steps="<<rt.steps<<"\n";return 0;
     }
 }

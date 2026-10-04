@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+struct IopYield : std::exception {const char* what() const noexcept override {return "IOP thread waiting for event";}};
+
 struct IopContext {
     std::array<std::uint32_t,32> r{};
     std::uint32_t pc=0,hi=0,lo=0,branch_target=0,load_value=0;
@@ -40,13 +42,32 @@ public:
     std::vector<std::uint8_t> ram=std::vector<std::uint8_t>(ram_size);
     std::vector<std::pair<std::uint32_t,std::uint32_t>> ranges;
     std::map<std::pair<std::string,unsigned>,Provider> providers;
+    struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
+    std::map<unsigned,DmaChannel> dma_channels;
+    bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
+    struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;};
+    std::map<unsigned,Interrupt> interrupts;
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0;};
+    std::map<unsigned,Thread> threads;
+    unsigned next_thread=0x20001,current_thread=0;
+    std::function<void(IopRuntime&,IopContext&)> execute;
+    std::uint32_t stack_cursor=0x1E0000;
+    struct Semaphore {std::uint32_t attr,option,count,maximum;};
+    std::map<unsigned,Semaphore> semaphores;
+    unsigned next_semaphore=0x30001;
+    struct Event {std::uint32_t attr,option,bits;};
+    std::map<unsigned,Event> events;
+    unsigned next_event=0x10001;
     struct Library {std::uint32_t table; unsigned version; std::vector<std::uint32_t> slots;};
     std::map<std::string,Library> libraries;
     std::map<std::uint32_t,unsigned> export_bounds;
     std::uint32_t library_head=0;
-    std::set<std::uint32_t> entries;
+    std::set<std::uint32_t> entries,entry_targets;
     std::vector<std::string> imports;
     std::uint32_t executing_pc=0,blocked_address=0;
+    bool sio2_control_known=false;
+    std::uint32_t sio2_control=0;
+    unsigned sio2_reset_writes=0;
     unsigned steps=0,access_width=0;
     std::uint32_t access_value=0;
     std::string access_kind;
@@ -71,7 +92,11 @@ public:
     void write(std::uint32_t address,std::uint32_t value,unsigned size) {
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
-        const auto p=physical(address);check(p,size);
+        const auto p=physical(address);
+        if(p==0x1F808268 && size==4 && value==0x3BC) {
+            sio2_control=value;sio2_control_known=true;++sio2_reset_writes;return;
+        }
+        check(p,size);
         if((size==2 && p%2) || (size==4 && p%4))throw std::runtime_error("Unaligned IOP store");
         std::memcpy(ram.data()+p,&value,size);
     }

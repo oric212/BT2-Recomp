@@ -1,5 +1,6 @@
 #include "native_runtime.h"
 #include "library_provider.h"
+#include "kernel_provider.h"
 #include <iostream>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
 void check(bool v) {if(!v)throw std::runtime_error("IOP synthetic result differs");}
@@ -39,6 +40,22 @@ int main() {
         check(libraries.read(0x30000,4)==0 && libraries.libraries.at("test").version==0x101);
         rejected=false;try{libraries.import("loadcore",6,caller);}catch(const std::runtime_error&){rejected=true;}check(rejected && libraries.libraries.size()==1);
         caller.set(4,0x30004);rejected=false;try{libraries.import("loadcore",6,caller);}catch(const std::runtime_error&){rejected=true;}check(rejected && libraries.libraries.size()==1);
+        IopRuntime kernel;kernel.map(0x10000,std::vector<std::uint8_t>(0x1000));kernel.map(0x20000,std::vector<std::uint8_t>(0x100));
+        install_iop_kernel_providers(kernel);IopContext host;host.set(4,0x20040);host.set(28,0x18000);
+        kernel.write(0x20040,2,4);const auto event_id=kernel.import("thevent",4,host);
+        kernel.write(0x20040,0x02000000,4);kernel.write(0x20048,0x101C0,4);kernel.write(0x2004C,0x800,4);kernel.write(0x20050,16,4);
+        const auto thread_id=kernel.import("thbase",4,host);check(thread_id!=event_id);host.set(4,thread_id);host.set(5,event_id);kernel.execute=bt2_iop_synthetic;
+        check(kernel.import("thbase",6,host)==0);auto& worker=kernel.threads.at(thread_id);
+        check(worker.waiting && !worker.ready && worker.context.pc==0x10200 && worker.wait_bits==4 && worker.wait_mode==0x11);
+        check(worker.context.get(28)==0x18000 && kernel.events.at(event_id).bits==0 && kernel.current_thread==0);
+        const auto parked=worker.context;rejected=false;try{kernel.import("thbase",6,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && worker.context.pc==parked.pc);
+        kernel.events.at(event_id).bits=12;kernel.current_thread=thread_id;bt2_iop_synthetic(kernel,worker.context);kernel.current_thread=0;
+        check(!worker.waiting && worker.context.pc==IopRuntime::sentinel && worker.context.get(3)==9 && kernel.read(0x20000,4)==12 && kernel.events.at(event_id).bits==0);
+        kernel.write(0xBF808268,0x3BC,4);check(kernel.sio2_control_known && kernel.sio2_control==0x3BC);
+        rejected=false;try{kernel.write(0xBF808268,0x3BD,4);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.sio2_control==0x3BC);
+        host.set(4,0x20010);check(kernel.import("intrman",17,host)==0 && kernel.read(0x20010,4)==1 && !kernel.cpu_interrupts_enabled);
+        host.set(4,1);check(kernel.import("intrman",18,host)==0 && kernel.cpu_interrupts_enabled);
+        host.set(4,11);host.set(5,3);kernel.import("dmacman",33,host);kernel.import("dmacman",34,host);check(kernel.dma_channels.at(11).priority==3 && kernel.dma_channels.at(11).enabled);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

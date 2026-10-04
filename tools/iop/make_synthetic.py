@@ -5,7 +5,7 @@ from generate_native import emit
 BASE=0x10000
 
 def build():
-    image=bytearray(0x184);ranges=[]
+    image=bytearray(0x208);ranges=[]
     def program(offset,words):
         for n,word in enumerate(words):struct.pack_into('<I',image,offset+n*4,word)
         ranges.append((offset,offset+len(words)*4))
@@ -17,6 +17,7 @@ def build():
     program(0x100,[0xA8820003,0xB8820000,0x03E00008,0])
     program(0x140,[0x0C000000|((BASE+0x180)>>2),0,0x01000008,0])
     program(0x160,[0x8C820000,0x10400002,0x24430000,0x24030064,0x03E00008,0])
-    return emit(image,BASE,ranges,[{'address':0x180,'library':'synthetic','ordinal':4}],symbol='bt2_iop_synthetic')
+    program(0x1C0,[0x03E08021,0x24050004,0x24060011,0x3C070002,0x0C000000|((BASE+0x200)>>2),0,0x24030009,0x02000008,0])
+    return emit(image,BASE,ranges,[{'address':0x180,'library':'synthetic','ordinal':4},{'address':0x200,'library':'thevent','ordinal':10}],symbol='bt2_iop_synthetic')
 if __name__=='__main__':
     out=Path(__file__).resolve().parents[2]/'work/iop/synthetic_native.cpp';out.parent.mkdir(parents=True,exist_ok=True);out.write_text(build(),encoding='utf-8')
