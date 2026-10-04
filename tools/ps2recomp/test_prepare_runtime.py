@@ -1,9 +1,16 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_data_cache
+from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status
 
 
 class RuntimePreparationTests(unittest.TestCase):
+    def test_vu_status_routes_to_checked_runtime(self):
+        source='SET_GPR_U32(ctx, 6, ctx->vu0_vpu_stat);'
+        text,count=route_vu_status(source)
+        self.assertEqual(count,1);self.assertIn('runtime->readVuStatus(ctx)',text)
+        self.assertEqual(route_vu_status(text),(text,0))
+        with self.assertRaises(ValueError):route_vu_status('unexpected(ctx->vu0_vpu_stat)')
+
     def test_checked_cache_hook_scope(self):
         source = '// 0x1234: 0xbd180040  cache       0x18, 0x40($t0)\n    ctx->pc = 0x1234u;\n    // CACHE instruction (ignored)'
         text, count = route_data_cache(source)

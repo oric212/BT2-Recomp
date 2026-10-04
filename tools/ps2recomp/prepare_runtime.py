@@ -23,6 +23,13 @@ def route_tail_calls(source):
         'PS2Runtime::GuestBranchKind::TailJump, "generated tail call"); return;', source)
 
 
+def route_vu_status(source):
+    pattern=r"SET_GPR_U32\(ctx, (\d+), ctx->vu0_vpu_stat\);"
+    text,count=re.subn(pattern,lambda m:f'SET_GPR_U32(ctx, {m[1]}, runtime->readVuStatus(ctx));',source)
+    if 'ctx->vu0_vpu_stat' in text:raise ValueError('Unrecognized generated VU status access')
+    return text,count
+
+
 def route_data_cache(source):
     pattern = (r'(// 0x[0-9a-f]+: 0x[0-9a-f]+  cache       0x18, 0x([0-9A-Fa-f]+)\(\$t0\)'
                r'\s+ctx->pc = 0x[0-9A-Fa-f]+u;\s+)// CACHE instruction \(ignored\)')
@@ -81,10 +88,11 @@ def main():
     for address in verify_extra():
         source=ROOT/'game/generated/bt2'/f'FUN_{address:08X}_0x{address:x}.cpp'
         text,count=route_tail_calls(source.read_text(encoding='utf-8'))
+        text,vu_count=route_vu_status(text)
         destination=patched/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

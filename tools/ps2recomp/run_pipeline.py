@@ -234,6 +234,7 @@ def main():
     parser.add_argument('--gs-interrupt-captures',type=Path)
     parser.add_argument('--gs-csr-field-capture',type=Path)
     parser.add_argument('--gif-captures',type=Path)
+    parser.add_argument('--gif-sync-captures',type=Path)
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -362,12 +363,18 @@ def main():
         if not gs_interrupt:parser.error('CSR field requires INTC checkpoints')
         gs_field=verify_gs(args.gs_csr_field_capture,gs_crt[1],'gs-csr-field')
         scmd_bind=scmd_bind[0]+gs_field[0],scmd_bind[1]
+    gif_sync=None
     gif=None
     if args.gif_captures:
         if not gs_field:parser.error('GIF checkpoints require the CSR field checkpoint')
         from verify_gif import verify as verify_gif
         gif=verify_gif(args.gif_captures,gs_field[1])
         scmd_bind=scmd_bind[0]+gif[0],scmd_bind[1]
+    if args.gif_sync_captures:
+        if not gif:parser.error('GIF synchronization requires first packet evidence')
+        from verify_gif import verify_sync
+        gif_sync=verify_sync(args.gif_sync_captures,gs_field[1])
+        scmd_bind=scmd_bind[0]+gif_sync[0],scmd_bind[1]
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -486,6 +493,7 @@ def main():
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
         "gif_provenance": gif[1] if gif else None,
+        "gif_sync_provenance": gif_sync[1] if gif_sync else None,
         "gs_interrupt_provenance": gs_interrupt[1] if gs_interrupt else None,
         "gs_field_provenance": gs_field[1] if gs_field else None,
         "gs_imr_provenance": gs_imr[1] if gs_imr else None,

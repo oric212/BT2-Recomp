@@ -5,6 +5,7 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
+#include "gs_command_sink.h"
 
 class GifPacketMismatch : public std::runtime_error {
 public:
@@ -14,7 +15,7 @@ public:
     std::vector<std::uint8_t> expected,actual;
 };
 
-// First observed normal-mode GIF request only. No transfer is accepted here.
+// Two observed normal-mode GIF requests with bounded diagnostic completion.
 class GifDmaStaging {
 public:
     void supply(std::span<const std::uint8_t> expected_packet) {
@@ -22,8 +23,9 @@ public:
         expected_.assign(expected_packet.begin(),expected_packet.end());supplied_=true;
     }
     std::uint32_t readIdle() {
-        if(!supplied_ || phase_!=0)throw std::runtime_error("Unsupported/repeated GIF idle read");
-        phase_=1;++idle_reads;return 0;
+        if(!supplied_ || (phase_!=0 && !(phase_==6 && starts==1 && !second_.empty())))throw std::runtime_error("Unsupported/repeated GIF idle read");
+        if(phase_==6) {expected_=second_;sync_reads=0;packet_verified=false;}
+        phase_=1;++idle_reads;return starts?1:0;
     }
     void setCount(std::uint32_t value) {
         if(phase_!=1 || value!=15)throw std::runtime_error("Unsupported GIF count/order");
@@ -49,15 +51,63 @@ public:
             if(mask==1 && expected_value!=actual_value)++padding_differences;
         }
         if(!matches)throw GifPacketMismatch(expected_,actual);
+        staged_.assign(actual.begin(),actual.end());
         reserved_difference_words=padding_differences;
         madr=value;phase_=3;++staging_writes;packet_verified=true;
     }
+    void start(std::uint32_t value,std::span<const std::uint8_t> ram) {
+        if(!ready() || value!=0x101)throw std::runtime_error("Unsupported GIF start/order");
+        // Revalidate the staged bytes immediately before command consumption.
+        if(madr>ram.size() || std::size_t(qwc)*16>ram.size()-madr)throw std::runtime_error("GIF start source bounds changed");
+        auto packet=ram.subspan(madr,qwc*16);
+        if(!std::equal(staged_.begin(),staged_.end(),packet.begin()))throw GifPacketMismatch(staged_,packet);
+        gs.consume(packet);chcr=value;phase_=4;++starts;
+        madr+=qwc*16;qwc=0;
+        // Packet consumption advances MADR/QWC; STR remains set until checked completion.
+    }
+    void supplySync(std::span<const std::uint8_t> pub) {
+        constexpr std::array<std::uint32_t,27> expected={0,0,0x1FFEAF0,0,0x101,0,0x1FFEC40,0x40,0xE00,
+            1,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0,
+            0x1000A000,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0};
+        if(sync_ || pub.size()!=372 || std::memcmp(pub.data(),expected.data(),sizeof(expected)))
+            throw std::runtime_error("Invalid GIF synchronization evidence");
+        constexpr std::array<std::uint32_t,6> idle_return={0,0,0x1FFEAF0,0,0,0x1FFEB00};
+        if(std::memcmp(pub.data()+108,idle_return.data(),sizeof(idle_return)))throw std::runtime_error("Invalid VU idle/GS synchronization return evidence");
+        second_.assign(pub.begin()+132,pub.end());sync_=true;
+    }
+    bool syncSupplied() const {return sync_;}
+    std::uint32_t readVifIdle() {
+        if(!sync_ || phase_!=4 || sync_reads)throw std::runtime_error("Unsupported VIF1 channel read");
+        ++sync_reads;return 0;
+    }
+    std::uint32_t readStarted(bool completion_poll) {
+        if(!sync_ || phase_!=4 || sync_reads!=(completion_poll?2u:1u))throw std::runtime_error("Unsupported GIF completion order");
+        ++sync_reads;
+        if(completion_poll) {phase_=5;chcr=1;++completions;}
+        return chcr;
+    }
+    std::uint32_t readVifStatus() {
+        if(!sync_ || phase_!=5 || sync_reads!=3)throw std::runtime_error("Unsupported VIF1 status read");
+        ++sync_reads;return 0x40;
+    }
+    std::uint32_t readVuIdle() {
+        if(!sync_ || phase_!=5 || sync_reads!=4 || vu_reads>=starts)throw std::runtime_error("Unsupported VU idle checkpoint/order");
+        ++vu_reads;return 0;
+    }
+    std::uint32_t readGifStatus() {
+        if(!sync_ || phase_!=5 || sync_reads!=4 || vu_reads!=starts)throw std::runtime_error("Unsupported GIF status/order");
+        phase_=6;++sync_reads;return 0;
+    }
+    unsigned sync_reads=0,completions=0,vu_reads=0;
+    GsCommandSink gs;
+    unsigned starts=0;
+    std::uint32_t chcr=0;
     bool ready() const {return phase_==3 && packet_verified;}
     unsigned idle_reads=0,staging_writes=0,reserved_difference_words=0;
     std::uint32_t qwc=0,madr=0;
     bool packet_verified=false;
 private:
-    bool supplied_=false;
+    bool supplied_=false,sync_=false;
     unsigned phase_=0;
-    std::vector<std::uint8_t> expected_;
+    std::vector<std::uint8_t> expected_,staged_,second_;
 };

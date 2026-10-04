@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616 && capture.tellg()!=988)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -305,6 +305,8 @@ int main(int argc, char** argv) {
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
                 || (runtime.gs_interrupt.acknowledgements==2 && stop.address==0x12001000 && stop.size==8 && context.pc==0x3104F4)
                 || (runtime.gs_field_reads==1 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4)
+                || (runtime.gif_dma.starts==1 && stop.address==0x10009000 && stop.size==4 && context.pc==0x310560)
+                || (runtime.gif_dma.starts==2 && stop.address==0x1000E010 && stop.size==4 && context.pc==0x3319CC)
                 || (runtime.gif_dma.ready() && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3101A8),
                 "Unexpected GS continuation memory boundary");
             else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
@@ -479,7 +481,9 @@ int main(int argc, char** argv) {
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
-                        require(runtime.reset_ready_checkpoint_reads==1 && !stop_target,
+                        require(runtime.reset_ready_checkpoint_reads==1 && (!stop_target
+                            || (stop_target==0x310548 && stop_source==0x1002B0 && stop_resume==0x1002B8
+                                && runtime.gif_dma.starts==1)),
                                 "Unexpected ready continuation target/replay");
                         if(!runtime.gs_csr_reset_writes) require(stop_address==0x12001000 && stop_size==8
                             && context.pc==0x30FE44 && runtime.guest_calls==230 && runtime.returns==226
@@ -493,6 +497,36 @@ int main(int argc, char** argv) {
                             && runtime.guest_calls==231 && runtime.returns==227
                             && context.r[29].low==runtime.initial_sp-608 && runtime.halfword_writes==4,
                             "GS CRT boundary differs");
+                        else if(runtime.gif_dma.starts) {
+                            require(runtime.gif_dma.gs.packets==runtime.gif_dma.starts
+                                && runtime.gif_dma.gs.sprites==runtime.gif_dma.starts
+                                && runtime.gif_dma.gs.pixels==std::uint64_t(runtime.gif_dma.starts)*640*448
+                                && runtime.gif_dma.qwc==0 && runtime.gif_dma.packet_verified
+                                && runtime.gif_dma.idle_reads==runtime.gif_dma.starts
+                                && runtime.gif_dma.staging_writes==runtime.gif_dma.starts*2,
+                                "GS command consumption/GIF state differs");
+                            if(runtime.gif_dma.starts==1) require(runtime.gif_dma.chcr==0x101
+                                && runtime.gif_dma.madr==runtime.initial_sp-288 && !runtime.gif_dma.completions
+                                && runtime.returns==252
+                                && ((stop_target==0x310548 && context.pc==0x310548 && !stop_address
+                                        && context.r[29].low==runtime.initial_sp-608 && runtime.guest_calls==255)
+                                    || (!stop_target && !runtime.gif_dma.syncSupplied()
+                                        && stop_address==0x10009000 && stop_size==4 && context.pc==0x310560
+                                        && context.r[29].low==runtime.initial_sp-624 && runtime.guest_calls==256)),
+                                "First GS synchronization evidence boundary differs");
+                            else require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
+                                && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2
+                                && runtime.gif_dma.chcr==1 && runtime.gif_dma.madr==runtime.initial_sp-48
+                                && stop_address==0x1000E010 && stop_size==4 && context.pc==0x3319CC
+                                && context.r[29].low==runtime.initial_sp-192
+                                && runtime.guest_calls==265 && runtime.returns==261 && runtime.dma_status_reads==1,
+                                "Post-reset SIF DMA status boundary differs");
+                            for(unsigned page : {0u,140u}) {
+                                if(page==0 && runtime.gif_dma.starts==1)continue;
+                                const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
+                                require(pixel.value==0 && pixel.known==UINT32_MAX,"Startup framebuffer clear edge differs");
+                            }
+                        }
                         else if(runtime.gs_interrupt.acknowledgements==2) require(runtime.gs_interrupt.polls==2
                             && runtime.gs_interrupt.events==1 && runtime.gs_interrupt.status()==8
                             && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1
@@ -536,6 +570,12 @@ int main(int argc, char** argv) {
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
                 << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
                 << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"gif_completions\":" << runtime.gif_dma.completions
+                << ",\"gif_sync_reads\":" << runtime.gif_dma.sync_reads
+                << ",\"gs_packets\":" << runtime.gif_dma.gs.packets
+                << ",\"gs_sprites\":" << runtime.gif_dma.gs.sprites
+                << ",\"gs_pixels\":" << runtime.gif_dma.gs.pixels
+                << ",\"gif_starts\":" << runtime.gif_dma.starts
                 << ",\"gif_idle_reads\":" << runtime.gif_dma.idle_reads
                 << ",\"gif_staging_writes\":" << runtime.gif_dma.staging_writes
                 << ",\"gif_qwc\":" << runtime.gif_dma.qwc

@@ -55,8 +55,17 @@ struct UnsupportedGuestMemory : std::runtime_error {
     std::size_t size;
 };
 
+struct UnsupportedVuStatus : std::runtime_error {
+    UnsupportedVuStatus():std::runtime_error("Unsupported VU0 VPU_STAT read") {}
+};
+
 class PS2Runtime {
 public:
+    std::uint32_t readVuStatus(R5900Context* context) {
+        if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
+            return gif_dma.readVuIdle();
+        throw UnsupportedVuStatus();
+    }
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
     enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
@@ -863,7 +872,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -923,12 +932,13 @@ public:
             if(field!=0x551B6004)throw std::runtime_error("GS field checkpoint differs");
             gs_field_supplied_=true;
         }
-        if(bundle.size()==616) {
+        if(bundle.size()>=616) {
             const std::array<std::uint32_t,9> idle{0,0,0x1FFEAF0,0,0,0,1,0x800040,0x1201};
             const std::array<std::uint64_t,2> results{15,0};
             if(std::memcmp(bundle.data()+324,idle.data(),36) || std::memcmp(bundle.data()+360,results.data(),16))
                 throw std::runtime_error("GIF idle/staging/reference return evidence differs");
             gif_dma.supply(bundle.subspan(376,240));gif_dma_supplied_=true;
+            if(bundle.size()==988)gif_dma.supplySync(bundle.subspan(616,372));
         }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
@@ -991,7 +1001,8 @@ public:
                 || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
             throw UnsupportedGuestMemory(address,8);
         // Reached reset accepted only with matching reference readback evidence.
-        // No native reset of unimplemented GS/GIF/renderer state is claimed.
+        // Reset only the supported drawing-register defaults; VRAM stays unknown.
+        gif_dma.gs.resetDrawingState();
         ++gs_csr_reset_writes;
     }
     std::uint64_t Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
@@ -1018,17 +1029,28 @@ public:
             gs_interrupt.acknowledge(value);return;
         }
         if(gif_dma_supplied_ && gs_field_reads==1 && context->r[29].low==initial_sp-624) {
+            if(address==0x1000A000 && context->pc==0x3101A8) {
+                checkMemory(rdram,0,0);gif_dma.start(value,memory());return;
+            }
             if(address==0x1000A020 && context->pc==0x310148) {
                 checkMemory(rdram,0,0);gif_dma.setCount(value);return;
             }
             if(address==0x1000A010 && context->pc==0x310194) {
-                checkMemory(rdram,0,0);gif_dma.setAddress(value,initial_sp-528,memory());return;
+                checkMemory(rdram,0,0);gif_dma.setAddress(value,initial_sp-(gif_dma.starts?288u:528u),memory());return;
             }
         }
         write32(rdram, address, value);
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(gif_dma.syncSupplied() && gif_dma.starts>=1 && gif_dma.starts<=2 && context->r[29].low==initial_sp-624) {
+            if(address==0x10009000 && context->pc==0x310560) {checkMemory(rdram,0,0);return gif_dma.readVifIdle();}
+            if(address==0x1000A000 && (context->pc==0x3105A4 || context->pc==0x3105CC)) {
+                checkMemory(rdram,0,0);return gif_dma.readStarted(context->pc==0x3105CC);
+            }
+            if(address==0x10003020 && context->pc==0x310664) {checkMemory(rdram,0,0);return gif_dma.readGifStatus();}
+            if(address==0x10003C00 && context->pc==0x3105EC) {checkMemory(rdram,0,0);return gif_dma.readVifStatus();}
+        }
         if(address==0x1000A000 && gif_dma_supplied_ && gs_field_reads==1 && context->pc==0x3100E4
             && context->r[29].low==initial_sp-624) {
             checkMemory(rdram,0,0);return gif_dma.readIdle();

@@ -1,0 +1,72 @@
+#include "gif_dma_staging.h"
+#include <iostream>
+#include <set>
+void check(bool value) {if(!value)throw std::runtime_error("GS assertion failed");}
+int main() {
+    std::vector<std::uint8_t> p(240);
+    auto put=[&](unsigned offset,std::uint64_t value){std::memcpy(p.data()+offset,&value,8);};
+    put(0,0x100000000000800EULL);put(8,14);
+    std::array<unsigned,14> regs={0x4C,0x4E,0x18,0x40,0x1A,0x46,0x45,0x47,0x47,0,1,5,5,0x47};
+    std::array<std::uint64_t,14> values={0x10000,0x1000020,0,0x0007000000070000ULL,1,1,0,0x50000,0x30000,6,0x3F80000012345678ULL,0,0x0000000900800080ULL,0x50000};
+    for(unsigned i=0;i<14;++i){put(16+i*16,values[i]);put(24+i*16,regs[i]);}
+    const auto original=p;
+    GsCommandSink gs;
+    bool uninitialized_rejected=false;
+    try{gs.consume(p);}catch(const std::runtime_error&){uninitialized_rejected=true;}
+    check(uninitialized_rejected && gs.packets==0);
+    gs.seedForTest(1000000,0xCAFEBABE);gs.resetDrawingState();
+    check(gs.word(1000000).value==0xCAFEBABE && gs.word(1000000).known==UINT32_MAX);
+    auto ca=GsCommandSink::address(0,1,7,7,false),za=GsCommandSink::address(32,1,7,7,true);
+    gs.seedForTest(za,0xABFFFFFF);gs.consume(p);
+    check(gs.pixels==64 && gs.packets==1 && gs.word(ca).value==0x12345678 && gs.word(ca).known==UINT32_MAX);
+    check(gs.word(za).value==0xAB000009 && gs.word(za).known==UINT32_MAX);
+    check(gs.word(GsCommandSink::address(32,1,0,0,true)).known==0xFFFFFF);
+    check(gs.word(GsCommandSink::address(0,1,8,0,false)).known==0);
+    // Independent address landmarks and complete-page bijection.
+    check(GsCommandSink::address(0,1,8,0,false)==64);
+    check(GsCommandSink::address(0,1,0,8,false)==128);
+    check(GsCommandSink::address(0,1,32,0,false)==1024);
+    check(GsCommandSink::address(0,1,0,0,true)==1536);
+    std::set<std::size_t> addresses;
+    for(unsigned y=0;y<32;++y)for(unsigned x=0;x<64;++x)addresses.insert(GsCommandSink::address(0,1,x,y,false));
+    check(addresses.size()==2048 && *addresses.rbegin()==2047);
+    // A late malformed register must leave earlier state and pixels untouched.
+    put(24+13*16,0x7F);bool rejected=false;
+    try{gs.consume(p);}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && gs.packets==1 && gs.pixels==64);put(24+13*16,regs[13]);
+    // Frame mask, disabled depth writes, clipping and lower/right exclusive edges.
+    put(16,0x00FF00FF00010000ULL);put(32,0x101000020ULL);
+    put(16+3*16,0x0006000200060002ULL);
+    auto masked=GsCommandSink::address(0,1,2,2,false);gs.seedForTest(masked,0xAABBCCDD);
+    put(16+12*16,0x0000000C00800080ULL);
+    gs.consume(p);check(gs.pixels==89);
+    check(gs.word(masked).value==0x12BB56DD);
+    check(gs.word(za).value==0xAB000009);
+    check(gs.word(GsCommandSink::address(32,1,2,2,true)).value==9);
+    put(16+9*16,0x46);rejected=false;
+    try{gs.consume(p);}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && gs.pixels==89);
+    // A transfer consumes commands before completion. Later reads require
+    // explicit evidence and ordering; source mutation cannot draw partial data.
+    GifDmaStaging dma;dma.gs.resetDrawingState();dma.supply(original);check(dma.readIdle()==0);dma.setCount(15);
+    std::vector<std::uint8_t> ram(4096);std::copy(original.begin(),original.end(),ram.begin()+256);
+    dma.setAddress(256,256,ram);ram[256+16]^=1;rejected=false;
+    try{dma.start(0x101,ram);}catch(const GifPacketMismatch&){rejected=true;}
+    check(rejected && dma.gs.packets==0 && dma.starts==0);ram[256+16]^=1;
+    dma.start(0x101,ram);check(dma.qwc==0 && dma.madr==496 && dma.chcr==0x101 && dma.gs.packets==1);
+    rejected=false;try{dma.readVifIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+    std::array<std::uint32_t,33> pub={0,0,0x1FFEAF0,0,0x101,0,0x1FFEC40,0x40,0xE00,
+        1,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0,
+        0x1000A000,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0,
+        0,0,0x1FFEAF0,0,0,0x1FFEB00};
+    std::vector<std::uint8_t> evidence(372);std::memcpy(evidence.data(),pub.data(),sizeof(pub));
+    std::copy(original.begin(),original.end(),evidence.begin()+132);dma.supplySync(evidence);
+    check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
+    check(dma.completions==1 && dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0);
+    check(dma.readIdle()==1);dma.setCount(15);std::copy(original.begin(),original.end(),ram.begin()+512);
+    dma.setAddress(512,512,ram);dma.start(0x101,ram);check(dma.starts==2 && dma.gs.packets==2);
+    check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
+    check(dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0 && dma.completions==2);
+    rejected=false;try{dma.readIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+    std::cout<<"GS scoped command tests passed\n";
+}

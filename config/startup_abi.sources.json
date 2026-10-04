@@ -303,6 +303,40 @@
         "sha256": "b9d73e6f5a8caf8ab12ab470de1ba8fdc407b5eb58c5bafa80e178adb57d730c"
       }
     ],
-    "role": "Public register/mode/tag guidance only, no implementation copied. Explicit local captures gate idle read and QWC/MADR staging. Full single PACKED A+D source is compared before DMA start. PRMODECONT/COLCLAMP/DTHE have only bit 0 defined; generated FUN_003119E8 retains guest stack padding in those words. Only those unused bits may differ, without modifying guest RAM; tag, register addresses and all other values stay exact. Drawing packet includes XYZ2 kicks. No transfer completion or renderer implemented."
+    "role": "Public register/mode/tag guidance only, no implementation copied. Explicit local captures gate idle read and QWC/MADR staging. Full single PACKED A+D source is compared before DMA start. PRMODECONT/COLCLAMP/DTHE have only bit 0 defined; generated FUN_003119E8 retains guest stack padding in those words. Only those unused bits may differ, without modifying guest RAM; tag, register addresses and all other values stay exact. Drawing packet includes XYZ2 kicks. Scoped software consumption and bounded logical completion are described by gs_software_reference; no general DMA timing or presentation implemented."
+  },
+  "gs_software_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/GS/GSLocalMemory.h",
+        "sha256": "8cd6ed874f53aafde5f3d294048b2b0beed87765ab099a5f8aa93899cb988a19"
+      },
+      {
+        "path": "pcsx2/GS/GSLocalMemory.cpp",
+        "sha256": "46da01086c93f3839c0c20787433f8cd0b7b89790d42f12414f9589c66fd4e51"
+      },
+      {
+        "path": "pcsx2/GS/GSTables.h",
+        "sha256": "34c60c7163952ed34c4b150e603d8bc78aa35ed6661d684c485510167b9cc0eb"
+      },
+      {
+        "path": "pcsx2/GS/GSTables.cpp",
+        "sha256": "a9a226297ede32b89177d7bdb04e9d8e21728e7d55799405f6112e97fe4969e8"
+      },
+      {
+        "path": "pcsx2/GS/GSState.cpp",
+        "sha256": "a5b210e5bc6427416841a88337d7e81c4ecb075323e7bc2f373eb2c133b97193"
+      },
+      {
+        "path": "pcsx2/GS/GSDrawingEnvironment.cpp",
+        "sha256": "eafc1728cbd89cae54ece1b60118dc8df11ce9b7aebc966d49f51184dd0442e7"
+      },
+      {
+        "path": "pcsx2/GS/GSDrawingContext.cpp",
+        "sha256": "f3f80e952115a6a420296f53a10e2930632d6e87fe8672cff453f3bbd7fa16b2"
+      }
+    ],
+    "role": "Public PSMCT32/PSMZ24 page, block and pixel addressing, depth XOR and 24-bit preservation. Authored bit placement and transactional scoped sprite operation; no reference implementation copied. Unknown VRAM bits remain unknown. Independent BT2 checkpoints establish first transfer polling and idle VU status. The second observed same-form packet reuses the bounded logical DMA sequence; no physical timing or presentation claimed. Reached CSR reset initializes drawing-register defaults (including SCANMSK/FBA); VRAM is not cleared."
   }
 }

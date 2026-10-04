@@ -42,7 +42,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: follow [the first drawing/renderer plan](GS_RENDERER_BRINGUP_PLAN.md) before accepting the first GIF DMA start in FUN_003100D0. Idle/count/address staging and semantic source comparison are working. Actual graphics consumption, transfer completion, video timing and IOP execution remain unimplemented; retain strict unsupported boundaries.
+Current next step: follow [post-reset SIF transport bring-up](POST_RESET_SIF_PLAN.md). Both observed GS startup clears and synchronization helpers return through the authored scoped sink. The new DMAC_STAT read belongs to the second SIF initialization after reboot; old one-shot transport/RPC checkpoints remain invalid. Display/presentation, general graphics, video timing and IOP execution remain incomplete.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

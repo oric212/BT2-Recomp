@@ -4,21 +4,22 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The checkpoint probe now stages the first GIF DMA request: idle read, count and source address are checked, and the generated packet matches reference semantics. It stops before starting the transfer because the packet draws a sprite. GS/event behavior still uses diagnostic checkpoints; native rendering, video timing and IOP execution remain incomplete.
+The generated probe now executes both startup clear packets: two 640 by 448 PSMCT32 color/PSMZ24 depth sprites are consumed in a scoped software sink, and the drawing/synchronization helpers return. It reaches the second SIF initialization after the IOP reboot. DMA/event timing remains diagnostic; no displayed frame, native video clock or IOP execution is established.
 
-Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 55 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
+Latest verification: MSVC full checkpoint build/pipeline, eight CTests, 58 capture tests and 43 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
 
 ## Current blocker and next step
 
-A 32-bit GIF DMA CHCR start write `0x101` at `0x1000A000`, PC `0x003101A8`, SP `0x01FFEAF0`, in `FUN_003100D0`. Source `0x01FFEB50`, QWC 15, includes 14 A+D writes and two XYZ2 kicks. No transfer or drawing effect has been accepted.
+A DMAC_STAT read at `0x1000E010`, PC `0x003319CC`, SP `0x01FFECA0`, in `FUN_00331888`, reached from the second SIF initialization at `0x001003E0`. Full probe: 265 calls / 261 returns. IOP epoch 1 remains pending; earlier service/channel checkpoints cannot be reused.
 
-Next: implement [the first drawing/renderer plan](GS_RENDERER_BRINGUP_PLAN.md). Consume supported commands before acknowledging DMA or reporting a frame. Three control words differ only in documented unused bits; meaningful packet fields match and guest RAM stays intact.
+Next: [post-reset SIF transport bring-up](POST_RESET_SIF_PLAN.md). Capture the later caller/register state, establish fresh transport ownership, then continue to the actual service blocker.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **101** distinct functions entered / **97** completed across native probes (startup/helpers, not gameplay).
-- Function counts are unchanged this pass; execution advances through idle/count/address staging and packet validation. Entry, `FUN_00100388`, `FUN_00100258` and `FUN_003100D0` remain partial. No rendered frame or complete game boot.
+- **102** distinct functions entered / **100** completed across native probes (startup/helpers, not gameplay).
+- This pass adds `FUN_00310548`; it, `FUN_003100D0` and `FUN_00100258` now complete. Re-entered SIF routines completed in the earlier lifetime but are partial in this invocation. Entry/main remain partial.
+- Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No rendered/presented frame or complete game boot.
 
 ## Milestones
 
