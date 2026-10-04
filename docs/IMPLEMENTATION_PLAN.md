@@ -38,7 +38,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: collect fresh disc-backed IOP boot/service evidence at post-reboot SifGetReg(SMFLAG=4). Local IOPRP300 identity/inventory, reboot submission acknowledgement and four ordered register clears are validated; generated reset helpers return. No reset completion or new service state is established. Keep the pending IOP boot lifetime separate from earlier CD snapshots.
+Current next step: follow [the scoped GS bring-up plan](GS_BRINGUP_PLAN.md) from the reached FUN_0030FDC0 call. A disc-backed ready-branch checkpoint now permits an explicit one-shot replay of the tested IOP readiness bit; this is not native IOP execution or complete reset/service implementation. Preserve the separate pending IOP lifetime and reject unsupported new service behavior.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

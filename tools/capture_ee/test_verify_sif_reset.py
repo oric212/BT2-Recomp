@@ -90,3 +90,38 @@ class RebootSubmissionEvidenceTests(unittest.TestCase):
         def mutate(point,ee,m):
             if point=='reset-cmd-clear':struct.pack_into('<I',ee,MARKER+12,0x30000)
         with self.assertRaises(ValueError):self.check_chain(mutate)
+
+
+class ReadyEvidenceTests(unittest.TestCase):
+    def check(self, change=None):
+        from pathlib import Path
+        import json
+        address,trap,marker=capture_trap('reset-ready')
+        ee=bytearray(32*1024*1024);iop=bytes(2*1024*1024)
+        ee[address:address+len(trap)]=trap
+        struct.pack_into('<3I',ee,MARKER,marker,0x40000,0x1FFED30)
+        m={'source_elf_sha256':verifier.EXPECTED_SHA,'capture_point':'reset-ready: fixture',
+           'pcsx2_sha256':'pcsx2','bios_sha256':'bios','disc_sha256':'disc',
+           'patch':{'address':address,'size':len(trap),'authored_words':list(struct.unpack('<8I',trap)),
+                    'marker_address':MARKER,'marker_value':marker}}
+        if change:change(ee,m)
+        m['capture_sha256']=hashlib.sha256(ee).hexdigest();m['iop_capture_sha256']=hashlib.sha256(iop).hexdigest()
+        with patch.object(verifier,'READY_BRANCH_SHA',hashlib.sha256(bytes(32)).hexdigest()), \
+             patch.object(Path,'read_text',lambda path,**kw:json.dumps(m)), \
+             patch.object(Path,'read_bytes',lambda path:iop if path.name=='iop-ram.bin' else ee):
+            return verifier.verify_ready(Path('fixture/capture.json'),{'reset-submit-after':
+                {'pcsx2_sha256':'pcsx2','bios_sha256':'bios','disc_sha256':'disc'}})
+
+    def test_ready_branch_preserves_not_ready_return(self):
+        address,trap,_=capture_trap('reset-ready')
+        self.assertLessEqual(address+len(trap),0x33814C)
+        self.assertEqual(struct.unpack('<8I',trap)[2],0xAF030004)
+        self.assertEqual(self.check()[0],struct.pack('<I',0x40000))
+
+    def test_wrong_ready_publication_rejected(self):
+        def change(ee,m):struct.pack_into('<I',ee,MARKER+4,0)
+        with self.assertRaises(ValueError):self.check(change)
+
+    def test_wrong_ready_disc_rejected(self):
+        def change(ee,m):m['disc_sha256']='another-disc'
+        with self.assertRaises(ValueError):self.check(change)

@@ -83,3 +83,24 @@ def verify_submission_chain(folder, image_report):
     if any(any(m[key]!=first[key] for key in ('pcsx2_sha256','bios_sha256','disc_sha256')) for m in manifests.values()):
         raise ValueError('Reboot chain environments differ.')
     return struct.pack('<5I',0xE01,0x20000,0,0,0),manifests
+
+
+READY_BRANCH_SHA='94650c2e1225da69a0ae2025860eba1f6c95dd59455df4e74c94a1710c25f7bc'
+
+
+def verify_ready(path, submission_manifests):
+    m=json.loads(path.read_text(encoding='utf-8'));ee=path.with_name('ee-ram.bin').read_bytes()
+    iop=path.with_name('iop-ram.bin').read_bytes();address,trap,marker=capture_trap('reset-ready');p=m['patch']
+    if (len(ee)!=32*1024*1024 or len(iop)!=2*1024*1024 or m['source_elf_sha256']!=EXPECTED_SHA
+        or not m['capture_point'].startswith('reset-ready:') or p['address']!=address or p['size']!=len(trap)
+        or p['authored_words']!=list(struct.unpack('<8I',trap)) or p['marker_address']!=MARKER or p['marker_value']!=marker
+        or ee[address:address+len(trap)]!=trap or hashlib.sha256(ee).hexdigest()!=m['capture_sha256']
+        or hashlib.sha256(ee[0x338108:0x338128]).hexdigest()!=READY_BRANCH_SHA
+        or hashlib.sha256(iop).hexdigest()!=m['iop_capture_sha256']
+        or struct.unpack_from('<3I',ee,MARKER)!=(marker,0x40000,0x1FFED30)):
+        raise ValueError('Ready-branch evidence differs.')
+    first=submission_manifests['reset-submit-after']
+    if any(m.get(key)!=first[key] for key in ('pcsx2_sha256','bios_sha256','disc_sha256')):
+        raise ValueError('Ready-branch environment differs.')
+    # Only the tested bit is established, not the complete SMFLAG register.
+    return struct.pack('<I',0x40000),m

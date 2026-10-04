@@ -227,6 +227,7 @@ def main():
     parser.add_argument('--reset-smflag-before-capture', type=Path)
     parser.add_argument('--reset-smflag-after-capture', type=Path)
     parser.add_argument('--reset-submission-captures', type=Path, help='Mounted-disc reboot submission/clear capture folder.')
+    parser.add_argument('--reset-ready-capture',type=Path,help='Disc-backed ready-branch bit checkpoint; requires submission chain.')
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -324,6 +325,12 @@ def main():
         first=reset_submission[1]['reset-submit-after']
         if any(first[key]!=scmd_bind[1][key] for key in ('pcsx2_sha256','bios_sha256')):raise ValueError('Reboot environment differs.')
         scmd_bind=scmd_bind[0]+reset_submission[0],scmd_bind[1]
+    reset_ready=None
+    if args.reset_ready_capture:
+        if not reset_submission:parser.error('Ready checkpoint requires reboot submission chain')
+        from verify_sif_reset import verify_ready
+        reset_ready=verify_ready(args.reset_ready_capture,reset_submission[1])
+        scmd_bind=scmd_bind[0]+reset_ready[0],scmd_bind[1]
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -441,6 +448,7 @@ def main():
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "reset_ready_provenance": reset_ready[1] if reset_ready else None,
         "iop_image_provenance": image_report,
         "reset_submission_provenance": reset_submission[1] if reset_submission else None,
         "reset_smflag_provenance": reset_smflag[1] if reset_smflag else None,

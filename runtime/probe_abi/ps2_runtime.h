@@ -217,6 +217,14 @@ public:
             sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
             return;
         }
+        if (code == 0 && selector == 0x7A && iop_reset_pending && reset_ready_supplied_) {
+            if(reset_ready_checkpoint_reads || reset_clear_writes!=4 || context->pc!=0x32F078
+                    || context->r[4].low!=4 || context->r[29].low!=initial_sp-48
+                    || context->r[31].low!=0x338118)throw UnsupportedSyscall(selector,context->pc);
+            // Explicit reference checkpoint replay: this caller tests only bit 0x40000.
+            // This does not model full SMFLAG or execute/complete the native IOP boot.
+            context->r[2].low=0x40000;++reset_ready_checkpoint_reads;return;
+        }
         if (code == 0 && selector == 0x7A && sif_stop_calls) {
             if (!sif_reset_subaddr_supplied_ || sif_reset_subaddr_reads
                     || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000 || context->r[29].low != initial_sp - 224)
@@ -831,7 +839,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -855,15 +863,20 @@ public:
             if (std::memcmp(bundle.data()+192,flags.data(),12)) throw std::runtime_error("Reset SMFLAG checkpoint differs");
             sif_smflag=0x30000; reset_smflag_supplied_=true;
         }
-        if(bundle.size()==224) {
+        if(bundle.size()>=224) {
             const std::array<std::uint32_t,5> completion{0xE01,0x20000,0,0,0};
             if(std::memcmp(bundle.data()+204,completion.data(),20))throw std::runtime_error("Invalid reboot submission/clear checkpoints");
             reset_submission_supplied_=true;
         }
+        if(bundle.size()==228) {
+            std::uint32_t bit;std::memcpy(&bit,bundle.data()+224,4);
+            if(bit!=0x40000)throw std::runtime_error("Invalid ready-bit checkpoint");
+            reset_ready_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
-    unsigned iop_epoch=0, reset_clear_writes=0;
+    unsigned iop_epoch=0, reset_clear_writes=0, reset_ready_checkpoint_reads=0;
     std::uint32_t reset_rpcinit=1, reset_subaddr=0x19600;
     unsigned sif_stop_calls = 0, sif_reset_subaddr_reads = 0, reset_smflag_writes = 0;
     std::uint32_t sif_smflag = 0;
@@ -1150,7 +1163,7 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
-    bool reset_submission_supplied_=false;
+    bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;
     bool scmd_mmode_supplied_ = false;

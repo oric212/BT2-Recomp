@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The C++20 host and automated recompilation pipeline work locally. Checked startup submits the real IOP reboot request, clears four reset registers and returns through two startup helpers. The local IOPRP300 image matches the disc. Complete IOP boot, disc services and gameplay remain incomplete.
+The native checkpoint probe now passes the post-reboot readiness bit test, completes two more helpers and reaches a graphics setup boundary. The ready bit is an explicit local reference checkpoint replay; native IOP boot/service execution and complete game startup remain incomplete.
 
-Latest verification: MSVC build/full checkpoint pipeline, seven CTests, 42 recomp-tool tests, 39 capture-tool tests and five IOP-inventory tests passed. Proprietary files, captures, generated code and automatic bindings remain ignored. Retail revision is confirmed; function boundaries remain provisional.
+Latest verification: MSVC full checkpoint build/pipeline and seven CTests passed; 42 capture-tool tests passed. Earlier 42 recomp-tool/five IOP-inventory tests remain the last verification for unchanged tools. Proprietary content, captures, generated code and automatic bindings remain ignored.
 
 ## Current blocker and next step
 
-Post-reboot SifGetReg(SMFLAG=4), selector `0x7A`, stops at `0x0032F078`, SP `0x01FFED30`, in `FUN_00338108`. The accepted request starts a separate pending IOP lifetime; old service state is invalidated. No reboot completion or ready flag is supplied.
+Mapped call to `FUN_0030FDC0` from `0x0010026C`, resume `0x00100274`, SP `0x01FFEB00`. Its generated code includes 64-bit GS register access at `0x12001000`; this new subsystem needs [the scoped GS bring-up plan](GS_BRINGUP_PLAN.md).
 
-Next: consult the reference architecture and collect fresh disc-backed post-reset IOP boot/service evidence. Determine the ready transition and actual service/import requirements before implementing them; earlier CD snapshots cannot establish the new state.
+Next: link the reached GS setup entries and capture the actual register/syscall requirements. Implement only verified behavior. IOP reset/service lifetime remains pending in the native model; its observed ready bit cannot establish native IOP execution.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **87** distinct functions entered / **84** completed across native probes (startup/helpers, not gameplay).
-- This pass completes previous partial `FUN_00337F88` and `FUN_00338158`; newly linked `FUN_00338108` reaches the readiness poll. Entry, `FUN_00100388` and `FUN_00338108` remain partial. Previously completed helpers can stop on new inputs.
+- **89** distinct functions entered / **86** completed across native probes (startup/helpers, not gameplay).
+- This pass completes previous partial `FUN_00338108` and newly linked `FUN_0032F0E0`; enters `FUN_00100258`. Entry, `FUN_00100388` and `FUN_00100258` remain partial. The reached GS helper is not yet entered.
 
 ## Milestones
 

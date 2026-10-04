@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -458,12 +458,22 @@ int main(int argc, char** argv) {
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
                             && runtime.sif_dma_submissions == 6 && runtime.reset_smflag_writes == 1
-                            && runtime.sif_reset_subaddr_reads == 1 && runtime.returns == 220,
+                            && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
+                    if(runtime.reset_ready_checkpoint_reads) {
+                        require(runtime.reset_ready_checkpoint_reads==1 && stop_selector==0
+                            && ((stop_target==0x32F0E0 && stop_source==0x338128 && stop_resume==0x338130
+                                && runtime.guest_calls==224 && runtime.returns==221 && context.r[29].low==runtime.initial_sp-48)
+                            || (stop_target==0x100258 && stop_source==0x1003D8 && stop_resume==0x1003E0
+                                && runtime.guest_calls==227 && runtime.returns==225 && context.r[29].low==runtime.initial_sp-32)
+                            || (stop_target==0x30FDC0 && stop_source==0x10026C && stop_resume==0x100274
+                                && runtime.guest_calls==228 && runtime.returns==225 && context.r[29].low==runtime.initial_sp-608)),
+                            "Checked ready continuation boundary differs");
+                    } else
                     require((stop_target == 0x338108 && stop_source == 0x1003C8 && stop_resume == 0x1003D0
-                                && runtime.guest_calls == 222 && context.r[29].low == runtime.initial_sp - 32)
+                                && runtime.guest_calls == 222 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 32)
                             || (!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
-                                && runtime.guest_calls == 224 && context.r[29].low == runtime.initial_sp - 48
+                                && runtime.guest_calls == 224 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 48
                                 && GPR_U32(&context,4) == 4), "Post-reboot readiness boundary differs");
                 }
             }
@@ -480,6 +490,7 @@ int main(int argc, char** argv) {
                 << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"reset_subaddr_reads\":" << runtime.sif_reset_subaddr_reads
                 << ",\"smflag_writes\":" << runtime.reset_smflag_writes
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
+                << ",\"reset_ready_checkpoint_reads\":" << runtime.reset_ready_checkpoint_reads
                 << ",\"iop_reset_pending\":" << (runtime.iop_reset_pending ? "true" : "false")
                 << ",\"prior_iop_services_valid\":" << (runtime.prior_iop_services_valid ? "true" : "false")
                 << ",\"sp\":" << context.r[29].low << ",\"scmd_binds\":" << runtime.scmd_bind_calls << ",\"arguments\":[" << GPR_U32(&context,4) << "," << GPR_U32(&context,5) << "]"

@@ -40,3 +40,7 @@ BT2 now requests `rom0:UDNL cdrom0:\IRX\IOPRP300.IMG;1` in command 0x80000003. N
 The pinned [BT3 IOPRP tooling](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/tools/iop/ioprp.py) supplied ROMDIR inventory guidance. Our authored validator derives offsets from all directory entries and checks metadata/ISO bounds, rather than locating the first ELF as an offset shortcut. BT2's local image matches the disc and contains 16 ELF payloads (inventory/hashes remain ignored). This establishes identity and header metadata, not successful loading/import resolution.
 
 Five independent disc-backed EE checkpoints establish submission acknowledgement and ordered register clears. A new pending IOP lifetime invalidates old service state. Fresh post-reset IOP evidence is still needed before readiness, loader/import providers, scheduling or service routing can be implemented. No reference game implementation was copied.
+
+### Reached GS setup boundary
+
+The pinned GPU interface was consulted again for the GS boundary (SHA-256 `2e70e2cdaad179218e55cd365b54c2308cf6ce46dafd5d9fe9d820f44cd741aa`). It separates command recording from presentation. BT2's next mapped helper includes GS register access at 0x12001000; [the scoped plan](GS_BRINGUP_PLAN.md) starts with actual register evidence before rendering integration. No renderer implementation copied.
