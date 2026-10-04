@@ -18,6 +18,20 @@ The first major gameplay goal is a playable versus battle. Use a custom compatib
 
 ## Working rules
 
+### Continue through multiple blockers
+
+Do not stop after resolving a single blocker. Keep following the execution path through multiple blockers in one pass: generate/link -> run -> inspect the blocker -> gather evidence -> fix -> rerun -> repeat.
+
+When more evidence is needed, gather it from available local captures, tooling, [the reference architecture](REFERENCE_ARCHITECTURE.md), or its linked repositories, and continue when possible. Adapt reference implementations to BT2's observed behavior; do not copy them 1:1.
+
+Stop only when:
+
+- A genuinely new major subsystem is reached and needs a separate implementation plan.
+- Progress requires information or access that cannot be obtained in the current session.
+- The next change would be speculative.
+
+At the end of the pass, test the changes, update current progress and detailed history, review the diff and staged files, commit, and push.
+
 Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored `work/` or `research/`, and proprietary-derived generated code in ignored `game/generated/`. Never download or commit proprietary content. Record confirmed facts, hypotheses, and unknowns separately. Preserve unknown function names until evidence supports renaming. Implement only PS2 behavior required by BT2.
 
 After each verified step, update [the current status](PROG.md) and append detailed evidence to `progress/YYYY-MM.md`. Keep `PROG.md` concise and link each monthly history file there. Keep `README.md` at the repository root and other documentation under `docs/`. Review staged files before committing.
