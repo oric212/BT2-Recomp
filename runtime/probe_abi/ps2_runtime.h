@@ -169,6 +169,35 @@ public:
             context->r[2].low = sif_dma_result_;
             return;
         }
+        if (code == 0 && selector == 0x79 && sif_stop_calls) {
+            if (!reset_smflag_supplied_ || reset_smflag_writes || sif_reset_subaddr_reads != 1
+                    || context->r[4].low != 4 || context->r[5].low != 0x40000
+                    || context->r[29].low != initial_sp - 224 || sif_smflag != 0x30000)
+                throw UnsupportedSyscall(selector, context->pc);
+            // Captured kernel behavior: EE SMFLAG write clears selected bits,
+            // returning the prior value (different from the pinned Play! return).
+            const auto previous = sif_smflag;
+            sif_smflag &= ~0x40000u; ++reset_smflag_writes;
+            context->r[2].low = previous;
+            return;
+        }
+        if (code == 0 && selector == 0x6B) {
+            if (!sif_stop_supplied_ || sif_stop_calls || scmd_mmode_calls != 1 || sif_dma_submissions != 5
+                    || dmac_removals != 1 || dmac_mask != 0x800000 || !dmac_handlers.empty()
+                    || context->r[4].low != 1 || context->r[29].low != initial_sp - 224)
+                throw UnsupportedSyscall(selector, context->pc);
+            // Local kernel handler writes zero to SIF2 CHCR/QWC and returns QWC.
+            // All supported logical submissions have finished; active DMA is unsupported.
+            sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
+            return;
+        }
+        if (code == 0 && selector == 0x7A && sif_stop_calls) {
+            if (!sif_reset_subaddr_supplied_ || sif_reset_subaddr_reads
+                    || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000 || context->r[29].low != initial_sp - 224)
+                throw UnsupportedSyscall(selector, context->pc);
+            ++sif_reset_subaddr_reads; context->r[2].low = 0x19600;
+            return;
+        }
         if (code == 0 && selector == 0x7A && static_cast<std::uint32_t>(context->r[4].low) == 0x80000002) {
             if (!sif_rpc_supplied_ || sif_rpc_reads || sif_dma_submissions != 1)
                 throw UnsupportedSyscall(selector, context->pc);
@@ -776,17 +805,35 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
-        if (bundle.size() == 184) {
+        if (bundle.size() >= 184) {
             const std::array<std::uint32_t,24> mmode{0,1,0,0,0x370000,0x3838E8,
                 0x400,0x3695C0,0x80000008,0,0,0,0,0x369F40,0x8000000A,0,0,0,0,0,0,0,2,0};
             if(std::memcmp(bundle.data()+88,mmode.data(),96)) throw std::runtime_error("Invalid media-mode checkpoint");
             std::copy_n(bundle.data()+112,64,scmd_mmode_reply_.data());scmd_mmode_supplied_=true;
         }
+        if (bundle.size() >= 188) {
+            std::uint32_t stop_word; std::memcpy(&stop_word,bundle.data()+184,4);
+            if (stop_word) throw std::runtime_error("SIF stop checkpoint differs");
+            sif_stop_supplied_=true;
+        }
+        if (bundle.size() >= 192) {
+            std::uint32_t subaddr; std::memcpy(&subaddr,bundle.data()+188,4);
+            if (subaddr!=0x19600) throw std::runtime_error("Reset SUBADDR checkpoint differs");
+            sif_reset_subaddr_supplied_=true;
+        }
+        if (bundle.size() == 204) {
+            const std::array<std::uint32_t,3> flags{0x30000,0x30000,0x30000};
+            if (std::memcmp(bundle.data()+192,flags.data(),12)) throw std::runtime_error("Reset SMFLAG checkpoint differs");
+            sif_smflag=0x30000; reset_smflag_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
+    unsigned sif_stop_calls = 0, sif_reset_subaddr_reads = 0, reset_smflag_writes = 0;
+    std::uint32_t sif_smflag = 0;
+    std::uint32_t sif2_chcr = 0, sif2_qwc = 0;
     unsigned scmd_bind_calls = 0, scmd_mmode_calls = 0;
     unsigned semaphore_polls = 0;
     unsigned cd_init_calls = 0, cd_init_context_preservations = 0, cd_semaphores_created = 0;
@@ -1069,6 +1116,7 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
+    bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;
     bool scmd_mmode_supplied_ = false;
     std::array<std::uint8_t,64> scmd_mmode_reply_{};
     bool scmd_bind_supplied_ = false;

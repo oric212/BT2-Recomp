@@ -24,7 +24,9 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: establish the reached SifStopDma and subsequent reset lifecycle before extending the runtime. Checked CD-init and synchronous-command binds, mode-2 media-mode completion, semaphore cleanup and SIF handler shutdown now return. The standalone media-mode reply is 0 and establishes no disc readiness. Preserve checkpoint provenance, caller CPU/stack isolation and all earlier boundaries; keep general IOP execution and reset unsupported until verified.
+Current next step: validate the local disc-backed IOPRP300 image and actual reboot receive/boot lifecycle at the pending SifSetDma command 0x80000003. DMA stop, post-stop SUBADDR query and first SMFLAG write now return using checked local evidence. No reset completion or new service state is established. Keep the new IOP boot lifetime separate from earlier CD snapshots.
+
+Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

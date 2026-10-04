@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -407,7 +407,7 @@ int main(int argc, char** argv) {
             } else {
                 require(runtime.semaphore_deletions == 4 && runtime.semaphore_waits == 5 && runtime.semaphore_signals == 6
                         && runtime.sif_dma_submissions == 5, "SCMD media-mode cleanup differs");
-                if (stop_target) {
+                if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
                         {0x32F810,0x331B10},{0x32E9D0,0x32F840},{0x32E990,0x331B20},
@@ -415,7 +415,7 @@ int main(int argc, char** argv) {
                     require(std::any_of(reached.begin(),reached.end(),[&](const auto& entry) {
                         return entry[0] == stop_target && entry[1] == stop_source && stop_resume == stop_source + 8;
                     }), "Unexpected SCMD mapped-entry boundary");
-                } else require(stop_selector == 0x6B && context.pc == 0x32EF38
+                } else if (!runtime.sif_stop_calls) require(stop_selector == 0x6B && context.pc == 0x32EF38
                     && runtime.guest_calls == 214 && runtime.returns == 209
                     && context.r[29].low == runtime.initial_sp - 224 && GPR_U32(&context,4) == 1
                     && runtime.dmac_disable_calls == 1 && runtime.dmac_removals == 1
@@ -423,6 +423,37 @@ int main(int argc, char** argv) {
                     && runtime.read32(runtime.memory().data(),0x36AA90) == 0
                     && runtime.read32(runtime.memory().data(),0x36AA8C) == 0,
                     "SIF shutdown and DMA-stop boundary differs");
+            }
+            if (runtime.sif_stop_calls) {
+                require(runtime.sif_stop_calls == 1 && runtime.sif2_chcr == 0 && runtime.sif2_qwc == 0
+                        && context.r[29].low == runtime.initial_sp - 224,
+                        "SIF stop continuation state differs");
+                if (!runtime.sif_reset_subaddr_reads) {
+                    require(!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
+                            && runtime.guest_calls == 215 && runtime.returns == 210,
+                            "Post-stop SUBADDR boundary differs");
+                } else if (!runtime.reset_smflag_writes) {
+                    require(runtime.sif_reset_subaddr_reads == 1 && runtime.returns == 212
+                            && ((stop_target == 0x32F060 && stop_source == 0x338070 && stop_resume == 0x338078
+                                && runtime.guest_calls == 216)
+                            || (!stop_target && stop_selector == 0x79 && context.pc == 0x32F068
+                                && runtime.guest_calls == 217)), "First reset SMFLAG boundary differs");
+                } else {
+                    require(runtime.reset_smflag_writes == 1 && runtime.sif_reset_subaddr_reads == 1
+                            && runtime.sif_smflag == 0x30000 && !stop_target && stop_selector == 0x77
+                            && context.pc == 0x32F028 && runtime.guest_calls == 218 && runtime.returns == 213
+                            && GPR_U32(&context,4) == runtime.initial_sp - 224 && GPR_U32(&context,5) == 1,
+                            "IOP reboot submission boundary differs");
+                    const std::array<std::uint32_t,4> descriptor{0x3ACC40,0x19600,104,0x44};
+                    for (unsigned i=0;i<4;++i) require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4)==descriptor[i],
+                                                    "IOP reboot descriptor differs");
+                    const std::array<std::uint32_t,6> header{104,0,0x80000003,0,36,0};
+                    for (unsigned i=0;i<6;++i) require(runtime.read32(runtime.memory().data(),0x3ACC40+i*4)==header[i],
+                                                    "IOP reboot packet header differs");
+                    constexpr char boot_argument[] = "rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1";
+                    require(std::equal(std::begin(boot_argument),std::end(boot_argument),runtime.memory().begin()+0x3ACC58),
+                            "IOP reboot path differs");
+                }
             }
             std::ofstream report(argv[2]);
             if (!report) throw std::runtime_error("Could not write SCMD report");
@@ -434,11 +465,15 @@ int main(int argc, char** argv) {
                 << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
                 << ",\"deletions\":" << runtime.semaphore_deletions << ",\"dma_disables\":" << runtime.dmac_disable_calls
                 << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls
+                << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"reset_subaddr_reads\":" << runtime.sif_reset_subaddr_reads
+                << ",\"smflag_writes\":" << runtime.reset_smflag_writes
                 << ",\"sp\":" << context.r[29].low << ",\"scmd_binds\":" << runtime.scmd_bind_calls << ",\"arguments\":[" << GPR_U32(&context,4) << "," << GPR_U32(&context,5) << "]"
                 << ",\"descriptor_words\":[";
             for(unsigned i=0;i<((stop_selector==0x40 || stop_selector==0x77)?8u:0u);++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4);
             report << "],\"packet_words\":[";
             for(unsigned i=0;i<16;++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3A97C0+i*4);
+            report << "],\"reset_packet_words\":[";
+            for(unsigned i=0;i<26;++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3ACC40+i*4);
             report << "]}\n"; return 0;
         }
         if (bind_mode) {

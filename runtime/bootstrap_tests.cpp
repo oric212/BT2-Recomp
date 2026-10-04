@@ -944,6 +944,16 @@ int main() {
                 && shutdown.dmac_removals == 1 && shutdown_context.r[2].low == 0
                 && shutdown_context.r[2].high == 0x1122334455667788ULL);
         reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        shutdown_context.r[3].low = 0x6B; shutdown_context.r[4].low = 1;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        require(shutdown.sif_stop_calls == 0);
+        shutdown_context.r[3].low = 0x79; shutdown_context.r[4].low = 4;
+        shutdown_context.r[5].low = 0x40000; shutdown.sif_stop_calls = 1;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        require(shutdown.reset_smflag_writes == 0);
+        shutdown_context.r[3].low = 0x7A; shutdown_context.r[4].low = 0x80000000;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
+        require(shutdown.sif_reset_subaddr_reads == 0);
         PS2Runtime zero_checkpoint;
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
         zero_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));

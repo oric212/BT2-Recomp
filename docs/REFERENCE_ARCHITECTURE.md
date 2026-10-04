@@ -26,3 +26,11 @@ Its PCSX2 launcher boots a user's local ISO on the host. Use that separation for
 ## Working strategy
 
 Discover provisionally, generate, compile/link, execute, inspect the actual blocker, implement a narrow runtime fix or checked patch, and repeat. Manual reverse engineering follows failing paths. Existing entry/control audits validate tooling; exhaustive manual boundary approval is not a prerequisite for experimental local generation.
+
+## Reached IOP boot boundary (2026-10-04)
+
+Before unfamiliar subsystem/architecture work, consult this review and its linked sources first. Verify every adapted pattern against BT2; keep game-specific behavior separate.
+
+The pinned [BT3 IOP notes](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/tools/iop/README.md) describe separate R3000 module translation, import providers, loader, IOP memory/scheduling and RPC routing. Treat those as architectural guidance; reported module behavior and permissive fallback returns are not BT2 evidence. The inspected README SHA-256 is `59da0bf2c59bfb017bca594c46274b02066fe38a126848cbfca8d27baadc6414`.
+
+BT2 now requests `rom0:UDNL cdrom0:\IRX\IOPRP300.IMG;1` in command 0x80000003. Next validate that actual local image and collect disc-backed boot evidence using isolated reference settings, following Chronicle's user-local disc workflow. Establish a new IOP boot/service lifetime; neither a BT3 inventory nor BT2's earlier standalone CD snapshot establishes reset completion. General IOP scheduling/recompilation remains a separate implementation decision after this evidence.

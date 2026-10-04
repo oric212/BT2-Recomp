@@ -222,6 +222,10 @@ def main():
     parser.add_argument('--cd-semaphores-capture', type=Path, help='Checked four CD semaphore results; requires CD-init completion.')
     parser.add_argument('--scmd-bind-capture', type=Path, help='Checked second CD service bind; requires CD semaphore checkpoint.')
     parser.add_argument('--scmd-mmode-capture', type=Path, help='Checked mode-2 media-mode call completion; requires SCMD bind.')
+    parser.add_argument('--sif-stop-capture', type=Path, help='Checked reached SIF2 stop completion; requires media-mode evidence.')
+    parser.add_argument('--sif-reset-subaddr-capture', type=Path, help='Checked post-stop SUBADDR; requires SIF stop.')
+    parser.add_argument('--reset-smflag-before-capture', type=Path)
+    parser.add_argument('--reset-smflag-after-capture', type=Path)
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -279,6 +283,29 @@ def main():
         if any(scmd_mmode[1][key] != scmd_bind[1][key] for key in ('pcsx2_sha256','bios_sha256')):
             raise ValueError('Media-mode reference environment differs.')
         scmd_bind = scmd_bind[0]+scmd_mmode[0], scmd_bind[1]
+    sif_stop = None
+    sif_reset_subaddr = None
+    for path,point in ((args.sif_stop_capture,'sif-stop-after'),(args.sif_reset_subaddr_capture,'sif-reset-subaddr')):
+        if not path: continue
+        if not scmd_mmode or (point == 'sif-reset-subaddr' and not sif_stop):
+            parser.error('SIF stop/query requires media-mode and ordered stop evidence')
+        from verify_sif_reset import verify as verify_sif_reset
+        value = verify_sif_reset(path,point)
+        if any(value[1][key] != scmd_bind[1][key] for key in ('pcsx2_sha256','bios_sha256')):
+            raise ValueError('SIF stop/query environment differs.')
+        scmd_bind = scmd_bind[0]+value[0],scmd_bind[1]
+        if point == 'sif-stop-after': sif_stop = value
+        else: sif_reset_subaddr = value
+    reset_smflag = None
+    if bool(args.reset_smflag_before_capture) != bool(args.reset_smflag_after_capture):
+        parser.error('Reset SMFLAG requires before and after captures')
+    if args.reset_smflag_before_capture:
+        if not sif_reset_subaddr: parser.error('Reset SMFLAG requires post-stop SUBADDR capture')
+        from verify_sif_reset import verify_smflag_pair
+        reset_smflag=verify_smflag_pair(args.reset_smflag_before_capture,args.reset_smflag_after_capture)
+        if any(reset_smflag[1]['before'][key] != scmd_bind[1][key] for key in ('pcsx2_sha256','bios_sha256')):
+            raise ValueError('Reset SMFLAG environment differs.')
+        scmd_bind=scmd_bind[0]+reset_smflag[0],scmd_bind[1]
     if bool(args.sif_dma_before_capture) != bool(args.sif_dma_after_capture) or (args.sif_dma_after_capture and not args.sif_command_capture):
         parser.error('SIF DMA captures require both before/after and --sif-command-capture')
     sif_dma = verify_sif_dma_pair(args.sif_dma_before_capture, args.sif_dma_after_capture) if args.sif_dma_after_capture else None
@@ -396,6 +423,9 @@ def main():
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "reset_smflag_provenance": reset_smflag[1] if reset_smflag else None,
+        "sif_stop_provenance": sif_stop[1] if sif_stop else None,
+        "sif_reset_subaddr_provenance": sif_reset_subaddr[1] if sif_reset_subaddr else None,
         "scmd_mmode_provenance": scmd_mmode[1] if scmd_mmode else None,
         "scmd_bind_provenance": scmd_bind[1] if scmd_bind else None,
         "cd_semaphores_provenance": cd_semaphores[1] if cd_semaphores else None,

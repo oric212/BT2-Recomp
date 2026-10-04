@@ -234,5 +234,11 @@
     "path": "Source/ee/PS2OS.cpp",
     "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
     "role": "sc_DeleteSema returns ID and frees it; invalid ID returns -1. Authored model deletes only the observed last semaphore 3 after bind signal/wait, without wait queues or rescheduling. sc_CreateSema reads initCount/maxCount/option, not unused attribute field. Pinned PS2SDK sceSifCallRpc also leaves attr uninitialized; only the exact first synchronous CD-init call descriptor permits its residual attr, gated by a local validated semaphore result capture. No general attribute semantics or syscall stack clearing. This pass also admits four exact captured CD semaphore descriptors and models sc_PollSema nonblocking invalid/empty/success behavior without queues or scheduling. Reached channel-5 DisableDmac clears only its mask bit and returns changed; RemoveDmacHandler removes the sole dormant handler and returns remaining count. Scoped to recorded post-media-mode startup; no DMA cancellation or reset semantics."
+  },
+  "sif_reset_local_evidence": {
+    "kernel_stop_address": "0x80006380",
+    "kernel_stop_size": 44,
+    "kernel_stop_sha256": "6a47c4cee303ef9916bbf8229e556dcd2f84ccdd054239b4c10f3a6dadecb19e",
+    "role": "Local BIOS implementation plus explicit PCSX2 stop/query/SMFLAG captures, not copied code. Reached SIF2 CHCR/QWC clear returns zero; SUBADDR remains 0x19600; first EE SMFLAG write clears selected 0x40000 bits and returns prior 0x30000. Pinned Play SifSetReg zero return is not used. No active DMA cancellation or IOP reboot completion modeled."
   }
 }
