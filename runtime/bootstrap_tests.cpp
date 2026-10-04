@@ -55,6 +55,36 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 int main() {
     try {
         {
+            std::vector<std::uint8_t> packet(240,0x5A),ram(512,0);
+            std::copy(packet.begin(),packet.end(),ram.begin()+16);
+            GifDmaStaging stage;reject([&]{stage.readIdle();});reject([&]{stage.setCount(15);});
+            reject([&]{stage.supply(std::span(packet).first(16));});stage.supply(packet);
+            reject([&]{stage.supply(packet);});require(stage.readIdle()==0);
+            reject([&]{stage.readIdle();});reject([&]{stage.setCount(0);});stage.setCount(15);
+            reject([&]{stage.setCount(15);});
+            reject([&]{stage.setAddress(17,17,ram);});reject([&]{stage.setAddress(16,32,ram);});
+            reject([&]{stage.setAddress(496,496,ram);});reject([&]{stage.setAddress(528,528,ram);});
+            ram[16]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[16]^=1;
+            stage.setAddress(16,16,ram);require(stage.ready() && stage.packet_verified && stage.qwc==15
+                && stage.madr==16 && stage.idle_reads==1 && stage.staging_writes==2);
+            reject([&]{stage.setAddress(16,16,ram);});
+        }
+        {
+            // Authored A+D words: semantic bit mutations must still fail.
+            std::vector<std::uint8_t> packet(240,0),ram(256,0);
+            const std::array<std::uint64_t,3> registers{0x1A,0x46,0x45};
+            for(unsigned i=0;i<3;++i)std::memcpy(packet.data()+24+i*16,&registers[i],8);
+            std::copy(packet.begin(),packet.end(),ram.begin()+16);
+            for(unsigned i=0;i<3;++i)ram[32+i*16]=0x80;
+            GifDmaStaging stage;stage.supply(packet);stage.readIdle();stage.setCount(15);
+            ram[32]|=1;reject([&]{stage.setAddress(16,16,ram);});ram[32]&=0xFE;
+            ram[40]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[40]^=1;
+            ram[16]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[16]^=1;
+            ram[80]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[80]^=1;
+            stage.setAddress(16,16,ram);require(stage.ready() && stage.reserved_difference_words==3);
+            require(ram[32]==0x80 && ram[48]==0x80 && ram[64]==0x80);
+        }
+        {
             IntcCheckpoint wait;reject([&]{wait.acknowledge(4);});
             wait.arm(12,0x1802);reject([&]{wait.arm(12,0x1802);});
             reject([&]{wait.acknowledge(8);});wait.acknowledge(4);

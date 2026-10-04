@@ -27,6 +27,8 @@ SLUS_21441
 SLUS_21441.*
 
 # Proprietary-derived generated code and reverse-engineering output.
+*.gif-expected.bin
+*.gif-actual.bin
 /generated/
 /game/generated/
 /research/

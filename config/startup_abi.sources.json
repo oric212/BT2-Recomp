@@ -282,5 +282,27 @@
       "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a"
     },
     "role": "INTC acknowledgement clears selected bits; Vblank-start is source 2 (bit 4), status latching is independent of callback mask. Independently captured BT2 publications gate a bounded diagnostic sequence: first unsatisfied poll, then one explicit event checkpoint. Poll count is chosen for diagnostics, not observed elapsed EE cycles. No video clock, interrupt callbacks or reference implementation copied. Later CSR field uses a separate explicit readback checkpoint."
+  },
+  "gif_dma_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/Dmac.cpp",
+        "sha256": "93761abcb9179758a920fc27b562f90c8b27fc58469284f3f2745ca1145d4d43"
+      },
+      {
+        "path": "pcsx2/Gif.cpp",
+        "sha256": "703a59851661d73c087539dde645b2003267cb8c4e45d484c3198ad7fdaff905"
+      },
+      {
+        "path": "pcsx2/Gif_Unit.h",
+        "sha256": "7ef080a9d889e9b015bd4e8f233473a748006b894af7ac40544eddda1b513032"
+      },
+      {
+        "path": "pcsx2/GS/GSRegs.h",
+        "sha256": "b9d73e6f5a8caf8ab12ab470de1ba8fdc407b5eb58c5bafa80e178adb57d730c"
+      }
+    ],
+    "role": "Public register/mode/tag guidance only, no implementation copied. Explicit local captures gate idle read and QWC/MADR staging. Full single PACKED A+D source is compared before DMA start. PRMODECONT/COLCLAMP/DTHE have only bit 0 defined; generated FUN_003119E8 retains guest stack padding in those words. Only those unused bits may differ, without modifying guest RAM; tag, register addresses and all other values stay exact. Drawing packet includes XYZ2 kicks. No transfer completion or renderer implemented."
   }
 }

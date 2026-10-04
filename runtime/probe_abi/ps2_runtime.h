@@ -12,6 +12,7 @@
 #include <vector>
 #include <immintrin.h>
 #include "intc_checkpoint.h"
+#include "gif_dma_staging.h"
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
@@ -862,7 +863,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -917,14 +918,22 @@ public:
             if(std::memcmp(bundle.data()+252,evidence.data(),64))throw std::runtime_error("INTC evidence differs");
             gs_interrupt_supplied_=true;
         }
-        if(bundle.size()==324) {
+        if(bundle.size()>=324) {
             std::uint64_t field;std::memcpy(&field,bundle.data()+316,8);
             if(field!=0x551B6004)throw std::runtime_error("GS field checkpoint differs");
             gs_field_supplied_=true;
         }
+        if(bundle.size()==616) {
+            const std::array<std::uint32_t,9> idle{0,0,0x1FFEAF0,0,0,0,1,0x800040,0x1201};
+            const std::array<std::uint64_t,2> results{15,0};
+            if(std::memcmp(bundle.data()+324,idle.data(),36) || std::memcmp(bundle.data()+360,results.data(),16))
+                throw std::runtime_error("GIF idle/staging/reference return evidence differs");
+            gif_dma.supply(bundle.subspan(376,240));gif_dma_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
+    GifDmaStaging gif_dma;
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1008,10 +1017,22 @@ public:
             }
             gs_interrupt.acknowledge(value);return;
         }
+        if(gif_dma_supplied_ && gs_field_reads==1 && context->r[29].low==initial_sp-624) {
+            if(address==0x1000A020 && context->pc==0x310148) {
+                checkMemory(rdram,0,0);gif_dma.setCount(value);return;
+            }
+            if(address==0x1000A010 && context->pc==0x310194) {
+                checkMemory(rdram,0,0);gif_dma.setAddress(value,initial_sp-528,memory());return;
+            }
+        }
         write32(rdram, address, value);
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(address==0x1000A000 && gif_dma_supplied_ && gs_field_reads==1 && context->pc==0x3100E4
+            && context->r[29].low==initial_sp-624) {
+            checkMemory(rdram,0,0);return gif_dma.readIdle();
+        }
         if(address==0x1000F000 && gs_interrupt_supplied_ && context->pc==0x32F130
             && context->r[29].low==initial_sp-656) {
             checkMemory(rdram,0,0);return gs_interrupt.poll();
@@ -1256,6 +1277,7 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
+    bool gif_dma_supplied_=false;
     bool gs_interrupt_supplied_=false,gs_field_supplied_=false;
     bool gs_csr_supplied_=false,gs_imr_supplied_=false,gs_crt_supplied_=false;
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;

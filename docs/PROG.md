@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The checkpoint probe now completes the first interrupt acknowledgement/wait/acknowledgement sequence and its generated caller, then reaches GIF DMA setup. The event schedule and GS readbacks remain explicit diagnostic checkpoints; native video timing, IOP execution and rendering remain incomplete.
+The checkpoint probe now stages the first GIF DMA request: idle read, count and source address are checked, and the generated packet matches reference semantics. It stops before starting the transfer because the packet draws a sprite. GS/event behavior still uses diagnostic checkpoints; native rendering, video timing and IOP execution remain incomplete.
 
-Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 49 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
+Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 55 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
 
 ## Current blocker and next step
 
-A 32-bit GIF DMA CHCR read at `0x1000A000`, PC `0x003100E4`, SP `0x01FFEAF0`, in `FUN_003100D0`. No graphics transfer has been accepted.
+A 32-bit GIF DMA CHCR start write `0x101` at `0x1000A000`, PC `0x003101A8`, SP `0x01FFEAF0`, in `FUN_003100D0`. Source `0x01FFEB50`, QWC 15, includes 14 A+D writes and two XYZ2 kicks. No transfer or drawing effect has been accepted.
 
-Next: implement [the GIF DMA plan](GIF_DMA_BRINGUP_PLAN.md). Capture reached control/status and packet evidence before modeling channel behavior or acknowledging transfers. The interrupt checkpoint preserves clear/poll/event/clear ordering but is not a native video clock.
+Next: implement [the first drawing/renderer plan](GS_RENDERER_BRINGUP_PLAN.md). Consume supported commands before acknowledging DMA or reporting a frame. Three control words differ only in documented unused bits; meaningful packet fields match and guest RAM stays intact.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
 - **101** distinct functions entered / **97** completed across native probes (startup/helpers, not gameplay).
-- This pass enters one additional function and completes two previously partial helpers. Entry, `FUN_00100388`, `FUN_00100258` and `FUN_003100D0` remain partial. No rendered frame or complete game boot.
+- Function counts are unchanged this pass; execution advances through idle/count/address staging and packet validation. Entry, `FUN_00100388`, `FUN_00100258` and `FUN_003100D0` remain partial. No rendered frame or complete game boot.
 
 ## Milestones
 

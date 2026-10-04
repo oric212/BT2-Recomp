@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -287,6 +287,16 @@ int main(int argc, char** argv) {
             if (!bind_mode) throw;
             stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
         }
+        catch (const GifPacketMismatch& mismatch) {
+            // Diagnostics follow the caller's report path; pipeline uses ignored work/.
+            for(const auto& item : {std::pair{".gif-expected.bin",&mismatch.expected},
+                                    std::pair{".gif-actual.bin",&mismatch.actual}}) {
+                std::ofstream dump(std::string(argv[2])+item.first,std::ios::binary);
+                if(!dump.write(reinterpret_cast<const char*>(item.second->data()),item.second->size()))
+                    throw std::runtime_error("Could not write GIF mismatch diagnostic");
+            }
+            throw;
+        }
         catch (const UnsupportedGuestMemory& stop) {
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
@@ -294,7 +304,8 @@ int main(int argc, char** argv) {
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
                 || (runtime.gs_interrupt.acknowledgements==2 && stop.address==0x12001000 && stop.size==8 && context.pc==0x3104F4)
-                || (runtime.gs_field_reads==1 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4),
+                || (runtime.gs_field_reads==1 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4)
+                || (runtime.gif_dma.ready() && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3101A8),
                 "Unexpected GS continuation memory boundary");
             else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
                     && context.pc == 0x003319EC && runtime.dma_status_reads == 1,
@@ -491,7 +502,9 @@ int main(int argc, char** argv) {
                                     && context.pc==0x3104F4 && runtime.guest_calls==254 && runtime.returns==250
                                     && context.r[29].low==runtime.initial_sp-640)
                                 || (runtime.gs_field_reads==1 && stop_address==0x1000A000 && stop_size==4
-                                    && context.pc==0x3100E4 && runtime.guest_calls==255 && runtime.returns==251
+                                    && (context.pc==0x3100E4 || (context.pc==0x3101A8 && runtime.gif_dma.ready() && GPR_U32(&context,4)==0x101
+                                        && runtime.gif_dma.idle_reads==1 && runtime.gif_dma.staging_writes==2
+                                        && runtime.gif_dma.qwc==15 && runtime.gif_dma.madr==runtime.initial_sp-528)) && runtime.guest_calls==255 && runtime.returns==251
                                     && context.r[29].low==runtime.initial_sp-624)),
                             "INTC/field/GIF DMA diagnostic boundary differs");
                         else require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1
@@ -523,6 +536,12 @@ int main(int argc, char** argv) {
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
                 << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
                 << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"gif_idle_reads\":" << runtime.gif_dma.idle_reads
+                << ",\"gif_staging_writes\":" << runtime.gif_dma.staging_writes
+                << ",\"gif_qwc\":" << runtime.gif_dma.qwc
+                << ",\"gif_madr\":" << runtime.gif_dma.madr
+                << ",\"gif_reserved_difference_words\":" << runtime.gif_dma.reserved_difference_words
+                << ",\"gif_packet_verified\":" << (runtime.gif_dma.packet_verified ? "true" : "false")
                 << ",\"intc_acks\":" << runtime.gs_interrupt.acknowledgements
                 << ",\"intc_polls\":" << runtime.gs_interrupt.polls
                 << ",\"intc_events\":" << runtime.gs_interrupt.events
