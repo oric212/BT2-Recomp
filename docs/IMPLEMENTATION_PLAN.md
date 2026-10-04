@@ -24,7 +24,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: establish evidence for pending RPC bind command `0x80000009`, server ID `0x80000592`, then implement the required IOP service lookup/response and EE delivery behavior. Preserve all earlier checkpoint boundaries, receive-effect validation and bounded uncached RAM access. Continue through multiple link/runtime blockers per pass until a new major subsystem or missing evidence prevents a safe change.
+Current next step: connect the validated local CD initialization RPC bind response and three verified generated RPC_END functions to the bounded submission path, preserving the caller CPU/stack context. Service/queue/response evidence and isolated callback validation now work; automatic delivery and service execution remain unsupported. Preserve all earlier checkpoint boundaries, receive-effect validation and bounded uncached RAM access. Continue through multiple link/runtime blockers per pass until a new major subsystem or missing evidence prevents a safe change.
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 

@@ -11,6 +11,15 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual((words[4] & 0x03ffffff) << 2, HANDLER + 16)
         self.assertEqual(words[5], 0)
 
+    def test_bind_capture_preserves_request_and_publishes_caller_boundary(self):
+        address, trap, marker = capture_trap('sif-bind-after')
+        words = struct.unpack('<8I', trap)
+        self.assertEqual(address, 0x33284C)
+        self.assertEqual(marker, 0xB70F)
+        self.assertEqual(words[2:4], (0xAF020004, 0xAF1D0008))
+        self.assertEqual((words[6] & 0x03ffffff) << 2, address + 24)
+        self.assertEqual(words[7], 0)
+
     def test_wrong_elf_rejected(self):
         with self.assertRaises(ValueError):
             instrument(bytes(52))

@@ -208,5 +208,24 @@
     "path": "ee/kernel/include/kernel.h",
     "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
     "role": "UNCACHED_SEG sets address bit 0x20000000. Authored coherent RAM adapter enables checked byte/word alias accesses in [0x20000000,0x22000000) only after explicit RPCINIT query. Reached CACHE line checks accept this alias; wider access sizes, MMIO, TLB and guest cache state remain unsupported."
+  },
+  "rpc_bind_callback_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "sources": [
+      {
+        "path": "ee/kernel/src/sifrpc.c",
+        "sha256": "8a4aa210ab4c6a66f493f61a19f0948af188b3678e05676ad0b0d0c95ece53ef"
+      },
+      {
+        "path": "ee/rpc/cdvd/src/libcdvd.c",
+        "sha256": "5dca8220ab92385a3ce229c870cf3ac8e0a6d7a5bf441fc0e19861d217395451"
+      },
+      {
+        "path": "iop/cdvd/cdvdfsv/src/cdvdfsv.c",
+        "sha256": "8aa32fefb2bdec70fc62f0ced3d902450febb02d94e15c9206ca995520bd01e0"
+      }
+    ],
+    "role": "ABI and service identity only; no public source copied/linked. CD_SERVER_INIT and sceSifRegisterRpc identify 0x80000592 as CD initialization. RPC_END bind response assigns server/buf/cbuf, invokes iSignalSema, frees pending packet. Local capture establishes retail pointers/effects. Negative syscall -0x43 accepted only inside isolated generated RPC_END validation; no interrupt scheduler or automatic delivery."
   }
 }

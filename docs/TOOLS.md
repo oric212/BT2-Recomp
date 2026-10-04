@@ -288,3 +288,13 @@ Append `--sif-dma-before-capture work/pcsx2-capture/sif-dma-before/capture.json 
 Append `--sif-rpc-state-capture work/pcsx2-capture/sif-rpc-state/capture.json` to continue through the reached RPCINIT query. It requires the paired receive captures and matching PCSX2/BIOS provenance. Observed selector `0x80000002` returns 1 once. Omit this input to retain that query stop; omit the paired inputs to retain the first SifSetDma stop.
 
 Checked coherent main-RAM byte/word aliases `[0x20000000,0x22000000)` support the reached packet allocator; other access widths and address regions remain unsupported. Full continuation stops at the second submission: RPC bind command `0x80000009`, server ID `0x80000592`, packet source `0x203A97C0`, size 64. No general transfer scheduler, IRQ delivery or RPC service response is implemented. All EE/IOP/capture/generated output stays ignored.
+
+## First RPC bind response and isolated callback
+
+```powershell
+python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-bind-after
+cmake --build build/probe --config Debug --target bt2-rpc-bind-probe
+python tools/capture_ee/verify_rpc_bind.py work/pcsx2-capture/sif-bind-after/capture.json --run-probe
+```
+
+Use the existing generated-probe CMake configuration. The verifier checks the first CD initialization bind's request, registered IOP service/queue, reply, completed client and packet release. It writes the checked image and provenance to ignored `work/bt2-generation/`. The probe reconstructs only the explicit pending callback fixture and runs three original generated functions with strict returns. Negative interrupt-only SignalSema is scoped to this probe callback. This command does not advance the main entry probe or emulate interrupt delivery. Connect delivery with caller-context preservation next; CD initialization execution and disc access are separate future blockers.

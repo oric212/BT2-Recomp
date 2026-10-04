@@ -59,6 +59,15 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_compile_options(bt2-copy-handler-tests PRIVATE /W4 /permissive- /utf-8)
     target_compile_definitions(bt2-copy-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     add_test(NAME generated-copy-handler COMMAND bt2-copy-handler-tests)
+    # Independent response validation; no entry-path interrupt delivery.
+    add_executable(bt2-rpc-bind-probe runtime/rpc_bind_probe.cpp
+        "${BT2_GENERATED_DIR}/FUN_003322E8_0x3322e8.cpp"
+        "${BT2_GENERATED_DIR}/FUN_00332258_0x332258.cpp"
+        "${BT2_GENERATED_DIR}/FUN_0032EC90_0x32ec90.cpp")
+    target_include_directories(bt2-rpc-bind-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
+    target_compile_features(bt2-rpc-bind-probe PRIVATE cxx_std_20)
+    target_compile_options(bt2-rpc-bind-probe PRIVATE /W4 /permissive- /utf-8)
+    target_compile_definitions(bt2-rpc-bind-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"

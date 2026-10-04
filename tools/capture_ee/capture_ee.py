@@ -29,9 +29,11 @@ TRAP = struct.pack('<6I', 0x3C180038, 0x37187E80, 0x3419B702,
 def capture_trap(point):
     if point == 'kernel-handler':
         return HANDLER, TRAP, 0xB702
-    if point in ('sif-dma-before', 'sif-dma-after'):
-        # First SifSetDma call boundary, or caller resumed after submission.
-        address, marker = (0x331D44, 0xB70C) if point == 'sif-dma-before' else (0x331D4C, 0xB70D)
+    if point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after'):
+        # SifSetDma boundary or caller resumed after first/change-address or bind submission.
+        address, marker = {'sif-dma-before': (0x331D44, 0xB70C),
+                           'sif-dma-after': (0x331D4C, 0xB70D),
+                           'sif-bind-after': (0x33284C, 0xB70F)}[point]
         words = [0x3C180038, 0x37187E80, 0xAF020004, 0xAF1D0008,
                  0x34190000 | marker, 0xAF190000,
                  0x08000000 | ((address + 24) >> 2), 0]
@@ -189,7 +191,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pcsx2', type=Path, required=True)
     parser.add_argument('--bios', type=Path, required=True)
-    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state'], default='kernel-handler')
+    parser.add_argument('--capture-point', choices=['kernel-handler', 'timer3-mode', 'timer2-mode', 'intc-mask', 'timer2-readback', 'osd-config', 'osd-readback', 'dma-status', 'dma5-control', 'sif-command', 'sif-dma-before', 'sif-dma-after', 'sif-rpc-state', 'sif-bind-after'], default='kernel-handler')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -197,7 +199,7 @@ def main():
     executable = args.pcsx2.resolve()
     exe_data = executable.read_bytes()
     rva = export_rva(exe_data, 'EEmem')
-    capture_iop = args.capture_point in ('sif-dma-before', 'sif-dma-after')
+    capture_iop = args.capture_point in ('sif-dma-before', 'sif-dma-after', 'sif-bind-after')
     iop_rva = export_rva(exe_data, 'IOPmem') if capture_iop else None
     source = ROOT / 'rom/SLUS_214.41'
     original = source.read_bytes()
@@ -280,8 +282,13 @@ def main():
             sp, = struct.unpack_from('<I', data, MARKER + 8)
             if sp > len(data) - 16 or reader.read(pointer + sp, 16) != data[sp:sp + 16]:
                 raise ValueError('SIF DMA descriptor changed during capture.')
-            if reader.read(pointer + 0x3A9580, 20) != data[0x3A9580:0x3A9580 + 20]:
+            packet_address, packet_size = (0x3A97C0, 64) if args.capture_point == 'sif-bind-after' else (0x3A9580, 20)
+            if reader.read(pointer + packet_address, packet_size) != data[packet_address:packet_address + packet_size]:
                 raise ValueError('SIF packet changed during capture.')
+        if args.capture_point == 'sif-bind-after':
+            for start, size in ((MARKER, 12), (0x3A94C0, 64), (0x3A87A8, 40), (0x3A95C0, 13 * 12)):
+                if reader.read(pointer + start, size) != data[start:start + size]:
+                    raise ValueError('RPC response/client/handler table changed during capture.')
         if args.capture_point == 'sif-rpc-state' and reader.read(pointer + MARKER, 12) != data[MARKER:MARKER + 12]:
             raise ValueError('SIF query publication changed during capture.')
         iop_data = None
@@ -292,7 +299,8 @@ def main():
                 raise ValueError('IOP memory is not allocated.')
             iop_data = reader.read(iop_pointer, 2 * 1024 * 1024)
             time.sleep(0.1)
-            for start, size in ((0x19600, 20), (0x196C0, 12)):
+            receive_size = 64 if args.capture_point == 'sif-bind-after' else 20
+            for start, size in ((0x19600, receive_size), (0x196C0, 12)) + (((0x3F570, 68), (0x3F558, 12)) if args.capture_point == 'sif-bind-after' else ()):
                 if reader.read(iop_pointer + start, size) != iop_data[start:start + size]:
                     raise ValueError('IOP receive packet/table changed during capture.')
             (folder / 'iop-ram.bin').write_bytes(iop_data)
@@ -324,7 +332,7 @@ def main():
                     'observed_sif_dma_result': struct.unpack_from('<I', data, MARKER + 4)[0] if capture_iop else None,
                     'observed_sif_dma_sp': struct.unpack_from('<I', data, MARKER + 8)[0] if capture_iop else None,
                     'original_osd_config': struct.unpack_from('<I', data, MARKER + 8)[0] if args.capture_point == 'osd-readback' else None,
-                    'limitations': ('Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
+                    'limitations': ('Instrumented standalone ELF boot; EE running in loop, IOP active. Bind request, response, client, handler table and IOP service/queue stable in two reads; no interrupt timing captured.' if args.capture_point == 'sif-bind-after' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF descriptor/packet and IOP receive packet/table stable in two reads; kernel and IOP continue running.' if capture_iop else 'Instrumented standalone ELF boot; EE running in loop, IOP active. SIF query publication stable; kernel continues running.' if args.capture_point == 'sif-rpc-state' else 'Instrumented standalone ELF boot; EE running in loop, IOP active. Kernel prefix stable in two reads.') + ' Diagnostic only; no gameplay validated.'}
         (folder / 'capture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         print(f'Captured {len(data)} bytes at {args.capture_point}: {dump}')
     finally:

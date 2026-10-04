@@ -88,6 +88,18 @@ public:
         found->second(memory_.empty() ? nullptr : memory_.data(), &context, this);
     }
 
+    // Isolated logical RPC_END callback validation. The caller supplies checked
+    // capture state; this does not emulate interrupt entry or schedule delivery.
+    void validateRpcEndCallback(R5900Context& context) {
+        if (rpc_end_callback_active_ || context.r[4].low != 0x3A94C0
+                || context.r[5].low != 0x3AAFC0 || context.r[28].low != 0x38BDF0)
+            throw std::runtime_error("Invalid isolated RPC_END callback context");
+        rpc_end_callback_active_ = true;
+        try { callFunction(0x3322E8, context); }
+        catch (...) { rpc_end_callback_active_ = false; throw; }
+        rpc_end_callback_active_ = false;
+    }
+
     void expectStartupZeroRegion(std::uint32_t start, std::uint32_t end) {
         if (startup_zero_end_ || thread_initialized || end <= start || end > memory_.size())
             throw std::runtime_error("Invalid startup zero checkpoint");
@@ -372,7 +384,8 @@ public:
             context->r[2].low = id;
             return;
         }
-        if (code == 0 && (selector == 0x44 || selector == 0x42)) {
+        if (code == 0 && (selector == 0x44 || selector == 0x42
+                || (selector == 0xFFFFFFBD && rpc_end_callback_active_))) {
             const auto id = static_cast<std::uint32_t>(context->r[4].low);
             if (id >= semaphores.size()) {
                 context->r[2].low = UINT64_MAX;
@@ -766,6 +779,7 @@ private:
     std::vector<std::uint8_t> sif_iop_;
     std::uint32_t sif_dma_result_ = 0;
     bool sif_rpc_supplied_ = false;
+    bool rpc_end_callback_active_ = false;
     bool sif_command_supplied_ = false;
     std::uint32_t sif_command_word_ = 0;
     bool dma_status_supplied_ = false, dma5_control_supplied_ = false;
