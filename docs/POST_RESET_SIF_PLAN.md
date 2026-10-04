@@ -16,3 +16,11 @@ The diagnostic reset-ready branch does not execute an IOP boot or make the old R
 6. Rerun through multiple supported blockers, test meaningful changes, update progress, commit and push.
 
 The GS sink has no display register/presentation support. If execution next requests display setup, follow GS_RENDERER_BRINGUP_PLAN.md and obtain actual register evidence before presenting a frame.
+
+## Completed transport scope (2026-10-04)
+
+Separate disc-backed traps at main 0x001003E0 and 0x001003E8 preserve the earlier SIF initialization. EE publications and selected live IOP ownership windows are stable in two reads. The 136-byte extension validates ELF/trap/prefix identity, reference environment, whole RAM hashes and fresh buffer/SET_SREG effects.
+
+The authored adapter accepts the observed DMAC status/channel reads, chain setup, handler registration/mask enable, address queries/mutations, two INIT_CMD submissions and one logical SET_SREG reply. Generated FUN_0032F040 and FUN_00331840 now complete, and the second FUN_00331FE8 returns. DMA submission IDs are authored nonzero tokens; this is diagnostic transport delivery without native IOP instructions, interrupt entry or physical timing.
+
+Execution continues through synchronous RPC semaphore creation to the fresh bind request at 0x0032F028: 305 calls / 298 returns. Old service bindings remain invalid. Follow [the service lifetime plan](POST_RESET_IOP_SERVICES_PLAN.md) for the next implementation scope.

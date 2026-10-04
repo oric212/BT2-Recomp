@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             std::ifstream capture(argv[17], std::ios::binary | std::ios::ate);
-            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616 && capture.tellg()!=988)) throw std::runtime_error("Invalid SCMD bundle size");
+            if (!capture || (capture.tellg()!=88 && capture.tellg()!=184 && capture.tellg()!=188 && capture.tellg()!=192 && capture.tellg()!=204 && capture.tellg()!=224 && capture.tellg()!=228 && capture.tellg()!=236 && capture.tellg()!=244 && capture.tellg()!=252 && capture.tellg()!=316 && capture.tellg()!=324 && capture.tellg()!=616 && capture.tellg()!=988 && capture.tellg()!=1124)) throw std::runtime_error("Invalid SCMD bundle size");
             std::vector<std::uint8_t> bundle(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(bundle.data()),bundle.size()) || capture.peek()!=EOF)
                 throw std::runtime_error("Invalid SCMD bind bundle size");
@@ -300,7 +300,8 @@ int main(int argc, char** argv) {
         catch (const UnsupportedGuestMemory& stop) {
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
-            if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
+            if(runtime.post_sif.supplied) throw; // Fresh transport accepts no unknown memory access.
+            else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
                 || (runtime.gs_interrupt.acknowledgements==2 && stop.address==0x12001000 && stop.size==8 && context.pc==0x3104F4)
@@ -418,7 +419,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             require(stopped && !stop_handler && runtime.scmd_bind_calls == 1 && runtime.cd_init_calls == 1
-                    && runtime.semaphores.size() == 7, "SCMD continuation state differs");
+                    && runtime.semaphores.size() == (runtime.post_sif.rpc_initialized && stop_selector==0x77 ? 8u : 7u), "SCMD continuation state differs");
             if (!runtime.scmd_mmode_calls) {
                 require(!stop_target && stop_selector == 0x40 && context.pc == 0x32EC68
                         && runtime.guest_calls == 190 && runtime.returns == 185
@@ -426,7 +427,7 @@ int main(int argc, char** argv) {
                         "SCMD call-semaphore boundary differs");
             } else {
                 require(runtime.semaphore_deletions == 4 && runtime.semaphore_waits == 5 && runtime.semaphore_signals == 6
-                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6)), "SCMD media-mode cleanup differs");
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -439,7 +440,7 @@ int main(int argc, char** argv) {
                     && runtime.guest_calls == 214 && runtime.returns == 209
                     && context.r[29].low == runtime.initial_sp - 224 && GPR_U32(&context,4) == 1
                     && runtime.dmac_disable_calls == 1 && runtime.dmac_removals == 1
-                    && runtime.dmac_mask == 0x800000 && runtime.dmac_handlers.empty()
+                    && (runtime.post_sif.supplied || (runtime.dmac_mask == 0x800000 && runtime.dmac_handlers.empty()))
                     && runtime.read32(runtime.memory().data(),0x36AA90) == 0
                     && runtime.read32(runtime.memory().data(),0x36AA8C) == 0,
                     "SIF shutdown and DMA-stop boundary differs");
@@ -477,14 +478,48 @@ int main(int argc, char** argv) {
                     require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                            && runtime.sif_dma_submissions == 6 && runtime.reset_smflag_writes == 1
+                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions && runtime.reset_smflag_writes == 1
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
-                        require(runtime.reset_ready_checkpoint_reads==1 && (!stop_target
+                        require(runtime.reset_ready_checkpoint_reads==1 && (runtime.post_sif.supplied || !stop_target
                             || (stop_target==0x310548 && stop_source==0x1002B0 && stop_resume==0x1002B8
                                 && runtime.gif_dma.starts==1)),
                                 "Unexpected ready continuation target/replay");
+                        if(runtime.post_sif.supplied) {
+                            const bool chain_target=stop_target==0x32F040 && stop_source==0x3319FC && stop_resume==0x331A04 && runtime.post_sif.phase==2;
+                            const bool sreg_target=stop_target==0x331840 && stop_source==0x332140 && stop_resume==0x332148 && runtime.post_sif.phase==13;
+                            const bool service_stop=!stop_target && stop_selector==0x77 && context.pc==0x32F028
+                                && runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized
+                                && runtime.guest_calls==305 && runtime.returns==298 && context.r[29].low==runtime.initial_sp-464
+                                && GPR_U32(&context,4)==runtime.initial_sp-464 && GPR_U32(&context,5)==1;
+                            require(chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
+                            require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
+                                && runtime.gif_dma.gs.packets==2 && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
+                                && runtime.gif_dma.qwc==0 && runtime.gif_dma.madr==runtime.initial_sp-48
+                                && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2 && runtime.gif_dma.packet_verified,
+                                "Fresh SIF prior GS effects differ");
+                            require(runtime.gs_interrupt.acknowledgements==2 && runtime.gs_interrupt.polls==2 && runtime.gs_interrupt.events==1
+                                && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
+                                && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1 && runtime.halfword_writes==4,
+                                "Fresh SIF prior GS synchronization differs");
+                            for(unsigned page : {0u,140u}) {
+                                const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
+                                require(pixel.value==0 && pixel.known==UINT32_MAX,"Fresh SIF startup framebuffer edge differs");
+                            }
+                            if(service_stop) {
+                                require(runtime.post_sif.submissions==2 && runtime.post_sif.sreg_responses==1
+                                    && runtime.post_sif.ee_receive_address==0x3A94C0 && runtime.dmac_mask==0xA00000
+                                    && runtime.dmac_handlers.size()==1 && runtime.dmac_enable_calls==2
+                                    && runtime.read32(runtime.memory().data(),0x3A9740)==1
+                                    && runtime.read32(runtime.memory().data(),0x3A9598+8)==0x1E640,
+                                    "Fresh SIF ownership/handshake differs");
+                                const std::array<std::uint32_t,4> descriptor={0x203A97C0,0x1E640,64,0x44};
+                                for(unsigned n=0;n<descriptor.size();++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==descriptor[n],"Fresh RPC descriptor differs");
+                                const std::array<std::uint32_t,9> packet={64,0,0x80000009,0,5,0x203A97C0,2,0x3A87A8,0x80000592};
+                                for(unsigned n=0;n<packet.size();++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==packet[n],"Fresh RPC bind request differs");
+                            }
+                        }
                         if(!runtime.gs_csr_reset_writes) require(stop_address==0x12001000 && stop_size==8
                             && context.pc==0x30FE44 && runtime.guest_calls==230 && runtime.returns==226
                             && context.r[29].low==runtime.initial_sp-688 && !runtime.halfword_writes,
@@ -497,7 +532,7 @@ int main(int argc, char** argv) {
                             && runtime.guest_calls==231 && runtime.returns==227
                             && context.r[29].low==runtime.initial_sp-608 && runtime.halfword_writes==4,
                             "GS CRT boundary differs");
-                        else if(runtime.gif_dma.starts) {
+                        else if(runtime.gif_dma.starts && !runtime.post_sif.supplied) {
                             require(runtime.gif_dma.gs.packets==runtime.gif_dma.starts
                                 && runtime.gif_dma.gs.sprites==runtime.gif_dma.starts
                                 && runtime.gif_dma.gs.pixels==std::uint64_t(runtime.gif_dma.starts)*640*448
@@ -527,7 +562,7 @@ int main(int argc, char** argv) {
                                 require(pixel.value==0 && pixel.known==UINT32_MAX,"Startup framebuffer clear edge differs");
                             }
                         }
-                        else if(runtime.gs_interrupt.acknowledgements==2) require(runtime.gs_interrupt.polls==2
+                        else if(runtime.gs_interrupt.acknowledgements==2 && !runtime.post_sif.supplied) require(runtime.gs_interrupt.polls==2
                             && runtime.gs_interrupt.events==1 && runtime.gs_interrupt.status()==8
                             && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1
                             && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
@@ -541,7 +576,7 @@ int main(int argc, char** argv) {
                                         && runtime.gif_dma.qwc==15 && runtime.gif_dma.madr==runtime.initial_sp-528)) && runtime.guest_calls==255 && runtime.returns==251
                                     && context.r[29].low==runtime.initial_sp-624)),
                             "INTC/field/GIF DMA diagnostic boundary differs");
-                        else require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1
+                        else if(!runtime.post_sif.supplied) require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1
                             && runtime.gs_crt_calls==1 && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1}
                             && stop_address==0x1000F000 && stop_size==4 && context.pc==0x32F10C
                             && runtime.guest_calls==252 && runtime.returns==247 && context.r[29].low==runtime.initial_sp-656
@@ -570,6 +605,9 @@ int main(int argc, char** argv) {
                 << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
                 << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
                 << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
+                << ",\"post_sif_phase\":" << runtime.post_sif.phase
+                << ",\"post_sif_submissions\":" << runtime.post_sif.submissions
+                << ",\"post_sif_responses\":" << runtime.post_sif.sreg_responses
                 << ",\"gif_completions\":" << runtime.gif_dma.completions
                 << ",\"gif_sync_reads\":" << runtime.gif_dma.sync_reads
                 << ",\"gs_packets\":" << runtime.gif_dma.gs.packets

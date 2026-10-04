@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The generated probe now executes both startup clear packets: two 640 by 448 PSMCT32 color/PSMZ24 depth sprites are consumed in a scoped software sink, and the drawing/synchronization helpers return. It reaches the second SIF initialization after the IOP reboot. DMA/event timing remains diagnostic; no displayed frame, native video clock or IOP execution is established.
+The generated probe consumes both startup GS clears and now completes the second SIF initialization after the IOP reboot. A separate transport lifetime installs the fresh command buffer and delivers the validated SET_SREG response. No displayed frame, native video clock or native IOP execution is established.
 
-Latest verification: MSVC full checkpoint build/pipeline, eight CTests, 58 capture tests and 43 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
+Latest verification: MSVC checkpoint pipeline, nine CTests, 66 capture tests and 43 recomp-tool tests. Local content, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-A DMAC_STAT read at `0x1000E010`, PC `0x003319CC`, SP `0x01FFECA0`, in `FUN_00331888`, reached from the second SIF initialization at `0x001003E0`. Full probe: 265 calls / 261 returns. IOP epoch 1 remains pending; earlier service/channel checkpoints cannot be reused.
+Fresh RPC bind submission: syscall `0x77`, PC `0x0032F028`, SP `0x01FFEB90`, requesting service `0x80000592` through IOP buffer `0x1E640`. Full probe: **305 calls / 298 returns**. Old service bindings remain invalid; transport initialization does not establish service execution.
 
-Next: [post-reset SIF transport bring-up](POST_RESET_SIF_PLAN.md). Capture the later caller/register state, establish fresh transport ownership, then continue to the actual service blocker.
+Next: [post-reset IOP service ownership and delivery](POST_RESET_IOP_SERVICES_PLAN.md). The fresh live capture contains a candidate service record at `0x43388`, while the old address contains code. Verify the new bind/reply and service lifetime before accepting responses.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **102** distinct functions entered / **100** completed across native probes (startup/helpers, not gameplay).
-- This pass adds `FUN_00310548`; it, `FUN_003100D0` and `FUN_00100258` now complete. Re-entered SIF routines completed in the earlier lifetime but are partial in this invocation. Entry/main remain partial.
+- **104** distinct functions entered / **102** completed across native probes (startup/helpers, not gameplay).
+- This pass adds and completes `FUN_0032F040` and `FUN_00331840`; re-entered SIF initialization now returns. Counts describe startup helpers, not restored gameplay. Entry/main remain partial.
 - Two drawing requests / two logical DMA completions / **573,440** sprite pixels processed, including depth writes. No rendered/presented frame or complete game boot.
 
 ## Milestones

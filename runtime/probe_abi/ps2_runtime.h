@@ -13,6 +13,7 @@
 #include <immintrin.h>
 #include "intc_checkpoint.h"
 #include "gif_dma_staging.h"
+#include "post_reset_sif.h"
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
@@ -137,6 +138,29 @@ public:
             context->r[31] = saved_ra;
             context->pc = resume;
             return;
+        }
+        if(code==0 && post_sif.supplied && gif_dma.completions==2 && iop_epoch==1) {
+            if(selector==0x78 && post_sif.phase==2) {
+                post_sif.chain();return; // SDK declares void, retain v0.
+            }
+            if(selector==0x7A) {context->r[2].low=post_sif.get(static_cast<std::uint32_t>(context->r[4].low));return;}
+            if(selector==0x79) {post_sif.set(static_cast<std::uint32_t>(context->r[4].low),static_cast<std::uint32_t>(context->r[5].low));context->r[2].low=context->r[5].low;return;}
+            if(selector==0x77 && (post_sif.phase==10 || post_sif.phase==12)) {
+                auto d=static_cast<std::uint32_t>(context->r[4].low);checkMemory(rdram,d,16);
+                auto source=read32(rdram,d),count=read32(rdram,d+8);
+                if(context->r[5].low!=1 || read32(rdram,d+4)!=0x1E640 || read32(rdram,d+12)!=0x44 || source!=(post_sif.phase==10?0x3A9580u:0x3A9800u))
+                    throw UnsupportedSyscall(selector,context->pc);
+                checkMemory(rdram,source,count);
+                auto result=post_sif.submit(memory().subspan(source,count));
+                sif_ee_receive_address=post_sif.ee_receive_address;++sif_dma_submissions;
+                if(post_sif.sreg_responses) {
+                    // Captured SET_SREG index 0/value 1 response, logical delivery.
+                    constexpr std::array<std::uint32_t,6> reply={0,0,0x80000001,0,0,1};
+                    for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+                    write32(rdram,0x3A9740,1);
+                }
+                context->r[2].low=result;return;
+            }
         }
         if (code == 0 && selector == 0x77 && sif_dma_submissions == 4 && scmd_mmode_supplied_) {
             receiveScmdMmode(rdram,context); return;
@@ -368,6 +392,10 @@ public:
                 context->r[2].low = UINT64_MAX;
                 return;
             }
+            if(post_sif.supplied && gif_dma.completions==2) {
+                if(address!=0x331DF0 || !dmac_handlers.empty())throw UnsupportedSyscall(selector,context->pc);
+                post_sif.handler();
+            }
             dmac_handlers.push_back({channel, address, static_cast<std::uint32_t>(context->r[7].low),
                                      static_cast<std::uint32_t>(context->r[28].low)});
             const auto id = static_cast<std::uint32_t>(dmac_handlers.size());
@@ -400,6 +428,7 @@ public:
             // Captured mask bits only. No status acknowledgements, DMA or interrupt delivery.
             if (context->r[4].low != 5 || dma_status_reads != 1 || dma5_control_reads != 1
                     || dmac_handlers.empty()) throw UnsupportedSyscall(selector, context->pc);
+            if(post_sif.supplied && gif_dma.completions==2)post_sif.enable();
             const auto bit = 0x10000u << 5;
             const bool changed = !(dmac_mask & bit);
             dmac_mask |= bit;
@@ -513,7 +542,10 @@ public:
             const bool mmode_sema = scmd_mmode_supplied_ && scmd_bind_calls == 1 && !scmd_mmode_calls
                 && semaphores.size() == 7 && address == initial_sp - 304 && maximum == 1
                 && initial == 0 && option == 0x3838E8 && attributes == 0x370000;
-            if (attributes != 0 && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            // Same reached RPC helper as before reboot; attr remains unused stack residue.
+            const bool fresh_bind_sema = post_sif.rpc_initialized && semaphores.size()==7
+                && address==initial_sp-320 && maximum==1 && initial==0 && option==0x3838D8;
+            if (attributes != 0 && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -872,7 +904,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988 && bundle.size() != 1124)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -938,12 +970,14 @@ public:
             if(std::memcmp(bundle.data()+324,idle.data(),36) || std::memcmp(bundle.data()+360,results.data(),16))
                 throw std::runtime_error("GIF idle/staging/reference return evidence differs");
             gif_dma.supply(bundle.subspan(376,240));gif_dma_supplied_=true;
-            if(bundle.size()==988)gif_dma.supplySync(bundle.subspan(616,372));
+            if(bundle.size()>=988)gif_dma.supplySync(bundle.subspan(616,372));
+            if(bundle.size()==1124)post_sif.supply(bundle.subspan(988,136));
         }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
     GifDmaStaging gif_dma;
+    PostResetSif post_sif;
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1043,6 +1077,10 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(post_sif.supplied && gif_dma.completions==2 && iop_epoch==1 && context->r[29].low==initial_sp-192) {
+            if(address==0x1000E010 && context->pc==0x3319CC) {checkMemory(rdram,0,0);return post_sif.status();}
+            if(address==0x1000C000 && context->pc==0x3319EC) {checkMemory(rdram,0,0);return post_sif.channel();}
+        }
         if(gif_dma.syncSupplied() && gif_dma.starts>=1 && gif_dma.starts<=2 && context->r[29].low==initial_sp-624) {
             if(address==0x10009000 && context->pc==0x310560) {checkMemory(rdram,0,0);return gif_dma.readVifIdle();}
             if(address==0x1000A000 && (context->pc==0x3105A4 || context->pc==0x3105CC)) {

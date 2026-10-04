@@ -26,6 +26,14 @@
     {
       "path": "ee/kernel/include/timer.h",
       "sha256": "00bfea47e976d8f5ce1331e5a3e6dcc1843306af1b942d058d54a1d86fee752f"
+    },
+    {
+      "path": "ee/kernel/src/sifcmd.c",
+      "sha256": "3184529a0b741e9b8b495e3928bd3f8e2c4f89c25f02cfa2c1791efe6adecdc5"
+    },
+    {
+      "path": "iop/system/sifcmd/src/sifcmd.c",
+      "sha256": "40f4956fa3500bdc82ce1b6e6da8f0c771faa81095da6e45958e3afbefbedc5e"
     }
   ],
   "bootstrap_model_reference": {
@@ -338,5 +346,6 @@
       }
     ],
     "role": "Public PSMCT32/PSMZ24 page, block and pixel addressing, depth XOR and 24-bit preservation. Authored bit placement and transactional scoped sprite operation; no reference implementation copied. Unknown VRAM bits remain unknown. Independent BT2 checkpoints establish first transfer polling and idle VU status. The second observed same-form packet reuses the bounded logical DMA sequence; no physical timing or presentation claimed. Reached CSR reset initializes drawing-register defaults (including SCANMSK/FBA); VRAM is not cleared."
-  }
+  },
+  "post_reset_sif_role": "Pinned public command INIT_CMD opt 0/1 and SET_SREG layout/order, separate transport lifetime. Local before/after captures establish buffer ownership and response. Authored nonzero logical submission tokens; no native IOP execution or renewed service validity."
 }

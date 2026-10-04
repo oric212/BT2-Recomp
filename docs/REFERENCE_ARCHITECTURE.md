@@ -70,3 +70,9 @@ Consulted pinned [GSLocalMemory.h](https://github.com/PCSX2/pcsx2/blob/81526d4dc
 The first DMA synchronization is backed by separate before/poll/after, VU-idle and helper-return captures; the second same-form source packet is captured at the latter return. Completion remains a bounded logical diagnostic, independent of physical DMA/video timing. Main startup next requests a new [post-reset SIF transport lifetime](POST_RESET_SIF_PLAN.md); old channel/service evidence must not be reused automatically.
 
 Pinned [GSDrawingEnvironment.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/GS/GSDrawingEnvironment.cpp) and [GSDrawingContext.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/GS/GSDrawingContext.cpp) were also consulted: drawing reset establishes SCANMSK and FBA defaults. The reached CSR reset explicitly initializes those scoped sink defaults while preserving unknown VRAM; full GS reset/presentation effects remain incomplete.
+
+### Fresh SIF transport and IOP service lifetime
+
+Consulted pinned PS2SDK [EE sifcmd.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/sifcmd.c) and [IOP sifcmd.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/sifcmd/src/sifcmd.c) for INIT_CMD opt 0/1 and command ownership. Local BT2 before/after captures establish fresh buffer addresses and SET_SREG index 0/value 1. Source hashes/roles are in config/startup_abi.sources.json. No implementation copied.
+
+The separate diagnostic adapter completes transport initialization without executing an IOP boot or validating RPC services. BT3's native IOP module/import/scheduler separation guides the [new service ownership scope](POST_RESET_IOP_SERVICES_PLAN.md). Live IOP service records are evidence to validate against a fresh reply, not a reason to reuse old pointers.

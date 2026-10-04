@@ -370,3 +370,9 @@ The runtime stages only the reached idle/count/address operations, validates sou
 `tools/ps2recomp/run_pipeline.py --gif-sync-captures work/pcsx2-capture` requires `--gif-captures` and the preceding GS/checkpoint chain. Five ignored disc-backed points (`gif-sync-before`, `gif-sync-poll`, `gif-sync-after`, `gif-vu-idle`, `gif-path-after`) validate the first wait, idle status and second source packet; their extension produces the 988-byte SCMD bundle. Use the capture tool with the user's existing local PCSX2/BIOS/disc paths. Do not commit captures, packet bytes or patched executables.
 
 The authored GS CTest validates page addressing, color/depth masks, clipping, unknown bits, transactional rejection, source immutability and ordered two-request consumption/completion. Completion is a bounded logical diagnostic; no video clock or displayed game frame is asserted. Generated VPU_STAT accesses are routed through a checked runtime hook with preparation hashes, preserving raw output.
+
+## Fresh SIF transport checkpoint
+
+Capture `post-sif-before` and `post-sif-after` with the user's existing local PCSX2, BIOS and disc paths. These unique caller traps preserve both earlier startup and the reboot path; all patched files and EE/IOP captures remain ignored. Selected ownership windows are stable twice, while full IOP RAM remains a live snapshot.
+
+Append `--post-sif-captures work/pcsx2-capture` to the pipeline after `--gif-sync-captures` and its prerequisites. `verify_post_sif.py` validates identity, environment, full RAM hashes, trap/prefix/publication, EE/IOP ownership, opt-1 packet and SET_SREG effects. The 136-byte extension produces a 1124-byte bundle. The scoped runtime now reaches the fresh service bind described in [the service lifetime plan](POST_RESET_IOP_SERVICES_PLAN.md); it does not execute the IOP or reuse old service addresses.
