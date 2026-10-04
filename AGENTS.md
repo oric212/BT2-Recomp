@@ -20,6 +20,13 @@ Build/test meaningful changes. At the end of each pass, update concise docs/PROG
 
 Never download or commit proprietary game/BIOS content, retail executables, disc images, extracted assets or proprietary-derived generated code. Keep local content, captures, prepared/generated code and build output ignored. README.md stays at the root; project documentation stays in docs/.
 
+
+### Work at subsystem scale
+
+Use a blocker-driven approach, but work at subsystem scale whenever possible. When several blockers belong to the same subsystem, trace and implement the bounded set needed to complete that subsystem instead of stopping after each individual function/syscall.
+
+Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is completing startup subsystems far enough to reach game asset loading, real draw submission and presentation. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
+
 ## Documentation encoding
 
 Read and write documentation explicitly as UTF-8. Preserve historical entries when appending; do not round-trip them through the Windows default code page. Check changed files for replacement characters and newly introduced mojibake before committing.

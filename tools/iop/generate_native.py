@@ -53,14 +53,14 @@ def emit(image,base,ranges,imports=(),seeds=(),symbol='bt2_iop_module'):
         for address in range(lo,hi,4):
             body=bodies.setdefault(address>>12,[])
             body.append(f'case {address}u: {{')
-            if address in seeds:body.append(f'rt.entries.insert({address}u);')
+            if address in seeds:body.append(f'rt.entries.insert({base+address}u);')
             body.append(instruction(struct.unpack_from('<I',image,address)[0],base+address,base));body.append('break;}')
     for item in imports:
         body=bodies.setdefault(item['address']>>12,[])
         body.extend([f'case {item["address"]}u: {{',f'const auto target=c.get(31);const auto result=rt.import({json.dumps(item["library"])},{item["ordinal"]},c);c.advance();c.set(2,result);c.pc=target;break;}}'])
     lines=['#include "native_runtime.h"']
     for bucket,body in sorted(bodies.items()):
-        lines += [f'static void {symbol}_{bucket}(IopRuntime& rt,IopContext& c) {{',f'while(c.pc!=IopRuntime::sentinel && ((IopRuntime::physical(c.pc)-{base}u)>>12)=={bucket}u) {{','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc)-{base}u);',f'switch(IopRuntime::physical(c.pc)-{base}u) {{',*body,'default: throw std::runtime_error("Unmapped native IOP target");','}','}','}']
+        lines += [f'static void {symbol}_{bucket}(IopRuntime& rt,IopContext& c) {{',f'while(c.pc!=IopRuntime::sentinel && ((IopRuntime::physical(c.pc)-{base}u)>>12)=={bucket}u) {{','rt.tick(c);',f'if(rt.entry_targets.contains(c.pc))rt.entries.insert(IopRuntime::physical(c.pc));',f'switch(IopRuntime::physical(c.pc)-{base}u) {{',*body,'default: throw std::runtime_error("Unmapped native IOP target");','}','}','}']
     lines += [f'void {symbol}(IopRuntime& rt,IopContext& c) {{','while(c.pc!=IopRuntime::sentinel) {',f'switch((IopRuntime::physical(c.pc)-{base}u)>>12) {{']
     for bucket in sorted(bodies):lines.append(f'case {bucket}u: {symbol}_{bucket}(rt,c);break;')
     lines += ['default: rt.tick(c);throw std::runtime_error("Unmapped native IOP target");','}','}','}']

@@ -15,7 +15,7 @@ void PS2Runtime::receiveNativeModule(std::uint8_t* rdram,R5900Context* context) 
         std::string path;for(unsigned n=0;n<252;++n) {const auto ch=memory_.at(0x3ACA08+n);if(!ch)break;if(ch<32 || ch>126)throw UnsupportedSyscall(0x77,context->pc);path+=static_cast<char>(ch);}
         native_module_request=path;
         if(path.empty() || path.size()==252)throw UnsupportedSyscall(0x77,context->pc);
-        if(!native_iop)native_iop=std::make_shared<NativeIopService>(iop_epoch,bt2_compiled_iop_modules());
+        if(!native_iop) {native_iop=std::make_shared<NativeIopService>(iop_epoch,bt2_compiled_iop_modules());native_iop->attachEeTransport(iop_epoch); }
         if(!native_iop->supports(path))throw UnsupportedSyscall(0x77,context->pc);
         NativeIopService::Resident resident{};
         try {resident=native_iop->load(iop_epoch,path);}
@@ -26,7 +26,7 @@ void PS2Runtime::receiveNativeModule(std::uint8_t* rdram,R5900Context* context) 
         }
         native_iop_pc=native_iop->runtime.executing_pc;native_iop_steps=native_iop->runtime.steps;
         native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_waiters=0;
-        for(const auto& [id,thread]:native_iop->runtime.threads)if(thread.waiting)++native_iop_waiters;
+        for(const auto& [thread_id,thread]:native_iop->runtime.threads)if(thread.waiting)++native_iop_waiters;
         write32(rdram,0x3ACA00,resident.id);write32(rdram,0x3ACA04,resident.result);
         const std::array<std::uint32_t,16> reply={0x800,0x3ACA00,0x80000008,0,0,0,0,0x3ACC00,0x8000000A,0,0,0,0,0,0,0};
         for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);

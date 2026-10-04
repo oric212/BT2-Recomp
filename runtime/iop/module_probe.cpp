@@ -7,7 +7,7 @@
 #include <iostream>
 void bt2_iop_module(IopRuntime&,IopContext&);
 int main(int argc,char** argv) {
-    if(argc!=3){std::cerr<<"Usage: bt2-iop-probe private-image report.json\n";return 1;}
+    if(argc!=3 && !(argc==4 && (std::string(argv[3])=="--mcman" || std::string(argv[3])=="--mcserv" || std::string(argv[3])=="--dbcman"))){std::cerr<<"Usage: bt2-iop-probe private-image report.json [--mcman|--mcserv|--dbcman]\n";return 1;}
     if(std::filesystem::weakly_canonical(std::filesystem::path(argv[2]).parent_path())!=std::filesystem::weakly_canonical("work/iop")) {
         std::cerr<<"IOP output must stay under ignored work/iop; run from project root\n";return 1;
     }
@@ -18,17 +18,17 @@ int main(int argc,char** argv) {
         if(!stream || stream.tellg()!=iop_module_size)throw std::runtime_error("IOP private image size differs");
         std::vector<std::uint8_t> image(iop_module_size);stream.seekg(0);stream.read(reinterpret_cast<char*>(image.data()),image.size());
         if(!stream || !std::equal(image.begin(),image.end(),iop_expected_image.begin()))throw std::runtime_error("IOP image differs from generated source");
-        service.load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");entry_returned=true;diagnostic="Module entry returned; effects require validation before EE LOADFILE success";
+        service.load(1,"cdrom0:\\IRX\\SIO2MAN.IRX;1");if(argc==4)service.load(1,"cdrom0:\\IRX\\MCMAN.IRX;1");if(argc==4 && (std::string(argv[3])=="--mcserv" || std::string(argv[3])=="--dbcman")) {service.attachEeTransport(1);service.load(1,"cdrom0:\\IRX\\MCSERV.IRX;1");}if(argc==4 && std::string(argv[3])=="--dbcman")service.load(1,"cdrom0:\\IRX\\DBCMAN.IRX;1");entry_returned=true;diagnostic="Scoped resident effects validated; transfers remain unvalidated";
     } catch(const std::exception& e) {
         if(!rt.steps){std::cerr<<e.what()<<"\n";return 1;}
-        diagnostic=e.what();
+        diagnostic=e.what();entry_returned=c.pc==IopRuntime::sentinel;
     }
     {
         std::ofstream memory(std::string(argv[2])+".ram.bin",std::ios::binary);memory.write(reinterpret_cast<const char*>(rt.ram.data()),rt.ram.size());
         if(!memory){std::cerr<<"Cannot write private IOP memory\n";return 1;}
         std::ofstream report(argv[2]);if(!report){std::cerr<<"Cannot write IOP report\n";return 1;}report<<"{\"entry_returned\":"<<(entry_returned?"true":"false")<<",\"entry_result\":"<<c.get(2)<<",\"sio2_control_known\":"<<(rt.sio2_control_known?"true":"false")<<",\"sio2_control\":"<<rt.sio2_control<<",\"events\":"<<rt.events.size()<<",\"semaphores\":"<<rt.semaphores.size()<<",\"threads\":[";
         bool first_thread=true;
-        for(const auto& [id,t]:rt.threads) {if(!first_thread)report<<',';first_thread=false;report<<"{\"id\":"<<id<<",\"entry\":"<<t.entry<<",\"pc\":"<<t.context.pc<<",\"waiting\":"<<(t.waiting?"true":"false")<<",\"event\":"<<t.wait_event<<",\"bits\":"<<t.wait_bits<<",\"mode\":"<<t.wait_mode<<",\"result\":"<<t.wait_result<<",\"priority\":"<<t.priority<<",\"stacksize\":"<<t.stacksize<<",\"attr\":"<<t.attr<<",\"option\":"<<t.option<<",\"gp\":"<<t.gp<<"}";}
+        for(const auto& [id,t]:rt.threads) {if(!first_thread)report<<',';first_thread=false;report<<"{\"id\":"<<id<<",\"entry\":"<<t.entry<<",\"pc\":"<<t.context.pc<<",\"waiting\":"<<(t.waiting?"true":"false")<<",\"event\":"<<t.wait_event<<",\"bits\":"<<t.wait_bits<<",\"mode\":"<<t.wait_mode<<",\"result\":"<<t.wait_result<<",\"rpc_queue\":"<<t.wait_rpc<<",\"priority\":"<<t.priority<<",\"stacksize\":"<<t.stacksize<<",\"attr\":"<<t.attr<<",\"option\":"<<t.option<<",\"gp\":"<<t.gp<<"}";}
         report<<"],\"event_objects\":[";bool first=true;
         for(const auto& [id,e]:rt.events) {if(!first)report<<',';first=false;report<<"{\"id\":"<<id<<",\"attr\":"<<e.attr<<",\"option\":"<<e.option<<",\"bits\":"<<e.bits<<"}";}
         report<<"],\"semaphore_objects\":[";first=true;

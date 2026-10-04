@@ -402,6 +402,9 @@ With your local disc/module already provided:
 ```powershell
 python tools/iop/generate_native.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/iop/sio2man_native.cpp
 python tools/iop/generate_native.py rom/IRX/MCMAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x20000 --symbol bt2_iop_mcman --prefix iop_mcman --output work/iop/mcman_native.cpp
+python tools/iop/generate_native.py rom/IRX/MCSERV.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x50000 --symbol bt2_iop_mcserv --prefix iop_mcserv --output work/iop/mcserv_native.cpp
+python tools/iop/generate_native.py rom/IRX/DBCMAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x60000 --symbol bt2_iop_dbcman --prefix iop_dbcman --output work/iop/dbcman_native.cpp
+python tools/iop/generate_native.py rom/IRX/SIO2D.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x70000 --symbol bt2_iop_sio2d --prefix iop_sio2d --output work/iop/sio2d_native.cpp
 cmake -S . -B build/probe -DBT2_BUILD_IOP_PROBE=ON
 cmake --build build/probe --config Debug --target bt2-iop-tests bt2-iop-probe
 build/probe/Debug/bt2-iop-tests.exe
@@ -410,7 +413,7 @@ build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/native-
 
 The authored standalone MIPS-I translator emits native instruction expressions and checked import dispatch. It is separate from the pinned EE PS2Recomp pipeline. Outputs, relocation images and provenance remain under ignored work/iop/. CMake also generates authored synthetic programs locally. No game code is needed in the repository.
 
-The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: entry returned with result 0 after 151 instructions, six entry targets entered and one native worker waiting for event bits 0x4155. Reports and companion private RAM output must be directly under work/iop; run from the project root. The isolated probe and optional EE adapter now share NativeIopService. Enable BT2_LINK_NATIVE_IOP with the existing generated-entry probe configuration to execute both compiled modules through the persistent EE loader. The ordinary host remains independent of private code.
+The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: entry returned with result 0 after 151 instructions, six entry targets entered and one native worker waiting for event bits 0x4155. Reports and companion private RAM output must be directly under work/iop; run from the project root. The isolated probe and optional EE adapter now share NativeIopService. Enable BT2_LINK_NATIVE_IOP with the existing generated-entry probe configuration to execute the compiled modules through the persistent EE loader. The ordinary host remains independent of private code.
 
 Validate scoped native initialization against your recorded local checkpoint:
 
@@ -421,3 +424,27 @@ python tools/iop/verify_native.py --native work/iop/native-stop.json --reference
 The checker validates capture hashes/trap, module ownership/code, normalized BSS, semaphore/event state and native thread parameters/wait. It checks reached reset/DMA/IRQ state against the public behavior consulted. It does not equate opaque options or capture hardware MMIO, and does not complete EE LOADFILE. Runtime handles use separate event/semaphore/thread namespaces. Kernel record offsets are specific to this reference scenario.
 
 Generated IOP functions are partitioned into 4 KiB address buckets to bound MSVC switch compilation. Synthetic tests exercise branch delay slots across bucket boundaries. `--symbol` and `--prefix` give separately linked modules distinct generated names.
+
+## Scoped MCMAN resident comparison
+
+Capture `--capture-point mcman-module-after` with the existing explicit local PCSX2/BIOS/disc arguments. The authored trap is at unique main caller return 0x100434, so the preceding SIO2MAN load completes normally. Result/SP, LOADFILE buffers/service windows are checked stable; full IOP RAM remains a live diagnostic.
+
+```powershell
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/mcman-stop.json --mcman
+python tools/iop/verify_mcman.py --native work/iop/mcman-stop.json --reference work/pcsx2-capture/mcman-module-after/capture.json --module rom/IRX/MCMAN.IRX --output work/iop/mcman-validation.json
+```
+
+The checker guards capture/source hashes, trap, scenario-specific module record/base/text extent, result 2, relocated code and full initialized data/BSS. Only unequal module-local address values and two owned semaphore handles are normalized; equal scalar words stay unchanged. Semaphore record tags/attributes/count/max are guarded. Kernel offsets are observed for this scenario, not a portable ABI. Opaque options, authentication and card transfer behavior remain unverified. Generated entry-target counts now use physical addresses so different modules cannot collide through identical local offsets.
+
+## Native RPC worker startup comparisons
+
+Capture `mcserv-module-after` / `dbcman-module-after` with the explicit local PCSX2/BIOS/disc arguments. Unique EE main return traps 0x100454 / 0x100474 preserve preceding module loads. Full IOP RAM remains live; stable service/publication windows are checked separately.
+
+```powershell
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/mcserv-stop.json --mcserv
+build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/dbcman-stop.json --dbcman
+python tools/iop/verify_rpc_startup.py --profile mcserv --native work/iop/mcserv-stop.json --reference work/pcsx2-capture/mcserv-module-after/capture.json --module rom/IRX/MCSERV.IRX --output work/iop/mcserv-validation.json
+python tools/iop/verify_rpc_startup.py --profile dbcman --native work/iop/dbcman-stop.json --reference work/pcsx2-capture/dbcman-module-after/capture.json --module rom/IRX/DBCMAN.IRX --output work/iop/dbcman-validation.json
+```
+
+The checker guards identity/hash/trap, resident result, module ownership/text extent, relocated code, full normalized data/BSS, queue thread identity and reference worker sleep/parameters. Native kernel handles and module-local address values are normalized. Opaque options, physical timing/DMA and real RPC requests remain unvalidated. The four completed module entries do not represent complete device functionality.

@@ -182,3 +182,12 @@ class OsdReadbackCaptureTests(unittest.TestCase):
         self.assertEqual(words[5], 0xAF190008)
         self.assertEqual((words[8] & 0x3ffffff) << 2, address + 32)
         self.assertEqual(words[9], 0)
+
+
+class McmanReturnCaptureTests(unittest.TestCase):
+    def test_unique_caller_return_preserves_module_result_publication(self):
+        address,trap,marker=capture_trap('mcman-module-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x100434,0xB73B))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)

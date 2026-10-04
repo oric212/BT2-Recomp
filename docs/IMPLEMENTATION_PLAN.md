@@ -40,9 +40,16 @@ Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored 
 
 After each verified step, update [the current status](PROG.md) and append detailed evidence to `progress/YYYY-MM.md`. Keep `PROG.md` concise and link each monthly history file there. Keep `README.md` at the repository root and other documentation under `docs/`. Review staged files before committing.
 
+
+### Work at subsystem scale
+
+Use a blocker-driven approach, but work at subsystem scale whenever possible. When several blockers belong to the same subsystem, trace and implement the bounded set needed to complete that subsystem instead of stopping after each individual function/syscall.
+
+Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is completing startup subsystems far enough to reach game asset loading, real draw submission and presentation. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
+
 ## Repository workflow
 
-Current next step: follow [the IOMAN driver lifecycle plan](IOP_IOMAN_DRIVER_PLAN.md). The persistent native IOP bridge completes the first SIO2MAN EE load, and MCMAN now reaches DelDrv. Preserve real native callback execution and pending failure behavior. [EE bridge](IOP_LOADFILE_BRIDGE_PLAN.md) and [SIO2 scope](SIO2_BRINGUP_PLAN.md) document established ownership and limits.
+Current next step: follow [the IOP Vblank timing and SIO2D plan](IOP_VBLANK_PLAN.md). Four native resident modules now complete EE loads; SIO2D reaches WaitVblankEnd with no event producer. Native IOMAN and RPC startup are implemented/validated within their documented limits. Continue at subsystem scale toward asset loading, draw submission and presentation.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

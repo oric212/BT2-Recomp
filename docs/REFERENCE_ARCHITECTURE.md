@@ -106,3 +106,15 @@ Consulted pinned public PS2SDK intrman.h/intrman.c, dmacman.h/dmacman.c, thbase.
 ### Persistent native LOADFILE and MCMAN imports
 
 The authored shared service follows the previously reviewed BT3 separation of compiled module dispatch and owned runtime lifetime. Consulted pinned PS2SDK sysclib.h (memset ordinal 14), secrman.h (void callback setters 4/5), modload.h/modload.c (void SetCheckKelfPathCallback ordinal 13), and ioman.h/ioman.c (driver init/deinit lifecycle) at ac92a9f657d2e531dd8f060250b07f2a5ac6dea5. BT3's ordinal-13 description does not establish BT2 behavior; the public SDK identifies a callback setter rather than module loading. Only reached callbacks are retained, not invoked or counted as executed. See [IOMAN plan](IOP_IOMAN_DRIVER_PLAN.md) for links and adaptation limits.
+
+### IOMAN lifecycle and MCMAN removable resident result
+
+Adapted public pinned PS2SDK ioman.c/ioman.h: 16-slot driver registry, first-match deletion, native init/deinit callbacks and removal after negative init. BT3's permissive IOMAN/security defaults were not adopted. Public modload.c retains entry results with low bits 0 or 2 and reports the actual entry result; reached MCMAN returns 2. Scoped runtime accepts only the observed exact 0/2 values. MCMAN normalized local return/code/data/BSS comparison is separate from physical timing/device equivalence.
+
+Pinned [sifman.h](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/sifman/include/sifman.h) identifies sceSifCheckInit ordinal 29. Existing pinned IOP sifcmd.c startup checks SIFMAN before command/RPC setup. This informs the separate [native SIF/RPC server plan](IOP_SIF_RPC_SERVER_PLAN.md); EE initialization snapshots do not justify automatic native IOP initialized flags.
+
+### Bounded native RPC startup and reached Vblank wait
+
+Consulted pinned PS2SDK sifman.c/sifman.h, IOP sifrpc.c/sifcmd.h and common sifrpc-common.h for initialized-flag queries, idempotent RPC init, 24-byte queue / 68-byte server descriptors, list linkage and empty-queue sleep. Authored compatibility providers attach to the validated fresh EE epoch and retain actual compiled worker contexts. MCSERV/DBCMAN startup is compared against separate local unique-caller captures; no physical SIF transfer or successful client request is implied.
+
+Pinned VBLANK ordinal 5 is WaitVblankEnd (not handler registration). vblank.c implements an OR wait on an end-event flag. The reached SIO2D worker requires an owned event/phase producer; no immediate-success result is justified. See [Vblank timing scope](IOP_VBLANK_PLAN.md).

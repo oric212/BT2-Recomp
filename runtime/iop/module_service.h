@@ -1,6 +1,8 @@
 #pragma once
 #include "library_provider.h"
 #include "kernel_provider.h"
+#include "ioman_provider.h"
+#include "sif_rpc_provider.h"
 #include <string_view>
 
 struct NativeIopModule {
@@ -19,7 +21,8 @@ public:
         if(!epoch_)throw std::runtime_error("Native IOP needs a fresh epoch");
         runtime.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
         runtime.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
-        install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);
+        install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);
+        install_iop_sif_rpc_provider(runtime);
         runtime.execute=[this](IopRuntime& rt,IopContext& c){
             rt.check(IopRuntime::physical(c.pc),4);
             for(const auto& module:definitions_)if(IopRuntime::physical(c.pc)>=module.base && IopRuntime::physical(c.pc)<module.base+module.image.size()) {module.execute(rt,c);return;}
@@ -43,10 +46,14 @@ public:
             entry={};entry.pc=found->entry;entry.set(28,found->gp);entry.set(29,0x1FFF00);
             entry.set(31,IopRuntime::sentinel);entry.set(4,1);entry.set(5,0x1FE000);
             found->execute(runtime,entry);
-            if(entry.pc!=IopRuntime::sentinel || entry.get(2)!=0)throw std::runtime_error("IOP module did not return resident completion");
+            if(entry.pc!=IopRuntime::sentinel || (entry.get(2)!=0 && entry.get(2)!=2))throw std::runtime_error("IOP module did not return resident completion: "+std::to_string(entry.get(2)));
             found->validate(runtime);
             const Resident resident{next_id_++,entry.get(2)};residents.emplace(std::string(path),resident);return resident;
         } catch(...) {failed_=true;throw;}
+    }
+    void attachEeTransport(unsigned epoch) {
+        if(epoch!=epoch_ || failed_ || runtime.sif_transport_attached)throw std::runtime_error("Invalid native SIF transport attachment");
+        runtime.sif_transport_attached=true;
     }
     bool supports(std::string_view path) const {for(const auto& m:definitions_)if(m.path==path)return true;return false;}
     unsigned epoch() const {return epoch_;}

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-struct IopYield : std::exception {const char* what() const noexcept override {return "IOP thread waiting for event";}};
+struct IopYield : std::exception {const char* what() const noexcept override {return "IOP thread waiting";}};
 
 struct IopContext {
     std::array<std::uint32_t,32> r{};
@@ -46,10 +46,19 @@ public:
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;
     std::uint32_t kelf_path_handler=0;
+    struct Driver {std::uint32_t descriptor=0,operations=0,gp=0;std::string name;};
+    std::array<Driver,16> drivers{};
+    bool driver_callback_active=false;
+    bool sif_transport_attached=false,rpc_initialized=false;
+    struct RpcQueue {unsigned thread;std::vector<std::uint32_t> servers;};
+    struct RpcServer {std::uint32_t descriptor,id,handler,buffer,queue,gp;};
+    std::map<std::uint32_t,RpcQueue> rpc_queues;
+    std::uint32_t rpc_queue_head=0,rpc_queue_tail=0;
+    std::map<std::uint32_t,RpcServer> rpc_servers;
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;};
     std::map<unsigned,Thread> threads;
     unsigned next_thread=0x20001,current_thread=0;
     std::function<void(IopRuntime&,IopContext&)> execute;

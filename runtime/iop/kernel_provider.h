@@ -113,4 +113,14 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         memory.kelf_path_handler=handler;if(handler)memory.entry_targets.insert(handler);return c.get(2);
     };
 
+    rt.providers[{"sysclib",29}]=[](IopRuntime& memory,IopContext& c) {
+        const auto count=c.get(6);
+        if(count>IopRuntime::ram_size)throw std::runtime_error("IOP string comparison budget exceeded");
+        for(unsigned n=0;n<count;++n) {
+            const auto a=memory.read(c.get(4)+n,1),b=memory.read(c.get(5)+n,1);
+            if(a!=b)return a-b;if(!a)return 0u;
+        }
+        return 0u;
+    };
+
 }

@@ -17,3 +17,9 @@ Compiled MCMAN entry reaches ioman ordinal 21 (DelDrv) at native PC 0x31BE4 afte
 No memory-card backing store, authentication, SIO2 transfer, asynchronous device completion or generic filesystem success is implied. Unknown operations remain explicit blockers. Consult BT3 architecture first, then public SDK semantics and local BT2 execution; adapt rather than copy.
 
 Public semantics: [ioman.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/ioman/src/ioman.c), [ioman.h](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/ioman/include/ioman.h).
+
+## Implemented checkpoint: 2026-10-04
+
+Owned 16-slot registry implements AddDrv/DelDrv with real compiled init/deinit callbacks, retained module GP and copied caller context. Absent deletion returns -1. Public SDK permits duplicate names; first-match deletion is preserved. Negative init or callback failure removes the pending registration; deinit failure retains the existing driver.
+
+Actual MCMAN registers mc at native descriptor 0x3200C / operations 0x31FA0 and executes init 0x2FC10. Entry returns 2, retained/removable according to public MODLOAD semantics. A new isolated local capture at EE caller return 0x100434 confirms result 2, relocated code and normalized initialized data/BSS, including two priority semaphores. Opaque options and device transfers remain unvalidated. Native MCSERV proceeds to the separate [SIF/RPC scope](IOP_SIF_RPC_SERVER_PLAN.md).

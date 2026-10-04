@@ -1,6 +1,7 @@
 #include "native_runtime.h"
 #include "library_provider.h"
 #include "kernel_provider.h"
+#include "ioman_provider.h"
 #include <iostream>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
 void check(bool v) {if(!v)throw std::runtime_error("IOP synthetic result differs");}
@@ -67,6 +68,24 @@ int main() {
         host.set(4,0x101C1);rejected=false;try{kernel.import("secrman",4,host);}catch(const std::runtime_error&){rejected=true;}check(rejected && kernel.security_handlers.at(4)==0x101C0);
         host.set(4,0x20040);kernel.write(0x20040,1,4);kernel.write(0x20048,1,4);kernel.write(0x2004C,2,4);
         const auto semaphore=kernel.import("thsemap",4,host);check(semaphore!=event_id && semaphore!=thread_id && kernel.semaphores.at(semaphore).attr==1);
+        IopRuntime io;io.map(0x10000,std::vector<std::uint8_t>(0x1000));io.map(0x20000,std::vector<std::uint8_t>(128));
+        io.execute=bt2_iop_synthetic;install_iop_ioman_provider(io);IopContext request;request.pc=0x10044;request.set(4,0x20060);request.set(28,0x18000);request.set(29,0x20080);
+        io.write(0x20060,'m',1);io.write(0x20061,'c',1);io.write(0x20068,'d',1);
+        check(io.import("ioman",21,request)==UINT32_MAX && io.steps==0);
+        io.write(0x20000,0x20060,4);io.write(0x2000C,0x20068,4);io.write(0x20010,0x20040,4);
+        io.write(0x20040,0x10240,4);io.write(0x20044,0x10260,4);request.set(4,0x20000);
+        const auto saved=request;check(io.import("ioman",20,request)==0 && io.drivers[0].name=="mc" && io.read(0x20018,4)==0);
+        check(request.r==saved.r && request.pc==saved.pc && !io.driver_callback_active && io.entries.contains(0x10240));
+        request.set(4,0x20060);check(io.import("ioman",21,request)==0 && !io.drivers[0].descriptor && io.read(0x2001C,4)==7);
+        request.set(4,0x20000);io.write(0x20040,0x10280,4);check(io.import("ioman",20,request)==UINT32_MAX && !io.drivers[0].descriptor);
+        io.write(0x20040,0x10241,4);rejected=false;try{io.import("ioman",20,request);}catch(const std::runtime_error&){rejected=true;}check(rejected && !io.drivers[0].descriptor && !io.driver_callback_active);
+        io.write(0x20040,0x10240,4);
+        for(unsigned n=0;n<16;++n)check(io.import("ioman",20,request)==0); // SDK permits duplicate names; preserve first-match deletion.
+        const auto full_steps=io.steps;check(io.import("ioman",20,request)==UINT32_MAX && io.steps==full_steps);
+        request.set(4,0x20060);check(io.import("ioman",21,request)==0 && !io.drivers[0].descriptor && io.drivers[1].descriptor);
+        request.set(4,0x20060);request.set(5,0x20068);request.set(6,0);install_iop_kernel_providers(io);
+        check(io.import("sysclib",29,request)==0);request.set(6,2);check(iop_signed(io.import("sysclib",29,request))>0);
+        request.set(5,0x20060);check(io.import("sysclib",29,request)==0);
         std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }
