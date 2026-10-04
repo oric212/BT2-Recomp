@@ -55,6 +55,20 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 int main() {
     try {
         {
+            IntcCheckpoint wait;reject([&]{wait.acknowledge(4);});
+            wait.arm(12,0x1802);reject([&]{wait.arm(12,0x1802);});
+            reject([&]{wait.acknowledge(8);});wait.acknowledge(4);
+            require(wait.status()==8 && wait.events==0 && !wait.callbackPending());
+            reject([&]{wait.acknowledge(4);});
+            require(wait.poll()==8 && wait.events==0);
+            require(wait.poll()==12 && wait.events==1 && !wait.callbackPending());
+            require(wait.poll()==12 && wait.events==1);wait.acknowledge(4);
+            require(wait.status()==8);reject([&]{wait.acknowledge(4);});
+            IntcCheckpoint absent;absent.arm(12,0x1802);absent.acknowledge(4);
+            for(unsigned i=0;i<64;++i)require(absent.poll(false)==8);
+            reject([&]{absent.poll(false);});require(absent.events==0);
+        }
+        {
             PS2Runtime widths;std::vector<std::uint8_t> image(PS2Runtime::ram_size,0xA5);
             widths.loadMemory(image);auto* ram=widths.memory().data();R5900Context ctx{};
             widths.write16(ram,2,0x1234);

@@ -259,5 +259,28 @@
       "sha256": "9ea638423ac95123f644e9287a1453d6c48ebc8886dcd0d10fca058bf88b8ee0",
       "role": "INTC_STAT 0x1000F000; DMAC_CTRL 0x1000E000. No event or DMA semantics inferred from register-address identity alone."
     }
+  },
+  "gs_interrupt_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/HwWrite.cpp",
+        "sha256": "92a6c4da39f6389114bd7a4bccabdfb0e4a0713fc87596082300626b97c965a5"
+      },
+      {
+        "path": "pcsx2/Hw.cpp",
+        "sha256": "215c0707e81519d8d8f590d73abeec5cedaf9b5ea615fe69cc75bed6bf69e918"
+      },
+      {
+        "path": "pcsx2/Counters.cpp",
+        "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9"
+      }
+    ],
+    "ps2sdk": {
+      "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+      "path": "ee/kernel/include/kernel.h",
+      "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a"
+    },
+    "role": "INTC acknowledgement clears selected bits; Vblank-start is source 2 (bit 4), status latching is independent of callback mask. Independently captured BT2 publications gate a bounded diagnostic sequence: first unsatisfied poll, then one explicit event checkpoint. Poll count is chosen for diagnostics, not observed elapsed EE cycles. No video clock, interrupt callbacks or reference implementation copied. Later CSR field uses a separate explicit readback checkpoint."
   }
 }

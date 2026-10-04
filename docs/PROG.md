@@ -4,21 +4,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-04
 
 ## Current status
 
-The checkpoint probe now completes initial GS reset/mask/CRT setup and several generated RAM setup helpers. It reaches an interrupt acknowledgement/event-wait boundary. GS readbacks and syscall returns remain explicit local reference checkpoints; native video timing, IOP execution and rendering remain incomplete.
+The checkpoint probe now completes the first interrupt acknowledgement/wait/acknowledgement sequence and its generated caller, then reaches GIF DMA setup. The event schedule and GS readbacks remain explicit diagnostic checkpoints; native video timing, IOP execution and rendering remain incomplete.
 
-Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 46 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
+Latest verification: MSVC full checkpoint build/pipeline, seven CTests, 49 capture tests and 42 recomp-tool tests passed. Proprietary content, captures, prepared/generated code and automatic bindings remain ignored.
 
 ## Current blocker and next step
 
-A 32-bit write of `4` to INTC_STAT `0x1000F000` at `0x0032F10C`, SP `0x01FFEAD0`, in `FUN_0032F0F0`. The routine subsequently waits for bit `4` to become set again, then acknowledges it again. Separate disc-backed captures reach the completed wait and later CSR field read.
+A 32-bit GIF DMA CHCR read at `0x1000A000`, PC `0x003100E4`, SP `0x01FFEAF0`, in `FUN_003100D0`. No graphics transfer has been accepted.
 
-Next: implement [the interrupt/video-timing plan](GS_INTERRUPT_TIMING_PLAN.md). Preserve event acknowledgement and ordering; returning the written value would incorrectly bypass synchronization. Full DMA, renderer and IOP service execution remain unsupported.
+Next: implement [the GIF DMA plan](GIF_DMA_BRINGUP_PLAN.md). Capture reached control/status and packet evidence before modeling channel behavior or acknowledging transfers. The interrupt checkpoint preserves clear/poll/event/clear ordering but is not a native video clock.
 
 ## Key counts
 
 - **7,262** locally generated functions; **7,271** raw generated C++/header files.
-- **100** distinct functions entered / **95** completed across native probes (startup/helpers, not gameplay).
-- This pass enters 11 functions and completes nine. Entry, `FUN_00100388`, `FUN_00100258`, `FUN_003104B0` and `FUN_0032F0F0` remain partial. No rendered frame or complete game boot.
+- **101** distinct functions entered / **97** completed across native probes (startup/helpers, not gameplay).
+- This pass enters one additional function and completes two previously partial helpers. Entry, `FUN_00100388`, `FUN_00100258` and `FUN_003100D0` remain partial. No rendered frame or complete game boot.
 
 ## Milestones
 

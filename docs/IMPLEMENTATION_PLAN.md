@@ -42,7 +42,7 @@ After each verified step, update [the current status](PROG.md) and append detail
 
 ## Repository workflow
 
-Current next step: follow [the interrupt/video-timing plan](GS_INTERRUPT_TIMING_PLAN.md) at INTC_STAT acknowledgement in FUN_0032F0F0. Initial GS setup now returns using explicit local checkpoints and generated RAM helpers execute. Actual event timing, rendering and IOP execution remain unimplemented; retain strict unsupported boundaries.
+Current next step: follow [the GIF DMA plan](GIF_DMA_BRINGUP_PLAN.md) at channel control read in FUN_003100D0. The bounded interrupt ordering experiment and later explicit CSR field checkpoint let generated setup helpers return. Actual video timing, rendering and IOP execution remain unimplemented; retain strict unsupported boundaries.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

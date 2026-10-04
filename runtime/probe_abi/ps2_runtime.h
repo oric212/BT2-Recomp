@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 #include <immintrin.h>
+#include "intc_checkpoint.h"
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
@@ -861,7 +862,7 @@ public:
     void supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
             0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
-        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252)
+        if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324)
                 || std::memcmp(bundle.data(), expected.data(), 88))
             throw std::runtime_error("Invalid SCMD bind checkpoint");
         if (bundle.size() >= 184) {
@@ -905,14 +906,27 @@ public:
             if(result!=0xFF00)throw std::runtime_error("Invalid GS IMR checkpoint");
             gs_imr_supplied_=true;
         }
-        if(bundle.size()==252) {
+        if(bundle.size()>=252) {
             std::uint64_t result;std::memcpy(&result,bundle.data()+244,8);
             if(result)throw std::runtime_error("Invalid GS CRT checkpoint");
             gs_crt_supplied_=true;
         }
+        if(bundle.size()>=316) {
+            const std::array<std::uint32_t,16> evidence{12,0x1802,0x1FFEAD0,1,8,0x1802,0x1FFEAD0,1,
+                12,0x1802,0x1FFEAD0,4,8,0x1802,0x1FFEAD0,1};
+            if(std::memcmp(bundle.data()+252,evidence.data(),64))throw std::runtime_error("INTC evidence differs");
+            gs_interrupt_supplied_=true;
+        }
+        if(bundle.size()==324) {
+            std::uint64_t field;std::memcpy(&field,bundle.data()+316,8);
+            if(field!=0x551B6004)throw std::runtime_error("GS field checkpoint differs");
+            gs_field_supplied_=true;
+        }
         std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
     }
     bool iop_reset_pending=false, prior_iop_services_valid=true;
+    IntcCheckpoint gs_interrupt;
+    unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
     std::uint32_t gs_imr=0;
     std::array<std::uint32_t,3> gs_crt_request{};
@@ -973,16 +987,35 @@ public:
     }
     std::uint64_t Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
         checkMemory(rdram,0,0);
+        if(address==0x12001000 && gs_field_supplied_ && gs_interrupt.acknowledgements==2 && !gs_field_reads
+            && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
+            ++gs_field_reads;return 0x551B6004; // Independent captured field, not timed native GS state.
+        }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes!=1 || gs_csr_reads
                 || context->pc!=0x30FE50 || context->r[29].low!=initial_sp-688)
             throw UnsupportedGuestMemory(address,8);
         ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
     }
-    void Store32(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint32_t value) {
+    void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+        if(address==0x1000F000 && gs_interrupt_supplied_ && gs_crt_calls==1
+            && context->r[29].low==initial_sp-656 && value==4
+            && ((context->pc==0x32F10C && !gs_interrupt.acknowledgements)
+                || (context->pc==0x32F160 && gs_interrupt.acknowledgements==1))) {
+            checkMemory(rdram,0,0);
+            if(!gs_interrupt.acknowledgements) {
+                if(intc_mask!=0x1802)throw std::runtime_error("INTC mask differs from checkpoint");
+                gs_interrupt.arm(12,intc_mask);
+            }
+            gs_interrupt.acknowledge(value);return;
+        }
         write32(rdram, address, value);
     }
 
-    std::uint32_t Load32(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
+    std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(address==0x1000F000 && gs_interrupt_supplied_ && context->pc==0x32F130
+            && context->r[29].low==initial_sp-656) {
+            checkMemory(rdram,0,0);return gs_interrupt.poll();
+        }
         if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
             checkMemory(rdram, 0, 0);
             ++timer3_mode_reads;
@@ -1223,6 +1256,7 @@ private:
         deliverRpcEnd(rdram,context,0x369F40,7,0x3F690,0x3F6D8);
         ++scmd_mmode_calls;++sif_dma_submissions;context->r[2].low=1;
     }
+    bool gs_interrupt_supplied_=false,gs_field_supplied_=false;
     bool gs_csr_supplied_=false,gs_imr_supplied_=false,gs_crt_supplied_=false;
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};

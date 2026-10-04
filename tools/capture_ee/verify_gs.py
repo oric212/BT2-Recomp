@@ -25,3 +25,30 @@ def verify(path,ready_manifest,point='gs-csr-reset'):
     if any(m.get(key)!=ready_manifest[key] for key in ('pcsx2_sha256','bios_sha256','disc_sha256')):
         raise ValueError('GS checkpoint environment differs.')
     return struct.pack('<Q',value),m
+
+INTERRUPT_POINTS={
+ 'gs-intc-before':(0x32F100,0x32F10C,'2c4af947b906d39895813949116eb3421716893fde29af41553833810e75c6f5',12,1),
+ 'gs-intc-cleared':(0x32F100,0x32F114,'ef4d49a5b8d26983d3c301188fcac49b5b9b65335e79901046cc7fa9cfa5283a',8,1),
+ 'gs-intc-event':(0x32F128,0x32F14C,'6d3fd08e79d1ca7c0564d7b492b35f4a5ea53540fe95e036b0c32be5961bd4a8',12,4),
+ 'gs-intc-acknowledged':(0x32F154,0x32F168,'ef4d49a5b8d26983d3c301188fcac49b5b9b65335e79901046cc7fa9cfa5283a',8,1)}
+
+def verify_interrupts(folder,environment):
+    """Independent reached-point evidence, not a continuous elapsed-cycle trace."""
+    bundle=bytearray();manifests={}
+    for point,(start,end,prefix,status,result) in INTERRUPT_POINTS.items():
+        path=folder/point/'capture.json';m=json.loads(path.read_text(encoding='utf-8'))
+        ee=path.with_name('ee-ram.bin').read_bytes();address,trap,marker=capture_trap(point);p=m['patch']
+        publication=struct.pack('<4I',status,0x1802,0x1FFEAD0,result)
+        if (len(ee)!=32*1024*1024 or m['source_elf_sha256']!=EXPECTED_SHA
+            or not m['capture_point'].startswith(point+':') or p['address']!=address or p['size']!=len(trap)
+            or p['authored_words']!=list(struct.unpack('<'+str(len(trap)//4)+'I',trap))
+            or p['marker_address']!=MARKER or p['marker_value']!=marker
+            or ee[address:address+len(trap)]!=trap or hashlib.sha256(ee).hexdigest()!=m['capture_sha256']
+            or hashlib.sha256(ee[start:end]).hexdigest()!=prefix
+            or ee[MARKER:MARKER+4]!=struct.pack('<I',marker)
+            or ee[MARKER+8:MARKER+24]!=publication):
+            raise ValueError('INTC publication/prefix differs: '+point)
+        if any(m.get(key)!=environment[key] for key in ('pcsx2_sha256','bios_sha256','disc_sha256')):
+            raise ValueError('INTC checkpoint environment differs.')
+        bundle+=publication;manifests[point]=m
+    return bytes(bundle),manifests

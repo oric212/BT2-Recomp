@@ -50,3 +50,9 @@ The pinned GPU interface was consulted again for the GS boundary (SHA-256 `2e70e
 Consulted pinned PCSX2 GS.cpp for CSR reset behavior and Hw.h for register addresses, and pinned Play PS2OS.cpp for GS syscall ABI. Source hashes/provenance are in config/startup_abi.sources.json. Local captures determine returned values; Play's void-style handlers do not establish BT2 BIOS return values. The authored adapter records only exact reached requests with explicit reference readback checkpoints, without copying reset/rendering implementations.
 
 The next stop is INTC_STAT acknowledgement followed by polling and a later CSR field read. An initial working hypothesis incorrectly labeled 0x1000F000 as DMA control; the pinned hardware map resolves it as INTC_STAT (DMAC_CTRL is 0x1000E000). No runtime DMA behavior was added from that hypothesis. Follow GS_INTERRUPT_TIMING_PLAN.md before introducing event sources or synchronization.
+
+### Interrupt ordering and GIF DMA boundary
+
+Pinned [PCSX2 HwWrite.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/HwWrite.cpp) establishes status acknowledgement; [Hw.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/Hw.cpp) separates status latching from mask-gated interrupt delivery. [Counters.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/Counters.cpp) separates Vblank start, later GS field update, and Vblank end. Pinned PS2SDK kernel.h identifies Vblank-start source 2, hence bit 4. Hashes are in config/startup_abi.sources.json. The authored diagnostic sequence uses validated BT2 samples without copying these implementations or claiming cycle accuracy.
+
+The reached GIF DMA channel read now needs [its separate plan](GIF_DMA_BRINGUP_PLAN.md). Use BT3's recording/presentation separation as architectural guidance; validate actual BT2 transfers before acknowledging or decoding them.

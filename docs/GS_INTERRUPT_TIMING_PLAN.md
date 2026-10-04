@@ -15,3 +15,11 @@ Two independent disc-backed captures reach the completed helper and subsequent C
 5. Test acknowledgement, repeated/absent events and unsupported cases, then rerun through subsequent blockers. Start a separate GIF/renderer plan when actual submission requires it.
 
 Existing GS setup returns use explicit reference checkpoints. They do not reset a native renderer, configure actual display timing or complete native IOP boot. Keep old IOP services invalid. Update PROG.md/history, commit and push after verification.
+
+## Verified diagnostic continuation (2026-10-04)
+
+Four independent disc-backed reached-point captures publish INTC_STAT, INTC_MASK, SP and preceding v0. Corrected instrumentation explicitly forms address 0x1000F000 before loading; an initial signed-offset trap was rejected and all four captures replaced. Status samples are 12 before acknowledgement, 8 after, 12 at event arrival (original masked poll result 4), and 8 after the second acknowledgement. Mask is 0x1802 throughout, SP 0x01FFEAD0. These are not a continuous cycle trace.
+
+The authored IntcCheckpoint component is gated by all four validated publications. It clears only the acknowledged bit, preserves bit 8, allows one unsatisfied poll, then latches one explicit diagnostic Vblank-start checkpoint. Acknowledgement does not inject an event. The chosen two-poll schedule establishes logical ordering, not physical video timing. Mask excludes both sampled bits, so no callback is delivered. Repeated/unsupported acknowledgement, unsupported initialization and an absent-event poll budget fail explicitly.
+
+A separate validated CSR field sample 0x551B6004 allows generated FUN_003104B0 to return. Its alternative SetVSyncFlag path is not reached or implemented. The next major subsystem is [GIF DMA](GIF_DMA_BRINGUP_PLAN.md). Native video clock, event/CSR field correlation and interrupt callback scheduling remain future work.

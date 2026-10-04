@@ -345,6 +345,14 @@ Append `--reset-ready-capture work/pcsx2-capture/reset-ready/capture.json` after
 
 Use capture points `gs-csr-reset`, `gs-imr-after`, `gs-crt-after` with the explicit local disc/PCSX2/BIOS arguments. Publications retain a 64-bit value at marker+8 and SP at marker+16. Pipeline flags `--gs-csr-capture`, `--gs-imr-capture`, `--gs-crt-capture` require the preceding checkpoint. The verifier checks preceding instruction digests, trap/publication, RAM hash and matching disc/PCSX2/BIOS. Omit each input to preserve its unsupported boundary.
 
-Diagnostic points `gs-intc-after` and `gs-csr-field` capture the completed interrupt wait and subsequent field read. `verify_gs.verify(..., ready_manifest, point)` validates them; they are not runtime replay inputs. Do not interpret independent snapshots as a continuous event trace.
+Diagnostic points `gs-intc-after` and `gs-csr-field` capture the completed interrupt wait and subsequent field read. `verify_gs.verify(..., ready_manifest, point)` validates them; the completed-helper sample remains diagnostic; the field sample can now be supplied explicitly after the interrupt evidence bundle. Do not interpret independent snapshots as a continuous event trace.
 
 Selected extra entries now compile from ignored prepared sources. `prepare_runtime.py` routes emitted direct tail calls uniformly through checked dispatch, records raw/prepared hashes, and retains unchanged file timestamps. Original generated sources remain untouched.
+
+### Interrupt ordering checkpoints
+
+Capture points `gs-intc-before`, `gs-intc-cleared`, `gs-intc-event` and `gs-intc-acknowledged` require the explicit local disc/PCSX2/BIOS arguments. Each publishes four words at marker+8: status, mask, SP and preceding v0. The event trap leaves the original polling loop intact. These independent halted runs do not establish elapsed cycles.
+
+Append `--gs-interrupt-captures work/pcsx2-capture` after the CRT checkpoint. verify_gs.verify_interrupts checks all four full RAM hashes, authored trap, preceding instruction digest, publications and matching reference environment. This appends 64 bytes to the ignored startup bundle (316 bytes total), enabling a deliberately bounded diagnostic wait: acknowledge, unsatisfied poll, one event checkpoint, poll success, acknowledge. No timed video or callback scheduling is claimed.
+
+Append `--gs-csr-field-capture work/pcsx2-capture/gs-csr-field/capture.json` to enable the one-shot later CSR field sample (324-byte bundle). Without it the probe stops at that read; without the interrupt bundle it retains the first acknowledgement boundary. Full continuation currently stops at the GIF DMA control read, before any transfer is accepted. Pipeline receipts retain all new provenance.
