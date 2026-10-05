@@ -35,7 +35,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20 && argc != 21) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20 && argc != 21 && argc != 22) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
@@ -180,6 +180,13 @@ int main(int argc, char** argv) {
             std::array<std::uint8_t,224> evidence;capture.seekg(0);
             if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("Texture evidence read failed");
             runtime.texture_gif.supply(evidence);
+        }
+        if(argc>=22) {
+            std::ifstream capture(argv[21],std::ios::binary|std::ios::ate);
+            if(!capture || capture.tellg()!=56)throw std::runtime_error("Invalid EE thread-start evidence");
+            std::array<std::uint8_t,56> evidence;capture.seekg(0);
+            if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("EE thread-start evidence read failed");
+            runtime.supplySoundThreadStart(evidence);
         }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
@@ -709,6 +716,11 @@ int main(int argc, char** argv) {
                 << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
                 << ",\"console_messages\":" << runtime.ee_console_messages.size()
                 << ",\"console_first_message\":" << jsonString(runtime.ee_console_messages.empty()?std::string{}:runtime.ee_console_messages.front())
+                << ",\"ee_status\":" << context.cop0_status
+                << ",\"ee_thread_count\":" << runtime.threads.size()
+                << ",\"sound_thread_starts\":" << runtime.sound_thread_starts
+                << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
+                << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
                 << ",\"sound_rpc_binds\":" << runtime.sound_rpc_binds
                 << ",\"sound_rpc_calls\":" << runtime.sound_rpc_calls
                 << ",\"sound_client_words\":[";
@@ -723,6 +735,24 @@ int main(int argc, char** argv) {
                 report<<handle<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option<<","<<t.waiting<<","<<t.ready;
             }
 #endif
+            report<<"],\"ee_sound_context\":[";
+            if(runtime.sound_thread_starts) {
+                const auto& t=runtime.threads.at(1);const auto& c=t.context;
+                report<<t.id<<","<<t.ready<<","<<c.pc<<","<<c.r[28].low<<","<<c.r[29].low<<","<<c.r[31].low<<","<<c.r[4].low<<","<<c.cop0_status;
+            }
+            report<<"],\"iop_rpc_servers\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {
+                bool first=true;
+                for(const auto& [id,server]:runtime.native_iop->runtime.rpc_servers) {
+                    report<<(first?"":",")<<"["<<id<<","<<server.descriptor<<","<<server.buffer<<","<<server.handler<<","<<server.queue<<","<<server.gp<<"]";first=false;
+                }
+            }
+#endif
+            report<<"],\"sounds_client_words\":[";
+            if(runtime.sounds_rpc_binds)for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x6351C0+n*4);
+            report<<"],\"sounds_result_words\":[";
+            if(runtime.sounds_rpc_calls)for(unsigned n=0;n<16;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x635180+n*4);
             report<<"],\"heap_calls\":" << runtime.heap_calls
                 << ",\"heap_frees\":" << runtime.heap_frees
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes

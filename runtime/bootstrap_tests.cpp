@@ -1083,6 +1083,25 @@ int main() {
         reject([&]{start_boundary.dispatchGuestBranch(nullptr,&start_context,0x32FDA0,0x315210,0x315218,
             PS2Runtime::GuestBranchKind::DirectCall,"checked StartThread");});
         require(start_boundary.guest_calls==0 && start_context.r[2].low==0x1234);
+        {
+            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            const std::array<std::uint32_t,14> data={0x70030C11,3,0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};
+            const auto evidence=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data.data()),sizeof(data));
+            reject([&]{rt.supplySoundThreadStart(evidence.first(52));});require(!rt.sound_thread_start_supplied);
+            rt.supplySoundThreadStart(evidence);reject([&]{rt.supplySoundThreadStart(evidence);});
+            rt.thread_initialized=rt.heap_initialized=true;rt.initial_sp=0x1FFED60;rt.current_thread_id=1;rt.main_thread_priority=2;rt.thread_arguments[4]=0x100250;
+            rt.threads.push_back({2,0x200,0x1000,0x400,0x300,0,0,0x1160,0x13E0});
+            auto* ram=rt.memory().data();const std::array<std::uint32_t,9> descriptor={0,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,0,0,0};
+            std::memcpy(ram+0x2000,descriptor.data(),sizeof(descriptor));R5900Context cpu{};cpu.r[3].low=0x20;cpu.r[4].low=0x2000;
+            rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==3 && !rt.threads[1].ready);
+            auto& t=rt.threads[1];require(rt.read32(ram,t.context_address+31*16)==0x100250);
+            rt.sound_thread_checkpoint=true;cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=3;cpu.r[5].low=rt.initial_sp-256;
+            const std::vector<std::uint8_t> untouched(rt.memory().begin(),rt.memory().end());cpu.r[4].low=2;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(std::equal(rt.memory().begin(),rt.memory().end(),untouched.begin()) && !rt.sound_thread_queries);
+            cpu.r[4].low=3;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10 && rt.sound_thread_queries==1);
+            cpu.pc=0x32EA88;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0;
+            rt.handleSyscall(ram,&cpu,0);require(t.ready && t.context.pc==0x315380 && t.context.r[31].low==0x100250 && cpu.r[2].low==3 && rt.current_thread_id==1);
+            reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.sound_thread_starts==1);
+        }
         PS2Runtime heap_evidence_runtime;
         const std::array<std::uint32_t,16> heap_reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};
         auto heap_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(heap_reply.data()),sizeof(heap_reply));

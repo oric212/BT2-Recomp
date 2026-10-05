@@ -195,3 +195,10 @@ Consulted the pinned BT3 IOP notes/module ownership model and local pinned publi
 Consulted the already pinned PS2SDK SIFRPC source for request metadata, handler invocation and retained queue-tail semantics. The owned native worker context/GP/buffer pattern follows the pinned BT3 IOP notes without copying implementation. Public kernel thread status constants distinguish RUNNING (1), READY (2), WAIT (4) and DORMANT (0x10); retail running and native ready are not asserted equivalent.
 
 The official pinned [PS2SDK DECI2 source](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/deci2.c) identifies kputs as subfunction 16 with a pointer in the first argument word. Local capture establishes this BIOS return separately. Console logging does not establish disc-file reads. The valid native path stops at the new [EE thread-start scope](EE_THREAD_START_PLAN.md), before its unvalidated Status/context transition.
+
+
+### EE sound thread readiness and SOUNDS command
+
+Consulted the pinned BT3 runtime scheduler/fiber interfaces for ownership and explicit blocking/dispatch boundaries, and the pinned Play StartThread/ReferThreadStatus behavior plus PS2SDK kernel.h for the public 48-byte descriptor. Adapted only owned state and lower-priority ready transition, not thread/fiber implementations. Independent ID-3 query, caller Status and saved-context captures establish this BT2 scope. The child's exit is the supplied SetupThread handler, not the reference BIOS constant used by the older dormant bootstrap profile. IE/EIE handoff is explicitly capture-backed; continuous interrupt timing is unimplemented.
+
+Native SOUNDS command 0x10 reuses the checked registered-worker request contract and executes actual translated code. Its result/input/metadata match independent captures; no public handler implementation copied. The next DBCMAN service has an owned server but unknown EE command effects. Its request group requires [separate protocol evidence](DBCMAN_RPC_PLAN.md); service IDs do not establish subsystem capabilities.

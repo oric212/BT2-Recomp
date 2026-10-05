@@ -6,11 +6,11 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. The first SDRDRV bind/command executes through native IOP code and generated EE cleanup. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **101/101 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **102/102 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,007 EE calls / 1,003 returns**, **31,072 IOP instructions / 129 physical entry targets / twelve waiting workers and one ready helper**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,077 EE calls / 1,071 returns**, **31,126 IOP instructions / 131 physical entry targets / twelve waiting workers and one ready helper**.
 
 The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
 
@@ -20,7 +20,9 @@ The second IOP allocation now completes through real translated FILEIO and gener
 
 SDRDRV service **0x80000701** binds using owned native addresses. Command **0xE620** runs its registered handler, returns sixteen zero bytes and starts a priority-24 IOP helper. Independent retail captures validate the result and thread parameters. The helper is ready natively versus running in retail; scheduling equivalence and its outgoing callback bind are unverified.
 
-Current stop: **FUN_0032FDA0 (EE StartThread), caller 0x315210**, thread ID 3 / argument zero. Retail returns 3 with CP0 Status 0x70030C11; native Status still defaults to zero and otherwise produces a false failure. The probe stops before that invalid transition. Follow [EE thread start and sound callbacks](EE_THREAD_START_PLAN.md). This is a new scheduling/context scope. Forward SOUNDS bind and console captures are evidence only; no assets loaded, displayed frame or audio playback.
+The [EE thread-start scope](EE_THREAD_START_PLAN.md) now completes: owned ID 3 queries dormant state, clears its saved context and becomes ready with the captured GP/SP/exit handler. Only the reached IE/EIE handoff is supplied; main priority 2 continues ahead of child priority 5. No child instructions or general scheduling yet. SOUNDS service **0x02000004** binds to native owned addresses; command **0x10** executes natively and returns the independently captured 64-byte result. Both sound RPC cleanup paths complete.
+
+Current stop: **CreateSema 0x40 / EE PC 0x32EC68**, preparing DBCMAN **0x80001300**, client 0x3A03C0 / RPC ID 31. Its four native servers already exist, but EE command delivery and protocol effects are a new scope. Follow [DBCMAN requests](DBCMAN_RPC_PLAN.md) as one bounded group. No assets loaded, displayed frame or audio playback.
 
 The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
 

@@ -135,7 +135,7 @@
         "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
       }
     ],
-    "role": "THREADPARAM/sc_CreateThread/ThreadReset/SetupThread/GetThreadId evidence. Authored model reserves main ID 1 and idle ID 256, allocates 2..255, records dormant threads and four low-word stack context stores; no scheduler, ID reuse or retail BIOS identity asserted. Epilog address 0x1FC03000 is a pinned reference-model value, not a confirmed retail BIOS entry."
+    "role": "THREADPARAM/sc_CreateThread/ThreadReset/SetupThread/GetThreadId evidence. Authored model reserves main ID 1 and idle ID 256, allocates 2..255, records dormant threads and four low-word stack context stores; no scheduler, ID reuse or retail BIOS identity asserted. Epilog address 0x1FC03000 is a pinned reference-model value, not a confirmed retail BIOS entry. The reached sound thread ID 3 now uses owned SetupThread exit 0x100250, independently captured before/after start. Scoped ReferThreadStatus uses the SDK 48-byte structure; StartThread records ready state without preempting main priority 2 with child priority 5. IE/EIE at this handoff are capture-backed; general interrupt scheduling remains unimplemented."
   },
   "thread_priority_reference": {
     "repository": "https://github.com/jpd002/Play-",

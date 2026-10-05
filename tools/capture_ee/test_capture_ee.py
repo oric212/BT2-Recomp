@@ -18,6 +18,15 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual((words[-2]&0x3FFFFFF)<<2,FRESH_BIND_STUB+48)
 
 
+    def test_sound_status_hook_preserves_earlier_thread_start(self):
+        blob=texture_stub('sound-ee-status-after');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        self.assertEqual(w[0],0x24180003)
+        early=2+(w[1]&65535)
+        self.assertEqual(w[1]&0xFFFF0000,0x16380000)
+        self.assertEqual(w[early:early+3],(0x0040802D,0x06000003,0x8FA30000))
+        self.assertEqual((w[early+3]&0x3FFFFFF)<<2,0x32FDFC)
+        self.assertEqual((w[early+5]&0x3FFFFFF)<<2,0x32FDEC)
+
     def test_texture_completion_skips_busy_reads(self):
         words=struct.unpack('<'+str(len(texture_stub('texture-complete'))//4)+'I',texture_stub('texture-complete'))
         self.assertEqual(words[0],0x30580100)

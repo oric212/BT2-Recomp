@@ -287,25 +287,28 @@ std::uint32_t NativeIopService::freeBootHeap(unsigned epoch,unsigned pointer) {
 }
 
 
-std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size) {
-    if(epoch!=epoch_ || failed_ || sound_rpc_requests || command!=0xE620 || input.size()!=64 || result_size!=16 || residents.size()!=13 || boot_heap_allocations!=2)
-        throw std::runtime_error("Unsupported SDRDRV native request");
-    const auto found=runtime.rpc_servers.find(0x80000701);
-    if(found==runtime.rpc_servers.end())throw std::runtime_error("No owned SDRDRV server");
+std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service) {
+    const bool sounds=service==0x02000004;auto& requests=sounds?sounds_rpc_requests:sound_rpc_requests;
+    const auto client=sounds?0x6351C0u:0x3A5C80u;const auto result=sounds?0x635180u:0x3A5C40u;
+    if((service!=0x80000701 && !sounds) || epoch!=epoch_ || failed_ || requests || command!=(sounds?16u:0xE620u)
+        || input.size()!=(sounds?256u:64u) || result_size!=(sounds?64u:16u) || (sounds && sound_rpc_requests!=1) || residents.size()!=13 || boot_heap_allocations!=2)
+        throw std::runtime_error("Unsupported sound RPC native request");
+    const auto found=runtime.rpc_servers.find(service);
+    if(found==runtime.rpc_servers.end())throw std::runtime_error("No owned sound RPC server");
     const auto server=found->second;const auto queue=runtime.rpc_queues.find(server.queue);
     if(queue==runtime.rpc_queues.end() || runtime.current_thread || !runtime.cpu_interrupts_enabled)
-        throw std::runtime_error("SDRDRV request outside idle owned context");
+        throw std::runtime_error("sound RPC request outside idle owned context");
     auto& worker=runtime.threads.at(queue->second.thread);
     if(!worker.waiting || worker.ready || worker.wait_rpc!=server.queue || worker.gp!=server.gp)
-        throw std::runtime_error("SDRDRV worker is not parked at its queue");
+        throw std::runtime_error("sound RPC worker is not parked at its queue");
     runtime.check(server.buffer,static_cast<unsigned>(input.size()));
     runtime.check(worker.context.get(29)-64,64);
     runtime.check(server.descriptor,68);runtime.check(server.queue,24);
-    if(runtime.read(server.queue+12,4) || runtime.read(server.queue+4,4))throw std::runtime_error("SDRDRV queue already has a request");
+    if(runtime.read(server.queue+12,4) || runtime.read(server.queue+4,4))throw std::runtime_error("sound RPC queue already has a request");
     try {
         std::copy(input.begin(),input.end(),runtime.ram.begin()+server.buffer);
         // Reached SDK request fields; link/end retain ownership after dequeue.
-        for(auto [offset,value]:std::array<std::pair<unsigned,std::uint32_t>,8>{{{12,64},{28,0x3A5C80},{32,0x203A97C0},{36,command},{40,0x3A5C40},{44,result_size},{48,1},{52,5}}})
+        for(auto [offset,value]:std::array<std::pair<unsigned,std::uint32_t>,8>{{{12,static_cast<unsigned>(input.size())},{28,client},{32,0x203A97C0},{36,command},{40,result},{44,result_size},{48,1},{52,5}}})
             runtime.write(server.descriptor+offset,value,4);
         runtime.write(server.queue+16,server.descriptor,4);runtime.write(server.queue+12,0,4);runtime.write(server.queue+4,1,4);
         // The public RPC loop calls the registered handler on its worker stack.
@@ -313,10 +316,10 @@ std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uin
         IopContext c=worker.context;c.pc=server.handler;c.branch_pending=false;c.delay_instruction=false;c.load_register=0;
         c.set(4,command);c.set(5,server.buffer);c.set(6,static_cast<unsigned>(input.size()));c.set(28,server.gp);c.set(31,IopRuntime::sentinel);
         runtime.current_thread=queue->second.thread;runtime.execute(runtime,c);runtime.current_thread=0;
-        if(c.pc!=IopRuntime::sentinel || c.get(29)!=worker.context.get(29))throw std::runtime_error("SDRDRV handler did not return to its worker frame");
-        if(!c.get(2))throw std::runtime_error("SDRDRV returned null response");
+        if(c.pc!=IopRuntime::sentinel || c.get(29)!=worker.context.get(29))throw std::runtime_error("sound RPC handler did not return to its worker frame");
+        if(!c.get(2))throw std::runtime_error("sound RPC returned null response");
         runtime.check(IopRuntime::physical(c.get(2)),result_size);
-        runtime.write(server.queue+4,0,4);++sound_rpc_requests;
+        runtime.write(server.queue+4,0,4);++requests;
         return {runtime.ram.begin()+IopRuntime::physical(c.get(2)),runtime.ram.begin()+IopRuntime::physical(c.get(2))+result_size};
     } catch(...) {runtime.current_thread=0;failed_=true;throw;}
 }

@@ -2,9 +2,9 @@
 
 ## Confirmed boundary
 
-After the first real SDRDRV command, generated FUN_00315148 creates owned dormant EE thread ID 3: entry 0x315380, stack 0x3A5CC0, size 0x1000, GP 0x38BDF0, priority 5. It calls FUN_0032FDA0 at 0x315210 with ID 3 and argument zero. The native probe deliberately stops before that call.
+After the first real SDRDRV command, generated FUN_00315148 creates owned dormant EE thread ID 3: entry 0x315380, stack 0x3A5CC0, size 0x1000, GP 0x38BDF0, priority 5. It calls FUN_0032FDA0 at 0x315210 with ID 3 and argument zero. This was the previous checked boundary; the bounded transition now completes, as recorded below.
 
-Independent before/after retail captures publish CP0 Status **0x70030C11** and successful return **3** at 0x315218. The native context still defaults Status to zero. FUN_0032F730 tests its interrupt-enable bit, so the earlier exploratory run reported failure and continued down a different error path. Those exploratory downstream call counts are invalid as a boot-progress measure. The authoritative checkpoint is 1,007 calls / 1,003 returns.
+Independent before/after retail captures publish CP0 Status **0x70030C11** and successful return **3** at 0x315218. The native context starts with Status zero; generated EI leaves 0x10000 at the reached boundary, still without IE bit 0. FUN_0032F730 tests its interrupt-enable bit, so the earlier exploratory run reported failure and continued down a different error path. Those exploratory downstream call counts are invalid as a boot-progress measure. The authoritative checkpoint is 1,007 calls / 1,003 returns.
 
 SDRDRV also starts an IOP helper at module+0xFF0, priority 24, stack 0x800. It is ready natively and running in retail. Its generated path includes an outbound bind to service 0x80000704. Registration, invocation and completion of the corresponding EE callback are still unknown.
 
@@ -20,4 +20,15 @@ SDRDRV also starts an IOP helper at module+0xFF0, priority 24, stack 0x800. It i
 
 A local DECI2 subfunction-16 checkpoint returns all ones and contains a disc-file diagnostic. Authored console decoding and generated formatter ABI support have synthetic tests, but the valid native path has not reached that message. A diagnostic saying a file was found does not prove asset reads or loading.
 
-No runnable EE scheduler, IOP-to-EE callback completion, disc-file read, asset loading, audio playback or displayed frame is claimed. This is a new execution/scheduling scope requiring its own design before changing startup state.
+No runnable EE scheduler or IOP-to-EE callback completion, disc-file read, asset loading, audio playback or displayed frame is claimed. This is a new execution/scheduling scope requiring its own design before changing startup state.
+
+
+## Verified ready transition and continued sound command (2026-10-05)
+
+A new unique ID-3 ReferThreadStatus capture returns 0x10 and the full 48-byte dormant descriptor. Its hook preserves earlier ID-2 calls, including displaced branch/delay-slot behavior. Caller Status is 0x70030C11 before/after; the query runs with EIE cleared, 0x70020C11. A checked 56-byte local bundle supplies this scope. The adapter enables only IE/EIE at the exact handoff, preserving other native bits and rejecting absent/stale evidence. It does not assign the full retail Status as a universal default.
+
+Generated StartThread now executes its real helper, queries owned state, clears the saved context and invokes selector 0x22. The new child's RA uses the owned SetupThread exit **0x100250**, independently matching retail; older dormant bootstrap thread ID 2 retains its previously documented reference profile. The started child is ready with entry 0x315380 / GP 0x38BDF0 / SP 0x3A6CA0 / argument zero. Main priority 2 continues ahead of child priority 5. No child instructions execute and no general scheduler is claimed.
+
+The SOUNDS bind now returns owned native addresses. Command **0x10**, RPC ID 30, input **256 bytes**, response **64 bytes**, executes its actual handler for **54 native IOP instructions** and returns sixty-four zero bytes. Independent capture validates completed client, response, input buffer and selected request metadata. Generated EE RPC_END/wait/cleanup complete. This does not establish playback, asset loading or callback timing.
+
+The actual next blocker is the separate [DBCMAN request scope](DBCMAN_RPC_PLAN.md). The ready EE thread and ready SDRDRV helper remain pending until a modeled wait/dispatch event requires their execution. The authoritative checkpoint is 1,077 EE calls / 1,071 returns and 31,126 IOP instructions / 131 physical targets.

@@ -152,7 +152,7 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && read32(rdram,0x3A97DC)==0x3A5C80) {receiveSoundRpc(rdram,context);return;}
+        if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
         if(code==0 && selector==0x77 && native_module_loads==14 && heap_calls==1 && !heap_frees
@@ -403,9 +403,34 @@ public:
             write32(rdram, saved_context + 28 * 16, gp);
             write32(rdram, saved_context + 29 * 16, top - 0x20);
             write32(rdram, saved_context + 30 * 16, top - 0x20);
-            write32(rdram, saved_context + 31 * 16, 0x1FC03000);
+            write32(rdram, saved_context + 31 * 16, sound_thread_start_supplied && id==3 && entry==0x315380 ? thread_arguments[4] : 0x1FC03000);
             context->r[2].low = id;
             return;
+        }
+        if(code==0 && selector==0x30 && sound_thread_checkpoint) {
+            const auto out=static_cast<std::uint32_t>(context->r[5].low);
+            if(sound_thread_queries || context->pc!=0x32EB68 || context->r[4].low!=3 || threads.size()!=2
+                || threads[1].ready || out!=initial_sp-256 || context->cop0_status!=1)
+                throw UnsupportedSyscall(selector,context->pc);
+            const auto& t=threads[1];checkMemory(rdram,out,48);
+            const std::array<std::uint32_t,12> info={0x10,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.initial_priority,0,0,0,0,0};
+            for(unsigned n=0;n<info.size();++n)write32(rdram,out+n*4,info[n]);
+            context->r[2].low=0x10;++sound_thread_queries;return;
+        }
+        if(code==0 && selector==0x22 && sound_thread_checkpoint) {
+            if(sound_thread_starts || sound_thread_queries!=1 || context->pc!=0x32EA88 || context->r[4].low!=3 || context->r[5].low
+                || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=2 || threads[1].ready || context->cop0_status!=0x10001)
+                throw UnsupportedSyscall(selector,context->pc);
+            auto& t=threads[1];
+            if(t.entry!=0x315380 || t.stack_base!=0x3A5CC0 || t.stack_size!=0x1000 || t.gp!=0x38BDF0 || t.initial_priority!=5)
+                throw UnsupportedSyscall(selector,context->pc);
+            checkMemory(rdram,t.context_address,512);
+            R5900Context child{};
+            for(unsigned n=0;n<32;++n)std::memcpy(&child.r[n],memory_.data()+t.context_address+n*16,16);
+            child.r[0]={0,0};child.r[4].low=0;child.pc=t.entry;child.cop0_status=context->cop0_status;
+            if(child.r[28].low!=t.gp || child.r[29].low!=t.initial_sp || child.r[31].low!=thread_arguments[4] || thread_arguments[4]!=0x100250)
+                throw UnsupportedSyscall(selector,context->pc);
+            t.context=child;t.ready=true;++sound_thread_starts;context->r[2].low=t.id;return;
         }
         if (code == 0 && selector == 0x14) {
             // Observed cause only; explicit mask checkpoint avoids a fabricated BIOS default.
@@ -617,6 +642,8 @@ public:
                 && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
                     || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
                     || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
+            const bool sounds_bind_sema=sound_thread_starts==1 && !sounds_rpc_binds && native_module_loads==14 && heap_calls==2
+                && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
             const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
@@ -624,7 +651,7 @@ public:
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
-            if (attributes != 0 && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -672,7 +699,8 @@ public:
                     || (post_loadfile.binds && !post_loadfile.versions && semaphores[id].option==0x3838D8)
                     || (post_loadfile.versions==1 && semaphores[id].option==0x3838E8)
                     || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8)
-                    || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8));
+                    || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8)
+                    || (sounds_rpc_binds==1 && semaphores[id].option==0x3838D8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
                     || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
@@ -726,11 +754,14 @@ public:
             return true;
         }
         const auto found = functions_.find(target);
-        // CreateThread owns a dormant host record, but generated StartThread's
-        // kernel table and runnable EE scheduling are not implemented. Never let
-        // it report a false failure and carry startup down the error path.
-        if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1)
-            throw UnsupportedGuestBranch(target,source,resume);
+        if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
+            if(!sound_thread_start_supplied || sound_thread_checkpoint || current_thread_id!=1 || main_thread_priority!=2
+                || threads.size()!=2 || threads[1].id!=3 || context->r[4].low!=3 || context->r[5].low
+                || context->cop0_status!=0x10000)throw UnsupportedGuestBranch(target,source,resume);
+            // Independent caller capture supplies only the reached IE/EIE bits.
+            // Other CP0 fields remain outside this bootstrap compatibility scope.
+            context->cop0_status|=0x10001;sound_thread_checkpoint=true;
+        }
         if (found == functions_.end()) throw UnsupportedGuestBranch(target, source, resume);
         verifyKernelBinding(target);
         if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
@@ -1101,7 +1132,15 @@ public:
     std::shared_ptr<NativeIopService> native_iop;
 #endif
     unsigned heap_binds=0,heap_calls=0,heap_frees=0;
-    unsigned sound_rpc_binds=0,sound_rpc_calls=0;
+    bool sound_thread_start_supplied=false,sound_thread_checkpoint=false;
+    unsigned sound_thread_queries=0,sound_thread_starts=0;
+    void supplySoundThreadStart(std::span<const std::uint8_t> evidence) {
+        const std::array<std::uint32_t,14> expected={0x70030C11,3,0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};
+        if(sound_thread_start_supplied || evidence.size()!=sizeof(expected) || std::memcmp(evidence.data(),expected.data(),sizeof(expected)))
+            throw std::runtime_error("EE sound thread-start evidence differs/repeated");
+        sound_thread_start_supplied=true;
+    }
+    unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0;
     std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
@@ -1132,7 +1171,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls;}
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1370,6 +1409,7 @@ public:
     std::array<std::uint32_t, 5> thread_arguments{};
     struct DormantThread {
         std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
+        bool ready=false;R5900Context context{};
     };
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;

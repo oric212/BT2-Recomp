@@ -1,0 +1,43 @@
+"""Validate the reached EE sound thread query/start; keep evidence bundles local."""
+import argparse,json,struct
+from pathlib import Path
+from verify_sound_rpc import capture,words,require
+from capture_ee import MARKER
+
+def verify(root,output=None,native=None):
+    baseline=json.loads((root/'work/pcsx2-capture/heap-second-after/capture.json').read_text(encoding='utf-8'))
+    before,_=capture(root,'sound-ee-thread-before',baseline)
+    query,_=capture(root,'sound-ee-status-after',baseline)
+    after,_=capture(root,'sound-ee-thread-after',baseline)
+    require(words(before,MARKER+40,1)==(0x70030C11,) and words(after,MARKER+40,1)==(0x70030C11,),'Thread caller Status differs')
+    require(words(query,MARKER+8,2)==(0x10,0) and words(query,MARKER+16,1)==(0x1FFEC60,) and words(query,MARKER+40,1)==(0x70020C11,),'Thread status-query return differs')
+    info=words(query,0x1FFEC60,12)
+    require(info==(0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0),'Dormant sound thread descriptor differs')
+    require(words(after,MARKER+8,2)==(3,0) and words(after,0x3681D4,1)==(3,),'StartThread return/ID differs')
+    frame=0x3A5CC0+0x1000-0x2A0
+    require(words(after,frame+28*16,1)==(0x38BDF0,) and words(after,frame+29*16,1)==(0x3A6CA0,) and words(after,frame+31*16,1)==(0x100250,),'Saved sound thread context differs')
+    if output:
+        output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(struct.pack('<14I',0x70030C11,3,*info))
+    if native:
+        r=json.loads(native.read_text(encoding='utf-8'))
+        require(r['sound_thread_starts']==1 and r['ee_sound_context']==[3,1,0x315380,0x38BDF0,0x3A6CA0,0x100250,0,0x10001],'Native ready EE context differs')
+        require(r['sounds_rpc_binds']==1 and r['sounds_client_words'][:5]==[0,30,7,0,0] and r['sounds_client_words'][5] and r['sounds_client_words'][9],'Native SOUNDS owned bind differs')
+    completed,retail_iop=capture(root,'sound-service-call-after',baseline)
+    require(words(completed,MARKER+8,4)==(0,0,0x1FFED10,0),'SOUNDS first caller return differs')
+    require(words(completed,0x635180,16)==(0,)*16 and words(completed,0x3A97E0,4)==(16,256,0x635180,64),'SOUNDS first command/result differs')
+    if native:
+        row=next(x for x in r['iop_rpc_servers'] if x[0]==0x02000004)
+        require(r['sounds_rpc_calls']==1 and r['sounds_result_words']==list(words(completed,0x635180,16)),'Native SOUNDS response differs')
+        require(r['sounds_client_words'][5]==row[2] and r['sounds_client_words'][9]==row[1],'Native SOUNDS server ownership differs')
+        owned_iop=Path(str(native)+'.iop.bin').read_bytes();ref=words(completed,0x6351C0,10)
+        require(owned_iop[row[2]:row[2]+256]==retail_iop[ref[5]:ref[5]+256],'SOUNDS input buffer differs')
+        for offset in (12,28,32,36,40,44,48):require(words(owned_iop,row[1]+offset,1)==words(retail_iop,ref[9]+offset,1),'SOUNDS request metadata differs')
+    dbc,dbc_iop=capture(root,'rpc-dbc-bind-after',baseline)
+    dbc_client=words(dbc,0x3A03C0,10)
+    require(words(dbc,MARKER+8,4)==(0,0,0x1FFEC40,0) and dbc_client==(0,31,7,0,0,0x7AB38,0,0,0,0x7AA10),'DBCMAN forward bind return differs')
+    require(words(dbc_iop,dbc_client[9],1)==(0x80001300,),'DBCMAN forward registration differs')
+    print('EE dormant query, IE/EIE publication, saved context and StartThread return validated'+(' against native ready-state transition.' if native else '.'))
+    print('Ready state does not prove worker execution, scheduling timing or sound callbacks.')
+
+if __name__=='__main__':
+    p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--output',type=Path);p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.output,a.native)

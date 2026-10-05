@@ -590,3 +590,8 @@ Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_seco
 ### Bounded sound delivery verification
 
 `python tools/capture_ee/verify_sound_rpc.py --native work/bt2-generation/entry-stop.json` validates ignored independent bind/command/thread/console captures and the native SDRDRV result/ownership. It requires the corrected EE thread-start boundary; later retail checkpoints are forward evidence. See [SDRDRV scope](SDRDRV_RPC_PLAN.md) and [EE thread start](EE_THREAD_START_PLAN.md). Captures and their game-derived bytes stay local and ignored.
+
+
+### EE sound thread-start checkpoint
+
+`python tools/capture_ee/verify_ee_thread.py --output work/bt2-generation/ee-thread-start.bin` verifies local thread query/Status/return/context and sound/device forward captures, then writes a checked 56-byte bundle. Append this as the optional 22nd probe argument after the texture bundle. Use `--native work/bt2-generation/entry-stop.json` to compare owned ready context, SOUNDS server/client/result/input and request metadata. The optional probe now reports RPC registration inventory. Bundles/captures/generated code remain ignored; ready state does not imply running threads.
