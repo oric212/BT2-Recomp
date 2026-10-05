@@ -41,7 +41,7 @@ inline void install_iop_sif_rpc_provider(IopRuntime& rt) {
         const auto queue=c.get(4);const auto q=m.rpc_queues.find(queue);const auto thread=m.threads.find(m.current_thread);
         if(!m.rpc_initialized || q==m.rpc_queues.end() || q->second.thread!=m.current_thread || thread==m.threads.end() || q->second.servers.empty())
             throw std::runtime_error("Invalid native IOP RPC loop ownership");
-        if(m.read(queue+12,4) || m.read(queue+16,4))throw std::runtime_error("Native IOP RPC request execution not yet supported");
+        if(m.read(queue+12,4))throw std::runtime_error("Native IOP RPC request execution not yet supported");
         m.write(queue+4,0,4);auto& t=thread->second;t.waiting=true;t.ready=false;t.wait_rpc=queue;
         throw IopYield{}; // Actual compiled worker parks here; no request/result is fabricated.
     };

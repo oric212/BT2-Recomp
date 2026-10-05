@@ -81,6 +81,11 @@ inline float FPU_ADD_S(float left, float right) {
     if (left != 0.0f || right != 0.0f) throw std::runtime_error("Unsupported bootstrap FPU operands");
     return left + right;
 }
+inline float FPU_MOV_S(float value) {return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value));}
+inline bool FPU_C_EQ_S(float left,float right) {
+    if(left!=0.0f || right!=0.0f)throw std::runtime_error("Unsupported bootstrap FPU comparison operands");
+    return true; // Only the already supported cleared-register domain.
+}
 inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = value; }
 
 #define READ16(address) runtime->read16(rdram, (address))

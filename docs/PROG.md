@@ -4,13 +4,13 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 ## Current status
 
-The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. No displayed frame, audio playback or complete boot yet.
+The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. The first SDRDRV bind/command executes through native IOP code and generated EE cleanup. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **100/100 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **101/101 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **983 EE calls / 975 returns**, **31,001 IOP instructions / 128 physical entry targets / twelve waiting workers**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,007 EE calls / 1,003 returns**, **31,072 IOP instructions / 129 physical entry targets / twelve waiting workers and one ready helper**.
 
 The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
 
@@ -18,7 +18,9 @@ The third normal GIF request completes: packed A+D retains PABE/TEX0 state witho
 
 The second IOP allocation now completes through real translated FILEIO and generated EE RPC cleanup: **0x81800 bytes at 0xCE500**, independently matching retail. Five native images were relocated out of that heap interval; the four resident modules still match their normalized retail startup captures. All module, heap and stack placements pass provenance/overlap checks. Only the two captured allocations are supported.
 
-Current stop: **SIF submission (0x77) at EE PC 0x32F028**, binding **SDRDRV service 0x80000701**, client 0x3A5C80, RPC ID 27. Follow [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md): native server registration exists, but worker request delivery and sound command execution are not yet implemented. This is a new sound RPC ownership/execution scope. No assets loaded, displayed frame or audio playback.
+SDRDRV service **0x80000701** binds using owned native addresses. Command **0xE620** runs its registered handler, returns sixteen zero bytes and starts a priority-24 IOP helper. Independent retail captures validate the result and thread parameters. The helper is ready natively versus running in retail; scheduling equivalence and its outgoing callback bind are unverified.
+
+Current stop: **FUN_0032FDA0 (EE StartThread), caller 0x315210**, thread ID 3 / argument zero. Retail returns 3 with CP0 Status 0x70030C11; native Status still defaults to zero and otherwise produces a false failure. The probe stops before that invalid transition. Follow [EE thread start and sound callbacks](EE_THREAD_START_PLAN.md). This is a new scheduling/context scope. Forward SOUNDS bind and console captures are evidence only; no assets loaded, displayed frame or audio playback.
 
 The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
 

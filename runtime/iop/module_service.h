@@ -62,9 +62,11 @@ public:
         if(epoch!=epoch_ || failed_ || runtime.sif_transport_attached)throw std::runtime_error("Invalid native SIF transport attachment");
         runtime.sif_transport_attached=true;
     }
+    std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);
     std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
+    unsigned sound_rpc_requests=0;
     unsigned buffer_loads=0;
     unsigned boot_heap_frees=0;
     unsigned boot_heap_allocations=0;

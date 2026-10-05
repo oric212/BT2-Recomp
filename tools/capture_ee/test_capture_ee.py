@@ -7,6 +7,17 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_sound_console_stubs_publish_actual_arguments(self):
+        for point in ('sound-bind-after','sound-init-before','sound-init-after','deci2-after'):
+            blob=texture_stub(point);words=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+            self.assertEqual(words[2:8],(0xFF020008,0xAF1D0010,0xAF040018,0xAF05001C,0xAF060020,0xAF070024))
+            self.assertEqual((words[-2]&0x3FFFFFF)<<2,FRESH_BIND_STUB+40)
+        for point in ('sound-ee-thread-before','sound-ee-thread-after'):
+            blob=texture_stub(point);words=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+            self.assertEqual(words[8:10],(0x40196000,0xAF190028))
+            self.assertEqual((words[-2]&0x3FFFFFF)<<2,FRESH_BIND_STUB+48)
+
+
     def test_texture_completion_skips_busy_reads(self):
         words=struct.unpack('<'+str(len(texture_stub('texture-complete'))//4)+'I',texture_stub('texture-complete'))
         self.assertEqual(words[0],0x30580100)

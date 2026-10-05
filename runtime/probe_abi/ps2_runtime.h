@@ -76,7 +76,7 @@ public:
         throw UnsupportedVuStatus();
     }
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
-    enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump };
+    enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump, IndirectJump=TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
 
     void clearLLBit(R5900Context* context) { context->ll_bit = false; }
@@ -152,6 +152,7 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && read32(rdram,0x3A97DC)==0x3A5C80) {receiveSoundRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
         if(code==0 && selector==0x77 && native_module_loads==14 && heap_calls==1 && !heap_frees
@@ -565,6 +566,17 @@ public:
             if(!thread_initialized || !heap_initialized || current_thread_id!=1)throw UnsupportedSyscall(selector,context->pc);
             context->r[2].low=heap_end;++heap_end_queries;return;
         }
+        if(code==0 && selector==0x7C && sound_rpc_calls==1 && native_module_loads==14) {
+            if(context->pc!=0x32F098 || context->r[4].low!=16 || context->r[5].low!=context->r[29].low)
+                throw UnsupportedSyscall(selector,context->pc);
+            const auto pointer=read32(rdram,static_cast<std::uint32_t>(context->r[5].low));
+            std::string message;bool terminated=false;
+            for(unsigned n=0;n<4096;++n) {
+                const auto ch=read8(rdram,pointer+n);if(!ch){terminated=true;break;}message+=static_cast<char>(ch);
+            }
+            if(!terminated)throw UnsupportedSyscall(selector,context->pc);
+            ee_console_messages.push_back(std::move(message));context->r[2].low=UINT64_MAX;return;
+        }
         if (code == 0 && selector == 0x40) {
             const auto address = static_cast<std::uint32_t>(context->r[4].low);
             checkMemory(rdram, address, 24);
@@ -605,12 +617,14 @@ public:
                 && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
                     || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
                     || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
+            const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
+                && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
             const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
                 && semaphores.size()==7 && address==initial_sp-288 && maximum==1 && initial==0 && option==0x3838E8;
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
-            if (attributes != 0 && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -657,7 +671,8 @@ public:
                     || (post_cd.modes==1 && !post_loadfile.binds && semaphores[id].option==0x3838E8)
                     || (post_loadfile.binds && !post_loadfile.versions && semaphores[id].option==0x3838D8)
                     || (post_loadfile.versions==1 && semaphores[id].option==0x3838E8)
-                    || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8));
+                    || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8)
+                    || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
                     || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
@@ -711,6 +726,11 @@ public:
             return true;
         }
         const auto found = functions_.find(target);
+        // CreateThread owns a dormant host record, but generated StartThread's
+        // kernel table and runnable EE scheduling are not implemented. Never let
+        // it report a false failure and carry startup down the error path.
+        if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1)
+            throw UnsupportedGuestBranch(target,source,resume);
         if (found == functions_.end()) throw UnsupportedGuestBranch(target, source, resume);
         verifyKernelBinding(target);
         if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
@@ -1081,6 +1101,8 @@ public:
     std::shared_ptr<NativeIopService> native_iop;
 #endif
     unsigned heap_binds=0,heap_calls=0,heap_frees=0;
+    unsigned sound_rpc_binds=0,sound_rpc_calls=0;
+    std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
     VifStartup vif_startup;
@@ -1110,7 +1132,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees;}
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1451,6 +1473,7 @@ private:
     }
 #ifdef BT2_NATIVE_IOP
     void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
+    void receiveSoundRpc(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);
 #endif
     void receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context) {

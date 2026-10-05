@@ -117,3 +117,59 @@ void PS2Runtime::receiveHeapFree(std::uint8_t* rdram,R5900Context* context) {
     ++heap_frees;++sif_dma_submissions;context->r[2].low=0x40000+heap_binds+heap_calls+heap_frees;
     native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_pc=native_iop->runtime.executing_pc;
 }
+
+
+void PS2Runtime::receiveSoundRpc(std::uint8_t* rdram,R5900Context* context) {
+    const auto d=static_cast<std::uint32_t>(context->r[4].low);
+    if(sound_rpc_binds==1 && !sound_rpc_calls && native_iop) {
+        auto& rt=native_iop->runtime;const auto found=rt.rpc_servers.find(0x80000701);
+        if(found==rt.rpc_servers.end())throw UnsupportedSyscall(0x77,context->pc);
+        const auto server=found->second;
+        if(iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || d!=initial_sp-736 || context->r[29].low!=d
+            || context->r[5].low!=2 || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1 || semaphores[7].option!=0x3838E8)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,8> desc={0x3A5C40,server.buffer,64,0,0x203A97C0,0x1E640,64,0x44};
+        const std::array<std::uint32_t,14> packet={0x4040,server.buffer,0x8000000A,0,5,0x203A97C0,28,0x3A5C80,0xE620,64,0x3A5C40,16,1,server.descriptor};
+        for(unsigned n=0;n<desc.size();++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned n=0;n<packet.size();++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,0x3A5C80)!=0x203A97C0 || read32(rdram,0x3A5C84)!=28 || read32(rdram,0x3A5C88)!=7
+            || read32(rdram,0x3A5CA4)!=server.descriptor || read32(rdram,0x3A5C94)!=server.buffer || read32(rdram,0x3A5CA0)!=0x3A5C40)
+            throw UnsupportedSyscall(0x77,context->pc);
+        std::vector<std::uint8_t> response;
+        try {response=native_iop->callSoundRpc(iop_epoch,0xE620,std::span<const std::uint8_t>(memory_.data()+0x3A5C40,64),16);}
+        catch(const std::exception& e) {
+            native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
+            throw UnsupportedSyscall(0x77,context->pc);
+        }
+        std::copy(response.begin(),response.end(),memory_.begin()+0x3A5C40);
+        const std::array<std::uint32_t,16> reply={0x1000,0x3A5C40,0x80000008,0,0,0,0,0x3A5C80,0x8000000A,0,0,0,0,0,0,0};
+        for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+        deliverRpcEnd(rdram,context,0x3A5C80,7,server.descriptor,server.buffer);
+        ++sound_rpc_calls;++sif_dma_submissions;context->r[2].low=0x60002;
+        native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;return;
+    }
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || heap_calls!=2 || heap_frees!=1 || sound_rpc_binds
+        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-368 || context->r[5].low!=1
+        || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1 || semaphores[7].option!=0x3838D8)
+        throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<std::uint32_t,4> desc={0x203A97C0,0x1E640,64,0x44};
+    const std::array<std::uint32_t,9> packet={64,0,0x80000009,0,5,0x203A97C0,27,0x3A5C80,0x80000701};
+    for(unsigned n=0;n<desc.size();++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+    for(unsigned n=0;n<packet.size();++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+    if(read32(rdram,0x3A5C80)!=0x203A97C0 || read32(rdram,0x3A5C84)!=27 || read32(rdram,0x3A5C88)!=7
+        || read32(rdram,0x3A5CA4) || read32(rdram,0x3A5C94))throw UnsupportedSyscall(0x77,context->pc);
+    auto& rt=native_iop->runtime;
+    const auto found=rt.rpc_servers.find(0x80000701);
+    if(found==rt.rpc_servers.end())throw UnsupportedSyscall(0x77,context->pc);
+    const auto& server=found->second;const auto queue=rt.rpc_queues.find(server.queue);
+    if(queue==rt.rpc_queues.end())throw UnsupportedSyscall(0x77,context->pc);
+    const auto worker=rt.threads.find(queue->second.thread);
+    if(worker==rt.threads.end() || !worker->second.waiting || worker->second.wait_rpc!=server.queue)
+        throw UnsupportedSyscall(0x77,context->pc);
+    rt.check(server.descriptor,68);rt.check(server.handler,4);rt.check(server.buffer,4);
+    // Return addresses of the actual owned registration; never retail pointer aliases.
+    const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A5C80,0x80000009,server.descriptor,server.buffer,0,0,0,0,0};
+    for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+    deliverRpcEnd(rdram,context,0x3A5C80,7,server.descriptor,server.buffer);
+    ++sound_rpc_binds;++sif_dma_submissions;context->r[2].low=0x60001;
+}

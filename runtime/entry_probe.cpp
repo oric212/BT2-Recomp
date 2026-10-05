@@ -19,6 +19,15 @@
 #include <iomanip>
 
 namespace {
+std::string jsonString(std::string_view value) {
+    std::string result="\"";constexpr char hex[]="0123456789abcdef";
+    for(unsigned char c:value) {
+        if(c=='"' || c=='\\') {result+='\\';result+=static_cast<char>(c);}
+        else if(c<32) {result+="\\u00";result+=hex[c>>4];result+=hex[c&15];}
+        else result+=static_cast<char>(c);
+    }
+    return result+'"';
+}
 void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
@@ -698,7 +707,23 @@ int main(int argc, char** argv) {
                 << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
                 << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
                 << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
-                << ",\"heap_calls\":" << runtime.heap_calls
+                << ",\"console_messages\":" << runtime.ee_console_messages.size()
+                << ",\"console_first_message\":" << jsonString(runtime.ee_console_messages.empty()?std::string{}:runtime.ee_console_messages.front())
+                << ",\"sound_rpc_binds\":" << runtime.sound_rpc_binds
+                << ",\"sound_rpc_calls\":" << runtime.sound_rpc_calls
+                << ",\"sound_client_words\":[";
+            for(unsigned i=0;i<10;++i)report<<(i?",":"")<<runtime.read32(runtime.memory().data(),0x3A5C80+i*4);
+            report<<"],\"sound_payload_words\":[";
+            for(unsigned i=0;i<16;++i)report<<(i?",":"")<<runtime.read32(runtime.memory().data(),0x3A5C40+i*4);
+            report<<"],\"sound_thread_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.sound_rpc_calls && runtime.native_iop) {
+                auto& rt=runtime.native_iop->runtime;
+                const auto handle=rt.read(0xA14CC,4);const auto& t=rt.threads.at(handle);
+                report<<handle<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option<<","<<t.waiting<<","<<t.ready;
+            }
+#endif
+            report<<"],\"heap_calls\":" << runtime.heap_calls
                 << ",\"heap_frees\":" << runtime.heap_frees
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority

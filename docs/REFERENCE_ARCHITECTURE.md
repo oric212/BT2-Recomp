@@ -188,3 +188,10 @@ The next retail IOP allocation reuses 0xCE500 for 0x81800 bytes. Its interval ov
 ### Second heap capacity and native layout
 
 Consulted the pinned BT3 IOP notes/module ownership model and local pinned public PS2SDK sysmem/FILEIO contracts. Native translation addresses are authored placements, while EE-visible heap pointers retain captured BT2 values. Five overlapping images were regenerated into disjoint owned ranges rather than overwriting code or remapping the retail heap result. Relocated resident startup state still passes independent normalized comparisons. Two captured allocations reuse the released block; arbitrary allocations remain unsupported. The next SDRDRV bind needs owned native server/worker request delivery, as described in the reference's separate RPC routing model; registration alone is not command execution.
+
+
+### SDRDRV request and EE thread-start evidence
+
+Consulted the already pinned PS2SDK SIFRPC source for request metadata, handler invocation and retained queue-tail semantics. The owned native worker context/GP/buffer pattern follows the pinned BT3 IOP notes without copying implementation. Public kernel thread status constants distinguish RUNNING (1), READY (2), WAIT (4) and DORMANT (0x10); retail running and native ready are not asserted equivalent.
+
+The official pinned [PS2SDK DECI2 source](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/ee/kernel/src/deci2.c) identifies kputs as subfunction 16 with a pointer in the first argument word. Local capture establishes this BIOS return separately. Console logging does not establish disc-file reads. The valid native path stops at the new [EE thread-start scope](EE_THREAD_START_PLAN.md), before its unvalidated Status/context transition.

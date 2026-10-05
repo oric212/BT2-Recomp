@@ -585,3 +585,8 @@ Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_seco
 `config/iop_layout.json` records authored translation placements for the five images moved out of the captured second heap. The native generator uses those defaults when `--base` is omitted; explicit overrides remain available for experiments. Regenerate moved images, then run `python tools/iop/verify_layout.py` before building. The checker verifies image/source hashes, all fourteen translated images, the reserved heap interval and worker/call/argument stack region for overlap and RAM bounds. The embedded nonresident image is released before heap reuse and is not a persistent placement.
 
 `python tools/capture_ee/verify_second_heap.py --native work/bt2-generation/entry-stop.json` compares the real translated handler result and lifecycle. The earlier embedded-module checker compares residual freed code only before heap reuse: after reuse, its bytes are undefined and are not historical completion evidence. Native lifecycle tests still independently verify its earlier execution/release. Arbitrary allocator requests remain rejected.
+
+
+### Bounded sound delivery verification
+
+`python tools/capture_ee/verify_sound_rpc.py --native work/bt2-generation/entry-stop.json` validates ignored independent bind/command/thread/console captures and the native SDRDRV result/ownership. It requires the corrected EE thread-start boundary; later retail checkpoints are forward evidence. See [SDRDRV scope](SDRDRV_RPC_PLAN.md) and [EE thread start](EE_THREAD_START_PLAN.md). Captures and their game-derived bytes stay local and ignored.

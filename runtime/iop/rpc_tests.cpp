@@ -20,7 +20,7 @@ int main(){try {
     check(rt.rpc_servers.at(0x80000400).gp==0x59290 && rt.read(0x50108,4)==0x50200);
     before=rt.ram;rejected([&]{rt.import("sifcmd",17,c);});check(rt.ram==before);
     c.set(4,0x50100);rt.write(0x5010C,0x50200,4);rejected([&]{rt.import("sifcmd",22,c);});check(!rt.threads.at(rt.current_thread).waiting);
-    rt.write(0x5010C,0,4);bool yielded=false;try{rt.import("sifcmd",22,c);}catch(const IopYield&){yielded=true;}
+    rt.write(0x5010C,0,4);rt.write(0x50110,0x50200,4);bool yielded=false;try{rt.import("sifcmd",22,c);}catch(const IopYield&){yielded=true;}
     check(yielded && rt.threads.at(rt.current_thread).waiting && rt.threads.at(rt.current_thread).wait_rpc==0x50100 && !rt.threads.at(rt.current_thread).ready);
     std::cout<<"Native RPC initialization, ownership, registration and no-request wait verified.\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

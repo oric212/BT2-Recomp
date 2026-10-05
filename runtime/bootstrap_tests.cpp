@@ -55,6 +55,19 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 int main() {
     try {
         {
+            PS2Runtime console;console.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            console.sound_rpc_calls=1;console.native_module_loads=14;
+            R5900Context cpu;cpu.pc=0x32F098;cpu.r[3].low=0x7C;cpu.r[4].low=16;cpu.r[5].low=cpu.r[29].low=0x1000;
+            console.write32(console.memory().data(),0x1000,0x1100);std::memcpy(console.memory().data()+0x1100,"synthetic log",14);
+            console.handleSyscall(console.memory().data(),&cpu,0);require(console.ee_console_messages.size()==1 && cpu.r[2].low==UINT64_MAX);
+            cpu.r[4].low=17;reject([&]{console.handleSyscall(console.memory().data(),&cpu,0);});require(console.ee_console_messages.size()==1);
+            cpu.r[4].low=16;std::fill_n(console.memory().begin()+0x1100,4096,static_cast<std::uint8_t>('x'));
+            reject([&]{console.handleSyscall(console.memory().data(),&cpu,0);});require(console.ee_console_messages.size()==1);
+            require(std::bit_cast<std::uint32_t>(FPU_MOV_S(std::bit_cast<float>(0x80000000u)))==0x80000000u);
+            require(FPU_C_EQ_S(0.0f,-0.0f));reject([]{FPU_C_EQ_S(1.0f,0.0f);});
+        }
+
+        {
             std::vector<std::uint8_t> packet(240,0x5A),ram(512,0);
             std::copy(packet.begin(),packet.end(),ram.begin()+16);
             GifDmaStaging stage;reject([&]{stage.readIdle();});reject([&]{stage.setCount(15);});
@@ -1064,6 +1077,12 @@ int main() {
                 && SRA32(UINT32_MAX, 32) == UINT32_MAX && SRA32(0x7FFFFFFF, 1) == 0x3FFFFFFF);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
+        PS2Runtime start_boundary;R5900Context start_context{};
+        start_boundary.registerFunction(0x32FDA0,return_leaf);start_boundary.sound_rpc_calls=1;
+        start_context.r[2].low=0x1234;
+        reject([&]{start_boundary.dispatchGuestBranch(nullptr,&start_context,0x32FDA0,0x315210,0x315218,
+            PS2Runtime::GuestBranchKind::DirectCall,"checked StartThread");});
+        require(start_boundary.guest_calls==0 && start_context.r[2].low==0x1234);
         PS2Runtime heap_evidence_runtime;
         const std::array<std::uint32_t,16> heap_reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};
         auto heap_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(heap_reply.data()),sizeof(heap_reply));
