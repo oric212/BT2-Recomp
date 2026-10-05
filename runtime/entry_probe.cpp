@@ -794,6 +794,18 @@ int main(int argc, char** argv) {
                 report<<(channel==12?",":"")<<"["<<channel<<","<<dma.madr<<","<<dma.bcr<<","<<dma.chcr<<","<<(dma.slice_known?1:0)<<"]";
             }
 #endif
+            report<<"],\"sio2_card_transfer_counts\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop)report<<runtime.native_iop->runtime.sio2_card_sends<<","<<runtime.native_iop->runtime.sio2_card_receives;
+#endif
+            report<<"],\"sio2_card_controls\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {unsigned n=0;for(auto v:runtime.native_iop->runtime.sio2_card_controls)report<<(n++?",":"")<<v;}
+#endif
+            report<<"],\"native_iop_import_arguments\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {unsigned n=0;for(auto v:runtime.native_iop->runtime.last_import_arguments)report<<(n++?",":"")<<v;}
+#endif
             report<<"],\"mc_client_words\":[";
             for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A6F80+n*4);
             report<<"],\"mc_input_words\":[";

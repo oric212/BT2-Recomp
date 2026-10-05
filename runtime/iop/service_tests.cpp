@@ -163,10 +163,15 @@ int main() {
         check(service.runtime.ram==query_before && !service.mc_query_requests);
         bool query_boundary=false;
         try {service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));}
-        catch(const std::runtime_error& e) {query_boundary=std::string(e.what())=="Unresolved IOP import: dmacman:32";}
+        catch(const std::runtime_error& e) {query_boundary=std::string(e.what())=="Unresolved IOP import: thbase:33";}
         check(query_boundary && service.runtime.current_thread==0 && !service.mc_query_requests);
         const auto& dma=service.runtime.dma_channels.at(11);
-        check(dma.slice_known && dma.madr==0x32020 && dma.bcr==0x10024 && dma.chcr==0x201);
+        check(dma.slice_known && dma.madr==0x320B0 && dma.bcr==0x10024 && dma.chcr==0x201);
+        check(service.runtime.sio2_card_sends==6 && service.runtime.sio2_card_receives==6);
+        const auto& receive_dma=service.runtime.dma_channels.at(12);
+        check(receive_dma.madr==0x326E0 && receive_dma.bcr==0x10024 && receive_dma.chcr==0x40000200);
+        check(std::all_of(service.runtime.ram.begin()+0x32650,service.runtime.ram.begin()+0x32656,[](auto v){return v==0xFF;}));
+        check(std::all_of(service.runtime.ram.begin()+0x32656,service.runtime.ram.begin()+0x326E0,[](auto v){return v==0;}));
         const auto failed_query=service.runtime.ram;const auto failed_steps=service.runtime.steps;
         rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));});
         check(service.runtime.ram==failed_query && service.runtime.steps==failed_steps);

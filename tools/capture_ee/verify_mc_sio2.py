@@ -22,9 +22,9 @@ def verify(root,native=None):
     require(all(ram[base+a:base+b]==image[a:b] for a,b in meta['code_ranges']),'Slice source module ownership differs')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));nr=Path(str(native)+'.iop.bin').read_bytes()
-        require(r['native_iop_error']=='Unresolved IOP import: dmacman:32' and r['native_iop_pc']==0x10E30 and r['mc_rpc_calls']==1 and r['mc_query_requests']==0,'Native pending start boundary differs')
-        require(r['sio2_dma_channels']==[[11,0x32020,0x10024,0x201,1],[12,0,0,0,0]],'Native slice state differs')
-        require(nr[0x32020:0x320B0]==payload,'Native command source differs')
-    print('Actual initial card slice API, source and register readbacks verified; native DMA START remains pending.')
+        require(r['native_iop_error']=='Unresolved IOP import: thbase:33' and r['native_iop_pc']==0x31B40 and r['mc_rpc_calls']==1 and r['mc_query_requests']==0,'Native pending start boundary differs')
+        require(r['sio2_dma_channels']==[[11,0x320B0,0x10024,0x201,1],[12,0x326E0,0x10024,0x40000200,1]],'Native slice state differs')
+        require(nr[0x32020:0x320B0]==bytes([0x81,0xF3])+bytes(142),'Native final command source differs')
+    print('Actual initial card slice API, source and register readbacks verified; native transfers now reach the timed-wait boundary.')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.native)

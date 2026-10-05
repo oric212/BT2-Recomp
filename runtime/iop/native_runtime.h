@@ -43,6 +43,8 @@ public:
     std::vector<std::pair<std::uint32_t,std::uint32_t>> ranges;
     std::map<std::pair<std::string,unsigned>,Provider> providers;
     std::vector<std::string> kernel_messages,stdio_messages;
+    std::array<std::uint32_t,4> last_import_arguments{};
+    std::uint32_t last_import_ra=0,last_import_sp=0;
     std::uint32_t cdvd_interrupt_event=0;
     unsigned data_cache_flushes=0;
     std::map<std::uint32_t,std::uint32_t> spu2_configuration;
@@ -100,6 +102,9 @@ public:
     std::map<std::uint32_t,std::uint32_t> sio2_parameters;
     std::vector<std::uint8_t> sio2_transmit,sio2_receive;
     unsigned sio2_receive_cursor=0;
+    bool sio2_card_absent=true; // Explicit initial device policy; mounted cards are not implemented.
+    unsigned sio2_card_sends=0,sio2_card_receives=0;
+    std::vector<std::uint32_t> sio2_card_controls;
     std::uint32_t sio2_command_status=0;
     unsigned steps=0,access_width=0;
     std::uint32_t access_value=0;
@@ -255,8 +260,16 @@ public:
         if(p==0x1F808280 && size==4 && sio2_irq_status_known) {sio2_irq_status&=~value;return;}
         if(p==0x1F808268 && size==4 && value==0x3BD) {
             const auto irq=interrupts.find(17);
-            if(sio2_receive.size()!=5 || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
+            if((sio2_receive.size()!=5 && sio2_receive.size()!=144) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
                 throw std::runtime_error("Unsupported SIO2 transfer completion state");
+            if(sio2_receive.size()==144) {
+                if(sio2_transmit.size()!=144 || sio2_receive_cursor!=144
+                    || (dma_channels.at(11).chcr!=0x1000201 && dma_channels.at(11).chcr!=0x201)
+                    || (dma_channels.at(12).chcr!=0x41000200 && dma_channels.at(12).chcr!=0x40000200))
+                    throw std::runtime_error("SIO2 card completion before both transfers");
+                sio2_card_controls.push_back(value);
+                dma_channels.at(11).chcr&=~0x1000000u;dma_channels.at(12).chcr&=~0x1000000u;
+            }
             sio2_control=value;sio2_control_known=true;sio2_irq_status=1;sio2_irq_status_known=true;
             IopContext callback=threads.at(current_thread).context;callback.pc=irq->second.handler;
             callback.branch_pending=false;callback.delay_instruction=false;callback.load_register=0;
@@ -270,6 +283,7 @@ public:
         if(p==0x1F808268 && size==4 && value==0x3BC) {
             sio2_control=value;sio2_control_known=true;++sio2_reset_writes;return;
         }
+        if(p==0x1F808268)throw std::runtime_error("Unsupported SIO2 control write: "+std::to_string(value));
         check(p,size);
         if((size==2 && p%2) || (size==4 && p%4))throw std::runtime_error("Unaligned IOP store");
         std::memcpy(ram.data()+p,&value,size);
@@ -278,6 +292,8 @@ public:
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {
         const auto key=std::make_pair(std::string(library),ordinal);
         imports.push_back(key.first+":"+std::to_string(ordinal));
+        for(unsigned n=0;n<4;++n)last_import_arguments[n]=c.get(4+n);
+        last_import_ra=c.get(31);last_import_sp=c.get(29);
         const auto found=providers.find(key);
         if(found==providers.end()) {
             const auto library_entry=libraries.find(library);

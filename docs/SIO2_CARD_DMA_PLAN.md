@@ -1,19 +1,23 @@
 # SIO2 card DMA scope
 
-Status: new transfer subsystem; design/evidence work required before starting DMA.
+Status: bounded initial absent-card transport verified; timed IOP suspension is the next separate scope.
 
-## Established boundary
+## Completed behavior
 
-The real initial MCSERV command-1 handler reaches MCMAN and SIO2. Bounded higher-priority worker wake and initial send-slice programming complete. Current native stop: dmacman:32 / sceStartDMA, IOP PC 0x10E30. Channel 11 retains MADR 0x32020 / BCR 0x10024 / CHCR 0x201. The command buffer is 144 bytes: 81 11 followed by zero padding. Channel 12 is not configured or completed. No bytes have been transferred, no SIO2 IRQ synthesized and the RPC request remains pending.
+- Real initial MCSERV command 1 enters MCMAN and SIO2. Priority-16 wake preserves the priority-104 caller.
+- Channel 11 sends owned 144-byte slices from 0x32020; channel 12 receives into 0x32650. Both use 36 words / one block. Native START is distinct from programming.
+- Five `81 11` probes (command 0x100472) and one `81 F3` fallback (0x140572) execute. Remaining transmit bytes are zero.
+- Explicit absent-card policy returns six FF bytes plus 138 padding zeros, independently captured with both reference card slots disabled. Mounted cards and other commands are rejected.
+- The registered native IRQ-17 handler/event path executes. Repeated control writes/readbacks retain 0x3BD. Final MADR 0x320B0/0x326E0, BCR 0x10024 and CHCR 0x201/0x40000200 match normalized owned reference buffers/registers.
 
-Independent interpreter evidence invokes actual sceSetSliceDMA, captures all five arguments, return 1, physical register readbacks and stable source bytes. Relocated MCMAN code validates the source's offset 0x12020. Public pinned PS2SDK dmacman.c/h define slice size/count and START separately. Existing byte-FIFO controller replies cannot stand in for memory-card DMA replies.
+## Evidence and limits
 
-## Design questions to resolve
+`capture_sio2_dma.py` captures actual slice programming; `capture_sio2_start.py` invokes actual first START APIs; `capture_sio2_flow.py` observes actual packet prefixes/control stores and stops before secondary SIF submission. `verify_mc_sio2_flow.py` checks environment hashes, observer bytes, relocated MCMAN ownership, six packets, final buffers/registers and native pending boundary. All raw output stays in ignored work/.
 
-- Exact command-queue lengths versus padded DMA input, receive slice, direction and destination ownership.
-- Source consumption and receive completion ordering, channel START/CHCR readback and IRQ 17 delivery through the actual registered worker.
-- Device policy for an absent card versus a mounted local card; do not bake the callback capture's -2 result into the runtime or infer card state from unrequested fields.
-- Actual MCSERV secondary SIF descriptor and poll after SIO2 completion, followed by real primary reply and guest callback. The 192-byte local stack includes uninitialized fields; copy actual owned native bytes rather than retail snapshots.
-- Callback FUN_0031DD60 is an observed indirect entry absent from the current provisional EE map. It needs evidence-backed discovery/generation when execution reaches it, not a handwritten success stub.
+Observers affect scheduling; whole-system control counts and hardware timing are not equated. Native completion is bounded logical transport, not a general DMA scheduler. No retail result or uninitialized 192-byte secondary payload is used as a native template. No full card filesystem/authentication is implemented.
 
-Consult REFERENCE_ARCHITECTURE.md, pinned BT3 IOP/DMA interfaces, PS2SDK dmacman and PCSX2 Sio2/Dmac code before selecting the bounded transfer model. Capture the first send/receive and device-profile effects locally. No full PS2 emulator, arbitrary card filesystem, or permissive DMA success is part of this scope.
+## Remaining path
+
+Native reaches a 300 microsecond DelayThread at IOP PC 0x31B40. Follow [timed IOP scope](IOP_TIMED_WAIT_PLAN.md) before supplying a wake/completion. Retail later requests secondary SIF transfer to 0x3A7480, size 192, flags 0. Native must copy its own stack bytes, then deliver primary response/RPC_END and execute the guest callback.
+
+FUN_0031DD60 is an observed indirect entry absent from the provisional EE map. Discover/generate it from evidence when reached; do not handwrite a success callback. Prior callback -2 and unrequested fields do not establish the explicit absent-card profile's result.

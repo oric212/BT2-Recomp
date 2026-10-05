@@ -404,6 +404,8 @@ def main():
     parser.add_argument('--capture-spu2-key-readback',choices=['on','off'],help='Terminal first LIBSD key-on readback after SOUNDS return.')
     parser.add_argument('--capture-spu2-initialized',action='store_true',help='Terminal LIBSD sceSdInit return and register snapshot after SOUNDS return.')
     parser.add_argument('--capture-cri-low-read',action='store_true',help='Terminal reached CRI low-memory argument read after SOUNDS return.')
+    parser.add_argument('--capture-mc-sio2-flow',action='store_true',help='Capture absent-card control writes and secondary SIF descriptor.')
+    parser.add_argument('--capture-mc-sio2-start',action='store_true',help='Capture actual first card send/receive DMA START readbacks.')
     parser.add_argument('--capture-mc-sio2-slice',action='store_true',help='Capture actual initial memory-card slice setup before DMA starts.')
     parser.add_argument('--capture-dbc-dma',action='store_true',help='Capture the first actual DBCMAN reverse DMA and its completion poll.')
     parser.add_argument('--capture-spu2-transfer',action='store_true',help='Terminal first LIBSD transfer poll and sound RAM readback after SOUNDS return.')
@@ -429,6 +431,8 @@ def main():
         folder = folder / (args.capture_point+"-pad-poll-"+str(args.pad_poll_read_count) if args.capture_first_pad_poll else args.capture_point)
     if args.capture_spu2_key_readback:folder=folder.with_name(folder.name+'-spu2-key-readback-'+args.capture_spu2_key_readback)
     if args.capture_spu2_initialized:folder=folder.with_name(folder.name+'-spu2-initialized')
+    if args.capture_mc_sio2_flow:folder=folder.with_name(folder.name+'-sio2-flow')
+    if args.capture_mc_sio2_start:folder=folder.with_name(folder.name+'-sio2-start')
     if args.capture_mc_sio2_slice:folder=folder.with_name(folder.name+'-sio2-slice')
     if args.capture_dbc_dma:folder=folder.with_name(folder.name+'-dbc-dma')
     if args.capture_cri_low_read:folder=folder.with_name(folder.name+'-cri-low-read')
@@ -472,7 +476,10 @@ def main():
     if args.capture_spu2_status or args.capture_spu2_interrupts or args.capture_spu2_transfer or args.capture_spu2_key_readback or args.capture_spu2_initialized or args.capture_cri_low_read:
         if args.capture_point!='sounds-module-after' or args.capture_first_pad_poll or (sum(map(bool,[args.capture_spu2_status,args.capture_spu2_interrupts,args.capture_spu2_transfer,args.capture_spu2_key_readback,args.capture_spu2_initialized,args.capture_cri_low_read]))>1):raise ValueError('SPU2 status capture requires SOUNDS checkpoint without FIFO capture')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
-    if args.capture_mc_sio2_slice:
+    if args.capture_mc_sio2_start or args.capture_mc_sio2_flow:
+        settings+='[MemoryCards]\nSlot1_Enable = false\nSlot2_Enable = false\n'
+    if args.capture_mc_sio2_slice or args.capture_mc_sio2_start or args.capture_mc_sio2_flow:
+        if sum(map(bool,[args.capture_mc_sio2_slice,args.capture_mc_sio2_start,args.capture_mc_sio2_flow]))!=1:raise ValueError('Choose one card DMA capture mode')
         if args.capture_point!='rpc-mc-query-before' or args.capture_dbc_dma or args.capture_first_pad_poll:raise ValueError('Card slice capture requires query before checkpoint only')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
     if args.capture_dbc_dma:
@@ -513,6 +520,14 @@ def main():
         log = (folder / 'pcsx2.log').read_text(encoding='utf-8', errors='replace')
         if f'DataRoot Directory: {profile}' not in log:
             raise ValueError('PCSX2 did not use the isolated data profile.')
+        if args.capture_mc_sio2_flow:
+            from capture_sio2_flow import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
+        if args.capture_mc_sio2_start:
+            from capture_sio2_start import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
         if args.capture_mc_sio2_slice:
             from capture_sio2_dma import capture
             capture(reader,pointer,iop_rva,original,folder,address,args)

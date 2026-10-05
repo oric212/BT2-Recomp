@@ -25,7 +25,9 @@ def later_dbc_dma_boundary(r):
 def later_mc_dma_boundary(r):
     return (r.get('dbc_rpc_binds')==4 and r.get('dbc_rpc_calls')==4 and r.get('mc_rpc_binds')==1
         and r.get('mc_rpc_calls')==1 and r.get('mc_query_requests')==0
-        and r.get('native_iop_error')=='Unresolved IOP import: dmacman:32' and r.get('native_iop_pc')==0x10E30
+        and ((r.get('native_iop_error')=='Unresolved IOP import: dmacman:32' and r.get('native_iop_pc')==0x10E30)
+            or (r.get('native_iop_error')=='Unresolved IOP import: thbase:33' and r.get('native_iop_pc')==0x31B40
+                and r.get('sio2_card_transfer_counts')==[6,6] and r.get('native_iop_import_arguments',[None])[0]==300))
         and r.get('selector')==0x77 and r.get('pc')==0x32F028
         and r.get('packet_words',[])[6:10]==[41,0x3A6F80,1,48])
 
