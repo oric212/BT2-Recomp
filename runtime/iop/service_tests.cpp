@@ -13,6 +13,12 @@ int main() {
         const auto loaded=service.load(1,path);check(loaded.id==1 && loaded.result==0 && service.residents.size()==1);
         check(service.runtime.steps==151 && service.runtime.threads.begin()->second.waiting);
         rejected([&]{service.load(1,path);});check(service.runtime.steps==151 && service.residents.size()==1);
+        std::vector<std::uint8_t> disc_request(300),disc_ee(32*1024*1024);
+        const auto before_disc_steps=service.runtime.steps;
+        rejected([&]{service.callDiscSearch(2,disc_request,disc_ee,"missing.iso");});
+        rejected([&]{service.callDiscSearch(1,disc_request,disc_ee,"missing.iso");});
+        rejected([&]{service.callDiscSearch(1,std::span<const std::uint8_t>(disc_request.data(),299),disc_ee,"missing.iso");});
+        check(service.runtime.steps==before_disc_steps && !service.disc_search_calls && !service.disc_dma_submissions);
         NativeIopService fresh(2,bt2_compiled_iop_modules());rejected([&]{fresh.load(1,path);});
         fresh.load(2,path);service.runtime.events.begin()->second.bits=4;
         check(fresh.runtime.events.begin()->second.bits==0 && fresh.runtime.threads.begin()->second.waiting);

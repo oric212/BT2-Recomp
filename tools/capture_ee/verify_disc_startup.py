@@ -13,10 +13,14 @@ def disc_bind_boundary(r):
         and r.get('target')==0 and r.get('native_iop_error')==''
         and r.get('packet_words',[])[6:9]==[42,0x3A8780,0x80000597])
 
+def disc_search_completed(r):
+    return (r.get('disc_rpc_binds')==1 and r.get('disc_rpc_calls')==1 and r.get('disc_dma_submissions')==1
+        and r.get('disc_dma_polls')==0 and r.get('disc_result')==1 and r.get('native_iop_error')=='')
+
 def verify(root,native):
     baseline=json.loads((root/'work/pcsx2-capture/rpc-mc-callback-before-absent-cards/capture.json').read_text(encoding='utf-8'))
     observations={}
-    for point in ('rpc-disc-init-after','rpc-disc-bind-sema','rpc-disc-bind-after'):
+    for point in ('rpc-disc-init-after','rpc-disc-bind-sema','rpc-disc-bind-after','rpc-disc-command-before','rpc-disc-command-after'):
         f=root/'work/pcsx2-capture'/(point+'-absent-cards')
         m=json.loads((f/'capture.json').read_text(encoding='utf-8'));b=(f/'ee-ram.bin').read_bytes();i=(f/'iop-ram.bin').read_bytes()
         require(m['capture_point'].startswith(point+':') and m['source_elf_sha256']==EXPECTED_SHA and len(b)==32*1024*1024 and len(i)==2*1024*1024,'Disc capture identity/size differs')
@@ -35,8 +39,29 @@ def verify(root,native):
     require(words(b,MARKER+8,2)==(0,0) and words(b,0x3A8780,10)==(0,42,10,0,0,0x441C8,0,0,0,0x433D0),'Actual disc-search bind client differs')
     r=json.loads(native.read_text(encoding='utf-8'))
     require(completed_card_query(r) and r.get('disc_bind_semaphores')==1,'Native prior query/disc semaphore lifecycle differs')
-    require(disc_bind_boundary(r),'Expected owned unsupported disc-search submission')
-    print('Actual disc initialization/semaphore/bind evidence verified. Native search request remains unsupported; no file or sector success claimed.')
+    require(disc_bind_boundary(r) or (r.get('disc_rpc_binds')==1 and r.get('native_iop_error')==''),'Native disc bind transition differs')
+    reply=b[0x3A94C0:0x3A9500]
+    (root/'work/bt2-generation/disc-bind.bin').write_bytes(reply)
+    before=observations['rpc-disc-command-before'];after=observations['rpc-disc-command-after']
+    require(before[0x3A8624:0x3A8636]==b'\\DATA\\ZS2US.DIR;1\0' and words(before,0x3A8724,2)==(0x3A8600,0),'First search request/path differs')
+    require(words(after,MARKER+8,2)==(0,0) and words(after,0x3A8740,1)==(1,),'Actual metadata result differs')
+    require(words(after,0x3A8600,2)==(0xE2A,64) and after[0x3A8608:0x3A8614]==b'ZS2US.DIR;1\0','Actual directory index metadata differs')
+    f=root/'work/pcsx2-capture/rpc-disc-command-before-absent-cards-disc-dma'
+    m=json.loads((f/'disc-dma.json').read_text(encoding='utf-8'));i=(f/'disc-dma-iop.bin').read_bytes();ee=(f/'disc-dma-ee.bin').read_bytes()
+    require(all(m[k]==baseline[k] for k in ('source_elf_sha256','pcsx2_sha256','bios_sha256','disc_sha256')),'DMA environment differs')
+    require(hashlib.sha256(i).hexdigest()==m['iop_sha256'] and hashlib.sha256(ee).hexdigest()==m['ee_sha256'],'DMA hashes differ')
+    require(m['descriptor']==[0x441C8,0x3A8600,36,0] and m['count']==1 and m['token']>0 and m['diagnostic_source_redirect'] is None,'Actual metadata DMA differs')
+    source=i[0x1D0800:0x1D0824]
+    require(hashlib.sha256(source).hexdigest()==m['source_sha256'] and ee[0x3A8600:0x3A8624]==source,'Actual secondary metadata copy differs')
+    from capture_disc_dma import submit_hook
+    require(i[0x1D0300:0x1D0300+len(submit_hook(m['targets'][0]))]==submit_hook(m['targets'][0]),'DMA observer differs')
+    if r.get('disc_rpc_calls'):
+        require(disc_search_completed(r),'Native original handler/transport differs')
+        nr=Path(str(native)+'.iop.bin').read_bytes()
+        require(len(nr)==2*1024*1024 and words(nr,0x1A5808,1)==(1,),'Native handler result/IOP image differs')
+        for lo,hi in ((0,8),(8,20),(24,36)):
+            require(nr[0x1A6498+lo:0x1A6498+hi]==source[lo:hi],'Native defined search metadata differs')
+    print('Actual disc initialization/semaphore/bind evidence verified. First search request/result verified independently; native completion is checked when present. No sector success claimed.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path,default=Path('work/bt2-generation/entry-stop.json'));a=p.parse_args();verify(a.root,a.native)

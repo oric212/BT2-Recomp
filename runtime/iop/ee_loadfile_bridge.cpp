@@ -351,3 +351,22 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
     deliverRpcEnd(rdram,context,client,10,server.descriptor,server.buffer);
     ++mc_rpc_binds;++sif_dma_submissions;context->r[2].low=0x70000+mc_rpc_binds+mc_rpc_calls;
 }
+
+void PS2Runtime::receiveDiscSearch(std::uint8_t* rdram,R5900Context* context) {
+    const auto d=static_cast<unsigned>(context->r[4].low);
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-816 || context->r[5].low!=2
+        || semaphores.size()!=11 || semaphores[10].count || semaphores[10].option!=0x3838E8)throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<unsigned,8> descriptor={0x3A8600,0x441C8,300,0,0x203A97C0,0x1E640,64,0x44};
+    const std::array<unsigned,14> packet={0x12C40,0x441C8,0x8000000A,0,5,0x203A97C0,43,0x3A8780,0,300,0x3A8740,4,1,0x433D0};
+    for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
+    for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+    if(read32(rdram,0x3A8788)!=10 || read32(rdram,0x3A8794)!=0x441C8 || read32(rdram,0x3A87A4)!=0x433D0)throw UnsupportedSyscall(0x77,context->pc);
+    auto& rt=native_iop->runtime;unsigned result;
+    try{result=native_iop->callDiscSearch(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A8600,300),memory_,local_disc_path);}
+    catch(const std::exception& e){native_iop_error=e.what();native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());throw UnsupportedSyscall(0x77,context->pc);}
+    write32(rdram,0x3A8740,result);
+    const std::array<unsigned,16> reply={0x400,0x3A8740,0x80000008,0,0,0,0,0x3A8780,0x8000000A,0,0,0,0,0,0,0};
+    for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+    deliverRpcEnd(rdram,context,0x3A8780,10,0x433D0,0x441C8);++disc_rpc_calls;++sif_dma_submissions;context->r[2].low=0x740002;
+    native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());
+}

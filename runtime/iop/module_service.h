@@ -69,6 +69,8 @@ public:
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);
     std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
+    std::uint32_t callDiscSearch(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory,const std::string& disc_path);
+    unsigned disc_search_calls=0,disc_dma_submissions=0,disc_dma_polls=0;
     unsigned mc_rpc_requests=0,mc_query_requests=0;
     unsigned sound_rpc_requests=0,sounds_rpc_requests=0,dbc_rpc_requests=0;
     unsigned dbc_dma_submissions=0,dbc_dma_polls=0;

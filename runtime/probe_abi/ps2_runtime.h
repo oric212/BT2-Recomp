@@ -147,6 +147,11 @@ public:
             context->pc = resume;
             return;
         }
+#ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && disc_rpc_binds==1 && !disc_rpc_calls && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
+#endif
+        if(code==0 && selector==0x77 && disc_bind_supplied && mc_rpc_calls==2 && disc_bind_semaphores==1
+            && read32(rdram,0x3A97DC)==0x3A8780 && !disc_rpc_binds) {receiveDiscBind(rdram,context);return;}
         if(code==0 && selector==0x77 && post_cd.supplied && post_sif.rpc_initialized && iop_epoch==1
             && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
@@ -665,8 +670,11 @@ public:
                 && context->pc==0x32EC68 && context->r[31].low==0x332814
                 && context->r[17].low==0x3A8780 && static_cast<std::uint32_t>(context->r[19].low)==0x80000597
                 && read32(rdram,0x3A8780)==0x203A97C0 && read32(rdram,0x3A8784)==42;
+            const bool disc_call_sema=disc_rpc_binds==1 && !disc_rpc_calls && semaphores.size()==10 && address==initial_sp-672
+                && maximum==1 && initial==0 && option==0x3838E8 && context->pc==0x32EC68 && context->r[31].low==0x332AD0
+                && context->r[17].low==0x3A8780 && context->r[19].low==1 && read32(rdram,0x3A8784)==43;
             if (disc_bind_sema) ++disc_bind_semaphores;
-            if (attributes != 0 && !disc_bind_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -718,7 +726,7 @@ public:
                     || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8)
                     || (sounds_rpc_binds==1 && semaphores[id].option==0x3838D8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup))
+                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==(disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -924,6 +932,8 @@ public:
         return memory_[address];
     }
     std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
+        // Generated first search copies the owned result through the uncached EE alias.
+        if(disc_rpc_calls==1 && address>=0x203A8600 && address<=0x203A8618 && !(address&7))address-=0x20000000;
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
         std::uint64_t value;
@@ -1192,7 +1202,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
+    unsigned serviceOperations() const {return disc_rpc_calls+disc_rpc_binds+mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1435,7 +1445,34 @@ public:
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
     unsigned priority_changes = 0;
-    unsigned disc_bind_semaphores=0;
+    unsigned disc_bind_semaphores=0,disc_rpc_binds=0,disc_rpc_calls=0;
+    std::string local_disc_path;
+    void receiveDiscSearch(std::uint8_t*,R5900Context*);
+    bool disc_bind_supplied=false;
+    void supplyDiscBind(std::span<const std::uint8_t> bundle) {
+        const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A8780,0x80000009,0x433D0,0x441C8,0,0,0,0,0};
+        if(disc_bind_supplied || bundle.size()!=sizeof(reply) || std::memcmp(bundle.data(),reply.data(),sizeof(reply)))
+            throw std::runtime_error("Invalid disc-search bind evidence");
+        disc_bind_supplied=true;
+    }
+    void receiveDiscBind(std::uint8_t* rdram,R5900Context* context) {
+        const auto d=static_cast<std::uint32_t>(context->r[4].low);
+        if(iop_epoch!=1 || !post_sif.rpc_initialized || prior_iop_services_valid || context->pc!=0x32F028
+            || d!=initial_sp-736 || context->r[29].low!=d || context->r[5].low!=1 || semaphores.size()!=11
+            || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838D8)
+            throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,4> descriptor={0x203A97C0,0x1E640,64,0x44};
+        const std::array<std::uint32_t,9> packet={64,0,0x80000009,0,5,0x203A97C0,42,0x3A8780,0x80000597};
+        for(unsigned n=0;n<4;++n)if(read32(rdram,d+4*n)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned n=0;n<9;++n)if(read32(rdram,0x3A97C0+4*n)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,0x3A8780)!=0x203A97C0 || read32(rdram,0x3A8784)!=42 || read32(rdram,0x3A8788)!=10
+            || read32(rdram,0x3A87A4) || read32(rdram,0x3A8794))throw UnsupportedSyscall(0x77,context->pc);
+        // Validated boot-service lookup only. CDVDFSV boot entry/request is not executed here.
+        const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A8780,0x80000009,0x433D0,0x441C8,0,0,0,0,0};
+        for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+4*n,reply[n]);
+        deliverRpcEnd(rdram,context,0x3A8780,10,0x433D0,0x441C8);
+        ++disc_rpc_binds;++sif_dma_submissions;context->r[2].low=0x740001;
+    }
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;

@@ -1,4 +1,7 @@
 #include "module_service.h"
+#include "disc_native.h"
+#include "disc_metadata.h"
+void bt2_iop_disc(IopRuntime&,IopContext&);
 #include "sio2man_native.h"
 #include "mcman_native.h"
 #include "mcserv_native.h"
@@ -422,4 +425,47 @@ std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span
     if(mc_dma_submissions!=1 || mc_dma_polls!=1)throw std::runtime_error("MCSERV secondary DMA incomplete");
 
     ++mc_query_requests;return response;
+}
+
+std::uint32_t NativeIopService::callDiscSearch(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee,const std::string& path) {
+    if(epoch!=epoch_ || failed_ || disc_search_calls || input.size()!=300 || ee.size()!=32*1024*1024
+        || std::memcmp(input.data()+36,"\\DATA\\ZS2US.DIR;1",17) || input[53]
+        || input[292]!=0 || input[293]!=0x86 || input[294]!=0x3A || input[295] || input[296] || input[297] || input[298] || input[299])
+        throw std::runtime_error("Unsupported owned disc search request");
+    DiscMetadata disc(path);const auto metadata=disc.lookup("\\DATA\\ZS2US.DIR;1");
+    if(!metadata)throw std::runtime_error("Validated local directory index missing");
+    unsigned lba=0,size=0;std::memcpy(&lba,metadata->data(),4);std::memcpy(&size,metadata->data()+4,4);
+    if(lba!=0xE2A || size!=64)throw std::runtime_error("Disc revision/search metadata differs");
+    const auto saved=runtime.providers;
+    bool locked=false;unsigned locks=0,lookups=0;
+    try {
+        runtime.map(iop_disc_base,iop_disc_image);
+        definitions_.push_back({"boot:CDVDFSV.search",iop_disc_base,iop_disc_base+0x754,iop_disc_gp,iop_disc_image,
+            [](IopRuntime&){},bt2_iop_disc,[](const IopRuntime&){throw std::runtime_error("CDVDFSV boot residency not implemented");}});
+        for(unsigned n=0;n<input.size();++n)runtime.write(iop_disc_base+0x6498+n,input[n],1);
+        runtime.providers[{"cdvdman",50}]=[&](IopRuntime& rt,IopContext& c) {
+            const auto value=rt.read(c.get(5),4);
+            if(c.pc!=iop_disc_base+0x4B68 || c.get(4)!=0xFFFFFFF6 || (value!=0xFF && value!=0))throw std::runtime_error("Unexpected search mutex operation");
+            // Bounded serialized request: acquire the owned free search bit, then release it.
+            if(value==0xFF){if(locked || locks++)throw std::runtime_error("Search mutex already owned");locked=true;}
+            else {if(!locked || lookups!=1 || disc_dma_submissions!=1)throw std::runtime_error("Search release before completion");locked=false;}
+            return value;
+        };
+        runtime.providers[{"cdvdman",84}]=[&](IopRuntime& rt,IopContext& c) {
+            if(!locked || lookups++ || c.pc!=iop_disc_base+0x4BB0 || c.get(4)!=iop_disc_base+0x6498 || c.get(5)!=iop_disc_base+0x64BC || c.get(6))throw std::runtime_error("Unsupported layer/search destination");
+            for(unsigned n=0;n<32;++n)rt.write(c.get(4)+n,(*metadata)[n],1);
+            return 1u;
+        };
+        runtime.providers[{"sifman",7}]=[&](IopRuntime& rt,IopContext& c) {
+            if(c.pc!=iop_disc_base+0x4A3C || c.get(4)!=iop_disc_base+0x53B0 || c.get(5)!=1 || disc_dma_submissions || !locked || lookups!=1)throw std::runtime_error("Unexpected metadata DMA submit");
+            const std::array<unsigned,4> expected={iop_disc_base+0x6498,0x3A8600,36,0};
+            for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+n*4,4)!=expected[n])throw std::runtime_error("Metadata DMA descriptor differs");
+            for(unsigned n=0;n<36;++n)ee[0x3A8600+n]=static_cast<std::uint8_t>(rt.read(expected[0]+n,1));
+            ++disc_dma_submissions;return 0x750001u;
+        };
+        IopContext c;c.pc=iop_disc_base+0x754;c.set(4,0);c.set(5,iop_disc_base+0x6498);c.set(6,300);
+        c.set(28,iop_disc_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
+        if(c.pc!=IopRuntime::sentinel || c.get(2)!=iop_disc_base+0x5808 || runtime.read(c.get(2),4)!=1 || locked || locks!=1 || disc_dma_submissions!=1 || disc_dma_polls)throw std::runtime_error("Original search handler completion differs");
+        runtime.providers=saved;++disc_search_calls;return 1;
+    }catch(...){runtime.providers=saved;failed_=true;throw;}
 }

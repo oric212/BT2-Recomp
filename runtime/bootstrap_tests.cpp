@@ -1161,6 +1161,12 @@ int main() {
         require(stream.mode==before.mode && stream.commands==before.commands && stream.words==before.words);
         reject([&]{stream.consume(std::array<std::uint32_t,1>{0x81000404});});
         reject([&]{stream.consume(std::array<std::uint32_t,1>{0x01010404});});
+        PS2Runtime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
+        auto* disc_ram=disc_alias.memory().data();disc_alias.write64(disc_ram,0x3A8600,0x123456789ABCDEF0);
+        reject([&]{disc_alias.read64(disc_ram,0x203A8600);});disc_alias.disc_rpc_calls=1;
+        require(disc_alias.read64(disc_ram,0x203A8600)==0x123456789ABCDEF0);
+        reject([&]{disc_alias.read64(disc_ram,0x203A8620);});
+        reject([&]{disc_alias.read64(disc_ram,0x203A8601);});
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
