@@ -35,7 +35,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20 && argc != 21 && argc != 22 && argc != 23 && argc != 24) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20 && argc != 21 && argc != 22 && argc != 23 && argc != 24 && argc != 25) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
@@ -187,6 +187,10 @@ int main(int argc, char** argv) {
             std::array<std::uint8_t,56> evidence;capture.seekg(0);
             if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("EE thread-start evidence read failed");
             runtime.supplySoundThreadStart(evidence);
+        }
+        if(argc>=25) {
+            std::ifstream f(argv[24],std::ios::binary|std::ios::ate);if(!f || f.tellg()!=64)throw std::runtime_error("Invalid command bind bundle");
+            std::array<std::uint8_t,64> evidence;f.seekg(0);if(!f.read(reinterpret_cast<char*>(evidence.data()),64))throw std::runtime_error("Command bind read failed");runtime.supplyNcmdBind(evidence);
         }
         if(argc>=24)runtime.local_disc_path=argv[23];
         if(argc>=23) {
@@ -494,7 +498,7 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls+runtime.ncmd_ready_calls
                         && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
@@ -749,7 +753,8 @@ int main(int argc, char** argv) {
 #ifdef BT2_NATIVE_IOP
                 << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
-                << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
+                << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls
+                << ",\"ncmd_rpc_binds\":" << runtime.ncmd_rpc_binds << ",\"ncmd_bind_semaphores\":" << runtime.ncmd_bind_semaphores << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
                 << ",\"stop_ra\":" << GPR_U32(&context,31) << ",\"stop_s1\":" << GPR_U32(&context,17) << ",\"stop_s3\":" << GPR_U32(&context,19)
                 << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
                 << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)

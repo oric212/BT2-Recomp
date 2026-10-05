@@ -4,13 +4,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 
 ## Current status
 
-The optional EE probe executes original generated BT2 code through platform startup, fourteen module-load paths (thirteen resident IOP modules), two owned IOP heap allocations, bounded sound/DBCMAN initialization and the initial MCSERV exchanges. The absent-card query now completes through real native IOP code, timed waits, secondary SIF transfer and generated EE callback/cleanup. The generated filesystem path now completes the first disc-search bind and original CDVDFSV metadata handler, its 36-byte transfer, and generated EE copy/cleanup. **No game assets loaded, displayed frame or native audio playback.**
+The optional EE probe executes original generated BT2 code through platform startup, fourteen module-load paths (thirteen resident IOP modules), two owned IOP heap allocations, bounded sound/DBCMAN initialization and the initial MCSERV exchanges. The absent-card query now completes through real native IOP code, timed waits, secondary SIF transfer and generated EE callback/cleanup. The generated filesystem path completes the first disc-search bind, original CDVDFSV metadata handler and 36-byte transfer, then the command-service bind and original readiness handler with generated EE cleanup. **No game assets loaded, displayed frame or native audio playback.**
 
-Verified: MSVC builds, **15/15 CTests**, **116/116 capture tests**, **46/46 recompilation tests**, **13/13 IOP tooling tests**, and ten independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **15/15 CTests**, **122/122 capture tests**, **46/46 recompilation tests**, **13/13 IOP tooling tests**, and eleven independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-Execution now reaches a new **CDVDFSV command-service bind to 0x80000595**, RPC ID **44**, client **0x369A90**. The checked stop is CreateSema **selector 0x40 / PC 0x32EC68**, return **0x332814**. The [bounded disc-search scope](DISC_SEARCH_PLAN.md) completes the first lookup of `\DATA\ZS2US.DIR;1`: **LBA 0xE2A, size 64, result 1**, one actual native 36-byte secondary copy and generated cleanup. Three following reached entries are linked. The command/sector-read subsystem needs a separate request, destination and completion design; no successful sector or file-content read is inferred.
+Execution reaches the **first asynchronous sector request**, service **0x80000595**, client **0x369590**, RPC ID **46**, command **1**: **LBA 0xE2A / two 2048-byte sectors / destination 0x39DE80**. The checked stop is SIF submission **selector 0x77 / PC 0x32F028**. The [disc command scope](DISC_COMMAND_PLAN.md) completes the bind and original command-14 readiness result **2**, primary reply and generated cleanup. Independent PCSX2 readback matches all 4096 ISO bytes; **native sector completion remains unsupported**.
+
+Next: design owned **CDVDMAN shared read state and completion** before extending the native sector handler. Diagnostic original execution reaches a null workspace at **CDVDFSV +0xF4C**; initialization obtains that workspace through **SC(-14)**. Do not copy retail shared state or substitute a completed read. This extends beyond the completed bind/readiness scope. The [metadata scope](DISC_SEARCH_PLAN.md) remains complete: `\DATA\ZS2US.DIR;1`, **LBA 0xE2A, size 64, result 1**.
 
 The [timed query scope](IOP_TIMED_WAIT_PLAN.md) completes five 300-us delays, priority dispatch, five FIFO probes, five alarm registrations / four real callbacks, an owned **192-byte secondary copy / one poll**, primary result **-11**, and generated **FUN_0031DD60** completion. Independent isolated captures with both cards disabled verify the result and transport.
 
@@ -18,8 +20,8 @@ Remaining ownership: the SDRDRV helper is parked on a pending reverse EE bind to
 
 ## Key counts
 
-- **8,581** provisional EE map entries / **8,584** raw generated C++/header files; boundaries remain unverified. **Three additional reached entry bindings** linked this pass; these are not three restored gameplay functions.
-- Latest full checkpoint: **1,463 EE calls / 1,452 returns**, **41,861 native IOP instructions / 164 physical entry targets / twelve ordinary waiting workers plus the parked reverse-bind helper**.
+- **8,581** provisional EE map entries / **8,584** raw generated C++/header files; boundaries remain unverified. No additional EE entry bindings this pass; bind/readiness completion does not establish gameplay-function restoration.
+- Latest full checkpoint: **1,508 EE calls / 1,497 returns**, **41,953 native IOP instructions / 166 physical entry targets / twelve ordinary waiting workers plus the parked reverse-bind helper**.
 - **111 distinct EE functions entered / 107 completed** at the earlier unique-count checkpoint; updated distinct totals have not been measured. Call totals are execution events, not working-function counts.
 - **Fourteen module-load paths / thirteen resident modules**, two captured IOP allocations, four EE startup pools, four DBCMAN binds/commands, and completed initial sound/MCSERV exchanges. Module discovery/relocation counts are in the history.
 - Card query: **six DMA pairs / five timed FIFO probes**. No mounted-card filesystem support.

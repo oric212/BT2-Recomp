@@ -1,13 +1,14 @@
 #include "ps2_runtime_macros.h"
 #include <iostream>
 #include <algorithm>
+#include <source_location>
 
 namespace {
-void require(bool value) { if (!value) throw std::runtime_error("Bootstrap helper test failed"); }
-template<class Action> void reject(Action action) {
+void require(bool value,const std::source_location where=std::source_location::current()) { if (!value) {std::cerr<<"Failed assertion line "<<where.line()<<"\n";throw std::runtime_error("Bootstrap helper test failed");} }
+template<class Action> void reject(Action action,const std::source_location where=std::source_location::current()) {
     bool caught = false;
     try { action(); } catch (const std::runtime_error&) { caught = true; }
-    require(caught);
+    require(caught,where);
 }
 void return_leaf(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
     runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0,
@@ -475,6 +476,22 @@ int main() {
             require(dc.r[2].low==10 && disc.disc_bind_semaphores==1 && disc.semaphores[10].count==0
                 && disc.semaphores[10].maximum==1 && disc.semaphores[10].option==0x3838D8);
             reject([&]{disc.handleSyscall(dm,&dc,0);});
+        }
+        {
+            PS2Runtime disc;disc.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            auto* dm=disc.memory().data();R5900Context dc{};disc.initial_sp=0x1FFED60;
+            disc.disc_rpc_calls=1;disc.semaphores.resize(10);dc.pc=0x32EC68;dc.r[3].low=0x40;
+            dc.r[4].low=disc.initial_sp-608;dc.r[31].low=0x332814;dc.r[17].low=0x369590;dc.r[19].low=0xFFFFFFFF80000595;
+            disc.write32(dm,0x369594,44);
+            for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<unsigned>(dc.r[4].low)+i*4,std::array<unsigned,6>{144,1,0,0,1,0x3838D8}[i]);
+            dc.r[17].low=0x369A90;reject([&]{disc.handleSyscall(dm,&dc,0);});require(disc.ncmd_bind_semaphores==0);
+            dc.r[17].low=0x369590;disc.handleSyscall(dm,&dc,0);require(disc.ncmd_bind_semaphores==1 && dc.r[2].low==10);
+            reject([&]{disc.handleSyscall(dm,&dc,0);});
+            disc.semaphores.resize(10);disc.ncmd_rpc_binds=1;dc.r[4].low=disc.initial_sp-624;dc.r[31].low=0x332AD0;dc.r[19].low=1;
+            disc.write32(dm,0x369594,45);
+            for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<unsigned>(dc.r[4].low)+i*4,std::array<unsigned,6>{144,1,0,0,1,0x3838E8}[i]);
+            dc.r[31].low=0x332814;reject([&]{disc.handleSyscall(dm,&dc,0);});require(disc.semaphores.size()==10);
+            dc.r[31].low=0x332AD0;disc.handleSyscall(dm,&dc,0);require(dc.r[2].low==10 && disc.semaphores[10].option==0x3838E8);
         }
         context.r[3].low = 0x40;
         context.r[4].low = 0x600;

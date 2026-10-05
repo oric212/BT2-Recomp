@@ -114,6 +114,9 @@ public:
     unsigned sio2_card_sends=0,sio2_card_receives=0,sio2_card_fifo_packets=0;
     std::vector<std::uint32_t> sio2_card_controls;
     std::uint32_t sio2_command_status=0;
+    // One captured command-14 readiness profile; disabled outside that owned request.
+    bool disc_type_known=false;
+    unsigned disc_type_reads=0,disc_ready_status_reads=0;
     unsigned steps=0,access_width=0;
     std::uint32_t access_value=0;
     std::string access_kind;
@@ -132,6 +135,8 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(size==1 && p==0x1F402005 && disc_type_known && executing_pc==0x1A3A38 && disc_type_reads==2 && !disc_ready_status_reads){++disc_ready_status_reads;return 0x4C;}
+        if(size==1 && p==0x1F40200F && disc_type_known && ((executing_pc==0x1A3B1C && disc_type_reads==0) || (executing_pc==0x1A3A34 && disc_type_reads==1))){++disc_type_reads;return 0x14;}
         if(size==4 && abi_read_only_words.contains(p))return abi_read_only_words.at(p);
         if(size==2 && (p==0x1F900344 || p==0x1F900744)) {
             if(p==0x1F900344 && spu2_fifo_halfwords==8 && !spu2_io_status_reads && spu2_configuration.at(0x1F90019A)==0x8010

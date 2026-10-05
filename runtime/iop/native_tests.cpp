@@ -10,6 +10,19 @@ void bt2_iop_synthetic(IopRuntime&,IopContext&);
 void check(bool v,const std::source_location where=std::source_location::current()) {if(!v)throw std::runtime_error("IOP synthetic result differs at line "+std::to_string(where.line()));}
 int main() {
     try {
+        {
+            auto rejects=[](auto action){bool rejected=false;try{action();}catch(const std::runtime_error&){rejected=true;}check(rejected);};
+            IopRuntime d;d.executing_pc=0x1A3B1C;
+            rejects([&]{d.read(0xBF40200F,1);});
+            d.disc_type_known=true;rejects([&]{d.read(0xBF40200F,4);});
+            d.executing_pc=0x1A3A34;rejects([&]{d.read(0xBF40200F,1);});
+            d.executing_pc=0x1A3B1C;check(d.read(0xBF40200F,1)==0x14);
+            rejects([&]{d.read(0xBF40200F,1);});
+            d.executing_pc=0x1A3A34;check(d.read(0xBF40200F,1)==0x14);
+            d.executing_pc=0x1A3A38;check(d.read(0xBF402005,1)==0x4C);
+            rejects([&]{d.read(0xBF402005,1);});
+            d.disc_type_known=false;d.disc_type_reads=0;d.executing_pc=0x1A3B1C;rejects([&]{d.read(0xBF40200F,1);});
+        }
         IopRuntime rt;rt.map(0x20000,std::vector<std::uint8_t>(32));
         auto context=[](unsigned offset){IopContext c;c.pc=0x10000+offset;c.set(31,IopRuntime::sentinel);c.set(8,IopRuntime::sentinel);return c;};
         auto c=context(0);bt2_iop_synthetic(rt,c);check(c.get(2)==7 && c.get(3)==9 && !c.get(0));

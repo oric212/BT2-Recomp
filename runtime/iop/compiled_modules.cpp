@@ -469,3 +469,28 @@ std::uint32_t NativeIopService::callDiscSearch(unsigned epoch,std::span<const st
         runtime.providers=saved;++disc_search_calls;return 1;
     }catch(...){runtime.providers=saved;failed_=true;throw;}
 }
+
+std::uint32_t NativeIopService::callDiscReady(unsigned epoch) {
+    if(epoch!=epoch_ || failed_ || disc_search_calls!=1 || disc_ready_calls || runtime.disc_type_known
+        || runtime.read(iop_disc_base+0x6088,4))throw std::runtime_error("Unsupported owned disc readiness request");
+    // One serialized readiness request owns acquire -> state queries -> release.
+    // SC(-3)/SC(-12) ignore param; residual stack bytes are not input state.
+    const auto saved=runtime.providers;unsigned stage=0;
+    try {
+        runtime.disc_type_known=true;
+        runtime.providers[{"cdvdman",50}]=[&](IopRuntime& rt,IopContext& c) {
+            if(c.pc!=iop_disc_base+0x4B68)throw std::runtime_error("Disc readiness import differs");
+            const auto value=c.get(4)==0xFFFFFFF6?rt.read(c.get(5),4):0u;
+            if(stage==0 && c.get(4)==0xFFFFFFF6 && value==14){++stage;return 14u;}
+            if(stage==1 && c.get(4)==0xFFFFFFFD){++stage;return 0u;}
+            if(stage==2 && c.get(4)==0xFFFFFFF4){++stage;return 1u;}
+            if(stage==3 && c.get(4)==0xFFFFFFF6 && value==0){++stage;return 0u;}
+            throw std::runtime_error("Unsupported disc readiness state transition");
+        };
+        IopContext c;c.pc=iop_disc_base+0x3ABC;c.set(4,14);c.set(5,iop_disc_base+0x6088);c.set(6,0);
+        c.set(28,iop_disc_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
+        if(c.pc!=IopRuntime::sentinel || c.get(2)!=iop_disc_base+0x5830 || runtime.read(c.get(2),4)!=2
+            || stage!=4 || runtime.disc_type_reads!=2 || runtime.disc_ready_status_reads!=1)throw std::runtime_error("Original readiness handler completion differs");
+        runtime.providers=saved;runtime.disc_type_known=false;++disc_ready_calls;return 2;
+    }catch(...){runtime.providers=saved;runtime.disc_type_known=false;failed_=true;throw;}
+}
