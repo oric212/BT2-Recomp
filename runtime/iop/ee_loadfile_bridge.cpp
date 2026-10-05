@@ -63,15 +63,16 @@ void PS2Runtime::receiveHeapBind(std::uint8_t* rdram,R5900Context* context) {
 
 void PS2Runtime::receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
-    if(!heap_allocation_supplied || heap_calls || heap_binds!=1 || native_module_loads!=13 || !native_iop || iop_epoch!=1
-        || prior_iop_services_valid || context->r[29].low!=d || d!=initial_sp-528 || context->r[5].low!=2
+    const bool second=heap_calls==1 && heap_frees==1 && texture_gif.phase==8;
+    if(!heap_allocation_supplied || (!second && heap_calls) || heap_binds!=1 || native_module_loads!=(second?14u:13u) || !native_iop || iop_epoch!=1
+        || prior_iop_services_valid || context->r[29].low!=d || d!=initial_sp-(second?432:528) || context->r[5].low!=2
         || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1 || semaphores[7].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
     const std::array<std::uint32_t,8> desc={0x3AC8C0,0x48480,4,0,0x203A97C0,0x1E640,64,0x44};
-    const std::array<std::uint32_t,14> packet={0x440,0x48480,0x8000000A,0,5,0x203A97C0,23,0x3AC840,1,4,0x3AC880,4,1,0x48438};
+    const std::array<std::uint32_t,14> packet={0x440,0x48480,0x8000000A,0,5,0x203A97C0,second?26u:23u,0x3AC840,1,4,0x3AC880,4,1,0x48438};
     for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
-    if(read32(rdram,0x3AC8C0)!=0x360 || read32(rdram,0x3AC840)!=0x203A97C0 || read32(rdram,0x3AC844)!=23
+    if(read32(rdram,0x3AC8C0)!=(second?0x81800u:0x360u) || read32(rdram,0x3AC840)!=0x203A97C0 || read32(rdram,0x3AC844)!=(second?26u:23u)
         || read32(rdram,0x3AC848)!=7 || read32(rdram,0x3AC854)!=0x48480 || read32(rdram,0x3AC864)!=0x48438)
         throw UnsupportedSyscall(0x77,context->pc);
     const auto allocated=native_iop->allocateBootHeap(iop_epoch,read32(rdram,0x3AC8C0));

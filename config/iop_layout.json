@@ -1,0 +1,10 @@
+{
+  "description": "Authored native placements, not retail addresses. Reserve captured heap CE500..14FD00 and workers from 1E0000.",
+  "modules": {
+    "MODSESQ2.IRX": "0x180000",
+    "CDVDSTM.IRX": "0x188000",
+    "SOUNDS.IRX": "0x150000",
+    "CRI_ADXI.IRX": "0x168000",
+    "FILEIO": "0x190000"
+  }
+}

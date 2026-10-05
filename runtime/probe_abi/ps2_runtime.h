@@ -161,7 +161,7 @@ public:
                 throw UnsupportedSyscall(selector,context->pc);
             ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
         }
-        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && !heap_calls
+        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8))
             && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
             && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
@@ -605,10 +605,12 @@ public:
                 && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
                     || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
                     || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
+            const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
+                && semaphores.size()==7 && address==initial_sp-288 && maximum==1 && initial==0 && option==0x3838E8;
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
-            if (attributes != 0 && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }

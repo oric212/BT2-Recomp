@@ -22,3 +22,12 @@ python tools/capture_ee/verify_second_heap.py
 ```
 
 This verifier confirms the current conflict and does not provide a native success bundle. Disc reads, asset loading, audio playback and presentation remain unimplemented.
+
+
+## Verified completion (2026-10-05)
+
+The initial conflict was broader than FILEIO: MODSESQ2, CDVDSTM, SOUNDS and CRI_ADXI also occupied the captured heap interval. Regenerated those images at authored bases 0x180000, 0x188000, 0x150000 and 0x168000; FILEIO is now 0x190000. Source/image provenance, all fourteen persistent translations, heap interval and reserved stacks are checked by `tools/iop/verify_layout.py`. Each relocated resident passes its existing independent code/data/BSS/worker comparison after address normalization.
+
+The first allocation/copy/nonresident module/free lifecycle remains tested. The second allocation requires that completed lifecycle, exact size 0x81800, fresh epoch and thirteen residents. Overlap is rejected before service memory mutation or instruction execution. The actual FILEIO handler executes fifty additional IOP instructions, returns 0xCE500 and the real generated RPC_END/cleanup completes. Independent return/result checks pass. Allocated contents remain undefined; no general allocator behavior is inferred.
+
+`verify_second_heap.py --native work/bt2-generation/entry-stop.json` now validates completion rather than requiring the obsolete conflict. Final checkpoint 983 calls / 975 returns, 31,001 IOP instructions. Next scope: [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md). The earlier boundary text above is retained as historical evidence.

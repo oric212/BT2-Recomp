@@ -6,19 +6,21 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **100/100 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **100/100 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **960 EE calls / 954 returns**, **30,951 IOP instructions / 128 physical entry targets / twelve waiting workers**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **983 EE calls / 975 returns**, **31,001 IOP instructions / 128 physical entry targets / twelve waiting workers**.
 
 The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
 
 The third normal GIF request completes: packed A+D retains PABE/TEX0 state without drawing. Disabled Timer 1 setup, main-thread priority 2, generated EE heap helpers and four pool allocations complete. The four pool pointers independently match retail captures; seven EndOfHeap queries and eight lock/unlock pairs execute.
 
-Current stop: **CreateSema (0x40) at EE PC 0x32EC68**, in the RPC path for a **second IOP heap allocation of 0x81800 bytes**. Retail returns 0xCE500, whose range ends at 0x14FD00 and overlaps our translated FILEIO image at 0x140000. Native request completion remains blocked. Follow [IOP heap capacity/layout](IOP_HEAP_CAPACITY_PLAN.md); accepting this request requires resolving ownership, not another success default.
+The second IOP allocation now completes through real translated FILEIO and generated EE RPC cleanup: **0x81800 bytes at 0xCE500**, independently matching retail. Five native images were relocated out of that heap interval; the four resident modules still match their normalized retail startup captures. All module, heap and stack placements pass provenance/overlap checks. Only the two captured allocations are supported.
 
-The [buffer-module scope](MODULE_BUFFER_STARTUP_PLAN.md) and [heap scope](IOP_HEAP_STARTUP_PLAN.md) support only the first validated allocation/copy/load/free lifecycle. General allocation, arbitrary buffer modules, file reads, physical DMA timing, assets and audio playback remain incomplete.
+Current stop: **SIF submission (0x77) at EE PC 0x32F028**, binding **SDRDRV service 0x80000701**, client 0x3A5C80, RPC ID 27. Follow [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md): native server registration exists, but worker request delivery and sound command execution are not yet implemented. This is a new sound RPC ownership/execution scope. No assets loaded, displayed frame or audio playback.
+
+The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
 
 ## Key counts
 

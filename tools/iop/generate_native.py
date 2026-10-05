@@ -67,13 +67,14 @@ def emit(image,base,ranges,imports=(),seeds=(),symbol='bt2_iop_module'):
     return '\n'.join(lines)+'\n'
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('module',type=Path);parser.add_argument('--disc',type=Path,required=True);parser.add_argument('--base',type=lambda x:int(x,0),default=0x10000);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--symbol',default='bt2_iop_module');parser.add_argument('--prefix',default='iop_module')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('module',type=Path);parser.add_argument('--disc',type=Path,required=True);parser.add_argument('--base',type=lambda x:int(x,0),default=None);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--symbol',default='bt2_iop_module');parser.add_argument('--prefix',default='iop_module')
     args=parser.parse_args()
     if not args.symbol.isidentifier() or not args.prefix.isidentifier() or not args.symbol.isascii() or not args.prefix.isascii():raise ValueError('Invalid native symbol/prefix')
     root=Path(__file__).resolve().parents[2];out=args.output.resolve()
     if not out.is_relative_to(root/'work/iop'):raise ValueError('Native IRX output must stay under ignored work/iop/')
     data=args.module.read_bytes()
     if data!=disc_image(args.disc,(args.module.name.upper()+';1').encode()):raise ValueError('IRX/disc mismatch')
+    if args.base is None:args.base=int(json.loads((root/'config/iop_layout.json').read_text(encoding='utf-8'))['modules'].get(args.module.name.upper(),'0x10000'),0)
     report=inspect(data);image=relocate(data,report,args.base);source=emit(image,args.base,report['code_ranges'],report['imports'],{r['start'] for r in report['provisional_functions']},symbol=args.symbol)
     out.parent.mkdir(parents=True,exist_ok=True);out.write_text(source,encoding='utf-8');out.with_suffix('.bin').write_bytes(image)
     exports='\n'.join(f'rt.export_bounds[{args.base+t["address"]}u]={len(t["slots"])}u;' for t in report['exports'])

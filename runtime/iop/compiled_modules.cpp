@@ -208,18 +208,22 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
 
 
 std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
-    if(epoch!=epoch_ || failed_ || boot_heap_allocations || size!=0x360 || residents.size()!=13)
+    const bool second=boot_heap_allocations==1 && boot_heap_frees==1 && buffer_loads==1 && size==0x81800;
+    if(epoch!=epoch_ || failed_ || (!second && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
         throw std::runtime_error("Unsupported boot IOP heap allocation");
+    // Reject conflicting ownership before touching service input or executing code.
+    for(auto [lo,hi]:runtime.ranges)if(lo<0xCE500+((size+255)&~255u) && 0xCE500<hi)
+        throw std::runtime_error("Captured IOP heap overlaps native ownership");
     try {
         // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
-        runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        if(!second) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
         definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
-            iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}});
+            iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}}); }
         runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
-        runtime.providers[{"sysmem",4}]=[this,size](IopRuntime& rt,IopContext& c) {
-            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations)
+        runtime.providers[{"sysmem",4}]=[this,size,second](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(second?1u:0u))
                 throw std::runtime_error("Unsupported native AllocSysMemory request");
-            // Captured first block; 256-byte rounding. Other allocations/modes remain checked failures.
+            // Two independently captured allocations reuse the released address; 256-byte rounding.
             rt.map(0xCE500,std::vector<std::uint8_t>((size+255)&~255u));
             ++boot_heap_allocations;return 0xCE500u;
         };

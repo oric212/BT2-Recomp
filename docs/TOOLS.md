@@ -481,7 +481,7 @@ The optional native targets now require these additional locally generated sourc
 python tools/iop/generate_native.py rom/IRX/LIBSD.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x90000 --symbol bt2_iop_libsd --prefix iop_libsd --output work/iop/libsd_native.cpp
 python tools/iop/generate_native.py rom/IRX/SDRDRV.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xA0000 --symbol bt2_iop_sdrdrv --prefix iop_sdrdrv --output work/iop/sdrdrv_native.cpp
 python tools/iop/generate_native.py rom/IRX/MODHSYN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xB0000 --symbol bt2_iop_modhsyn --prefix iop_modhsyn --output work/iop/modhsyn_native.cpp
-python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xD0000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
+python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x180000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/modsesq2-stop.json --modsesq2
 ```
 
@@ -495,9 +495,9 @@ The direct initial poll publication now includes DPCR1/2, using BF80 for their p
 Generate these supplied local sources before building the optional native targets:
 
 ```powershell
-python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xE0000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
-python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xF0000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
-python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x110000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
+python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x188000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
+python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x150000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
+python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x168000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/cri-adxi-stop.json --cri-adxi
 ```
 
@@ -578,3 +578,10 @@ Append the ignored 224-byte texture bundle after heap-allocation.bin in the opti
 Map preparation additionally admits one-word zero gaps after BEQ zero,zero and its non-control delay slot, with no checked direct edge into a gap and no unknown indirect/coprocessor branch. File-backed extent, size, range accounting and overlap quarantine remain required. The map records padding provenance and remains provisional. Regeneration preserved all previously selected raw-function hashes; selection provenance was refreshed only after that equality check.
 
 Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_second_heap.py` to inspect the second IOP request. The verifier checks return/size/client/source identity and the conflicting FILEIO placement. It intentionally supplies no allocation success bundle. See IOP_HEAP_CAPACITY_PLAN.md before changing ownership.
+
+
+## Checked second heap layout
+
+`config/iop_layout.json` records authored translation placements for the five images moved out of the captured second heap. The native generator uses those defaults when `--base` is omitted; explicit overrides remain available for experiments. Regenerate moved images, then run `python tools/iop/verify_layout.py` before building. The checker verifies image/source hashes, all fourteen translated images, the reserved heap interval and worker/call/argument stack region for overlap and RAM bounds. The embedded nonresident image is released before heap reuse and is not a persistent placement.
+
+`python tools/capture_ee/verify_second_heap.py --native work/bt2-generation/entry-stop.json` compares the real translated handler result and lifecycle. The earlier embedded-module checker compares residual freed code only before heap reuse: after reuse, its bytes are undefined and are not historical completion evidence. Native lifecycle tests still independently verify its earlier execution/release. Arbitrary allocator requests remain rejected.

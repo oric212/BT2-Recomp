@@ -12,7 +12,7 @@ def main():
  row=next(r for r in inventory(image)['entries'] if r['name']=='FILEIO');data=image[row['offset']:row['offset']+row['size']]
  r=inspect(data)
  if r['name']!='FILEIO_service' or r['sha256']!='270c6408794d7817c5e016dc7f0fba6df4e93db6cb31058dec480fd8270cdb42':raise ValueError('FILEIO identity differs')
- base=0x140000;memory=relocate(data,r,base);symbol='bt2_iop_fileio_boot';prefix='iop_fileio_boot';out=root/'work/iop/fileio_boot_native.cpp'
+ base=int(json.loads((root/'config/iop_layout.json').read_text(encoding='utf-8'))['modules']['FILEIO'],0);memory=relocate(data,r,base);symbol='bt2_iop_fileio_boot';prefix='iop_fileio_boot';out=root/'work/iop/fileio_boot_native.cpp'
  source=emit(memory,base,r['code_ranges'],r['imports'],{f['start'] for f in r['provisional_functions']},symbol=symbol)
  out.write_text(source,encoding='utf-8');out.with_suffix('.bin').write_bytes(memory)
  exports='\n'.join(f'rt.export_bounds[{base+t["address"]}u]={len(t["slots"])}u;' for t in r['exports'])

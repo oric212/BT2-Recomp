@@ -49,7 +49,7 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 
 ## Repository workflow
 
-Current next step: resolve the bounded [second IOP allocation and memory layout](IOP_HEAP_CAPACITY_PLAN.md). Initial VIF, repeated GS setup, a third GIF configuration packet and generated EE pool allocations are verified. Fourteen module-load RPCs complete with thirteen residents. Arbitrary heap allocation, sound playback, disc sectors, assets and presentation remain incomplete. Follow [disc-streaming scope](CDVD_STREAMING_PLAN.md) when sector requests are reached. Controller workers remain parked on owned Vblank events without a timing producer.
+Current next step: implement bounded [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md). The [second IOP allocation and memory layout](IOP_HEAP_CAPACITY_PLAN.md) is verified. Initial VIF, repeated GS setup, a third GIF configuration packet and generated EE pool allocations are verified. Fourteen module-load RPCs complete with thirteen residents. Arbitrary heap allocation, sound playback, disc sectors, assets and presentation remain incomplete. Follow [disc-streaming scope](CDVD_STREAMING_PLAN.md) when sector requests are reached. Controller workers remain parked on owned Vblank events without a timing producer.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 
@@ -60,4 +60,4 @@ Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the resu
 
 ### Current subsystem handoff
 
-The first owned heap/module-buffer lifecycle completes. Bounded [VIF startup](VIF_STARTUP_PLAN.md) and repeated GS setup complete. The bounded [GS texture-state startup](GS_TEXTURE_STARTUP_PLAN.md) completes, followed by generated EE pool allocation. The second IOP request has a concrete ownership conflict: follow [IOP heap capacity/layout](IOP_HEAP_CAPACITY_PLAN.md). Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.
+The first owned heap/module-buffer lifecycle completes. Bounded [VIF startup](VIF_STARTUP_PLAN.md) and repeated GS setup complete. The bounded [GS texture-state startup](GS_TEXTURE_STARTUP_PLAN.md) completes, followed by generated EE pool allocation. The second IOP request completes after verified relocation of conflicting native images. Follow [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md) at the new sound-service bind boundary. Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.
