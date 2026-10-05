@@ -63,12 +63,45 @@ def has_tail_nop_gap(candidate, metadata, data):
     return True
 
 
+def has_branch_nop_gaps(candidate, metadata, data):
+    """Accept isolated unreachable NOPs after BEQ zero,zero plus its delay slot."""
+    start,end=candidate['start'],candidate['end_exclusive']
+    try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
+    except (ValueError,TypeError):return False
+    if start%4 or end%4 or end-start>0x5000 or len(spans)<2 or spans[0][0]!=start or spans[-1][1]!=end:return False
+    if any(a%4 or b%4 or b<=a for a,b in spans):return False
+    if any(right[0]!=left[1]+4 for left,right in zip(spans,spans[1:])):return False
+    gaps={b for a,b in spans[:-1]}
+    if candidate['body_size']!=end-start-4*len(gaps):return False
+    sections=[x for x in metadata['sections'] if x['name']=='.text' and x['flags']&4 and x['occupies_file_bytes'] and x['address']<=start<end<=x['address']+x['size']]
+    if len(sections)!=1:return False
+    offset=sections[0]['file_offset']+start-sections[0]['address']
+    if offset<0 or offset+end-start>len(data):return False
+    def word(address):return struct.unpack_from('<I',data,offset+address-start)[0]
+    def control(ins):
+        op=ins>>26
+        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9)) or (op in (16,17,18) and (ins>>21)&31>=8)
+    for gap in gaps:
+        if gap-start<8 or word(gap)!=0 or word(gap-8)&0xFFFF0000!=0x10000000 or control(word(gap-4)):return False
+        immediate=word(gap-8)&65535;immediate=immediate-65536 if immediate&32768 else immediate
+        target=gap-4+immediate*4
+        if target in gaps or not start<=target<end:return False
+    for address in range(start,end,4):
+        ins=word(address);op=ins>>26
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008) or (op in (16,17,18) and (ins>>21)&31>=8):return False
+        if op in (1,4,5,6,7,20,21,22,23):
+            immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
+            if address+4+immediate*4 in gaps:return False
+        elif op in (2,3) and (((address+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)) in gaps:return False
+    return True
+
+
 def select_candidates(report, metadata, max_size=0x5000, data=None):
     rows, excluded = [], []
     for candidate in report["functions"]:
         start, end = candidate["start"], candidate["end_exclusive"]
         reason = None
-        padding = data is not None and has_tail_nop_gap(candidate, metadata, data)
+        padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data))
         if not padding and (not candidate["contiguous_aligned"] or start % 4 or end % 4 or end <= start or candidate["body_size"] != end - start):
             reason = "noncontiguous_or_invalid"
         elif not any(section["name"] == ".text" and section["flags"] & 4 and section["occupies_file_bytes"]
@@ -128,6 +161,7 @@ def main():
                 "excluded_counts": dict(Counter(row["reason"] for row in excluded)), "excluded": excluded,
                 "nop_padding_candidates": [row["start"] for row in report["functions"]
                     if has_tail_nop_gap(row, metadata, data)],
+                "branch_nop_padding_candidates": [row["start"] for row in report["functions"] if has_branch_nop_gaps(row,metadata,data)],
                 "max_function_bytes": 0x5000, "limitations": "Boundaries are provisional. Upstream may discover additional functions. No VU map or overlay assumed."}
     path.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Prepared {len(selected)} provisional EE functions; quarantined {len(excluded)}. Map: {path}")

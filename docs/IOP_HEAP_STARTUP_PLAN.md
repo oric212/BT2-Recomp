@@ -24,3 +24,7 @@ Generated startup reaches LOADFILE operation 6 for the copied buffer. Follow [me
 ## First source-block cleanup verified
 
 After the embedded module's nonresident return, generated FUN_00336EC8/FUN_00336E50 requests heap operation 2 for the owned 0xCE500 block. Unique retail return at 0x320650 records result 0. The translated FILEIO handler executes 49 further IOP instructions, invokes a scoped FreeSysMemory provider once and relinquishes the full rounded 0x400-byte source range. Stale epochs, wrong pointers, repeated free and accesses to released ownership reject. This completes only the first allocation/copy/load/free lifecycle; general allocation/free and FILEIO boot/worker execution remain unsupported. Continue at VIF_STARTUP_PLAN.md.
+
+## Later capacity handoff (2026-10-05)
+
+After the completed first lifecycle, VIF/GS setup and generated EE pool allocation, a second request asks for 0x81800 bytes. Retail reuses 0xCE500; that larger interval overlaps the authored translated FILEIO placement. See [capacity/layout plan](IOP_HEAP_CAPACITY_PLAN.md). The original first-allocation/free checks remain intact; native does not yet accept the second request.

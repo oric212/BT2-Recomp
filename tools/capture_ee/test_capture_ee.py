@@ -2,11 +2,21 @@ import struct
 import unittest
 from capture_ee import export_rva, instrument, TRAP, HANDLER, MARKER, capture_trap
 from capture_ee import vif_startup_stub,FRESH_BIND_STUB,EXPECTED_SHA
-from capture_ee import graph_csr_stub,graph_startup_stub
+from capture_ee import graph_csr_stub,graph_startup_stub,texture_stub,TEXTURE_POINTS
 from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_texture_completion_skips_busy_reads(self):
+        words=struct.unpack('<'+str(len(texture_stub('texture-complete'))//4)+'I',texture_stub('texture-complete'))
+        self.assertEqual(words[0],0x30580100)
+        early=2+(words[1]&65535)
+        self.assertEqual(words[early],0x30420100)
+        self.assertEqual((words[early+1]&0x3FFFFFF)<<2,0x28B9A0)
+        for point,(address,marker) in TEXTURE_POINTS.items():
+            self.assertEqual(capture_trap(point)[0],address)
+            self.assertEqual(capture_trap(point)[2],marker)
+
     def test_second_csr_hook_preserves_the_first_call(self):
         words=struct.unpack('<'+str(len(graph_csr_stub())//4)+'I',graph_csr_stub())
         self.assertEqual(words[:2],(0x3C1801FF,0x3718ECF0))

@@ -239,6 +239,7 @@ def main():
     parser.add_argument('--post-cd-captures',type=Path)
     parser.add_argument('--loadfile-captures',type=Path)
     parser.add_argument('--heap-bind-capture',type=Path,help='Guarded IOP heap bind capture directory; requires LOADFILE evidence and explicit local disc.')
+    parser.add_argument('--texture-startup-captures',action='store_true',help='Verify local texture GIF startup captures and append checked evidence; requires heap copy.')
     parser.add_argument('--heap-copy-capture',type=Path,help='Guarded first heap transfer/completion capture; requires allocation evidence.')
     parser.add_argument('--heap-allocation-capture',type=Path,help='Guarded first heap allocation capture; requires heap bind evidence.')
     parser.add_argument('--heap-disc',type=Path,help='User-local disc for heap-service/IOPRP identity validation.')
@@ -465,6 +466,12 @@ def main():
         if not heap_allocation_bundle:raise ValueError('Heap copy requires allocation evidence')
         from verify_heap_copy import verify as verify_heap_copy
         verify_heap_copy(ROOT,args.heap_copy_capture,args.heap_disc,heap_allocation_bundle)
+    texture_bundle=None
+    if args.texture_startup_captures:
+        if not args.heap_copy_capture:raise ValueError('Texture startup requires heap copy evidence')
+        from verify_texture_startup import verify as verify_texture
+        texture_bundle=folder/'texture-startup.bin'
+        verify_texture(ROOT,texture_bundle)
     kernel_generation = None
     if timer_capture:
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py")])
@@ -537,6 +544,7 @@ def main():
             entry_command.append(str(bundle))
         if heap_bundle:entry_command.append(str(heap_bundle))
         if heap_allocation_bundle:entry_command.append(str(heap_allocation_bundle))
+        if texture_bundle:entry_command.append(str(texture_bundle))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",

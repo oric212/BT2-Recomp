@@ -15,7 +15,7 @@ public:
     GsCommandSink():vram_(1024*1024) {}
     void resetDrawingState() {
         // CSR reset establishes SCANMSK/FBA/PABE defaults. Do not clear VRAM.
-        registers={};drawing_reset_=true;
+        registers={};tex0={};pabe=0;drawing_reset_=true;
     }
     static std::size_t address(unsigned page,unsigned width,unsigned x,unsigned y,bool depth) {
         // PSMCT32/PSMZ24: 64x32 pages, 8x8 blocks. Public GS bit layout,
@@ -31,6 +31,7 @@ public:
     Word word(std::size_t index) const {return vram_.at(index);}
     void seedForTest(std::size_t index,std::uint32_t value) {vram_.at(index)={value,UINT32_MAX};}
     void consume(std::span<const std::uint8_t> packet) {
+        if(packet.size()!=240) {consumeConfiguration(packet);return;}
         auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,packet.data()+offset,8);return v;};
         auto reject=[](){throw std::runtime_error("Unsupported GS sprite packet/state");};
         if(!drawing_reset_ || packet.size()!=240)reject();
@@ -71,6 +72,28 @@ public:
         }
         registers=v;++packets;++sprites;
     }
+    void consumeConfiguration(std::span<const std::uint8_t> packet) {
+        auto reject=[](){throw std::runtime_error("Unsupported GS configuration packet");};
+        if(!drawing_reset_ || packet.size()<32 || packet.size()%16)reject();
+        auto read=[&](std::size_t offset) {std::uint64_t value;std::memcpy(&value,packet.data()+offset,8);return value;};
+        auto tag=read(0);const auto loops=tag&32767;
+        // Packed, one A+D register, EOP, no PRE/primitive side effect.
+        if(tag!=(0x1000000000008000ULL|loops) || read(8)!=14 || loops!=(packet.size()-16)/16)reject();
+        auto next_tex0=tex0;auto next_pabe=pabe;
+        for(std::size_t i=16;i<packet.size();i+=16) {
+            const auto value=read(i),reg=read(i+8);
+            if(reg==0x49)next_pabe=value&1;
+            else if(reg==8 || reg==9) {
+                // CLD requires a CLUT transaction, not a register-only update.
+                if(value>>61)reject();
+                next_tex0[reg-8]=value;
+            } else reject();
+        }
+        tex0=next_tex0;pabe=next_pabe;++packets;++configuration_packets;
+    }
+    std::array<std::uint64_t,2> tex0{};
+    std::uint64_t pabe=0;
+    unsigned configuration_packets=0;
     unsigned packets=0,sprites=0;
     std::uint64_t pixels=0;
     std::array<std::uint64_t,14> registers{};

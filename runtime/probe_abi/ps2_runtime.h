@@ -15,6 +15,7 @@
 #include "gif_dma_staging.h"
 #include "post_reset_sif.h"
 #include "vif_startup.h"
+#include "texture_gif_startup.h"
 #ifdef BT2_NATIVE_IOP
 #include <memory>
 class NativeIopService;
@@ -299,7 +300,7 @@ public:
         if(code==0 && selector==2 && gs_crt_supplied_) {
             if(graph_startup_phase==3 && context->pc==0x32E868 && context->r[4].low==1 && context->r[5].low==2
                 && context->r[6].low==1 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005D0) {
-                graph_startup_phase=4;context->r[2].low=0;return;
+                graph_startup_phase=4;graph_halfword_checkpoint=halfword_writes;context->r[2].low=0;return;
             }
             if(gs_imr_writes!=1 || gs_crt_calls || context->pc!=0x32E868 || context->r[4].low!=1
                     || context->r[5].low!=2 || context->r[6].low!=1 || context->r[29].low!=initial_sp-608
@@ -360,10 +361,12 @@ public:
         }
         if (code == 0 && selector == 0x29) {
             // Only the main thread is runnable; created threads remain dormant.
-            if (!thread_initialized || current_thread_id != 1 || context->r[4].low != 1 || context->r[5].low != 1)
+            const bool startup_priority_two=texture_gif.phase==8 && timer1_setup_writes==1 && context->pc==0x32EAF8
+                && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005EC && context->r[5].low==2;
+            if (!thread_initialized || current_thread_id != 1 || context->r[4].low != 1 || (context->r[5].low != 1 && !startup_priority_two))
                 throw UnsupportedSyscall(selector, context->pc);
             context->r[2].low = main_thread_priority;
-            main_thread_priority = 1;
+            main_thread_priority = startup_priority_two?2u:1u;
             ++priority_changes;
             return;
         }
@@ -558,6 +561,10 @@ public:
             heap_initialized = true;
             return;
         }
+        if(code==0 && selector==0x3E) {
+            if(!thread_initialized || !heap_initialized || current_thread_id!=1)throw UnsupportedSyscall(selector,context->pc);
+            context->r[2].low=heap_end;++heap_end_queries;return;
+        }
         if (code == 0 && selector == 0x40) {
             const auto address = static_cast<std::uint32_t>(context->r[4].low);
             checkMemory(rdram, address, 24);
@@ -669,11 +676,13 @@ public:
                 if (!semaphore.count) throw UnsupportedSyscall(selector, context->pc);
                 --semaphore.count;
                 ++semaphore_waits;
+                if(context->pc==0x32ECA8 && context->r[31].low==0x3252F0)++ee_heap_lock_waits;
             } else {
                 // No waiting threads exist in this bounded model. Overflow is unverified.
                 if (semaphore.count >= semaphore.maximum) throw UnsupportedSyscall(selector, context->pc);
                 ++semaphore.count;
                 ++semaphore_signals;
+                if(context->pc==0x32EC88 && texture_gif.phase==8 && id==read32(rdram,0x36AB58))++ee_heap_lock_signals;
             }
             context->r[2].low = id;
             return;
@@ -1073,7 +1082,12 @@ public:
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
     VifStartup vif_startup;
+    TextureGifStartup texture_gif;
+    unsigned ee_heap_lock_waits=0,ee_heap_lock_signals=0,heap_end_queries=0;
+    unsigned timer1_setup_writes=0;
+    std::uint32_t timer1_mode=0;
     unsigned graph_startup_phase=0;
+    std::uint64_t graph_halfword_checkpoint=0;
     bool heap_allocation_supplied=false,heap_copy_supplied=false;
     unsigned heap_transfers=0,heap_dma_polls=0;
     void supplyHeapAllocation(std::span<const std::uint8_t> evidence) {
@@ -1190,6 +1204,15 @@ public:
         ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
     }
     void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+        if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
+            && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
+            checkMemory(rdram,0,0);timer1_mode=value;++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
+        }
+        if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
+            if(address==0x1000A020 && context->pc==0x28B96C) {checkMemory(rdram,0,0);texture_gif.count(value);return;}
+            if(address==0x1000A010 && context->pc==0x28B978) {checkMemory(rdram,0,0);texture_gif.address(value,initial_sp-112,memory());return;}
+            if(address==0x1000A000 && context->pc==0x28B98C) {checkMemory(rdram,0,0);texture_gif.start(value,memory(),gif_dma.gs);return;}
+        }
         if(dmac_startup_writes==3 && heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
             if(address==0x10003C10 && context->pc==0x30FF70 && !vif_startup.phase && value==1) {
                 checkMemory(rdram,0,0);vif_startup.phase=1;return;
@@ -1232,6 +1255,12 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
+            if(address==0x1000A000 && context->pc==0x28B928) {checkMemory(rdram,0,0);return texture_gif.idle();}
+            if(address==0x10003020 && context->pc==0x28B944) {checkMemory(rdram,0,0);return texture_gif.pathIdle();}
+            if(address==0x1000A000 && context->pc==0x28B998) {checkMemory(rdram,0,0);return texture_gif.poll();}
+            if(address==0x10003020 && context->pc==0x28B9B4) {checkMemory(rdram,0,0);return texture_gif.pathComplete();}
+        }
         if(post_sif.supplied && gif_dma.completions==2 && iop_epoch==1 && context->r[29].low==initial_sp-192) {
             if(address==0x1000E010 && context->pc==0x3319CC) {checkMemory(rdram,0,0);return post_sif.status();}
             if(address==0x1000C000 && context->pc==0x3319EC) {checkMemory(rdram,0,0);return post_sif.channel();}

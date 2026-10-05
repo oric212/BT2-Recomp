@@ -563,3 +563,18 @@ python tools/capture_ee/verify_vif_startup.py --native work/bt2-generation/entry
 ```
 
 The verifier checks source/environment hashes, hook/stub bytes, marker/SP, source packet bytes and native configuration/counts. Once the second graph phase completes, it also checks both graph captures. It does not use the diagnostic 0x12001010 LD as an IMR readback or infer video timing. No additional probe argument is required. Regenerate prepared local source with `prepare_runtime.py` after selecting entries: VU reset assignments now route to the checked control hook while raw generated output remains unchanged and ignored.
+
+### GIF configuration and EE heap continuation
+
+The existing local disc-backed capture command accepts `texture-idle`, `texture-path-idle`, `texture-poll`, `texture-complete`, `texture-after`, `main-priority-after`, `ee-arena-after` and `ee-pools-after`. The completion hook allows busy loads to continue by executing the displaced ANDI before resuming; publications and selected source windows are checked for stability. Pool pointers are checked independently at the unique return.
+
+```powershell
+python tools/capture_ee/verify_texture_startup.py --output work/bt2-generation/texture-startup.bin
+python tools/capture_ee/verify_texture_startup.py --native work/bt2-generation/entry-stop.json
+```
+
+Append the ignored 224-byte texture bundle after heap-allocation.bin in the optional entry-probe command. The normal pipeline has `--texture-startup-captures` (requires existing heap-copy evidence) to verify and append it. The native probe reports configuration, logical request completion, main-thread priority, EE lock activity and pool pointers. Captured readbacks describe this request, not a native video clock or generic DMA timing model.
+
+Map preparation additionally admits one-word zero gaps after BEQ zero,zero and its non-control delay slot, with no checked direct edge into a gap and no unknown indirect/coprocessor branch. File-backed extent, size, range accounting and overlap quarantine remain required. The map records padding provenance and remains provisional. Regeneration preserved all previously selected raw-function hashes; selection provenance was refreshed only after that equality check.
+
+Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_second_heap.py` to inspect the second IOP request. The verifier checks return/size/client/source identity and the conflicting FILEIO placement. It intentionally supplies no allocation success bundle. See IOP_HEAP_CAPACITY_PLAN.md before changing ownership.

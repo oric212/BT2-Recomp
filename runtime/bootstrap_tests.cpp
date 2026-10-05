@@ -332,6 +332,8 @@ int main() {
         require(runtime.heap_start == 0x43058F && runtime.heap_end == 0x1EFF000
                 && context.r[2].low == runtime.heap_end && context.r[2].high == 0x1234);
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        context.r[3].low=0x3E;runtime.handleSyscall(memory,&context,0);
+        require(context.r[2].low==runtime.heap_end && context.r[2].high==0x1234 && runtime.heap_end_queries==1);
         PS2Runtime uninitialized;
         reject([&] { uninitialized.handleSyscall(nullptr, &context, 0); });
         runtime.write32(memory, 0x170, 0x89ABCDEF);

@@ -1,4 +1,5 @@
 #include "gif_dma_staging.h"
+#include "texture_gif_startup.h"
 #include <iostream>
 #include <set>
 void check(bool value) {if(!value)throw std::runtime_error("GS assertion failed");}
@@ -71,5 +72,30 @@ int main() {
     const auto preserved=dma.gs.word(GsCommandSink::address(0,1,7,7,false));
     dma.gs.resetDrawingState();dma.gs.resetDrawingState();
     check(dma.gs.word(GsCommandSink::address(0,1,7,7,false)).value==preserved.value && dma.gs.packets==2 && dma.gs.pixels==128);
+    std::vector<std::uint8_t> config(64);
+    auto configPut=[&](unsigned offset,std::uint64_t value){std::memcpy(config.data()+offset,&value,8);};
+    configPut(0,0x1000000000008003ULL);configPut(8,14);
+    configPut(16,3);configPut(24,0x49);configPut(32,0x1234);configPut(40,8);configPut(48,0x5678);configPut(56,9);
+    dma.gs.consumeConfiguration(config);
+    check(dma.gs.pabe==1 && dma.gs.tex0[0]==0x1234 && dma.gs.tex0[1]==0x5678 && dma.gs.pixels==128);
+    configPut(16,0);configPut(56,0x7F);rejected=false;
+    try{dma.gs.consumeConfiguration(config);}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && dma.gs.pabe==1 && dma.gs.configuration_packets==1);
+    configPut(56,9);configPut(48,1ULL<<61);rejected=false;
+    try{dma.gs.consumeConfiguration(config);}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && dma.gs.tex0[1]==0x5678);
+    configPut(48,0x5678);
+    std::array<std::array<std::uint32_t,8>,5> config_publications{};
+    for(unsigned i=0;i<4;++i)config_publications[i]={i==0||i==3?1u:i==2?0x101u:0u,0,0x1FFECE0,0,1,0x1FFED30,0,0};
+    config_publications[4][2]=0x1FFED40;
+    std::vector<std::uint8_t> config_evidence(224),config_ram(128);
+    std::memcpy(config_evidence.data(),config_publications.data(),160);std::memcpy(config_evidence.data()+160,config.data(),64);std::memcpy(config_ram.data()+16,config.data(),64);
+    TextureGifStartup transfer;transfer.supply(config_evidence);
+    check(transfer.idle()==1 && transfer.pathIdle()==0);transfer.count(4);transfer.address(16,16,config_ram);
+    config_ram[32]^=1;rejected=false;try{transfer.start(0x101,config_ram,dma.gs);}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && transfer.starts==0 && transfer.phase==4);config_ram[32]^=1;
+    transfer.start(0x101,config_ram,dma.gs);check(transfer.madr==80 && transfer.qwc==0 && transfer.poll()==0x101 && transfer.poll()==1 && transfer.pathComplete()==0);
+    check(transfer.completions==1 && transfer.phase==8 && dma.gs.pixels==128);
+    rejected=false;try{transfer.poll();}catch(const std::runtime_error&){rejected=true;}check(rejected);
     std::cout<<"GS scoped command tests passed\n";
 }

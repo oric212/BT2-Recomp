@@ -16,3 +16,9 @@ Local packet inspection establishes packed A+D with three register writes: PABE 
 6. Build/test, update PROG and detailed history, commit and push.
 
 This is a new GS packet/texture-state scope. Full GS emulation, VU execution, texture sampling and presentation remain separate. Existing completion snapshots are evidence for their observed requests only.
+
+## Verified completion (2026-10-05)
+
+The third packet completes against independent source, original idle/busy/clear-STR loads and unique caller return captures. Native retains PABE/TEX0 for both contexts; no texture sampling, CLUT transaction or added pixels occur. A separate configuration consumer leaves the prior sprite validator intact. Unsupported register effects and malformed packets reject transactionally.
+
+Continued through disabled Timer 1 configuration, main-thread priority change, generated EE allocator/map-gap discovery and four pool allocations. Pool pointers match a unique retail return capture. The actual next native stop is CreateSema in the second IOP heap RPC path; the retail allocation range conflicts with translated FILEIO. Follow [memory-layout scope](IOP_HEAP_CAPACITY_PLAN.md). Earlier wording in this plan describes the original handoff.

@@ -26,7 +26,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20 && argc != 21) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
@@ -164,6 +164,13 @@ int main(int argc, char** argv) {
             std::vector<std::uint8_t> evidence(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
             if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("Heap allocation evidence read failed");
             runtime.supplyHeapAllocation(evidence);
+        }
+        if(argc>=21) {
+            std::ifstream capture(argv[20],std::ios::binary|std::ios::ate);
+            if(!capture || capture.tellg()!=224)throw std::runtime_error("Invalid texture GIF evidence");
+            std::array<std::uint8_t,224> evidence;capture.seekg(0);
+            if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("Texture evidence read failed");
+            runtime.texture_gif.supply(evidence);
         }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
@@ -450,7 +457,7 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations() && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations()+runtime.ee_heap_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals
                         && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
@@ -544,14 +551,14 @@ int main(int argc, char** argv) {
                                 && (native_loader_progress || loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
                             require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
                             require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
-                                && runtime.gif_dma.gs.packets==2 && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
+                                && runtime.gif_dma.gs.packets==(runtime.texture_gif.starts?3u:2u) && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
                                 && runtime.gif_dma.qwc==0 && runtime.gif_dma.madr==runtime.initial_sp-48
                                 && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2 && runtime.gif_dma.packet_verified,
                                 "Fresh SIF prior GS effects differ");
                             require(runtime.gs_interrupt.acknowledgements==2 && runtime.gs_interrupt.polls==2 && runtime.gs_interrupt.events==1
                                 && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
                                 && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
-                                && runtime.halfword_writes==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
+                                && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
                                 "Fresh SIF prior GS synchronization differs");
                             for(unsigned page : {0u,140u}) {
                                 const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
@@ -695,6 +702,19 @@ int main(int argc, char** argv) {
                 << ",\"heap_frees\":" << runtime.heap_frees
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
+                << ",\"ee_pool_pointers\":[" << runtime.read32(runtime.memory().data(),0x38A628) << "," << runtime.read32(runtime.memory().data(),0x38A62C) << "," << runtime.read32(runtime.memory().data(),0x38A630) << "," << runtime.read32(runtime.memory().data(),0x38A634) << "]"
+                << ",\"main_thread_priority\":" << runtime.main_thread_priority
+                << ",\"heap_end_queries\":" << runtime.heap_end_queries
+                << ",\"ee_heap_lock_waits\":" << runtime.ee_heap_lock_waits
+                << ",\"ee_heap_lock_signals\":" << runtime.ee_heap_lock_signals
+                << ",\"timer1_setup_writes\":" << runtime.timer1_setup_writes
+                << ",\"timer1_mode\":" << runtime.timer1_mode
+                << ",\"texture_gif_phase\":" << runtime.texture_gif.phase
+                << ",\"texture_gif_starts\":" << runtime.texture_gif.starts
+                << ",\"texture_gif_completions\":" << runtime.texture_gif.completions
+                << ",\"texture_gif_polls\":" << runtime.texture_gif.polls
+                << ",\"tex0\":[" << runtime.gif_dma.gs.tex0[0] << "," << runtime.gif_dma.gs.tex0[1] << "]"
+                << ",\"pabe\":" << runtime.gif_dma.gs.pabe
                 << ",\"vif_phase\":" << runtime.vif_startup.phase << ",\"vif_commands\":" << runtime.vif_startup.commands
                 << ",\"graph_startup_phase\":" << runtime.graph_startup_phase
                 << ",\"vif_words\":" << runtime.vif_startup.words << ",\"vif_fifo_writes\":" << runtime.vif_startup.fifo_writes
