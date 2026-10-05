@@ -152,7 +152,7 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls==1 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
+        if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
@@ -645,7 +645,7 @@ public:
                     || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
                     || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
             const bool dbc_init_sema=dbc_rpc_binds==4 && dbc_rpc_calls==1 && semaphores.size()==7 && address==initial_sp-288 && maximum==127 && initial==1 && option==0x381C28;
-            const bool dbc_call_sema=sounds_rpc_calls==1 && ((dbc_rpc_binds==1 && !dbc_rpc_calls && semaphores.size()==7) || (dbc_rpc_binds==4 && dbc_rpc_calls==1 && semaphores.size()==8)) && address==initial_sp-528 && maximum==1 && initial==0 && option==0x3838E8;
+            const bool dbc_call_sema=sounds_rpc_calls==1 && ((dbc_rpc_binds==1 && !dbc_rpc_calls && semaphores.size()==7) || (dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && semaphores.size()==8)) && address==initial_sp-(dbc_rpc_calls>=2?512:528) && maximum==1 && initial==0 && option==0x3838E8;
             const bool dbc_bind_sema=sounds_rpc_calls==1 && dbc_rpc_binds<4 && semaphores.size()==7 && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sounds_bind_sema=sound_thread_starts==1 && !sounds_rpc_binds && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
@@ -695,7 +695,7 @@ public:
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838D8;
             const bool mmode_cleanup = scmd_mmode_calls == 1 && semaphore_waits == 5 && semaphore_deletions == 3
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838E8;
-            const bool fresh_cleanup=post_cd.supplied && ((id==7 && semaphores.size()==8) || (dbc_rpc_binds==4 && dbc_rpc_calls==2 && id==8 && semaphores.size()==9))
+            const bool fresh_cleanup=post_cd.supplied && ((id==7 && semaphores.size()==8) || (dbc_rpc_binds==4 && dbc_rpc_calls>=2 && dbc_rpc_calls<=4 && id==8 && semaphores.size()==9))
                 && semaphore_deletions==3+serviceOperations()
                 && ((post_cd.binds && !post_cd.calls && semaphores[id].option==0x3838D8)
                     || (post_cd.calls==1 && !post_cd.scmd_binds && semaphores[id].option==0x3838E8)
@@ -726,12 +726,14 @@ public:
                 if (!semaphore.count) throw UnsupportedSyscall(selector, context->pc);
                 --semaphore.count;
                 ++semaphore_waits;
+                if(id==7 && semaphore.option==0x381C28 && context->pc==0x32ECA8 && context->r[31].low==0x3135B8)++dbc_lock_waits;
                 if(context->pc==0x32ECA8 && context->r[31].low==0x3252F0)++ee_heap_lock_waits;
             } else {
                 // No waiting threads exist in this bounded model. Overflow is unverified.
                 if (semaphore.count >= semaphore.maximum) throw UnsupportedSyscall(selector, context->pc);
                 ++semaphore.count;
                 ++semaphore_signals;
+                if(id==7 && semaphore.option==0x381C28 && context->pc==0x32EC88)++dbc_lock_signals;
                 if(context->pc==0x32EC88 && texture_gif.phase==8 && id==read32(rdram,0x36AB58))++ee_heap_lock_signals;
             }
             context->r[2].low = id;
@@ -1145,7 +1147,7 @@ public:
             throw std::runtime_error("EE sound thread-start evidence differs/repeated");
         sound_thread_start_supplied=true;
     }
-    unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0,dbc_rpc_binds=0,dbc_rpc_calls=0;
+    unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0,dbc_rpc_binds=0,dbc_rpc_calls=0,dbc_lock_waits=0,dbc_lock_signals=0;
     std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;

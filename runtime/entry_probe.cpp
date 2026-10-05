@@ -465,15 +465,25 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (argc >= 18) {
-            require(stopped && !stop_handler && runtime.scmd_bind_calls == 1 && runtime.cd_init_calls == 1
-                    && (runtime.post_cd.supplied ? (runtime.semaphores.size()==7 || runtime.semaphores.size()==8 || (runtime.dbc_rpc_binds==4 && runtime.dbc_rpc_calls>=1 && runtime.semaphores.size()==9 && runtime.semaphores[7].maximum==127 && runtime.semaphores[7].option==0x381C28)) : runtime.semaphores.size()==(runtime.post_sif.rpc_initialized && stop_selector==0x77 ? 8u : 7u)), "SCMD continuation state differs");
+            const auto semas=runtime.semaphores.size();
+            const bool pending_mc_bind=runtime.dbc_rpc_calls==4 && semas==11 && stop_selector==0x77 && context.pc==0x32F028
+                && runtime.semaphores[10].maximum==1 && runtime.semaphores[10].count==0 && runtime.semaphores[10].option==0x3838D8;
+            const bool mc_local_semas=runtime.dbc_rpc_calls==4 && (semas==10 || pending_mc_bind)
+                && runtime.semaphores[8].maximum==1 && runtime.semaphores[8].count==(pending_mc_bind?0u:1u)
+                && runtime.semaphores[8].option==0x3824C8 && runtime.semaphores[9].maximum==1
+                && runtime.semaphores[9].count==0 && runtime.semaphores[9].option==0x3824D8;
+            const bool dbc_semas=runtime.dbc_rpc_binds==4 && runtime.dbc_rpc_calls>=1 && (semas==9 || mc_local_semas)
+                && runtime.semaphores[7].maximum==127 && runtime.semaphores[7].option==0x381C28;
+            require(stopped && !stop_handler && runtime.scmd_bind_calls==1 && runtime.cd_init_calls==1
+                && (runtime.post_cd.supplied ? (semas==7 || semas==8 || dbc_semas)
+                    : semas==(runtime.post_sif.rpc_initialized && stop_selector==0x77?8u:7u)),"SCMD continuation state differs");
             if (!runtime.scmd_mmode_calls) {
                 require(!stop_target && stop_selector == 0x40 && context.pc == 0x32EC68
                         && runtime.guest_calls == 190 && runtime.returns == 185
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations()+runtime.ee_heap_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations()+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+(pending_mc_bind?1u:0u) && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals
                         && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
@@ -721,6 +731,12 @@ int main(int argc, char** argv) {
                 << ",\"sound_thread_starts\":" << runtime.sound_thread_starts
                 << ",\"dbc_rpc_binds\":" << runtime.dbc_rpc_binds
                 << ",\"dbc_rpc_calls\":" << runtime.dbc_rpc_calls
+                << ",\"dbc_lock_waits\":" << runtime.dbc_lock_waits
+                << ",\"dbc_lock_signals\":" << runtime.dbc_lock_signals
+#ifdef BT2_NATIVE_IOP
+                << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
+                << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
+#endif
                 << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
                 << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
                 << ",\"sound_rpc_binds\":" << runtime.sound_rpc_binds
@@ -756,6 +772,15 @@ int main(int argc, char** argv) {
                 if(client!=0x3A03C0)report<<",";report<<"[";
                 for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),client+n*4);report<<"]";
             }
+            report<<"],\"dbc_dma_ee_words\":[";
+            for(unsigned n=0;n<32;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A27C0+n*4);
+            report<<"],\"dbc_dma_payload_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop)for(unsigned n=0;n<32;++n) {
+                std::uint32_t value=0;for(unsigned b=0;b<4;++b)value|=std::uint32_t(runtime.native_iop->dbc_dma_payload[n*4+b])<<(b*8);
+                report<<(n?",":"")<<value;
+            }
+#endif
             report<<"],\"dbc_result_words\":[";
             for(unsigned n=0;n<36;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A04C0+n*4);
             report<<"],\"sounds_client_words\":[";

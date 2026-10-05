@@ -62,12 +62,14 @@ public:
         if(epoch!=epoch_ || failed_ || runtime.sif_transport_attached)throw std::runtime_error("Invalid native SIF transport attachment");
         runtime.sif_transport_attached=true;
     }
-    std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size);
+    std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service=0x80000701);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);
     std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
     unsigned sound_rpc_requests=0,sounds_rpc_requests=0,dbc_rpc_requests=0;
+    unsigned dbc_dma_submissions=0,dbc_dma_polls=0;
+    std::array<std::uint8_t,128> dbc_dma_payload{};
     unsigned buffer_loads=0;
     unsigned boot_heap_frees=0;
     unsigned boot_heap_allocations=0;

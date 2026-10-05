@@ -121,14 +121,30 @@ int main() {
         auto bad_setup=dbc_setup;bad_setup[1]+=4;
         rejected([&]{service.callDbcRpc(1,0x80001304,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bad_setup.data()),144),144);});
         check(service.runtime.ram==dbc_after && service.dbc_rpc_requests==1);
-        bool dma_boundary=false;
-        try {service.callDbcRpc(1,0x80001304,dbc_setup_input,144);}catch(const std::runtime_error& e){dma_boundary=std::string(e.what())=="Unresolved IOP import: sifman:7";}
-        check(dma_boundary && service.dbc_rpc_requests==1 && !service.runtime.current_thread && service.runtime.read(0x62774,4)==0x3A27C0);
+        std::vector<std::uint8_t> short_endpoint(128);
+        rejected([&]{service.callDbcRpc(1,0x80001304,dbc_setup_input,144,short_endpoint);});
+        check(service.runtime.ram==dbc_after && !service.dbc_dma_submissions && !service.runtime.providers.contains({"sifman",7}));
+        std::vector<std::uint8_t> ee_memory(32*1024*1024,0xA5);
+        const auto source=std::vector<std::uint8_t>(service.runtime.ram.begin()+0x62778,service.runtime.ram.begin()+0x627F8);
+        std::vector<std::uint8_t> setup_expected(144);setup_expected[0]=1;std::memcpy(setup_expected.data()+4,dbc_setup.data()+1,4);
+        check(service.callDbcRpc(1,0x80001304,dbc_setup_input,144,ee_memory)==setup_expected);
+        check(service.dbc_rpc_requests==2 && service.dbc_dma_submissions==1 && service.dbc_dma_polls==1 && !service.runtime.current_thread);
+        check(std::equal(source.begin(),source.end(),ee_memory.begin()+0x3A27C0));
+        check(std::all_of(ee_memory.begin(),ee_memory.begin()+0x3A27C0,[](auto b){return b==0xA5;}) && std::all_of(ee_memory.begin()+0x3A2840,ee_memory.end(),[](auto b){return b==0xA5;}));
         check(service.runtime.threads.at(dbc_worker).waiting && service.runtime.threads.at(dbc_worker).context.r==dbc_cpu.r);
-        check(service.runtime.read(dbc_server.buffer,4)==0x310 && service.runtime.read(dbc_server.queue+4,4)==1);
+        check(!service.runtime.providers.contains({"sifman",7}) && !service.runtime.providers.contains({"sifman",8}));
         const auto dbc_setup_after=service.runtime.ram;const auto dbc_setup_steps=service.runtime.steps;
-        rejected([&]{service.callDbcRpc(1,0x80001304,dbc_setup_input,144);});
-        check(service.runtime.ram==dbc_setup_after && service.runtime.steps==dbc_setup_steps && service.dbc_rpc_requests==1);
+        rejected([&]{service.callDbcRpc(1,0x80001304,dbc_setup_input,144,ee_memory);});
+        check(service.runtime.ram==dbc_setup_after && service.runtime.steps==dbc_setup_steps);
+        for(unsigned slot=0;slot<2;++slot) {
+            std::array<std::uint32_t,36> input{};input[0]=3;input[1]=1;input[2]=slot;
+            input[10]=0x3B0B00+slot*0x180;input[11]=input[10]+0x80;
+            const auto bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(input.data()),144);
+            const auto reply=service.callDbcRpc(1,0x80001301,bytes,144,ee_memory);
+            input[9]=slot;check(reply.size()==144 && std::memcmp(reply.data(),input.data(),144)==0);
+            check(service.dbc_rpc_requests==3+slot && service.dbc_dma_submissions==1 && service.dbc_dma_polls==1);
+            check(std::equal(source.begin(),source.end(),service.dbc_dma_payload.begin()));
+        }
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

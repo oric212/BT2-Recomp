@@ -7,6 +7,24 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_second_slot_capture_preserves_first_call(self):
+        blob=texture_stub('rpc-dbc-port1-before');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        early=4+(w[3]&65535)
+        self.assertEqual(w[3]&0xFFFF0000,0x13200000)
+        self.assertEqual(w[early:],(0x3C1F0031,0x37FF3650,0x08000000|(0x332970>>2),0x0000582D))
+        self.assertEqual((w[15]&0x3FFFFFF)<<2,FRESH_BIND_STUB+60)
+
+    def test_reverse_dma_hooks_preserve_actual_calls_and_negative_poll(self):
+        from capture_dbc_dma import submit_hook,poll_hook,SUBMIT,POLL
+        target=0x12340
+        w=struct.unpack('<'+str(len(submit_hook(target))//4)+'I',submit_hook(target))
+        self.assertEqual(w[-8],0x0C000000|(target>>2))
+        self.assertEqual(w[-11:-8],(0x3C19001D,0x37390040,0xAC990000))
+        p=struct.unpack('<'+str(len(poll_hook(target))//4)+'I',poll_hook(target))
+        self.assertEqual(p[3],0x0C000000|(target>>2))
+        self.assertEqual(12+(p[11]&65535),17)
+        self.assertEqual(p[15],0x03E00008)
+
     def test_later_dma_boundary_does_not_hide_earlier_service_failures(self):
         from verify_sound_rpc import later_dbc_dma_boundary
         r={'dbc_rpc_binds':4,'dbc_rpc_calls':1,'native_iop_error':'Unresolved IOP import: sifman:7','native_iop_pc':0x621DC,'selector':0x77,'pc':0x32F028,'packet_words':[0]*6+[36,0x3A03C0,0x80001304,144]}

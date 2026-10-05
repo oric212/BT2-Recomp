@@ -33,22 +33,27 @@ def verify(root,native=None):
     require(all(iop[refbase+a:refbase+b]==image[a:b] for a,b in report['code_ranges']),'Retail DBCMAN code differs')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
-        require(later_dbc_dma_boundary(r),'Native DBCMAN group incomplete')
-        completed=setup_before
-        require(r['dbc_result_words']==list(words(completed,0x3A04C0,36)),'Native staged DBCMAN input differs')
+        require(r['dbc_rpc_binds']==4 and r['dbc_rpc_calls']==4,'Native DBCMAN request group incomplete')
+        next_before,_=capture(root,'rpc-dbc-next-before',baseline)
+        next_after,_=capture(root,'rpc-dbc-next-after',baseline)
+        port_before,_=capture(root,'rpc-dbc-port1-before',baseline)
+        slots_after,_=capture(root,'rpc-dbc-slots-after',baseline)
+        for slot,source in enumerate((next_before,port_before)):
+            expected=[0]*36;expected[0]=3;expected[1]=1;expected[2]=slot
+            expected[10]=0x3B0B00+slot*0x180;expected[11]=expected[10]+0x80
+            require(list(words(source,0x3A04C0,36))==expected,'Captured related request differs')
+            expected[9]=slot
+            require(list(words((next_after,slots_after)[slot],0x3A04C0,36))==expected,'Captured related result differs')
+        require(r['dbc_result_words']==list(words(slots_after,0x3A04C0,36)),'Native completed related result differs')
         for index,service in enumerate(services):
             row=next(x for x in r['iop_rpc_servers'] if x[0]==service);client=r['dbc_client_words'][index]
-            require(client[:5]==([0x203A97C0,36,8,0,0] if index==0 else list(clients[index][:5])) and client[5]==row[2] and client[9]==row[1],'Native DBCMAN client ownership differs')
-        row=next(x for x in r['iop_rpc_servers'] if x[0]==services[0]);ref=words(completed,0x3A03C0,10)
-        require(ram[row[2]:row[2]+144]==setup_before[0x3A04C0:0x3A04C0+144],'Native DBCMAN handler buffer differs')
-        for offset in (12,28,32,36,40,44,48):require(words(ram,row[1]+offset,1)==words(setup_iop,ref[9]+offset,1),'Native DBCMAN request metadata differs')
+            require(client[:5]==([0,38,8,0,0] if index==0 else list(clients[index][:5])) and client[5]==row[2] and client[9]==row[1],'Native DBCMAN client ownership differs')
         require(words(ram,0x62774,1)==(0x3A27C0,),'Native DBCMAN retained EE destination differs')
-        require(words(ram,0x1E1EE0,4)==(0x62778,0x3A27C0,128,0),'Native pending DMA descriptor differs')
-        require(r['packet_words'][6:10]==[36,0x3A03C0,0x80001304,144],'Pending second DBCMAN request differs')
+        require(r['dbc_dma_submissions']==1 and r['dbc_dma_polls']==1,'Native reverse DMA lifecycle differs')
         image=relocate(module,report,0x60000)
         require(all(ram[0x60000+a:0x60000+b]==image[a:b] for a,b in report['code_ranges']),'Native DBCMAN code differs')
-    print('DBCMAN four binds, first real handler/result, initialization semaphore and pending reverse-DMA boundary verified'+(' against native execution.' if native else '.'))
-    print('No later command, callback delivery, input device behavior or hardware timing inferred.')
+    print('DBCMAN four binds and bounded four-request group verified'+(' against native execution.' if native else '.'))
+    print('No recurring transfer, callback delivery, input device behavior or hardware timing inferred.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.native)

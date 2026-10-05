@@ -228,10 +228,10 @@ void PS2Runtime::receiveSoundRpc(std::uint8_t* rdram,R5900Context* context) {
 void PS2Runtime::receiveDbcBind(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
     if(!native_iop || sounds_rpc_calls!=1)throw UnsupportedSyscall(0x77,context->pc);
-    if((dbc_rpc_binds==1 && !dbc_rpc_calls) || (dbc_rpc_binds==4 && dbc_rpc_calls==1)) {
-        const auto semaphore=dbc_rpc_calls?8u:7u;const auto command=dbc_rpc_calls?0x80001304u:0x80001363u;const auto id=dbc_rpc_calls?36u:32u;
+    if((dbc_rpc_binds==1 && !dbc_rpc_calls) || (dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4)) {
+        const auto semaphore=dbc_rpc_calls?8u:7u;const auto command=dbc_rpc_calls>=2?0x80001301u:dbc_rpc_calls?0x80001304u:0x80001363u;const auto id=dbc_rpc_calls>=2?35u+dbc_rpc_calls:dbc_rpc_calls?36u:32u;
         auto& rt=native_iop->runtime;const auto server=rt.rpc_servers.at(0x80001300);
-        if(iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || d!=initial_sp-672 || context->r[29].low!=d
+        if(iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || d!=initial_sp-(dbc_rpc_calls>=2?656:672) || context->r[29].low!=d
             || context->r[5].low!=2 || semaphores.size()!=semaphore+1 || semaphores[semaphore].count || semaphores[semaphore].maximum!=1 || semaphores[semaphore].option!=0x3838E8)
             throw UnsupportedSyscall(0x77,context->pc);
         const std::array<std::uint32_t,8> desc={0x3A04C0,server.buffer,144,0,0x203A97C0,0x1E640,64,0x44};
@@ -241,7 +241,7 @@ void PS2Runtime::receiveDbcBind(std::uint8_t* rdram,R5900Context* context) {
         if(read32(rdram,0x3A03C0)!=0x203A97C0 || read32(rdram,0x3A03C4)!=id || read32(rdram,0x3A03C8)!=semaphore
             || read32(rdram,0x3A03D4)!=server.buffer || read32(rdram,0x3A03E4)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
         checkMemory(rdram,0x3A04C0,144);std::vector<std::uint8_t> response;
-        try {response=native_iop->callDbcRpc(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+0x3A04C0,144),144);}
+        try {response=native_iop->callDbcRpc(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+0x3A04C0,144),144,memory_);}
         catch(const std::exception& e) {native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
         std::copy(response.begin(),response.end(),memory_.begin()+0x3A04C0);
         const std::array<std::uint32_t,16> reply={0x9000,0x3A04C0,0x80000008,0,0,0,0,0x3A03C0,0x8000000A,0,0,0,0,0,0,0};
