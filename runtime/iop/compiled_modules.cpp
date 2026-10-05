@@ -373,3 +373,11 @@ std::vector<std::uint8_t> NativeIopService::callMcRpc(unsigned epoch,std::span<c
     auto response=executeRegisteredRpc(0x80000400,0xFE,input,12,0x3A6F80,0x3A8540);
     ++mc_rpc_requests;return response;
 }
+
+std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span<const std::uint8_t> input) {
+    std::array<std::uint32_t,12> expected{};expected[7]=0x3A7480;
+    if(epoch!=epoch_ || failed_ || mc_rpc_requests!=1 || mc_query_requests || input.size()!=48
+        || std::memcmp(input.data(),expected.data(),48))throw std::runtime_error("MCSERV query outside captured profile");
+    auto response=executeRegisteredRpc(0x80000400,1,input,4,0x3A6F80,0x3A8540);
+    ++mc_query_requests;return response;
+}

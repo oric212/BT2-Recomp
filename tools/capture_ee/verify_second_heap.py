@@ -1,7 +1,7 @@
 """Compare the captured second allocation and authored native layout."""
 import argparse,hashlib,json,struct
 from pathlib import Path
-from verify_sound_rpc import later_dbc_dma_boundary
+from verify_sound_rpc import later_iop_boundary
 from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_stub
 
 def verify(root,native=None):
@@ -16,7 +16,7 @@ def verify(root,native=None):
     if start<=generated['base']<end:raise ValueError('Native FILEIO still overlaps captured heap')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'))
-        if r['heap_calls']!=2 or r['heap_frees']!=1 or r['native_module_loads']!=14 or (r['native_iop_error'] and not later_dbc_dma_boundary(r)) or tuple(r['heap_client_words'])!=struct.unpack_from('<10I',ee,0x3AC840):raise ValueError('Second native allocation lifecycle differs')
+        if r['heap_calls']!=2 or r['heap_frees']!=1 or r['native_module_loads']!=14 or (r['native_iop_error'] and not later_iop_boundary(r)) or tuple(r['heap_client_words'])!=struct.unpack_from('<10I',ee,0x3AC840):raise ValueError('Second native allocation lifecycle differs')
         ram=Path(str(native)+'.iop.bin').read_bytes()
         if struct.unpack_from('<I',ram,generated['base']+0x3FE0)[0]!=start:raise ValueError('Translated handler result differs')
     print(f'Second retail heap [{start:#x}, {end:#x}) validated'+(' against native translated handler.' if native else '; FILEIO placement is separate.'))

@@ -155,6 +155,21 @@ int main() {
         check(mc_reply.size()==12 && std::memcmp(mc_reply.data(),mc_expected.data(),12)==0 && service.mc_rpc_requests==1);
         const auto mc_after=service.runtime.ram;
         rejected([&]{service.callMcRpc(1,mc_input);});check(service.runtime.ram==mc_after);
+        std::array<std::uint32_t,12> mc_query_input{};mc_query_input[7]=0x3A7480;
+        const auto query_before=service.runtime.ram;
+        rejected([&]{service.callMcQuery(2,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));});
+        auto bad_query=mc_query_input;bad_query[1]=1;
+        rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bad_query.data()),48));});
+        check(service.runtime.ram==query_before && !service.mc_query_requests);
+        bool query_boundary=false;
+        try {service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));}
+        catch(const std::runtime_error& e) {query_boundary=std::string(e.what())=="Unresolved IOP import: dmacman:32";}
+        check(query_boundary && service.runtime.current_thread==0 && !service.mc_query_requests);
+        const auto& dma=service.runtime.dma_channels.at(11);
+        check(dma.slice_known && dma.madr==0x32020 && dma.bcr==0x10024 && dma.chcr==0x201);
+        const auto failed_query=service.runtime.ram;const auto failed_steps=service.runtime.steps;
+        rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));});
+        check(service.runtime.ram==failed_query && service.runtime.steps==failed_steps);
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

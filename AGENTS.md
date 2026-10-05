@@ -30,3 +30,7 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 ## Documentation encoding
 
 Read and write documentation explicitly as UTF-8. Preserve historical entries when appending; do not round-trip them through the Windows default code page. Check changed files for replacement characters and newly introduced mojibake before committing.
+
+## Usage-aware passes
+
+Preserve aggressive subsystem-scale passes while usage is plentiful. Reduce scope for the five-hour allowance only when remaining usage is low; do not use it to justify small passes routinely. Check the actual allowance before making that decision.

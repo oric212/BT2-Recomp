@@ -741,6 +741,7 @@ int main(int argc, char** argv) {
 #ifdef BT2_NATIVE_IOP
                 << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
+                << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
 #endif
                 << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
                 << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
@@ -784,6 +785,13 @@ int main(int argc, char** argv) {
             if(runtime.native_iop)for(unsigned n=0;n<32;++n) {
                 std::uint32_t value=0;for(unsigned b=0;b<4;++b)value|=std::uint32_t(runtime.native_iop->dbc_dma_payload[n*4+b])<<(b*8);
                 report<<(n?",":"")<<value;
+            }
+#endif
+            report<<"],\"sio2_dma_channels\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop)for(unsigned channel: {11u,12u}) {
+                const auto& dma=runtime.native_iop->runtime.dma_channels.at(channel);
+                report<<(channel==12?",":"")<<"["<<channel<<","<<dma.madr<<","<<dma.bcr<<","<<dma.chcr<<","<<(dma.slice_known?1:0)<<"]";
             }
 #endif
             report<<"],\"mc_client_words\":[";

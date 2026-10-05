@@ -96,6 +96,19 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(irq!=9 && irq!=17 && irq!=36 && irq!=40)throw std::runtime_error("Unsupported IOP interrupt enable");
         memory.enabled_interrupts.insert(irq);if(found!=memory.interrupts.end())found->second.enabled=true;return 0u;
     };
+    rt.providers[{"dmacman",28}]=[](IopRuntime& memory,IopContext& c) {
+        const auto channel=c.get(4),source=IopRuntime::physical(c.get(5));
+        memory.check(IopRuntime::physical(c.get(29))+16,4);
+        const auto direction=memory.read(IopRuntime::physical(c.get(29))+16,4);
+        const auto found=memory.dma_channels.find(channel);
+        if(c.pc!=0x10E28 || channel!=11 || source!=0x32020 || c.get(6)!=0x24 || c.get(7)!=1 || direction!=1
+            || found==memory.dma_channels.end() || !found->second.enabled_known || !found->second.enabled
+            || !found->second.priority_known || found->second.priority!=3 || found->second.slice_known)
+            throw std::runtime_error("IOP slice DMA outside first MCSERV/SIO2 profile");
+        memory.check(source,0x90);
+        auto& dma=found->second;dma.madr=source;dma.bcr=0x10024;dma.chcr=0x201;dma.slice_known=true;
+        return 1u; // Programmed slice only; no START, bytes, completion or IRQ supplied.
+    };
     rt.providers[{"dmacman",33}]=[](IopRuntime& memory,IopContext& c) {
         const auto channel=c.get(4);
         if(channel!=11 && channel!=12)throw std::runtime_error("Unsupported IOP DMA channel");
@@ -138,7 +151,16 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         for(auto id:ordered) {
             auto& t=memory.threads.at(id);const auto shared=bits&t.wait_bits;
             if(!((t.wait_mode&1)?shared!=0:shared==t.wait_bits))continue;
-            if(memory.current_thread || !memory.execute)throw std::runtime_error("Nested IOP event wake unsupported");
+            if(!memory.execute)throw std::runtime_error("IOP event wake needs dispatch");
+            if(memory.current_thread) {
+                const auto mc=memory.rpc_servers.find(0x80000400);
+                const bool mc_preemption=mc!=memory.rpc_servers.end() && memory.rpc_queues.contains(mc->second.queue)
+                    && memory.rpc_queues.at(mc->second.queue).thread==memory.current_thread
+                    && memory.threads.at(memory.current_thread).priority==104 && t.priority==16
+                    && t.entry==0x1039C && t.wait_event==0x10001 && id!=memory.current_thread
+                    && c.pc==0x10EA8 && memory.cpu_interrupts_enabled && !memory.in_interrupt;
+                if(!mc_preemption)throw std::runtime_error("Nested IOP event wake outside MCSERV/SIO2 scope");
+            }
             if(t.wait_result)memory.check(IopRuntime::physical(t.wait_result),4);
             wake.push_back(id);if(t.wait_mode&0x10)bits=0;
         }
@@ -150,11 +172,12 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             t.waiting=false;t.ready=true;t.wait_satisfied=true;
         }
         std::stable_sort(wake.begin(),wake.end(),[&](unsigned a,unsigned b){return memory.threads.at(a).priority<memory.threads.at(b).priority;});
+        const auto caller_thread=memory.current_thread;
         for(auto id:wake) {
             memory.current_thread=id;
-            try {memory.execute(memory,memory.threads.at(id).context);memory.current_thread=0;throw std::runtime_error("Unexpected IOP worker completion");}
-            catch(const IopYield&) {memory.current_thread=0;}
-            catch(...) {memory.current_thread=0;throw;}
+            try {memory.execute(memory,memory.threads.at(id).context);memory.current_thread=caller_thread;throw std::runtime_error("Unexpected IOP worker completion");}
+            catch(const IopYield&) {memory.current_thread=caller_thread;}
+            catch(...) {memory.current_thread=caller_thread;throw;}
         }
         return 0u;
     };

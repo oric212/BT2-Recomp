@@ -609,3 +609,7 @@ New isolated capture points: `rpc-dbc-second-bind-after`, `rpc-dbc-command-befor
 ### MCSERV startup evidence
 
 `capture_ee.py` accepts `rpc-mc-bind-after`, `rpc-mc-command-before` `rpc-mc-command-after` and `rpc-mc-query-before` using the existing local BIOS/disc arguments. `python tools/capture_ee/verify_mc_rpc.py --native work/bt2-generation/entry-stop.json` checks the independent initialization input/result and owned native client/code. Captures and derived files stay ignored; card operations and timing are not inferred.
+
+### First card slice and callback diagnostics
+
+`capture_ee.py --capture-point rpc-mc-query-before --capture-mc-sio2-slice` uses the isolated local interpreter and stops after the original sceSetSliceDMA, before START. Supply the existing local PCSX2/BIOS/disc arguments. `python tools/capture_ee/verify_mc_sio2.py --native work/bt2-generation/entry-stop.json` checks environment/provenance, hook, API arguments/return, registers, owned source bytes and exact pending native START. `rpc-mc-callback-before` captures the separate retail callback frontier; its unrequested stack data is not a native payload template. All outputs remain ignored. Run the final native checkpoint after CTest, which can overwrite the shared diagnostic report.

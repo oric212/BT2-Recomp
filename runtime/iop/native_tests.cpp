@@ -90,6 +90,27 @@ int main() {
         };
         host.set(4,kernel.vblank_event);host.set(5,4);check(kernel.import("thevent",6,host)==0 && worker.waiting && worker.wait_bits==0x10 && kernel.current_thread==0);
         host.set(5,~4u);check(kernel.import("thevent",8,host)==0 && !kernel.events.at(kernel.vblank_event).bits);
+        IopRuntime nested;install_iop_kernel_providers(nested);
+        nested.events.emplace(0x10001,IopRuntime::Event{2,0});
+        IopRuntime::Thread parent{},child{};parent.priority=104;
+        child.priority=16;child.entry=0x1039C;child.waiting=true;child.wait_event=0x10001;
+        child.wait_bits=1;child.wait_mode=0x11;child.wait_order=1;
+        nested.threads.emplace(1,parent);nested.threads.emplace(2,child);
+        nested.rpc_queues.emplace(0x536E0,IopRuntime::RpcQueue{1,{0x80000400}});
+        nested.rpc_servers.emplace(0x80000400,IopRuntime::RpcServer{0x536F8,0x80000400,0x50324,0x532B0,0x536E0,0x59290});
+        nested.current_thread=1;IopContext preempt;preempt.pc=0x10EA8;preempt.set(4,0x10001);preempt.set(5,1);
+        const auto parent_registers=preempt.r;
+        nested.execute=[](IopRuntime& m,IopContext&) {
+            check(m.current_thread==2 && !m.events.at(0x10001).bits);
+            auto& t=m.threads.at(2);t.waiting=true;t.ready=false;t.wait_satisfied=false;throw IopYield{};
+        };
+        check(nested.import("thevent",6,preempt)==0 && nested.current_thread==1 && preempt.r==parent_registers);
+        nested.execute=[](IopRuntime&,IopContext&){throw std::runtime_error("synthetic child failure");};
+        rejected=false;try{nested.import("thevent",6,preempt);}catch(const std::runtime_error&){rejected=true;}
+        check(rejected && nested.current_thread==1 && preempt.r==parent_registers);
+        auto& nt=nested.threads.at(2);nt.waiting=true;nt.priority=104;nested.events.at(0x10001).bits=0;
+        rejected=false;try{nested.import("thevent",6,preempt);}catch(const std::runtime_error&){rejected=true;}
+        check(rejected && nested.current_thread==1 && !nested.events.at(0x10001).bits && nt.waiting);
         libraries.execute=[](IopRuntime&,IopContext& export_context) {check(export_context.pc==0x30030 && export_context.get(28)==0x8760);export_context.set(6,export_context.get(28));export_context.set(2,17);export_context.pc=IopRuntime::sentinel;};
         libraries.libraries.at("test").gp=0x8760;caller.pc=0x4560;caller.set(28,0x3450);caller.set(31,0x5670);caller.set(29,0x7890);
         check(libraries.import("test",0,caller)==17 && caller.pc==0x4560 && caller.get(28)==0x3450 && caller.get(31)==0x5670 && caller.get(29)==0x7890 && caller.get(6)==0x8760);

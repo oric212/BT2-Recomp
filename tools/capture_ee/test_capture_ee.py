@@ -14,6 +14,21 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(w[early:],(0x3C1F0031,0x37FF3650,0x08000000|(0x332970>>2),0x0000582D))
         self.assertEqual((w[15]&0x3FFFFFF)<<2,FRESH_BIND_STUB+60)
 
+    def test_later_card_dma_boundary_does_not_hide_earlier_failure(self):
+        from verify_sound_rpc import later_mc_dma_boundary
+        r={'dbc_rpc_binds':4,'dbc_rpc_calls':4,'mc_rpc_binds':1,'mc_rpc_calls':1,'mc_query_requests':0,'native_iop_error':'Unresolved IOP import: dmacman:32','native_iop_pc':0x10E30,'selector':0x77,'pc':0x32F028,'packet_words':[0]*6+[41,0x3A6F80,1,48]}
+        self.assertTrue(later_mc_dma_boundary(r))
+        for key,value in [('mc_rpc_calls',0),('mc_query_requests',1),('native_iop_pc',0x10E28),('native_iop_error','Unresolved IOP import: mcman:53'),('packet_words',[])]:
+            self.assertFalse(later_mc_dma_boundary(dict(r,**{key:value})))
+
+    def test_card_slice_hook_calls_original_before_reading_programmed_registers(self):
+        from capture_sio2_dma import hook
+        w=struct.unpack('<'+str(len(hook(0x12340))//4)+'I',hook(0x12340))
+        self.assertEqual(w[5:8],(0x8FB90010,0,0xAF190014))
+        self.assertEqual(w[11:15],(0x0C000000|(0x12340>>2),0,0x3C18001D,0xAF020018))
+        self.assertEqual((w[16],w[20],w[24]),(0x8F391540,0x8F391544,0x8F391548))
+        self.assertEqual(w[-2:],(0x1000FFFF,0))
+
     def test_reverse_dma_hooks_preserve_actual_calls_and_negative_poll(self):
         from capture_dbc_dma import submit_hook,poll_hook,SUBMIT,POLL
         target=0x12340

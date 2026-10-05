@@ -284,6 +284,22 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
     constexpr auto client=0x3A6F80u,service=0x80000400u;
     const auto id=mc_rpc_binds?40u:39u;
+    if(mc_rpc_binds==1 && mc_rpc_calls==1) {
+        if(!native_iop || dbc_rpc_calls!=4 || iop_epoch!=1 || context->pc!=0x32F028 || d!=initial_sp-560
+            || context->r[29].low!=d || context->r[5].low!=2 || semaphores.size()!=10
+            || semaphores[8].count || semaphores[8].option!=0x3824C8)throw UnsupportedSyscall(0x77,context->pc);
+        auto& rt=native_iop->runtime;const auto server=rt.rpc_servers.at(service);
+        const std::array<std::uint32_t,8> desc={0x3A7000,server.buffer,48,0,0x203A97C0,0x1E640,64,0x44};
+        const std::array<std::uint32_t,14> packet={0x3040,server.buffer,0x8000000A,0,5,0x203A97C0,41,client,1,48,0x3A8540,4,1,server.descriptor};
+        for(unsigned n=0;n<desc.size();++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned n=0;n<packet.size();++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,client)!=0x203A97C0 || read32(rdram,client+4)!=41 || read32(rdram,client+8)!=UINT32_MAX
+            || read32(rdram,client+28)!=0x31DD60 || read32(rdram,client+32)!=0x3A7480
+            || read32(rdram,client+20)!=server.buffer || read32(rdram,client+36)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
+        try {native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48));}
+        catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
+        throw std::runtime_error("MCSERV query handler completed; asynchronous delivery remains unimplemented");
+    }
     if(mc_rpc_binds==1 && !mc_rpc_calls) {
         if(!native_iop || dbc_rpc_calls!=4 || iop_epoch!=1 || context->pc!=0x32F028 || d!=initial_sp-544
             || context->r[29].low!=d || context->r[5].low!=2 || semaphores.size()!=11

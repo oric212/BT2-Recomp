@@ -63,12 +63,13 @@ public:
         runtime.sif_transport_attached=true;
     }
     std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory={});
+    std::vector<std::uint8_t> callMcQuery(unsigned epoch,std::span<const std::uint8_t> input);
     std::vector<std::uint8_t> callMcRpc(unsigned epoch,std::span<const std::uint8_t> input);
     std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service=0x80000701);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);
     std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
-    unsigned mc_rpc_requests=0;
+    unsigned mc_rpc_requests=0,mc_query_requests=0;
     unsigned sound_rpc_requests=0,sounds_rpc_requests=0,dbc_rpc_requests=0;
     unsigned dbc_dma_submissions=0,dbc_dma_polls=0;
     std::array<std::uint8_t,128> dbc_dma_payload{};

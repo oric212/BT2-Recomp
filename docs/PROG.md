@@ -6,11 +6,11 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. The first SDRDRV bind/command executes through native IOP code and generated EE cleanup. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **106/106 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **108/108 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,263 EE calls / 1,255 returns**, **32,616 IOP instructions / 150 physical entry targets / twelve waiting workers and one ready helper**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,263 EE calls / 1,255 returns**, **33,393 IOP instructions / 158 physical entry targets / twelve waiting workers and one ready helper**.
 
 The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
 
@@ -26,7 +26,9 @@ DBCMAN's **four binds / four commands** complete through real native handlers an
 
 The bounded [MCSERV initialization exchange](MCSERV_RPC_PLAN.md) now completes: bind 0x80000400 / ID 39, real native command 0xFE / ID 40, and generated RPC_END/wait/delete. The actual 12-byte reply **[0,0x210,0x226]** matches independent local captures; invalid inputs, wrong epoch and duplicate requests are rejected. Generated startup continues through additional helpers.
 
-Current blocker: **asynchronous MCSERV command 1**, ID 41 / client 0x3A6F80, EE SifSetDma 0x77 / PC 0x32F028. Independent capture validates the 48-byte input (word 7 = 0x3A7480; all other words zero). The request carries a 4-byte primary result at 0x3A8540 and guest callback FUN_0031DD60 / argument 0x3A7480. No temporary call semaphore, reply or callback is fabricated. This introduces asynchronous card-query/data delivery and needs separate evidence/design beyond the completed initialization exchange. No assets loaded, displayed frame or audio playback.
+The asynchronous MCSERV query now executes its real handler and MCMAN/SIO2 export path. A bounded priority-16 SIO2 wake from the priority-104 MCSERV handler preserves the caller and returns after the worker yields. First slice programming completes: channel 11, owned source 0x32020, **36 words / one block / 144 bytes**, MADR 0x32020 / BCR 0x10024 / CHCR 0x201. Independent retail API/command-buffer/register captures match, including command bytes 81 11 and zero padding.
+
+Current blocker: **SIO2 DMA START**, dmacman:32 / native IOP PC 0x10E30. The MCSERV command-1 request remains pending at EE SifSetDma 0x77 / PC 0x32F028; no transferred bytes, device reply, guest callback or completion is supplied. This is a new hardware-transfer scope beyond prior byte-FIFO controller polls; see [card DMA scope](SIO2_CARD_DMA_PLAN.md). The retail callback capture includes unrequested stack bytes and is diagnostic only, not a native payload template. No assets loaded, displayed frame or audio playback.
 
 The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
 

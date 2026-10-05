@@ -55,7 +55,8 @@ public:
     bool spu2_io_transfer_completed=false;
     std::map<std::string,std::uint32_t> native_export_results;
     std::map<std::uint32_t,std::uint32_t> abi_read_only_words;
-    struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;};
+    struct DmaChannel {unsigned priority=0;bool priority_known=false,enabled=false,enabled_known=false;
+        std::uint32_t madr=0,bcr=0,chcr=0;bool slice_known=false;};
     std::map<unsigned,DmaChannel> dma_channels;
     std::map<unsigned,std::uint32_t> security_handlers;
     std::uint32_t kelf_path_handler=0;
