@@ -16,3 +16,9 @@ The reached routine subsequently writes VIF1 ERR, accesses the VU control regist
 6. Build/test, compare independent captures, update PROG/history, commit and push.
 
 Full VIF, VU microprogram execution, hardware DMA scheduling and presentation are not supplied by this plan.
+
+## Verified completion (2026-10-05)
+
+The bounded scope now returns to 0x1005BC. Two FIFO writes decode seven configuration commands and eight words; STMASK consumes a separate payload word. Native ERR/CYCLE/MODE/MASK/CODE/ITOPS/BASE/OFFSET/TOPS match the independent local capture. VU reset is a control pulse, not execution; idle GIF reset does not clear GS VRAM. The second graph initialization also completes, with an independently captured actual CSR load and unique caller return. Its repeated drawing-state reset preserves VRAM.
+
+Execution continues through FUN_00270FF0 to FUN_0028B908's GIF channel poll. See [next graphics scope](GS_TEXTURE_STARTUP_PLAN.md). This plan does not supply general VIF/VU execution or textured rendering.

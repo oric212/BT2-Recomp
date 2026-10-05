@@ -60,4 +60,4 @@ Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the resu
 
 ### Current subsystem handoff
 
-The first owned heap/module-buffer lifecycle completes. VIF1 reset/control and FIFO command processing are the next separate subsystem: follow [VIF startup](VIF_STARTUP_PLAN.md). Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.
+The first owned heap/module-buffer lifecycle completes. Bounded [VIF startup](VIF_STARTUP_PLAN.md) and repeated GS setup complete. The next separate graphics scope is a normal GIF packet initializing both TEX0 contexts: follow [GS texture-state startup](GS_TEXTURE_STARTUP_PLAN.md). Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.

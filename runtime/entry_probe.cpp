@@ -320,8 +320,11 @@ int main(int argc, char** argv) {
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
             const bool vif_handoff=runtime.native_module_loads==14 && runtime.heap_frees==1 && runtime.dmac_startup_writes==3
                 && stop.address==0x10003C10 && stop.size==4 && context.pc==0x30FF70 && context.r[29].low==runtime.initial_sp-32;
-            if(runtime.post_sif.supplied && !vif_handoff) throw; // Only the explicit new VIF subsystem boundary is accepted.
-            if(vif_handoff) { /* Preserve the checked memory stop below; no VIF request succeeds. */ }
+            const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
+                && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
+                && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -547,7 +550,8 @@ int main(int argc, char** argv) {
                                 "Fresh SIF prior GS effects differ");
                             require(runtime.gs_interrupt.acknowledgements==2 && runtime.gs_interrupt.polls==2 && runtime.gs_interrupt.events==1
                                 && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
-                                && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1 && runtime.halfword_writes==4,
+                                && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
+                                && runtime.halfword_writes==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
                                 "Fresh SIF prior GS synchronization differs");
                             for(unsigned page : {0u,140u}) {
                                 const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
@@ -691,6 +695,13 @@ int main(int argc, char** argv) {
                 << ",\"heap_frees\":" << runtime.heap_frees
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
+                << ",\"vif_phase\":" << runtime.vif_startup.phase << ",\"vif_commands\":" << runtime.vif_startup.commands
+                << ",\"graph_startup_phase\":" << runtime.graph_startup_phase
+                << ",\"vif_words\":" << runtime.vif_startup.words << ",\"vif_fifo_writes\":" << runtime.vif_startup.fifo_writes
+                << ",\"vu_resets\":" << runtime.vif_startup.vu_resets << ",\"gif_resets\":" << runtime.vif_startup.gif_resets
+                << ",\"vif_registers\":[" << runtime.vif_startup.error << ',' << runtime.vif_startup.cycle << ',' << runtime.vif_startup.mode
+                << ',' << runtime.vif_startup.mask << ',' << runtime.vif_startup.code << ',' << runtime.vif_startup.itops
+                << ',' << runtime.vif_startup.base << ',' << runtime.vif_startup.offset << ',' << runtime.vif_startup.tops << ']'
                 << ",\"heap_binds\":" << runtime.heap_binds
                 << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
                 << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes

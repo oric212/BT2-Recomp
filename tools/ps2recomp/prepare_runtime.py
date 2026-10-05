@@ -29,6 +29,12 @@ def route_vu_status(source):
     if 'ctx->vu0_vpu_stat' in text:raise ValueError('Unrecognized generated VU status access')
     return text,count
 
+def route_vu_control(source):
+    pattern=r"ctx->vu0_fbrst = GPR_U32\(ctx, (\d+)\) & 0x00000C0Cu;"
+    text,count=re.subn(pattern,lambda m:f'runtime->writeVuFbrst(ctx, GPR_U32(ctx, {m[1]}));',source)
+    if 'ctx->vu0_fbrst =' in text:raise ValueError('Unrecognized generated VU control write')
+    return text,count
+
 
 def route_data_cache(source):
     pattern = (r'(// 0x[0-9a-f]+: 0x[0-9a-f]+  cache       0x18, 0x([0-9A-Fa-f]+)\(\$t0\)'
@@ -89,10 +95,11 @@ def main():
         source=ROOT/'game/generated/bt2'/f'FUN_{address:08X}_0x{address:x}.cpp'
         text,count=route_tail_calls(source.read_text(encoding='utf-8'))
         text,vu_count=route_vu_status(text)
+        text,control_count=route_vu_control(text)
         destination=patched/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

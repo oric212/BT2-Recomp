@@ -1,9 +1,15 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status
+from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control
 
 
 class RuntimePreparationTests(unittest.TestCase):
+    def test_vu_reset_pulse_is_not_silently_masked(self):
+        source='ctx->vu0_fbrst = GPR_U32(ctx, 4) & 0x00000C0Cu;'
+        text,count=route_vu_control(source)
+        self.assertEqual(count,1);self.assertIn('writeVuFbrst(ctx, GPR_U32(ctx, 4))',text)
+        self.assertEqual(route_vu_control(text),(text,0))
+        with self.assertRaises(ValueError):route_vu_control('ctx->vu0_fbrst = 0;')
     def test_vu_status_routes_to_checked_runtime(self):
         source='SET_GPR_U32(ctx, 6, ctx->vu0_vpu_stat);'
         text,count=route_vu_status(source)

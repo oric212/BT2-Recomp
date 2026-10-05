@@ -1092,6 +1092,16 @@ int main() {
         dmac.write32(dmac.memory().data(),0x1000E010,0);
         require(dmac.dmac_startup_writes==3 && dmac.dmac_control==1 && dmac.dmac_priority==0x83FF0002 && dmac.dmac_mask==0xA00000);
         reject([&]{dmac.write32(dmac.memory().data(),0x1000E010,0);});
+        VifStartup stream;stream.consume(std::array<std::uint32_t,2>{0x03000080,0x02000020});
+        require(stream.base==128 && stream.offset==32 && stream.tops==128 && !stream.double_buffer);
+        stream.consume(std::array<std::uint32_t,1>{0x20000000});require(stream.pending_mask);
+        stream.consume(std::array<std::uint32_t,2>{0xFFFFFFFF,0x01000804});
+        require(!stream.pending_mask && stream.mask==UINT32_MAX && stream.cycle==0x804 && stream.commands==4 && stream.words==5);
+        const auto before=stream;
+        reject([&]{stream.consume(std::array<std::uint32_t,2>{0x05000001,0x14000000});});
+        require(stream.mode==before.mode && stream.commands==before.commands && stream.words==before.words);
+        reject([&]{stream.consume(std::array<std::uint32_t,1>{0x81000404});});
+        reject([&]{stream.consume(std::array<std::uint32_t,1>{0x01010404});});
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

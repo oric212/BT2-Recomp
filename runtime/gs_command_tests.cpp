@@ -68,5 +68,8 @@ int main() {
     check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
     check(dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0 && dma.completions==2);
     rejected=false;try{dma.readIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+    const auto preserved=dma.gs.word(GsCommandSink::address(0,1,7,7,false));
+    dma.gs.resetDrawingState();dma.gs.resetDrawingState();
+    check(dma.gs.word(GsCommandSink::address(0,1,7,7,false)).value==preserved.value && dma.gs.packets==2 && dma.gs.pixels==128);
     std::cout<<"GS scoped command tests passed\n";
 }

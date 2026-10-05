@@ -14,7 +14,6 @@ public:
     struct Word { std::uint32_t value=0, known=0; };
     GsCommandSink():vram_(1024*1024) {}
     void resetDrawingState() {
-        if(drawing_reset_)throw std::runtime_error("Repeated scoped GS drawing reset");
         // CSR reset establishes SCANMSK/FBA/PABE defaults. Do not clear VRAM.
         registers={};drawing_reset_=true;
     }

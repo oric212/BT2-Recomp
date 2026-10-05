@@ -93,6 +93,7 @@ inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = v
 
 #define WRITE64(address, value) runtime->write64(rdram, (address), (value))
 #define READ64(address) runtime->read64(rdram, (address))
+#define FAST_READ64(address) runtime->read64(rdram, (address))
 
 #define WRITE32(address, value) runtime->Store32(rdram, ctx, (address), (value))
 // Generated fast path still uses the same checked bootstrap memory API.

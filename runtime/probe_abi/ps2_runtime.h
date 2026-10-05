@@ -14,6 +14,7 @@
 #include "intc_checkpoint.h"
 #include "gif_dma_staging.h"
 #include "post_reset_sif.h"
+#include "vif_startup.h"
 #ifdef BT2_NATIVE_IOP
 #include <memory>
 class NativeIopService;
@@ -286,12 +287,20 @@ public:
             return;
         }
         if(code==0 && selector==0x71 && gs_imr_supplied_) {
+            if(graph_startup_phase==2 && context->pc==0x32EFA8 && context->r[4].low==0xFF00
+                && context->r[29].low==initial_sp-112 && context->r[31].low==0x30FE6C) {
+                gs_imr=0xFF00;graph_startup_phase=3;context->r[2].low=0xFF00;return;
+            }
             if(gs_csr_reads!=1 || gs_imr_writes || context->pc!=0x32EFA8 || context->r[4].low!=0xFF00
                     || context->r[29].low!=initial_sp-688 || context->r[31].low!=0x30FE6C)
                 throw UnsupportedSyscall(selector,context->pc);
             gs_imr=0xFF00;++gs_imr_writes;context->r[2].low=0xFF00;return;
         }
         if(code==0 && selector==2 && gs_crt_supplied_) {
+            if(graph_startup_phase==3 && context->pc==0x32E868 && context->r[4].low==1 && context->r[5].low==2
+                && context->r[6].low==1 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005D0) {
+                graph_startup_phase=4;context->r[2].low=0;return;
+            }
             if(gs_imr_writes!=1 || gs_crt_calls || context->pc!=0x32E868 || context->r[4].low!=1
                     || context->r[5].low!=2 || context->r[6].low!=1 || context->r[29].low!=initial_sp-608
                     || context->r[31].low!=0x100274)throw UnsupportedSyscall(selector,context->pc);
@@ -774,6 +783,11 @@ public:
 
     void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
         address = uncachedWordAddress(rdram, address);
+        if(address==0x10003000 && vif_startup.phase==5 && value==1 && !vif_startup.pending_mask) {
+            checkMemory(rdram,0,0);
+            if(gif_dma.starts!=2 || gif_dma.completions!=2 || gif_dma.qwc)throw UnsupportedGuestMemory(address,4);
+            ++vif_startup.gif_resets;vif_startup.phase=6;return; // Idle GIF reset, not GS VRAM/drawing-state reset.
+        }
         // The generated DMAC setup writes zero to STAT in its return delay slot.
         // STAT is W1C/toggle, so zero preserves the existing interrupt mask.
         if(address==0x1000E010 && dmac_startup_writes==2 && value==0 && heap_frees==1) {
@@ -1058,6 +1072,8 @@ public:
     unsigned heap_binds=0,heap_calls=0,heap_frees=0;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
+    VifStartup vif_startup;
+    unsigned graph_startup_phase=0;
     bool heap_allocation_supplied=false,heap_copy_supplied=false;
     unsigned heap_transfers=0,heap_dma_polls=0;
     void supplyHeapAllocation(std::span<const std::uint8_t> evidence) {
@@ -1127,14 +1143,30 @@ public:
     std::uint32_t dmac_mask = 0, dmac_enable_calls = 0, dmac_disable_calls = 0, dmac_removals = 0;
 
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
-    void Store128(std::uint8_t* rdram,R5900Context*,std::uint32_t address,const ProbeGpr& value) {
-        write128(rdram,address,value); // Checked RAM only; no VIF/GIF FIFO support.
+    void Store128(std::uint8_t* rdram,R5900Context* context,std::uint32_t address,const ProbeGpr& value) {
+        if(address==0x10005000 && context->r[29].low==initial_sp-32
+            && ((vif_startup.phase==3 && context->pc==0x30FFB4) || (vif_startup.phase==4 && context->pc==0x30FFBC))) {
+            const auto expected=read128(rdram,0x3680A0+(vif_startup.phase-3)*16);
+            if(value.low!=expected.low || value.high!=expected.high)throw UnsupportedGuestMemory(address,16);
+            std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
+            vif_startup.consume(words);++vif_startup.phase;return;
+        }
+        write128(rdram,address,value); // Other FIFO/MMIO paths still reject through checked RAM bounds.
+    }
+    void writeVuFbrst(R5900Context* context,std::uint32_t value) {
+        if(context->pc!=0x30FF90 || context->r[29].low!=initial_sp-32 || vif_startup.phase!=2 || value!=0x200)
+            throw std::runtime_error("Unsupported VU control write");
+        ++vif_startup.vu_resets;vif_startup.phase=3;context->vu0_fbrst=value&0xC0C;
     }
     void handleBreak(std::uint8_t*,R5900Context*) {
         throw std::runtime_error("Unsupported guest BREAK instruction");
     }
     void Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
         checkMemory(rdram,0,0);
+        if(address==0x12001000 && vif_startup.phase==6 && !graph_startup_phase && value==0x200
+            && context->pc==0x30FE44 && context->r[29].low==initial_sp-112 && gs_csr_reset_writes==1) {
+            gif_dma.gs.resetDrawingState();graph_startup_phase=1;return;
+        }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
                 || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
             throw UnsupportedGuestMemory(address,8);
@@ -1145,6 +1177,9 @@ public:
     }
     std::uint64_t Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
         checkMemory(rdram,0,0);
+        if(address==0x12001000 && graph_startup_phase==1 && context->pc==0x30FE50 && context->r[29].low==initial_sp-112) {
+            graph_startup_phase=2;return 0x551B4000; // Independently captured second original CSR load; no native video clock.
+        }
         if(address==0x12001000 && gs_field_supplied_ && gs_interrupt.acknowledgements==2 && !gs_field_reads
             && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
             ++gs_field_reads;return 0x551B6004; // Independent captured field, not timed native GS state.
@@ -1155,6 +1190,14 @@ public:
         ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
     }
     void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+        if(dmac_startup_writes==3 && heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
+            if(address==0x10003C10 && context->pc==0x30FF70 && !vif_startup.phase && value==1) {
+                checkMemory(rdram,0,0);vif_startup.phase=1;return;
+            }
+            if(address==0x10003C20 && context->pc==0x30FF80 && vif_startup.phase==1 && value==2) {
+                checkMemory(rdram,0,0);vif_startup.error=value;vif_startup.phase=2;return;
+            }
+        }
         if(heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
             if(address==0x1000E000 && context->pc==0x28B2B4 && !dmac_startup_writes && value==1) {
                 checkMemory(rdram,0,0);dmac_control=value;++dmac_startup_writes;return;

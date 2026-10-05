@@ -6,13 +6,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **97/97 capture tests**, **43/43 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **99/99 capture tests**, **44/44 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **765 EE calls / 762 returns**, **30,951 IOP instructions / 128 physical entry targets / twelve waiting workers**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **770 EE calls / 766 returns**, **30,951 IOP instructions / 128 physical entry targets / twelve waiting workers**.
 
-Startup reaches **VIF1 reset** in `FUN_0030FF60`: 32-bit store to **0x10003C10 at EE PC 0x30FF70**. Follow [initial VIF/VU startup](VIF_STARTUP_PLAN.md). This new subsystem needs reset/control and FIFO command evidence; no VIF request, VU microprogram or display presentation works yet.
+The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
+
+Current stop: **GIF CHCR read at 0x1000A000 / EE PC 0x28B928** in `FUN_0028B908`, called by `FUN_00270FF0`. Its new 64-byte packet configures PABE and TEX0 for both contexts; the current GS sink accepts only the two earlier sprite packets. Follow [GS texture-state startup](GS_TEXTURE_STARTUP_PLAN.md) for the new packet/decoder scope. No third DMA request, texture sampling or presentation succeeds yet.
 
 The [buffer-module scope](MODULE_BUFFER_STARTUP_PLAN.md) and [heap scope](IOP_HEAP_STARTUP_PLAN.md) support only the first validated allocation/copy/load/free lifecycle. General allocation, arbitrary buffer modules, file reads, physical DMA timing, assets and audio playback remain incomplete.
 

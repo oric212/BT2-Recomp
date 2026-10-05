@@ -553,3 +553,13 @@ python tools/capture_ee/verify_module_buffer.py
 The generator validates the retail ELF hash/file-backed source segment, full transferred IRX, relocated entry, independent loader return/metadata, local disc hash and disc-matched CDVDMAN version. Its `.cpp`, `.h` and receipts remain in ignored `work/iop/`. Optional native targets require this source alongside the thirteen module sources and boot FILEIO source. Regenerate it before building those targets. No additional entry-probe argument is required: the existing heap evidence enables the bounded owned buffer load and free.
 
 After the full native probe, add `--native work/bt2-generation/entry-stop.json` to the verifier. Native IDs are authored and differ from retail IDs; the embedded module returns 1 and is not retained as a resident. Freed code/heap bytes may remain as diagnostic residue, but native ownership checks reject accesses. The verifier compares code/returns and bounded DMAC setup; it does not establish full boot, VIF execution or presentation.
+
+### VIF configuration and repeated graph setup
+
+Use the existing capture command with the explicit local disc and `--capture-point vif-startup-after`, `graph-csr-after`, or `graph-startup-after`. The first publishes VIF1 configuration, GIF status and VU control at the unique return. The CSR hook selects the second helper frame and executes the displaced instruction on the earlier invocation; it records the actual original CSR LD. The graph return hook independently records return/SP. These hooks use an authored file-backed segment in an unused ELF program-header record. Hashes and raw RAM stay ignored.
+
+```powershell
+python tools/capture_ee/verify_vif_startup.py --native work/bt2-generation/entry-stop.json
+```
+
+The verifier checks source/environment hashes, hook/stub bytes, marker/SP, source packet bytes and native configuration/counts. Once the second graph phase completes, it also checks both graph captures. It does not use the diagnostic 0x12001010 LD as an IMR readback or infer video timing. No additional probe argument is required. Regenerate prepared local source with `prepare_runtime.py` after selecting entries: VU reset assignments now route to the checked control hook while raw generated output remains unchanged and ignored.

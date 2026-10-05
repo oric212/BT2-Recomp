@@ -1,9 +1,31 @@
 import struct
 import unittest
 from capture_ee import export_rva, instrument, TRAP, HANDLER, MARKER, capture_trap
+from capture_ee import vif_startup_stub,FRESH_BIND_STUB,EXPECTED_SHA
+from capture_ee import graph_csr_stub,graph_startup_stub
+from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_second_csr_hook_preserves_the_first_call(self):
+        words=struct.unpack('<'+str(len(graph_csr_stub())//4)+'I',graph_csr_stub())
+        self.assertEqual(words[:2],(0x3C1801FF,0x3718ECF0))
+        early=3+(words[2]&65535)
+        self.assertEqual(words[early],0xA6120002)
+        self.assertEqual((words[early+1]&0x3FFFFFF)<<2,0x30FE58)
+        self.assertEqual(capture_trap('graph-csr-after')[0],0x30FE54)
+    def test_vif_hook_has_a_file_backed_stub_segment(self):
+        data=bytearray(116+4096);struct.pack_into('<I',data,28,52);struct.pack_into('<HH',data,42,32,2)
+        struct.pack_into('<8I',data,52,1,116,0x100000,0x100000,4096,4096,5,4096)
+        struct.pack_into('<8I',data,84,1,0,0,0,0,0,5,4096)
+        metadata={'sha256':EXPECTED_SHA,'load_segments':[{'virtual_address':0x100000,'memory_size':4096,'file_size':4096,'flags':5,'file_offset':116}]}
+        with patch('capture_ee.inspect',return_value=metadata):prepared,offset=instrument(bytes(data),'vif-startup-after')
+        program=struct.unpack_from('<8I',prepared,84);stub=vif_startup_stub()
+        self.assertEqual(program[2:6],(FRESH_BIND_STUB,FRESH_BIND_STUB,len(stub),len(stub)))
+        self.assertEqual(prepared[program[1]:program[1]+program[4]],stub)
+        self.assertEqual(prepared[offset:offset+8],capture_trap('vif-startup-after')[1])
+        words=struct.unpack('<'+str(len(stub)//4)+'I',stub)
+        self.assertIn(0x4842E000,words);self.assertEqual((words[-2]&0x3FFFFFF)<<2,FRESH_BIND_STUB+(len(words)-2)*4)
     def test_loadfile_traps_do_not_overlap_the_caller(self):
         for point,address,marker in [('loadfile-bind-after',0x337264,0xB737),('loadfile-version-after',0x3372A8,0xB738),('loadfile-module-before',0x337BDC,0xB739),('loadfile-module-after',0x337BE4,0xB73A)]:
             actual,trap,value=capture_trap(point);words=struct.unpack('<8I',trap)
