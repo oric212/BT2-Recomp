@@ -7,6 +7,22 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_later_dma_boundary_does_not_hide_earlier_service_failures(self):
+        from verify_sound_rpc import later_dbc_dma_boundary
+        r={'dbc_rpc_binds':4,'dbc_rpc_calls':1,'native_iop_error':'Unresolved IOP import: sifman:7','native_iop_pc':0x621DC,'selector':0x77,'pc':0x32F028,'packet_words':[0]*6+[36,0x3A03C0,0x80001304,144]}
+        self.assertTrue(later_dbc_dma_boundary(r))
+        for key,value in [('dbc_rpc_calls',0),('native_iop_error','Unresolved IOP import: libsd:4'),('native_iop_pc',0x621D8),('packet_words',[])]:
+            self.assertFalse(later_dbc_dma_boundary(dict(r,**{key:value})))
+
+    def test_dbc_hooks_publish_real_returns_without_unrelated_mmio(self):
+        for point in ('rpc-dbc-command-before','rpc-dbc-command-after','rpc-dbc-binds-after','rpc-dbc-sema-after','rpc-dbc-init-after'):
+            address,trap,marker=capture_trap(point)
+            self.assertEqual(address,TEXTURE_POINTS[point][0])
+            self.assertEqual(marker,TEXTURE_POINTS[point][1])
+            stub=texture_stub(point);w=struct.unpack('<'+str(len(stub)//4)+'I',stub)
+            self.assertEqual(w[2:8],(0xFF020008,0xAF1D0010,0xAF040018,0xAF05001C,0xAF060020,0xAF070024))
+            self.assertEqual((w[-2]&0x3FFFFFF)<<2,FRESH_BIND_STUB+40)
+
     def test_sound_console_stubs_publish_actual_arguments(self):
         for point in ('sound-bind-after','sound-init-before','sound-init-after','deci2-after'):
             blob=texture_stub(point);words=struct.unpack('<'+str(len(blob)//4)+'I',blob)

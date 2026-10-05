@@ -595,3 +595,9 @@ Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_seco
 ### EE sound thread-start checkpoint
 
 `python tools/capture_ee/verify_ee_thread.py --output work/bt2-generation/ee-thread-start.bin` verifies local thread query/Status/return/context and sound/device forward captures, then writes a checked 56-byte bundle. Append this as the optional 22nd probe argument after the texture bundle. Use `--native work/bt2-generation/entry-stop.json` to compare owned ready context, SOUNDS server/client/result/input and request metadata. The optional probe now reports RPC registration inventory. Bundles/captures/generated code remain ignored; ready state does not imply running threads.
+
+### DBCMAN request evidence
+
+`python tools/capture_ee/verify_dbc_rpc.py --native work/bt2-generation/entry-stop.json` validates the reached four-bind/first-command group and pending second-command reverse-DMA boundary. The verifier checks local capture hashes, executable and environment identities, real caller publications, relocated code, owned client/server addresses and request metadata. The second request must remain pending at unresolved sifman:7; no retail success is replayed.
+
+New isolated capture points: `rpc-dbc-second-bind-after`, `rpc-dbc-command-before`, `rpc-dbc-command-after`, `rpc-dbc-binds-after`, `rpc-dbc-sema-after`, `rpc-dbc-init-after`, `rpc-dbc-setup-before`, `rpc-dbc-setup-after`. These retain the existing local disc/BIOS capture workflow; client/result windows are stable twice, but live IOP snapshots do not establish exact first DMA payload/completion.

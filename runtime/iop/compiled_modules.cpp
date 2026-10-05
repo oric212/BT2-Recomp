@@ -292,19 +292,31 @@ std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uin
     const auto client=sounds?0x6351C0u:0x3A5C80u;const auto result=sounds?0x635180u:0x3A5C40u;
     if((service!=0x80000701 && !sounds) || epoch!=epoch_ || failed_ || requests || command!=(sounds?16u:0xE620u)
         || input.size()!=(sounds?256u:64u) || result_size!=(sounds?64u:16u) || (sounds && sound_rpc_requests!=1) || residents.size()!=13 || boot_heap_allocations!=2)
-        throw std::runtime_error("Unsupported sound RPC native request");
+        throw std::runtime_error("Unsupported registered RPC native request");
+    auto response=executeRegisteredRpc(service,command,input,result_size,client,result);++requests;return response;
+}
+
+std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size) {
+    if(epoch!=epoch_ || failed_ || dbc_rpc_requests>=2 || command!=(dbc_rpc_requests?0x80001304u:0x80001363u) || input.size()!=144 || result_size!=144
+        || sounds_rpc_requests!=1 || residents.size()!=13 || boot_heap_allocations!=2)throw std::runtime_error("Unsupported DBCMAN native request");
+    std::array<std::uint32_t,36> expected{};if(dbc_rpc_requests){expected[0]=0x310;expected[1]=0x3A27C0;}
+    if(std::memcmp(input.data(),expected.data(),sizeof(expected)))throw std::runtime_error("DBCMAN input outside observed initialization profile");
+    auto response=executeRegisteredRpc(0x80001300,command,input,result_size,0x3A03C0,0x3A04C0);++dbc_rpc_requests;return response;
+}
+
+std::vector<std::uint8_t> NativeIopService::executeRegisteredRpc(std::uint32_t service,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t client,std::uint32_t result) {
     const auto found=runtime.rpc_servers.find(service);
-    if(found==runtime.rpc_servers.end())throw std::runtime_error("No owned sound RPC server");
+    if(found==runtime.rpc_servers.end())throw std::runtime_error("No owned registered RPC server");
     const auto server=found->second;const auto queue=runtime.rpc_queues.find(server.queue);
     if(queue==runtime.rpc_queues.end() || runtime.current_thread || !runtime.cpu_interrupts_enabled)
-        throw std::runtime_error("sound RPC request outside idle owned context");
+        throw std::runtime_error("registered RPC request outside idle owned context");
     auto& worker=runtime.threads.at(queue->second.thread);
     if(!worker.waiting || worker.ready || worker.wait_rpc!=server.queue || worker.gp!=server.gp)
-        throw std::runtime_error("sound RPC worker is not parked at its queue");
+        throw std::runtime_error("registered RPC worker is not parked at its queue");
     runtime.check(server.buffer,static_cast<unsigned>(input.size()));
     runtime.check(worker.context.get(29)-64,64);
     runtime.check(server.descriptor,68);runtime.check(server.queue,24);
-    if(runtime.read(server.queue+12,4) || runtime.read(server.queue+4,4))throw std::runtime_error("sound RPC queue already has a request");
+    if(runtime.read(server.queue+12,4) || runtime.read(server.queue+4,4))throw std::runtime_error("registered RPC queue already has a request");
     try {
         std::copy(input.begin(),input.end(),runtime.ram.begin()+server.buffer);
         // Reached SDK request fields; link/end retain ownership after dequeue.
@@ -316,10 +328,10 @@ std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uin
         IopContext c=worker.context;c.pc=server.handler;c.branch_pending=false;c.delay_instruction=false;c.load_register=0;
         c.set(4,command);c.set(5,server.buffer);c.set(6,static_cast<unsigned>(input.size()));c.set(28,server.gp);c.set(31,IopRuntime::sentinel);
         runtime.current_thread=queue->second.thread;runtime.execute(runtime,c);runtime.current_thread=0;
-        if(c.pc!=IopRuntime::sentinel || c.get(29)!=worker.context.get(29))throw std::runtime_error("sound RPC handler did not return to its worker frame");
-        if(!c.get(2))throw std::runtime_error("sound RPC returned null response");
+        if(c.pc!=IopRuntime::sentinel || c.get(29)!=worker.context.get(29))throw std::runtime_error("registered RPC handler did not return to its worker frame");
+        if(!c.get(2))throw std::runtime_error("registered RPC returned null response");
         runtime.check(IopRuntime::physical(c.get(2)),result_size);
-        runtime.write(server.queue+4,0,4);++requests;
+        runtime.write(server.queue+4,0,4);
         return {runtime.ram.begin()+IopRuntime::physical(c.get(2)),runtime.ram.begin()+IopRuntime::physical(c.get(2))+result_size};
     } catch(...) {runtime.current_thread=0;failed_=true;throw;}
 }

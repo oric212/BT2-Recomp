@@ -152,6 +152,8 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls==1 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
+        if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
@@ -642,6 +644,9 @@ public:
                 && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
                     || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
                     || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
+            const bool dbc_init_sema=dbc_rpc_binds==4 && dbc_rpc_calls==1 && semaphores.size()==7 && address==initial_sp-288 && maximum==127 && initial==1 && option==0x381C28;
+            const bool dbc_call_sema=sounds_rpc_calls==1 && ((dbc_rpc_binds==1 && !dbc_rpc_calls && semaphores.size()==7) || (dbc_rpc_binds==4 && dbc_rpc_calls==1 && semaphores.size()==8)) && address==initial_sp-528 && maximum==1 && initial==0 && option==0x3838E8;
+            const bool dbc_bind_sema=sounds_rpc_calls==1 && dbc_rpc_binds<4 && semaphores.size()==7 && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sounds_bind_sema=sound_thread_starts==1 && !sounds_rpc_binds && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
@@ -651,7 +656,7 @@ public:
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
-            if (attributes != 0 && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -690,7 +695,7 @@ public:
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838D8;
             const bool mmode_cleanup = scmd_mmode_calls == 1 && semaphore_waits == 5 && semaphore_deletions == 3
                 && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838E8;
-            const bool fresh_cleanup=post_cd.supplied && id==7 && semaphores.size()==8
+            const bool fresh_cleanup=post_cd.supplied && ((id==7 && semaphores.size()==8) || (dbc_rpc_binds==4 && dbc_rpc_calls==2 && id==8 && semaphores.size()==9))
                 && semaphore_deletions==3+serviceOperations()
                 && ((post_cd.binds && !post_cd.calls && semaphores[id].option==0x3838D8)
                     || (post_cd.calls==1 && !post_cd.scmd_binds && semaphores[id].option==0x3838E8)
@@ -1140,7 +1145,7 @@ public:
             throw std::runtime_error("EE sound thread-start evidence differs/repeated");
         sound_thread_start_supplied=true;
     }
-    unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0;
+    unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0,dbc_rpc_binds=0,dbc_rpc_calls=0;
     std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
@@ -1171,7 +1176,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls;}
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1513,6 +1518,7 @@ private:
     }
 #ifdef BT2_NATIVE_IOP
     void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
+    void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);
     void receiveSoundRpc(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);
 #endif

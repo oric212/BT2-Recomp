@@ -466,7 +466,7 @@ int main(int argc, char** argv) {
         }
         if (argc >= 18) {
             require(stopped && !stop_handler && runtime.scmd_bind_calls == 1 && runtime.cd_init_calls == 1
-                    && (runtime.post_cd.supplied ? (runtime.semaphores.size()==7 || runtime.semaphores.size()==8) : runtime.semaphores.size()==(runtime.post_sif.rpc_initialized && stop_selector==0x77 ? 8u : 7u)), "SCMD continuation state differs");
+                    && (runtime.post_cd.supplied ? (runtime.semaphores.size()==7 || runtime.semaphores.size()==8 || (runtime.dbc_rpc_binds==4 && runtime.dbc_rpc_calls>=1 && runtime.semaphores.size()==9 && runtime.semaphores[7].maximum==127 && runtime.semaphores[7].option==0x381C28)) : runtime.semaphores.size()==(runtime.post_sif.rpc_initialized && stop_selector==0x77 ? 8u : 7u)), "SCMD continuation state differs");
             if (!runtime.scmd_mmode_calls) {
                 require(!stop_target && stop_selector == 0x40 && context.pc == 0x32EC68
                         && runtime.guest_calls == 190 && runtime.returns == 185
@@ -719,6 +719,8 @@ int main(int argc, char** argv) {
                 << ",\"ee_status\":" << context.cop0_status
                 << ",\"ee_thread_count\":" << runtime.threads.size()
                 << ",\"sound_thread_starts\":" << runtime.sound_thread_starts
+                << ",\"dbc_rpc_binds\":" << runtime.dbc_rpc_binds
+                << ",\"dbc_rpc_calls\":" << runtime.dbc_rpc_calls
                 << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
                 << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
                 << ",\"sound_rpc_binds\":" << runtime.sound_rpc_binds
@@ -749,6 +751,13 @@ int main(int argc, char** argv) {
                 }
             }
 #endif
+            report<<"],\"dbc_client_words\":[";
+            for(const auto client:std::array<std::uint32_t,4>{0x3A03C0,0x3A0410,0x3A0438,0x3A0460}) {
+                if(client!=0x3A03C0)report<<",";report<<"[";
+                for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),client+n*4);report<<"]";
+            }
+            report<<"],\"dbc_result_words\":[";
+            for(unsigned n=0;n<36;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A04C0+n*4);
             report<<"],\"sounds_client_words\":[";
             if(runtime.sounds_rpc_binds)for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x6351C0+n*4);
             report<<"],\"sounds_result_words\":[";
