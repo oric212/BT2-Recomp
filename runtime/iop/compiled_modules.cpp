@@ -374,10 +374,52 @@ std::vector<std::uint8_t> NativeIopService::callMcRpc(unsigned epoch,std::span<c
     ++mc_rpc_requests;return response;
 }
 
-std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span<const std::uint8_t> input) {
+std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory) {
     std::array<std::uint32_t,12> expected{};expected[7]=0x3A7480;
     if(epoch!=epoch_ || failed_ || mc_rpc_requests!=1 || mc_query_requests || input.size()!=48
         || std::memcmp(input.data(),expected.data(),48))throw std::runtime_error("MCSERV query outside captured profile");
-    auto response=executeRegisteredRpc(0x80000400,1,input,4,0x3A6F80,0x3A8540);
+    if(ee_memory.size()!=32u*1024*1024 || runtime.pending_ee_bind.thread || runtime.providers.contains({"sifcmd",15}) || runtime.providers.contains({"sifman",7}) || runtime.providers.contains({"sifman",8}))
+        throw std::runtime_error("Card timed dispatch requires owned EE RPC endpoint");
+    runtime.providers[{"sifcmd",15}]=[this,ee_memory](IopRuntime& rt,IopContext& c)->std::uint32_t {
+        if(c.pc!=0xA1244 || c.get(4)!=0xA1CA0 || c.get(5)!=0x80000704 || c.get(6)
+            || rt.pending_ee_bind.thread || !rt.timed_wait_owner || !rt.threads.contains(rt.current_thread)
+            || rt.threads.at(rt.current_thread).entry!=0xA0FF0 || rt.threads.at(rt.current_thread).priority!=24)
+            throw std::runtime_error("IOP EE bind outside reached SDRDRV helper");
+        std::uint32_t registered;std::memcpy(&registered,ee_memory.data()+0x3A6D18,4);
+        if(registered)throw std::runtime_error("Pending EE bind scope requires the observed unregistered server");
+        constexpr unsigned packet=0x1FF400;
+        rt.check(0xA1CA0,40);rt.check(packet,64);
+        if(rt.read(0xA1CA0,4) || rt.read(0xA1CC4,4))throw std::runtime_error("Duplicate native EE sound bind");
+        // Owned logical outgoing request. No response/server pointer or API return is supplied.
+        const std::array<std::uint32_t,16> request={64,0,0x80000009,0,6,packet,2,0xA1CA0,0x80000704};
+        for(unsigned n=0;n<request.size();++n)rt.write(packet+n*4,request[n],4);
+        rt.write(0xA1CA0,packet,4);rt.write(0xA1CA4,2,4);rt.write(0xA1CA8,0,4);
+        rt.pending_ee_bind={rt.current_thread,0xA1CA0,0x80000704,packet,2};
+        auto& t=rt.threads.at(rt.current_thread);t.ready=false;t.waiting=true;t.wait_ee_bind=true;
+        throw IopYield{};
+    };
+    runtime.providers[{"sifman",7}]=[this,ee_memory](IopRuntime& rt,IopContext& c) {
+        if(c.pc!=0x51064 || c.get(4)!=0x1E1778 || c.get(5)!=1 || mc_dma_submissions
+            || rt.timed_wakes!=5 || rt.card_alarm_fires!=4 || rt.sio2_card_fifo_packets!=5)
+            throw std::runtime_error("MCSERV secondary DMA outside owned query");
+        const std::array<std::uint32_t,4> descriptor={0x1E16B8,0x3A7480,192,0};
+        rt.check(c.get(4),16);rt.check(descriptor[0],descriptor[2]);
+        for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+4*n,4)!=descriptor[n])
+            throw std::runtime_error("MCSERV secondary DMA descriptor differs");
+        std::copy_n(rt.ram.begin()+descriptor[0],192,mc_dma_payload.begin());
+        std::copy(mc_dma_payload.begin(),mc_dma_payload.end(),ee_memory.begin()+descriptor[1]);
+        ++mc_dma_submissions;return 0x730001u;
+    };
+    runtime.providers[{"sifman",8}]=[this](IopRuntime&,IopContext& c) {
+        if(c.pc!=0x5106C || c.get(4)!=0x730001 || mc_dma_submissions!=1 || mc_dma_polls)
+            throw std::runtime_error("MCSERV secondary DMA poll differs");
+        ++mc_dma_polls;return UINT32_MAX;
+    };
+    const auto cleanup=[&]{runtime.providers.erase({"sifcmd",15});runtime.providers.erase({"sifman",7});runtime.providers.erase({"sifman",8});};
+    std::vector<std::uint8_t> response;
+    try {response=executeRegisteredRpc(0x80000400,1,input,4,0x3A6F80,0x3A8540);cleanup();}
+    catch(...) {cleanup();throw;}
+    if(mc_dma_submissions!=1 || mc_dma_polls!=1)throw std::runtime_error("MCSERV secondary DMA incomplete");
+
     ++mc_query_requests;return response;
 }

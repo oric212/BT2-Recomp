@@ -1,6 +1,6 @@
 # Timed IOP wait and active RPC context scope
 
-Status: new scheduler design boundary; not implemented.
+Status: bounded timed wait, priority dispatch, alarm callback and query return transport implemented. General cross-CPU scheduling remains incomplete.
 
 ## Reached evidence
 
@@ -22,3 +22,17 @@ An independent isolated retail flow, with both card slots disabled, passes this 
 Use synthetic suspend/resume and priority-order cases with observable different continuations; reject duplicate wake, wrong owner/deadline/epoch and failed-context retry. Confirm the real query's owned stack/queue and pending EE request survive, and only one timer wake occurs. Compare actual final result/transport with an independently captured explicit absent-card profile, without equating unrequested stack contents or physical scheduling.
 
 An immediate-success DelayThread stub is not an implementation of this scope. Keep the pending boundary until context retention and eligible worker dispatch are supported.
+
+## Implemented bounded scope (2026-10-05)
+
+The reached caller remains live on the host stack, including nested native exports and the borrowed RPC frame. Separate ready worker contexts dispatch by priority before logical idle advance. Five 300-microsecond delays execute; the priority-24 SDRDRV helper runs once and parks on an owned outgoing bind to EE service 0x80000704, currently unregistered. Its request/client/continuation are retained; no server pointer, successful return or reply is invented.
+
+The real absent-card FIFO path sends `81 52 00` five times and receives three FF bytes each time. USec2SysClock converts 100 to [3686,0]. Five alarms register; four native callbacks signal the actual IOP semaphore. Logical time reaches 1900 microseconds; the fifth alarm remains pending at 2000. This is logical scheduling, not cycle/wall-clock equivalence. Retaining this alarm does not establish later recurring timer support.
+
+The real MCSERV handler submits its owned 192-byte worker-stack payload to EE 0x3A7480 and polls its logical completion once. The primary result is -11, independently matched at retail callback entry with both card slots disabled. Generated RPC_END and neutral FUN_0031DD60 execute; the latter signals the EE completion semaphore. Undefined secondary stack fields are not equated with retail.
+
+Synthetic priority/context retention and failure cases, native service lifecycle/endpoint checks, and independent delay/alarm/FIFO/flow/callback captures verify the bounded implementation. Capture sources and proprietary data stay ignored. Diagnostic binding against an already registered retail EE service is separate evidence; it is not substituted for the native pending request.
+
+## Remaining scheduler boundary
+
+The pending reverse bind requires actual EE server registration and command delivery before the sound helper may resume. General EE child dispatch, cross-CPU RPC routing, later alarm dispatch/cancellation and multiple simultaneous timed waits are not supplied by this scope. Follow their actual blockers and obtain evidence before extending it.

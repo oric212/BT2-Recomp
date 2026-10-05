@@ -468,11 +468,11 @@ int main(int argc, char** argv) {
             const auto semas=runtime.semaphores.size();
             const bool pending_mc_bind=runtime.dbc_rpc_calls==4 && semas==11 && stop_selector==0x77 && context.pc==0x32F028
                 && runtime.semaphores[10].maximum==1 && runtime.semaphores[10].count==0 && (runtime.semaphores[10].option==0x3838D8 || (runtime.mc_rpc_binds==1 && runtime.semaphores[10].option==0x3838E8));
-            const bool pending_mc_query=runtime.mc_rpc_calls==1 && semas==10 && stop_selector==0x77 && context.pc==0x32F028
+            const bool pending_mc_query=runtime.mc_rpc_calls==1 && semas==10 && ((stop_selector==0x77 && context.pc==0x32F028) || (stop_target==0x31DD60 && stop_source==0x332354))
                 && runtime.read32(runtime.memory().data(),0x3A97DC)==0x3A6F80
                 && runtime.read32(runtime.memory().data(),0x3A97E0)==1;
             const bool mc_local_semas=runtime.dbc_rpc_calls==4 && (semas==10 || pending_mc_bind)
-                && runtime.semaphores[8].maximum==1 && runtime.semaphores[8].count==(pending_mc_query?0u:1u-runtime.mc_lock_waits+runtime.mc_lock_signals)
+                && runtime.semaphores[8].maximum==1 && runtime.semaphores[8].count==(pending_mc_query?0u:1u-runtime.mc_lock_waits-runtime.mc_lock_polls+runtime.mc_lock_signals)
                 && runtime.semaphores[8].option==0x3824C8 && runtime.semaphores[9].maximum==1
                 && runtime.semaphores[9].count==0 && runtime.semaphores[9].option==0x3824D8;
             const bool dbc_semas=runtime.dbc_rpc_binds==4 && runtime.dbc_rpc_calls>=1 && (semas==9 || mc_local_semas)
@@ -486,7 +486,7 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations()+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals
                         && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
@@ -742,6 +742,16 @@ int main(int argc, char** argv) {
                 << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
                 << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
+                << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)
+                << ",\"mc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->mc_dma_polls:0)
+                << ",\"timed_waits\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_waits:0)
+                << ",\"timed_wakes\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_wakes:0)
+                << ",\"timed_dispatches\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_dispatches:0)
+                << ",\"logical_time_us\":" << (runtime.native_iop?runtime.native_iop->runtime.logical_time_us:0)
+                << ",\"card_alarm_fires\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_fires:0)
+                << ",\"card_alarm_sets\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_sets:0)
+                << ",\"card_alarm_waits\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_waits:0)
+                << ",\"sio2_card_fifo_packets\":" << (runtime.native_iop?runtime.native_iop->runtime.sio2_card_fifo_packets:0)
 #endif
                 << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
                 << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
@@ -786,6 +796,16 @@ int main(int argc, char** argv) {
                 std::uint32_t value=0;for(unsigned b=0;b<4;++b)value|=std::uint32_t(runtime.native_iop->dbc_dma_payload[n*4+b])<<(b*8);
                 report<<(n?",":"")<<value;
             }
+#endif
+            report<<"],\"mc_dma_ee_words\":[";
+            for(unsigned n=0;n<48;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A7480+n*4);
+            report<<"],\"pending_ee_bind\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {const auto& b=runtime.native_iop->runtime.pending_ee_bind;report<<b.thread<<","<<b.client<<","<<b.server_id<<","<<b.packet<<","<<b.rpc_id;}
+#endif
+            report<<"],\"mc_dma_payload_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop)for(unsigned n=0;n<48;++n){std::uint32_t v=0;std::memcpy(&v,runtime.native_iop->mc_dma_payload.data()+n*4,4);report<<(n?",":"")<<v;}
 #endif
             report<<"],\"sio2_dma_channels\":[";
 #ifdef BT2_NATIVE_IOP

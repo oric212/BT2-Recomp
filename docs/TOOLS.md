@@ -613,3 +613,9 @@ New isolated capture points: `rpc-dbc-second-bind-after`, `rpc-dbc-command-befor
 ### First card slice and callback diagnostics
 
 `capture_ee.py --capture-point rpc-mc-query-before --capture-mc-sio2-slice` uses the isolated local interpreter and stops after the original sceSetSliceDMA, before START. Supply the existing local PCSX2/BIOS/disc arguments. `python tools/capture_ee/verify_mc_sio2.py --native work/bt2-generation/entry-stop.json` checks environment/provenance, hook, API arguments/return, registers, owned source bytes and exact pending native START. `rpc-mc-callback-before` captures the separate retail callback frontier; its unrequested stack data is not a native payload template. All outputs remain ignored. Run the final native checkpoint after CTest, which can overwrite the shared diagnostic report.
+
+### Timed absent-card query evidence
+
+`capture_ee.py` supports isolated `--capture-iop-delay`, `--capture-iop-card-fifo`, `--capture-iop-card-alarm` and diagnostic `--capture-iop-ee-bind` modes at `rpc-mc-query-before`. These execute/observe the actual reached APIs or hardware stores. `--capture-mc-sio2-flow` records five delays and FIFO probes alongside the DMA sequence. `--absent-cards` creates a separately named profile with both cards disabled; use it at `rpc-mc-callback-before` to validate the primary result and reply shape. No user profile is modified.
+
+Run `python tools/capture_ee/verify_mc_timed.py` and `verify_mc_sio2_flow.py` against the restored full native report. The timed verifier checks capture identity/profile, instrumentation, owned pending bind, immutable secondary payload/readback and the actual -11 primary result. It does not equate undefined stack fields or physical scheduling. Raw captures, generated sources and prepared maps remain ignored.

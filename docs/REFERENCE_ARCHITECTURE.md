@@ -220,3 +220,9 @@ Reused the reviewed PS2SDK event semantics and BT3 owned worker/import separatio
 ### Absent-card DMA transport and timed IOP boundary
 
 Consulted pinned PCSX2 [IopDma.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/IopDma.cpp), locally pinned Sio2.cpp/SioTypes.h and PS2SDK dmacman API contracts. Adapted words-to-bytes sizing, retained channel state and separate START/completion; no implementation copied. Explicitly disabled local card slots establish five probe packets, one F3 fallback and six FF bytes/zero padding. Full observer preserves actual control writes/readbacks and real API calls. Native uses bounded logical DMA/IRQ delivery; hardware timing and whole-system control counts are not equated. MCMAN now reaches a real 300-microsecond DelayThread; the active borrowed RPC context and ready sound helper require [timed scheduling design](IOP_TIMED_WAIT_PLAN.md).
+
+### Bounded timed query dispatch (2026-10-05)
+
+The pinned BT3 IOP notes and public PS2SDK thread/RPC contracts informed ownership and cooperative dispatch. BT2 retains the live borrowed RPC/export CPU frames on the host stack while separately retained ready worker contexts run by priority. Independent local delay, clock/alarm, FIFO and absent-card callback captures verify reached behavior. The outgoing SDRDRV EE bind is retained as pending because the native EE server is not registered; the diagnostic retail bind result is not substituted. The current scope does not claim general EE/IOP scheduling or physical timing. See [timed IOP scope](IOP_TIMED_WAIT_PLAN.md).
+
+The later generated diagnostic formatter reaches EE PSUBW. [PCSX2's MMI interpreter](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/MMI.cpp#L290) confirms four independent word subtractions; the authored ABI helper uses unsigned 32-bit lane arithmetic and tests wraparound/no cross-lane borrow. No reference implementation was copied.

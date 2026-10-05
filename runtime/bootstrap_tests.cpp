@@ -285,6 +285,8 @@ int main() {
         require(std::bit_cast<std::array<std::uint32_t, 4>>(ps2_paddu32(left, right))
                 == std::array<std::uint32_t, 4>{UINT32_MAX, 2, UINT32_MAX, 3});
         R5900Context context{};
+        require(std::bit_cast<std::array<std::uint32_t,4>>(PS2_PSUBW(left,right))
+            ==std::array<std::uint32_t,4>{0xFFFFFFFE,0xFFFFFFFE,0,UINT32_MAX});
         context.r[0] = left;
         SET_GPR_VEC(&context, 0, right);
         require(GPR_VEC(&context, 0).low == 0 && context.r[0].low == left.low);

@@ -4,66 +4,45 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 ## Current status
 
-The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. The first SDRDRV bind/command executes through native IOP code and generated EE cleanup. No displayed frame, audio playback or complete boot yet.
+The optional EE probe executes original generated BT2 code through platform startup, fourteen module-load paths (thirteen resident IOP modules), two owned IOP heap allocations, bounded sound/DBCMAN initialization and the initial MCSERV exchanges. The absent-card query now completes through real native IOP code, timed waits, secondary SIF transfer and generated EE callback/cleanup. **No game assets loaded, displayed frame or audio playback.**
 
-Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**, **111/111 capture tests**, **45/45 recompilation tooling tests**, independent heap and embedded-module/cleanup checks. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **14/14 CTests**, **113/113 capture tests**, **46/46 recompilation tests**, **13/13 IOP tooling tests**, and nine independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,263 EE calls / 1,255 returns**, **37,601 IOP instructions / 162 physical entry targets / twelve waiting workers and one ready helper**.
+Execution reaches **FUN_002FD500**, currently a map gap, from indirect call **0x2F94D8**, arguments [0x2F92D0,0], in the following filesystem registration/diagnostic path. Discover this execution-observed entry, regenerate/link and inspect its real next requirement. Keep neutral names; do not substitute device/file-read success.
 
-The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
+The [timed query scope](IOP_TIMED_WAIT_PLAN.md) completes five 300-us delays, priority dispatch, five FIFO probes, five alarm registrations / four real callbacks, an owned **192-byte secondary copy / one poll**, primary result **-11**, and generated **FUN_0031DD60** completion. Independent isolated captures with both cards disabled verify the result and transport.
 
-The third normal GIF request completes: packed A+D retains PABE/TEX0 state without drawing. Disabled Timer 1 setup, main-thread priority 2, generated EE heap helpers and four pool allocations complete. The four pool pointers independently match retail captures; seven EndOfHeap queries and eight lock/unlock pairs execute.
-
-The second IOP allocation now completes through real translated FILEIO and generated EE RPC cleanup: **0x81800 bytes at 0xCE500**, independently matching retail. Five native images were relocated out of that heap interval; the four resident modules still match their normalized retail startup captures. All module, heap and stack placements pass provenance/overlap checks. Only the two captured allocations are supported.
-
-SDRDRV service **0x80000701** binds using owned native addresses. Command **0xE620** runs its registered handler, returns sixteen zero bytes and starts a priority-24 IOP helper. Independent retail captures validate the result and thread parameters. The helper is ready natively versus running in retail; scheduling equivalence and its outgoing callback bind are unverified.
-
-The [EE thread-start scope](EE_THREAD_START_PLAN.md) now completes: owned ID 3 queries dormant state, clears its saved context and becomes ready with the captured GP/SP/exit handler. Only the reached IE/EIE handoff is supplied; main priority 2 continues ahead of child priority 5. No child instructions or general scheduling yet. SOUNDS service **0x02000004** binds to native owned addresses; command **0x10** executes natively and returns the independently captured 64-byte result. Both sound RPC cleanup paths complete.
-
-DBCMAN's **four binds / four commands** complete through real native handlers and generated cleanup: 0x80001363, 0x80001304 and two 0x80001301 requests. The bounded **128-byte IOP-to-EE copy / one completion poll** completes using owned native source bytes; an immutable payload record verifies EE readback. Independent retail transport evidence uses an explicitly redirected diagnostic source copy, so live device bytes and physical scheduling are not equated. Both related request/result shapes match independent captures. See [completed reverse DMA scope](DBCMAN_DMA_PLAN.md).
-
-The bounded [MCSERV initialization exchange](MCSERV_RPC_PLAN.md) now completes: bind 0x80000400 / ID 39, real native command 0xFE / ID 40, and generated RPC_END/wait/delete. The actual 12-byte reply **[0,0x210,0x226]** matches independent local captures; invalid inputs, wrong epoch and duplicate requests are rejected. Generated startup continues through additional helpers.
-
-The asynchronous MCSERV query now executes real MCMAN/SIO2 code through **six DMA send/receive pairs**: five probe packets and one F3 fallback under an explicit absent-card profile. Channel-11/12 source/destination ownership, 144-byte slices, six FF reply bytes/zero padding, final registers and packet sequence independently match isolated retail captures with both card slots disabled. Registered IRQ-17/event delivery runs native code; physical scheduling and whole-system control counts are not equated. See [bounded card transport](SIO2_CARD_DMA_PLAN.md).
-
-Current blocker: **300 microsecond IOP DelayThread**, thbase:33 / native PC 0x31B40. The async query remains pending at EE SifSetDma 0x77 / PC 0x32F028. Timed dispatch must retain the active RPC context and account for the already ready sound helper; see [timed IOP scheduling scope](IOP_TIMED_WAIT_PLAN.md). Secondary SIF copy, RPC_END and FUN_0031DD60 callback are still pending. No assets loaded, displayed frame or audio playback.
-
-The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
+Remaining ownership: the SDRDRV helper is parked on a pending reverse EE bind to **0x80000704** (EE server not registered). Logical IOP time is **1900 us**; the fifth card alarm remains armed at **2000 us**. General cross-CPU scheduling, later timer delivery, mounted cards, sector reads and sound playback remain incomplete. An EE child is ready but has not executed.
 
 ## Key counts
 
-- **8,088** provisional mapped/generated EE functions; **8,091** raw generated C++/header files (8,089 C++ files include the stub unit). Safe structural filtering now admits isolated unreachable branch-padding NOPs; boundaries remain provisional.
-- **111** distinct EE functions entered / **107** completed at the last measured unique-count checkpoint across native probes (startup/helpers, not gameplay).
-- Fourteen EE module-load helper paths now complete (one nonresident); updated distinct EE totals have not been measured. Main and entry remain partial.
-- SIO2MAN: **47 provisional function ranges / 28 imports / 239 relocation sites** validated locally. All relocation words and code ranges match the reference loaded module; **six native IOP entry targets entered at its initial resident checkpoint**, with one worker parked then (now active at the transfer blocker). MCMAN: 167 provisional ranges / 35 imports; resident result 2 validated against a local reference return and normalized startup data/BSS. MCSERV and DBCMAN resident entries/worker waits are validated; SIO2D resident entry and Vblank wait are validated locally. DS2U_D: 40 provisional ranges / 25 imports; resident return and owned worker start/dormant state are verified. Live controller data/BSS is not equated across Vblank phases. These startup counts do not represent working gameplay functions.
-- Added sound maps: LIBSD **57 ranges / 19 imports**, SDRDRV **7 / 52**, MODHSYN **174 / 24**, MODSESQ2 **46 / 9**. These are provisional discovery counts, not restored gameplay functions. Their resident startup paths work; substantive sound processing remains unverified.
-- CDVDSTM **14 ranges / 34 imports** and SOUNDS **14 / 35** have verified resident startup. CRI_ADXI **217 / 45** has verified resident startup; these provisional map counts do not indicate functioning audio/streaming.
-- Three GS packets (two draws, one configuration) / three logical DMA completions / **573,440** sprite pixels processed, including depth writes. No displayed frame or complete game boot.
+- **8,580** provisional EE map entries / **8,583** raw generated C++/header files; boundaries remain unverified. **15 additional reached entry bindings** linked this pass; these are not fifteen restored gameplay functions.
+- Latest full checkpoint: **1,359 EE calls / 1,354 returns**, **41,799 native IOP instructions / 163 physical entry targets / thirteen waiting workers**.
+- **111 distinct EE functions entered / 107 completed** at the earlier unique-count checkpoint; updated distinct totals have not been measured. Call totals are execution events, not working-function counts.
+- **Fourteen module-load paths / thirteen resident modules**, two captured IOP allocations, four EE startup pools, four DBCMAN binds/commands, and completed initial sound/MCSERV exchanges. Module discovery/relocation counts are in the history.
+- Card query: **six DMA pairs / five timed FIFO probes**. No mounted-card filesystem support.
+- **Three GS packets / two startup draws / 573,440 sprite pixels** processed. No presented game frame or VU microprogram execution.
 
 ## Milestones
 
 - [x] Native host executable.
-- [x] Preliminary local executable validation and ELF metadata inspection.
+- [x] Local executable validation and ELF metadata inspection.
 - [x] Trusted retail revision confirmation (Redump disc match; local ELF equals the embedded executable).
-- [x] Pinned PS2Recomp tools and synthetic translation.
-- [x] Provisional BT2 function map and local C++ generation.
-- [x] Generated routines compiled, linked and executed; game entry reached.
-- [x] Local kernel capture and isolated generated scan validation.
-- [x] Bounded generated platform initialization returned to entry.
-- [ ] Full generated-code/runtime integration and complete startup.
-- [ ] First rendered frame.
-- [ ] Title screen and main menu.
+- [x] Pinned PS2Recomp tools, provisional EE map and local generation.
+- [x] Generated routines compiled/linked/executed; game entry reached.
+- [x] Local kernel capture and bounded generated platform initialization.
+- [x] Initial absent-card query through native IOP and generated EE callback.
+- [ ] Complete startup and general required runtime integration.
+- [ ] First rendered/presented frame; title screen and main menu.
 - [ ] Character select and battle load.
 - [ ] Playable versus battle.
 - [ ] Audio and full match.
 
-## History and references
+## History and working rules
 
-A plain "continue" automatically invokes the permanent pass rule: [continue through multiple blockers](IMPLEMENTATION_PLAN.md#continue-through-multiple-blockers), gathering available evidence before stopping under the documented conditions.
+- [October 2026 history](progress/2026-10.md): detailed evidence, old counts and the previous current-status summary are preserved.
+- [Implementation plan](IMPLEMENTATION_PLAN.md), [reference architecture](REFERENCE_ARCHITECTURE.md), [tools](TOOLS.md), [reverse-engineering evidence](REVERSE_ENGINEERING.md).
 
-- [October 2026 detailed history](progress/2026-10.md): all previous progress entries, evidence, counts and historical milestone snapshots preserved. Statements about "current" work inside that archive describe their original point in time.
-- [Implementation plan](IMPLEMENTATION_PLAN.md), [tool workflow](TOOLS.md), [reverse-engineering evidence](REVERSE_ENGINEERING.md).
-
-Keep this page limited to current status. Append detailed pass results to `progress/YYYY-MM.md`, linking new monthly logs here. Update the blocker, counts and checklist after verification.
+A plain "continue" invokes the permanent subsystem-scale pass rule. Follow multiple blockers, gather available evidence, verify, update history, commit and push. Reduce scope only when actual remaining usage is low. Keep this page short; detailed pass results belong in monthly history.

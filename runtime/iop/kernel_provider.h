@@ -174,11 +174,25 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(found==memory.semaphores.end() || found->second.count>=found->second.maximum)throw std::runtime_error("Invalid IOP semaphore signal");
         ++found->second.count;return 0u; // Zero-count suspension/wait queues remain unsupported.
     };
+    rt.providers[{"thsemap",7}]=[](IopRuntime& memory,IopContext& c) {
+        const auto found=memory.semaphores.find(c.get(4));
+        if(!memory.in_interrupt || memory.cpu_interrupts_enabled || c.pc!=0x31B8C || c.get(4)!=memory.read(0x33F10,4)
+            || found==memory.semaphores.end() || found->second.count || found->second.maximum!=1
+            || memory.card_alarm.callback!=0x29F84 || memory.logical_time_us!=memory.card_alarm.deadline)
+            throw std::runtime_error("IOP interrupt semaphore signal outside card alarm");
+        ++found->second.count;return 0u;
+    };
     rt.providers[{"thsemap",8}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.semaphores.find(c.get(4));
         if(found==memory.semaphores.end())throw std::runtime_error("Unknown IOP semaphore wait");
         if(!memory.cpu_interrupts_enabled)throw std::runtime_error("IOP semaphore wait with interrupts disabled");
-        if(!found->second.count)throw std::runtime_error("IOP semaphore suspension requires retained native call frames");
+        if(!found->second.count) {
+            if(c.pc!=0x31B94 || c.get(4)!=memory.read(0x33F10,4) || memory.card_alarm.callback!=0x29F84
+                || memory.card_alarm_fires>=5 || memory.card_alarm_waits>=5
+                || memory.timed_wakes!=memory.card_alarm_waits+1)
+                throw std::runtime_error("IOP semaphore suspension requires retained native call frames");
+            memory.waitCardAlarm(c,c.get(4));
+        }
         --found->second.count;return 0u;
     };
     rt.providers[{"thevent",6}]=[](IopRuntime& memory,IopContext& c) {
@@ -258,6 +272,29 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             throw std::runtime_error("Multiple waiters on single IOP event");
         auto& t=thread->second;t.waiting=true;t.ready=false;t.wait_event=c.get(4);t.wait_bits=bits;t.wait_mode=mode;t.wait_result=result;t.wait_order=++memory.next_wait_order;
         throw IopYield{};
+    };
+    rt.providers[{"thbase",35}]=[](IopRuntime& memory,IopContext& c) {
+        if(c.pc!=0x31B48 || c.get(4)!=0x33F18 || c.get(5)!=0x29F84 || c.get(6) || memory.card_alarm.callback
+            || memory.timed_wakes<1 || memory.timed_wakes>5 || memory.card_alarm_sets!=memory.timed_wakes-1 || memory.read(0x33F18,4)!=3686 || memory.read(0x33F1C,4)
+            || !memory.cpu_interrupts_enabled || memory.in_interrupt)
+            throw std::runtime_error("IOP alarm outside first absent-card timeout");
+        memory.check(0x29F84,4);memory.card_alarm={memory.logical_time_us+100,0x29F84,0,c.get(28)};
+        ++memory.card_alarm_sets;return 0u;
+    };
+    rt.providers[{"thbase",39}]=[](IopRuntime& memory,IopContext& c) {
+        if(c.pc!=0x31B50 || c.get(4)!=100 || c.get(5)!=0x33F18 || memory.timed_wakes<1 || memory.timed_wakes>5 || memory.sio2_card_fifo_packets!=memory.timed_wakes)
+            throw std::runtime_error("IOP clock conversion outside card timeout setup");
+        memory.check(0x33F18,8);memory.write(0x33F18,3686,4);memory.write(0x33F1C,0,4);
+        return c.get(2); // Public void conversion; 100us output independently captured.
+    };
+    rt.providers[{"thbase",33}]=[](IopRuntime& memory,IopContext& c) {
+        const auto mc=memory.rpc_servers.find(0x80000400);
+        if(c.pc!=0x31B40 || c.get(4)!=300 || c.get(31)!=0x29E58 || memory.timed_waits>=5
+            || mc==memory.rpc_servers.end() || !memory.rpc_queues.contains(mc->second.queue)
+            || memory.rpc_queues.at(mc->second.queue).thread!=memory.current_thread
+            || memory.sio2_card_sends!=6 || memory.sio2_card_receives!=6)
+            throw std::runtime_error("IOP DelayThread outside reached first card query");
+        return memory.delayCurrent(c,300);
     };
     rt.providers[{"thbase",22}]=[](IopRuntime& memory,IopContext& c) {
         const auto id=c.get(4)?c.get(4):memory.current_thread;

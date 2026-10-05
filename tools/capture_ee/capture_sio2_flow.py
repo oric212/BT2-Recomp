@@ -27,6 +27,17 @@ def send_hook(target):
     w[7]=(4<<26)|(3<<21)|(27-7-1)
     return pack(w)
 
+def count_hook(target):
+    return pack([0x3C18001D,0x8F190060,0,0x27390001,0xAF190060,0xAF04006C,0x08000000|(target>>2),0])
+
+def fifo_hook():
+    w=[0x3C01BF81,0xA0248260,0x3C18001D,0x3C030005,0x8C63CF08,0,0x8C630028,0,
+       0x3C19000C,0x37390342,0,0,0x8F190064,0,0x2F230060,0,0,
+       0x03381821,0xA0640E00,0x27390001,0xAF190064,0x03E00008,0]
+    w[10]=(5<<26)|(3<<21)|(25<<16)|(21-10-1)
+    w[15]=(4<<26)|(3<<21)|(21-15-1)
+    return pack(w)
+
 def capture(reader,ee_pointer,iop_rva,original,folder,address,args):
     from capture_ee import FRESH_BIND_STUB,texture_stub
     from inspect_elf import inspect
@@ -49,6 +60,12 @@ def capture(reader,ee_pointer,iop_rva,original,folder,address,args):
         if startword>>26!=2 or startdelay!=0x24000020:raise ValueError('START import differs')
         starttarget=(startword&0x3FFFFFF)<<2
         write(ip+BASE+0xE30,pack([0x08000000|((CODE+0x400)>>2),0]));write(ip+CODE+0x400,send_hook(starttarget));write(ip+SCRATCH+88,pack([0]))
+        delayword,delaytag=struct.unpack_from('<2I',before,0x4D030+0x11B40)
+        if delayword>>26!=2 or delaytag!=0x24000021:raise ValueError('Delay import differs')
+        delaytarget=(delayword&0x3FFFFFF)<<2
+        write(ip+0x4D030+0x11B40,pack([0x08000000|((CODE+0x600)>>2),0]));write(ip+CODE+0x600,count_hook(delaytarget))
+        if before[BASE+0x144:BASE+0x14C]!=pack([0x3C01BF81,0xA0248260]):raise ValueError('FIFO byte store differs')
+        write(ip+BASE+0x144,pack([0x08000000|((CODE+0x680)>>2),0]));write(ip+CODE+0x680,fifo_hook());write(ip+SCRATCH+0x60,bytes(16))
         report=inspect(original);seg=next(p for p in report['load_segments'] if p['virtual_address']<=address<p['virtual_address']+p['file_size'])
         off=seg['file_offset']+address-seg['virtual_address'];write(ee_pointer+address,original[off:off+8])
         loop=FRESH_BIND_STUB+len(texture_stub('rpc-mc-query-before'))-8;write(ee_pointer+loop,pack([0x08000000|(address>>2),0]))
@@ -67,10 +84,14 @@ def capture(reader,ee_pointer,iop_rva,original,folder,address,args):
         send_count=struct.unpack_from('<I',ram,SCRATCH+88)[0]
         if send_count>64:raise ValueError('Send trace overflow')
         sends=[list(struct.unpack_from('<3I',ram,SCRATCH+0x900+n*16)) for n in range(send_count)]
+        fifo_count=struct.unpack_from('<I',ram,SCRATCH+0x64)[0]
+        if fifo_count>96:raise ValueError('FIFO trace overflow')
+        fifo=list(ram[SCRATCH+0xE00:SCRATCH+0xE00+fifo_count])
+        delay_count=struct.unpack_from('<I',ram,SCRATCH+0x60)[0]
         descriptor=list(struct.unpack_from('<4I',ram,values[1]))
         if reader.read(ip+SCRATCH,0x1000)!=ram[SCRATCH:SCRATCH+0x1000]:raise ValueError('Flow publication changed')
         (folder/'sio2-flow-iop.bin').write_bytes(ram)
-        meta={'source_elf_sha256':hashlib.sha256(original).hexdigest(),'pcsx2_sha256':hashlib.sha256(args.pcsx2.read_bytes()).hexdigest(),'bios_sha256':hashlib.sha256(args.bios.read_bytes()).hexdigest(),'device_profile':'both memory-card slots disabled','final_dma_registers':list(values[10:16]),'controls':controls,'sends':sends,'start_target':starttarget,'descriptor_pointer':values[1],'descriptor':descriptor,'import_address':import_address,'target':target,'iop_sha256':hashlib.sha256(ram).hexdigest(),'limitations':'Actual control stores/readbacks and actual pending secondary SIF descriptor; SIF submission stopped before transport.'}
+        meta={'source_elf_sha256':hashlib.sha256(original).hexdigest(),'pcsx2_sha256':hashlib.sha256(args.pcsx2.read_bytes()).hexdigest(),'bios_sha256':hashlib.sha256(args.bios.read_bytes()).hexdigest(),'device_profile':'both memory-card slots disabled','final_dma_registers':list(values[10:16]),'controls':controls,'fifo':fifo,'delay_count':delay_count,'delay_argument':struct.unpack_from('<I',ram,SCRATCH+0x6C)[0],'delay_target':delaytarget,'sends':sends,'start_target':starttarget,'descriptor_pointer':values[1],'descriptor':descriptor,'import_address':import_address,'target':target,'iop_sha256':hashlib.sha256(ram).hexdigest(),'limitations':'Actual control stores/readbacks and actual pending secondary SIF descriptor; SIF submission stopped before transport.'}
         with args.disc.open('rb') as f:meta['disc_sha256']=hashlib.file_digest(f,'sha256').hexdigest()
         (folder/'sio2-flow.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(meta,indent=2))

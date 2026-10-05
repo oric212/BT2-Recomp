@@ -52,6 +52,12 @@ inline ProbeGpr PS2_PNOR(ProbeGpr left,ProbeGpr right) {
 inline ProbeGpr PS2_PAND(ProbeGpr left,ProbeGpr right) {
     return {left.low&right.low,left.high&right.high};
 }
+inline ProbeGpr PS2_PSUBW(ProbeGpr left,ProbeGpr right) {
+    auto words=std::bit_cast<std::array<std::uint32_t,4>>(left);
+    const auto subtract=std::bit_cast<std::array<std::uint32_t,4>>(right);
+    for(unsigned lane=0;lane<4;++lane)words[lane]-=subtract[lane];
+    return std::bit_cast<ProbeGpr>(words);
+}
 inline ProbeGpr PS2_PSUBB(ProbeGpr left,ProbeGpr right) {
     auto a=std::bit_cast<std::array<std::uint8_t,16>>(left);
     const auto b=std::bit_cast<std::array<std::uint8_t,16>>(right);
@@ -91,6 +97,7 @@ inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = v
 #define READ16(address) runtime->read16(rdram, (address))
 #define WRITE16(address, value) runtime->write16(rdram, (address), (value))
 #define WRITE8(address, value) runtime->write8(rdram, (address), (value))
+#define FAST_WRITE8(address, value) WRITE8(address, value)
 #define READ128(address) runtime->read128(rdram, (address))
 #define FAST_READ128(address) runtime->read128(rdram, (address))
 #define WRITE128(address, value) runtime->write128(rdram, (address), (value))

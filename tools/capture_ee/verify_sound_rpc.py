@@ -22,6 +22,13 @@ def later_dbc_dma_boundary(r):
         and r.get('native_iop_pc')==0x621DC and r.get('selector')==0x77 and r.get('pc')==0x32F028
         and r.get('packet_words',[])[6:10]==[36,0x3A03C0,0x80001304,144])
 
+def completed_card_query(r):
+    return (r.get('mc_query_requests')==1 and r.get('mc_dma_submissions')==1 and r.get('mc_dma_polls')==1
+        and r.get('timed_waits')==5 and r.get('timed_wakes')==5 and r.get('timed_dispatches')==1
+        and r.get('logical_time_us')==1900 and r.get('card_alarm_fires')==4 and r.get('card_alarm_sets')==5
+        and r.get('sio2_card_fifo_packets')==5 and r.get('sio2_card_transfer_counts')==[6,6]
+        and r.get('pending_ee_bind')==[0x2000E,0xA1CA0,0x80000704,0x1FF400,2])
+
 def later_mc_dma_boundary(r):
     return (r.get('dbc_rpc_binds')==4 and r.get('dbc_rpc_calls')==4 and r.get('mc_rpc_binds')==1
         and r.get('mc_rpc_calls')==1 and r.get('mc_query_requests')==0
@@ -31,7 +38,7 @@ def later_mc_dma_boundary(r):
         and r.get('selector')==0x77 and r.get('pc')==0x32F028
         and r.get('packet_words',[])[6:10]==[41,0x3A6F80,1,48])
 
-def later_iop_boundary(r):return later_dbc_dma_boundary(r) or later_mc_dma_boundary(r)
+def later_iop_boundary(r):return completed_card_query(r) or later_dbc_dma_boundary(r) or later_mc_dma_boundary(r)
 
 def verify(root,native=None):
     baseline=json.loads((root/'work/pcsx2-capture/heap-second-after/capture.json').read_text(encoding='utf-8'))
@@ -69,7 +76,7 @@ def verify(root,native=None):
         require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and r['console_messages']==0,'Native checked EE thread-start state differs')
         require(r['sound_rpc_binds']==1 and r['sound_rpc_calls']==1 and (not r['native_iop_error'] or later_iop_boundary(r)),'Native sound lifecycle differs')
         require(r['sound_client_words'][5]==owned+0x1C30 and r['sound_client_words'][9]==owned+0x15E0,'Native sound server mapping differs')
-        t=r['sound_thread_words'];require(len(t)==9 and (t[1]-owned,t[2]-owned,t[3],t[4],t[5])==expected and t[7:]==[0,1],'Native sound-created started helper thread differs')
+        t=r['sound_thread_words'];require(len(t)==9 and (t[1]-owned,t[2]-owned,t[3],t[4],t[5])==expected and (t[7:]==[0,1] or (completed_card_query(r) and t[7:]==[1,0])),'Native sound-created started helper thread differs')
         require(words(ram,owned+0x14CC,1)==(t[0],) and words(ram,owned+0x14E0,4)==words(after,0x3A5C40,4),'Native handler thread/result differs')
         image=relocate(module,report,owned)
         require(all(ram[owned+a:owned+b]==image[a:b] for a,b in report['code_ranges']),'Native SDRDRV code differs')

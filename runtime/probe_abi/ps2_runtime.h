@@ -682,6 +682,7 @@ public:
                 return;
             }
             --semaphores[id].count;
+            if(id==8 && semaphores[id].option==0x3824C8 && context->pc==0x32ECB8 && context->r[31].low==0x31DE18)++mc_lock_polls;
             context->r[2].low = id;
             return;
         }
@@ -1151,7 +1152,7 @@ public:
             throw std::runtime_error("EE sound thread-start evidence differs/repeated");
         sound_thread_start_supplied=true;
     }
-    unsigned mc_rpc_binds=0,mc_rpc_calls=0,mc_lock_waits=0,mc_lock_signals=0;
+    unsigned mc_rpc_binds=0,mc_rpc_calls=0,mc_lock_waits=0,mc_lock_signals=0,mc_lock_polls=0;
     unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0,dbc_rpc_binds=0,dbc_rpc_calls=0,dbc_lock_waits=0,dbc_lock_signals=0;
     std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
@@ -1515,7 +1516,8 @@ private:
         }
         rpc_end_callback_active_ = false;
         std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
-        if (callback.r[29].low != context->r[29].low || semaphores[semaphore].count != 1
+        if (callback.r[29].low != context->r[29].low || (semaphore ? semaphores[semaphore].count != 1 :
+                    (client != 0x3A6F80 || read32(rdram,client+8) != UINT32_MAX))
                 || read32(rdram, client) != 0 || read32(rdram, client + 36) != server
                 || read32(rdram, client + 20) != buffer || read32(rdram, 0x3A97D0) != 4
                 || read32(rdram, 0x3A97D8) != 0)

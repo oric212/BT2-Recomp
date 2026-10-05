@@ -19,6 +19,7 @@ struct IopContext {
     std::uint32_t pc=0,hi=0,lo=0,branch_target=0,load_value=0;
     unsigned load_register=0;
     bool branch_pending=false,delay_instruction=false;
+    bool operator==(const IopContext&) const = default;
     std::uint32_t get(unsigned n) const {return n?r.at(n):0;}
     void set(unsigned n,std::uint32_t value) {if(n)r.at(n)=value;}
     std::uint32_t merge(unsigned n) const {return load_register==n && n?load_value:get(n);}
@@ -74,9 +75,16 @@ public:
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;std::uint32_t gp=0;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;};
     std::map<unsigned,Thread> threads;
     std::uint64_t next_wait_order=0;
+    std::uint64_t logical_time_us=0,timed_deadline_us=0;
+    unsigned timed_wait_owner=0,timed_waits=0,timed_wakes=0,timed_dispatches=0;
+    struct EeBind {unsigned thread=0;std::uint32_t client=0,server_id=0,packet=0,rpc_id=0;};
+    EeBind pending_ee_bind;
+    IopContext timed_context;
+    struct Alarm {std::uint64_t deadline=0;std::uint32_t callback=0,argument=0,gp=0;};
+    Alarm card_alarm;unsigned card_alarm_sets=0,card_alarm_fires=0,card_alarm_waits=0;
     unsigned next_thread=0x20001,current_thread=0;
     std::function<void(IopRuntime&,IopContext&)> execute;
     std::uint32_t stack_cursor=0x1E0000;
@@ -103,7 +111,7 @@ public:
     std::vector<std::uint8_t> sio2_transmit,sio2_receive;
     unsigned sio2_receive_cursor=0;
     bool sio2_card_absent=true; // Explicit initial device policy; mounted cards are not implemented.
-    unsigned sio2_card_sends=0,sio2_card_receives=0;
+    unsigned sio2_card_sends=0,sio2_card_receives=0,sio2_card_fifo_packets=0;
     std::vector<std::uint32_t> sio2_card_controls;
     std::uint32_t sio2_command_status=0;
     unsigned steps=0,access_width=0;
@@ -241,12 +249,18 @@ public:
             if(!length || sio2_transmit.size()>=length)throw std::runtime_error("SIO2 transmit length/state unsupported");
             sio2_transmit.push_back(static_cast<std::uint8_t>(value));
             if(sio2_transmit.size()==length) {
+                if(sio2_card_absent && command->second==0xC0342 && sio2_transmit==std::vector<std::uint8_t>({0x81,0x52,0})
+                    && timed_wakes==sio2_card_fifo_packets+1 && sio2_card_fifo_packets<5 && sio2_card_sends==6 && sio2_card_receives==6
+                    && sio2_parameters.at(0x1F808250)==0xFFC00505 && sio2_parameters.at(0x1F808254)==0x201F4) {
+                    sio2_receive.assign(3,0xFF);sio2_command_status=0x1D100;sio2_receive_cursor=0;++sio2_card_fifo_packets;
+                } else {
                 const auto port=command->second&1;
                 if((command->second&~1u)!=0x140540 || sio2_transmit!=std::vector<std::uint8_t>({1,0x42,0,0,0})
                     || sio2_parameters.at(0x1F808240+port*8)!=0xFFC00505 || sio2_parameters.at(0x1F808244+port*8)!=0x20014)
-                    throw std::runtime_error("Unsupported SIO2 device packet/configuration");
+                    throw std::runtime_error("Unsupported SIO2 device packet/configuration: command="+std::to_string(command->second)+" first="+std::to_string(sio2_transmit[0])+" second="+std::to_string(sio2_transmit[1])+" length="+std::to_string(length));
                 sio2_receive=port?std::vector<std::uint8_t>(5,0xFF):std::vector<std::uint8_t>({0xFF,0x41,0x5A,0xFF,0xFF});
                 sio2_command_status=port?0x2D100:0x1100;sio2_receive_cursor=0;
+                }
             }
             return;
         }
@@ -260,7 +274,7 @@ public:
         if(p==0x1F808280 && size==4 && sio2_irq_status_known) {sio2_irq_status&=~value;return;}
         if(p==0x1F808268 && size==4 && value==0x3BD) {
             const auto irq=interrupts.find(17);
-            if((sio2_receive.size()!=5 && sio2_receive.size()!=144) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
+            if((sio2_receive.size()!=5 && sio2_receive.size()!=144 && !(sio2_receive.size()==3 && sio2_card_fifo_packets)) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
                 throw std::runtime_error("Unsupported SIO2 transfer completion state");
             if(sio2_receive.size()==144) {
                 if(sio2_transmit.size()!=144 || sio2_receive_cursor!=144
@@ -287,6 +301,52 @@ public:
         check(p,size);
         if((size==2 && p%2) || (size==4 && p%4))throw std::runtime_error("Unaligned IOP store");
         std::memcpy(ram.data()+p,&value,size);
+    }
+    void waitCardAlarm(IopContext& c,unsigned semaphore) {
+        if(!card_alarm.callback || card_alarm.deadline<=logical_time_us || !cpu_interrupts_enabled || in_interrupt
+            || !execute || !current_thread || !semaphores.contains(semaphore) || semaphores.at(semaphore).count)
+            throw std::runtime_error("Card alarm wait outside owned pending timeout");
+        for(const auto& [id,t]:threads)if(id!=current_thread && t.ready && !t.waiting)
+            throw std::runtime_error("Card alarm wait has an undispatched ready worker");
+        ++card_alarm_waits;logical_time_us=card_alarm.deadline;
+        const auto saved=c;IopContext callback=c;callback.pc=card_alarm.callback;
+        callback.branch_pending=false;callback.delay_instruction=false;callback.load_register=0;
+        callback.set(4,card_alarm.argument);callback.set(28,card_alarm.gp);callback.set(31,sentinel);
+        in_interrupt=true;cpu_interrupts_enabled=false;
+        try {execute(*this,callback);in_interrupt=false;cpu_interrupts_enabled=true;}
+        catch(...) {in_interrupt=false;cpu_interrupts_enabled=true;throw;}
+        if(callback.pc!=sentinel || callback.get(2)!=0 || c!=saved
+            || semaphores.at(semaphore).count!=1)throw std::runtime_error("Native card alarm callback/completion differs");
+        card_alarm={};++card_alarm_fires;
+    }
+    std::uint32_t delayCurrent(IopContext& c,unsigned usec) {
+        const auto owner=current_thread;
+        if(!owner || !threads.contains(owner) || !usec || usec>1000000 || timed_wait_owner
+            || !cpu_interrupts_enabled || in_interrupt || !execute || logical_time_us>UINT64_MAX-usec)
+            throw std::runtime_error("IOP timed wait outside owned enabled context");
+        // Keep the live CPU and every native export/RPC frame on the host stack.
+        // Ready workers have separate retained CPUs; the blocked caller cannot run.
+        timed_context=c;timed_wait_owner=owner;timed_deadline_us=logical_time_us+usec;++timed_waits;
+        try {
+            unsigned dispatch_budget=0;
+            for(;;) {
+                auto next=threads.end();
+                for(auto t=threads.begin();t!=threads.end();++t)
+                    if(t->first!=owner && t->second.ready && !t->second.waiting
+                        && (next==threads.end() || t->second.priority<next->second.priority))next=t;
+                if(next==threads.end())break;
+                if(++dispatch_budget>32)throw std::runtime_error("IOP timed dispatch budget exceeded");
+                current_thread=next->first;++timed_dispatches;
+                try {execute(*this,next->second.context);throw std::runtime_error("Unexpected timed IOP worker completion");}
+                catch(const IopYield&) {if(!next->second.waiting || next->second.ready)throw std::runtime_error("Timed IOP worker yielded without owned wait");}
+                current_thread=owner;
+            }
+            // Logical idle advance only once all eligible ready workers have parked.
+            logical_time_us=timed_deadline_us;
+            if(c!=timed_context
+                || !cpu_interrupts_enabled || in_interrupt)throw std::runtime_error("Suspended IOP timed CPU/context changed");
+            timed_wait_owner=0;++timed_wakes;current_thread=owner;return 0u;
+        } catch(...) {current_thread=owner;throw;} // Keep the pending snapshot/deadline for diagnosis.
     }
     void tick(IopContext& c) {executing_pc=c.pc;if(++steps>100000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {

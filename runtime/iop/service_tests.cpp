@@ -161,10 +161,19 @@ int main() {
         auto bad_query=mc_query_input;bad_query[1]=1;
         rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bad_query.data()),48));});
         check(service.runtime.ram==query_before && !service.mc_query_requests);
-        bool query_boundary=false;
-        try {service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));}
-        catch(const std::runtime_error& e) {query_boundary=std::string(e.what())=="Unresolved IOP import: thbase:33";}
-        check(query_boundary && service.runtime.current_thread==0 && !service.mc_query_requests);
+        rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48),std::span<std::uint8_t>(ee_memory.data(),1024));});
+        check(service.runtime.ram==query_before && !service.mc_query_requests);
+        std::fill_n(ee_memory.begin()+0x3A6D18,4,0);
+        const auto query_reply=service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48),ee_memory);
+        check(query_reply.size()==4 && service.runtime.current_thread==0 && service.mc_query_requests==1);
+        check(service.runtime.timed_waits==5 && service.runtime.timed_wakes==5 && service.runtime.timed_dispatches==1
+            && service.runtime.logical_time_us==1900 && service.runtime.card_alarm_fires==4 && service.runtime.card_alarm_sets==5);
+        check(service.runtime.sio2_card_fifo_packets==5 && service.mc_dma_submissions==1 && service.mc_dma_polls==1);
+        check(std::equal(service.mc_dma_payload.begin(),service.mc_dma_payload.end(),ee_memory.begin()+0x3A7480));
+        check(service.runtime.pending_ee_bind.server_id==0x80000704 && service.runtime.pending_ee_bind.client==0xA1CA0);
+        const auto& helper=service.runtime.threads.at(service.runtime.pending_ee_bind.thread);
+        check(helper.waiting && !helper.ready && helper.wait_ee_bind && helper.context.pc==0xA1244);
+        check(!service.runtime.providers.contains({"sifcmd",15}) && !service.runtime.providers.contains({"sifman",7}) && !service.runtime.providers.contains({"sifman",8}));
         const auto& dma=service.runtime.dma_channels.at(11);
         check(dma.slice_known && dma.madr==0x320B0 && dma.bcr==0x10024 && dma.chcr==0x201);
         check(service.runtime.sio2_card_sends==6 && service.runtime.sio2_card_receives==6);

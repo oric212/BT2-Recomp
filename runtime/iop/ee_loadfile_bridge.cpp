@@ -296,9 +296,15 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
         if(read32(rdram,client)!=0x203A97C0 || read32(rdram,client+4)!=41 || read32(rdram,client+8)!=UINT32_MAX
             || read32(rdram,client+28)!=0x31DD60 || read32(rdram,client+32)!=0x3A7480
             || read32(rdram,client+20)!=server.buffer || read32(rdram,client+36)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
-        try {native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48));}
+        std::vector<std::uint8_t> response;
+        try {response=native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48),memory_);}
         catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
-        throw std::runtime_error("MCSERV query handler completed; asynchronous delivery remains unimplemented");
+        std::copy(response.begin(),response.end(),memory_.begin()+0x3A8540);
+        const std::array<std::uint32_t,16> reply={0x400,0x3A8540,0x80000008,0,0,0,0,client,0x8000000A};
+        for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+        native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
+        deliverRpcEnd(rdram,context,client,0,server.descriptor,server.buffer);
+        ++mc_rpc_calls;++sif_dma_submissions;context->r[2].low=0x720003;return;
     }
     if(mc_rpc_binds==1 && !mc_rpc_calls) {
         if(!native_iop || dbc_rpc_calls!=4 || iop_epoch!=1 || context->pc!=0x32F028 || d!=initial_sp-544

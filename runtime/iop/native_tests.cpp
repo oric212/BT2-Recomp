@@ -239,6 +239,24 @@ int main() {
         check(std::all_of(card.ram.begin()+0x32650,card.ram.begin()+0x32656,[](auto v){return v==0xFF;}));
         check(std::all_of(card.ram.begin()+0x32656,card.ram.begin()+0x326E0,[](auto v){return v==0;}));
         refuses([&]{card.import("dmacman",32,dma_start);});check(card.sio2_card_receives==1);
+        { IopRuntime timer;IopContext caller;caller.pc=0x1110;caller.set(29,0x1800);caller.load_register=7;caller.load_value=99;
+        timer.threads.emplace(1,IopRuntime::Thread{0,0,0x1110,0,0,104,0,caller});
+        timer.threads.emplace(2,IopRuntime::Thread{0,0,0x2220,0,0,24,0,{}});
+        timer.threads.emplace(3,IopRuntime::Thread{0,0,0x3330,0,0,16,0,{}});
+        timer.threads.at(2).ready=timer.threads.at(3).ready=true;timer.current_thread=1;
+        const auto retained=caller;std::vector<unsigned> dispatch_order;
+        timer.execute=[&](IopRuntime& rt,IopContext& cpu) {
+            dispatch_order.push_back(rt.current_thread);cpu.set(2,rt.current_thread);
+            auto& thread=rt.threads.at(rt.current_thread);thread.ready=false;thread.waiting=true;throw IopYield{};
+        };
+        check(timer.delayCurrent(caller,300)==0 && caller==retained && dispatch_order==std::vector<unsigned>{3,2}
+            && timer.logical_time_us==300 && timer.current_thread==1 && !timer.timed_wait_owner);
+        timer.cpu_interrupts_enabled=false;refuses([&]{timer.delayCurrent(caller,300);});check(timer.logical_time_us==300);
+        timer.cpu_interrupts_enabled=true;timer.threads.at(2).ready=true;timer.threads.at(2).waiting=false;
+        timer.execute=[](IopRuntime&,IopContext&){throw std::runtime_error("worker failure");};
+        refuses([&]{timer.delayCurrent(caller,300);});check(timer.current_thread==1 && timer.timed_wait_owner==1 && caller==retained);
+        refuses([&]{timer.delayCurrent(caller,300);});check(timer.logical_time_us==300);
+        }
         IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
         IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
         log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);
@@ -255,6 +273,6 @@ int main() {
         check(print.import("stdio",4,message)==8 && print.stdio_messages==std::vector<std::string>{"ok -39 %"});
         message.set(4,0x2000C);refuses([&]{print.import("stdio",4,message);});check(print.stdio_messages.size()==1);
         install_iop_library_provider(print);message.set(2,0xBAD);check(print.import("loadcore",5,message)==0xBAD && print.data_cache_flushes==1);
-        std::cout<<"Native MIPS-I branches, load delays, HI/LO, unaligned pairs and import failure verified.\n";return 0;
+        std::cout<<"Native MIPS-I, timed priority/context retention and fail-closed imports verified.\n";return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

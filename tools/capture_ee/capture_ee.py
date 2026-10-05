@@ -404,6 +404,10 @@ def main():
     parser.add_argument('--capture-spu2-key-readback',choices=['on','off'],help='Terminal first LIBSD key-on readback after SOUNDS return.')
     parser.add_argument('--capture-spu2-initialized',action='store_true',help='Terminal LIBSD sceSdInit return and register snapshot after SOUNDS return.')
     parser.add_argument('--capture-cri-low-read',action='store_true',help='Terminal reached CRI low-memory argument read after SOUNDS return.')
+    parser.add_argument('--capture-iop-card-alarm',action='store_true',help='Capture initial real card SetAlarm setup/return.')
+    parser.add_argument('--capture-iop-card-fifo',action='store_true',help='Capture the first absent-card byte FIFO packet.')
+    parser.add_argument('--capture-iop-ee-bind',action='store_true',help='Diagnostic actual bind to the registered EE sound callback server.')
+    parser.add_argument('--capture-iop-delay',action='store_true',help='Capture actual initial MCMAN timed wait and return.')
     parser.add_argument('--capture-mc-sio2-flow',action='store_true',help='Capture absent-card control writes and secondary SIF descriptor.')
     parser.add_argument('--capture-mc-sio2-start',action='store_true',help='Capture actual first card send/receive DMA START readbacks.')
     parser.add_argument('--capture-mc-sio2-slice',action='store_true',help='Capture actual initial memory-card slice setup before DMA starts.')
@@ -411,6 +415,7 @@ def main():
     parser.add_argument('--capture-spu2-transfer',action='store_true',help='Terminal first LIBSD transfer poll and sound RAM readback after SOUNDS return.')
     parser.add_argument('--capture-spu2-interrupts',action='store_true',help='Record three linked LIBSD interrupt disables after SOUNDS return.')
     parser.add_argument('--capture-spu2-status',action='store_true',help='Terminal first LIBSD status read capture after SOUNDS return.')
+    parser.add_argument('--absent-cards',action='store_true',help='Disable both cards in a separate isolated capture profile.')
     parser.add_argument('--timeout', type=float, default=40)
     args = parser.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
@@ -429,8 +434,13 @@ def main():
     folder = ROOT / 'work/pcsx2-capture'
     if args.capture_point != 'kernel-handler':
         folder = folder / (args.capture_point+"-pad-poll-"+str(args.pad_poll_read_count) if args.capture_first_pad_poll else args.capture_point)
+    if args.absent_cards:folder=folder.with_name(folder.name+'-absent-cards')
     if args.capture_spu2_key_readback:folder=folder.with_name(folder.name+'-spu2-key-readback-'+args.capture_spu2_key_readback)
     if args.capture_spu2_initialized:folder=folder.with_name(folder.name+'-spu2-initialized')
+    if args.capture_iop_card_alarm:folder=folder.with_name(folder.name+'-card-alarm')
+    if args.capture_iop_card_fifo:folder=folder.with_name(folder.name+'-card-fifo')
+    if args.capture_iop_ee_bind:folder=folder.with_name(folder.name+'-iop-ee-bind')
+    if args.capture_iop_delay:folder=folder.with_name(folder.name+'-iop-delay')
     if args.capture_mc_sio2_flow:folder=folder.with_name(folder.name+'-sio2-flow')
     if args.capture_mc_sio2_start:folder=folder.with_name(folder.name+'-sio2-start')
     if args.capture_mc_sio2_slice:folder=folder.with_name(folder.name+'-sio2-slice')
@@ -476,10 +486,10 @@ def main():
     if args.capture_spu2_status or args.capture_spu2_interrupts or args.capture_spu2_transfer or args.capture_spu2_key_readback or args.capture_spu2_initialized or args.capture_cri_low_read:
         if args.capture_point!='sounds-module-after' or args.capture_first_pad_poll or (sum(map(bool,[args.capture_spu2_status,args.capture_spu2_interrupts,args.capture_spu2_transfer,args.capture_spu2_key_readback,args.capture_spu2_initialized,args.capture_cri_low_read]))>1):raise ValueError('SPU2 status capture requires SOUNDS checkpoint without FIFO capture')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
-    if args.capture_mc_sio2_start or args.capture_mc_sio2_flow:
+    if args.absent_cards or args.capture_mc_sio2_start or args.capture_mc_sio2_flow or args.capture_iop_delay or args.capture_iop_ee_bind or args.capture_iop_card_fifo or args.capture_iop_card_alarm:
         settings+='[MemoryCards]\nSlot1_Enable = false\nSlot2_Enable = false\n'
-    if args.capture_mc_sio2_slice or args.capture_mc_sio2_start or args.capture_mc_sio2_flow:
-        if sum(map(bool,[args.capture_mc_sio2_slice,args.capture_mc_sio2_start,args.capture_mc_sio2_flow]))!=1:raise ValueError('Choose one card DMA capture mode')
+    if args.capture_mc_sio2_slice or args.capture_mc_sio2_start or args.capture_mc_sio2_flow or args.capture_iop_delay or args.capture_iop_ee_bind or args.capture_iop_card_fifo or args.capture_iop_card_alarm:
+        if sum(map(bool,[args.capture_mc_sio2_slice,args.capture_mc_sio2_start,args.capture_mc_sio2_flow,args.capture_iop_delay,args.capture_iop_ee_bind,args.capture_iop_card_fifo,args.capture_iop_card_alarm]))!=1:raise ValueError('Choose one card DMA capture mode')
         if args.capture_point!='rpc-mc-query-before' or args.capture_dbc_dma or args.capture_first_pad_poll:raise ValueError('Card slice capture requires query before checkpoint only')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
     if args.capture_dbc_dma:
@@ -520,6 +530,22 @@ def main():
         log = (folder / 'pcsx2.log').read_text(encoding='utf-8', errors='replace')
         if f'DataRoot Directory: {profile}' not in log:
             raise ValueError('PCSX2 did not use the isolated data profile.')
+        if args.capture_iop_card_alarm:
+            from capture_card_alarm import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
+        if args.capture_iop_card_fifo:
+            from capture_card_fifo import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
+        if args.capture_iop_ee_bind:
+            from capture_iop_ee_bind import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
+        if args.capture_iop_delay:
+            from capture_iop_delay import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
         if args.capture_mc_sio2_flow:
             from capture_sio2_flow import capture
             capture(reader,pointer,iop_rva,original,folder,address,args)

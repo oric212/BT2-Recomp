@@ -64,7 +64,7 @@ def has_tail_nop_gap(candidate, metadata, data):
 
 
 def has_branch_nop_gaps(candidate, metadata, data):
-    """Accept isolated unreachable NOPs after BEQ zero,zero plus its delay slot."""
+    """Accept isolated unreachable NOPs after an unconditional branch/jump and delay slot."""
     start,end=candidate['start'],candidate['end_exclusive']
     try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
     except (ValueError,TypeError):return False
@@ -82,13 +82,23 @@ def has_branch_nop_gaps(candidate, metadata, data):
         op=ins>>26
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9)) or (op in (16,17,18) and (ins>>21)&31>=8)
     for gap in gaps:
-        if gap-start<8 or word(gap)!=0 or word(gap-8)&0xFFFF0000!=0x10000000 or control(word(gap-4)):return False
-        immediate=word(gap-8)&65535;immediate=immediate-65536 if immediate&32768 else immediate
-        target=gap-4+immediate*4
-        if target in gaps or not start<=target<end:return False
+        if gap-start<8 or word(gap)!=0 or control(word(gap-4)):return False
+        transfer=word(gap-8)
+        if transfer&0xFFFF0000==0x10000000:
+            immediate=transfer&65535;immediate=immediate-65536 if immediate&32768 else immediate
+            target=gap-4+immediate*4
+            if not start<=target<end:return False
+        elif transfer>>26==2:
+            target=((gap-4)&0xF0000000)|((transfer&0x03FFFFFF)<<2)
+            if not sections[0]['address']<=target<sections[0]['address']+sections[0]['size']:return False
+        else:return False
+        if target in gaps:return False
     for address in range(start,end,4):
         ins=word(address);op=ins>>26
-        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008) or (op in (16,17,18) and (ins>>21)&31>=8):return False
+        # Standard JALR ra,rs is a call with a local continuation. Unknown
+        # tail jumps/link registers remain quarantined; runtime still checks targets.
+        standard_call=op==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call) or (op in (16,17,18) and (ins>>21)&31>=8):return False
         if op in (1,4,5,6,7,20,21,22,23):
             immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
             if address+4+immediate*4 in gaps:return False

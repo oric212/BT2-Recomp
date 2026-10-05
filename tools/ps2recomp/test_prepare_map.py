@@ -23,6 +23,20 @@ class CandidateMapTests(unittest.TestCase):
         selected,_=select_candidates({'functions':[row,self.row(0x1008,0x1010),self.row(0x1040,0x1048)]},metadata,data=data)
         self.assertEqual(selected,[{'start':0x1040,'end':0x1048}])
 
+    def test_tail_jump_padding_before_another_path(self):
+        metadata={'sections':[{**self.metadata['sections'][0],'file_offset':0}]}
+        words=[0x14000004,0,0x08000420,0x27BD0020,0,0x0C000420,0,0x03E00008,0]
+        row={'start':0x1000,'end_exclusive':0x1024,'body_size':32,'contiguous_aligned':False,'body_ranges':['1000-100f','1014-1023']}
+        data=struct.pack('<9I',*words)
+        self.assertTrue(has_branch_nop_gaps(row,metadata,data))
+        indirect=words.copy();indirect[5]=0x0040F809
+        self.assertTrue(has_branch_nop_gaps(row,metadata,struct.pack('<9I',*indirect)))
+        indirect[5]=0x00401009
+        self.assertFalse(has_branch_nop_gaps(row,metadata,struct.pack('<9I',*indirect)))
+        for index,value in [(2,0x0C000420),(2,0x03200008),(2,0x08000404),(2,0x08000800),(0,0x14000003),(4,1),(3,0x03E00008)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(row,metadata,struct.pack('<9I',*changed)))
+
     def test_overlap_group_quarantines_all_members(self):
         report = {"functions": [self.row(0x1000, 0x1020), self.row(0x1010, 0x1030),
                                 self.row(0x1020, 0x1040), self.row(0x1040, 0x1048)]}
