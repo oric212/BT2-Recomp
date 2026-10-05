@@ -62,6 +62,8 @@ public:
         if(epoch!=epoch_ || failed_ || runtime.sif_transport_attached)throw std::runtime_error("Invalid native SIF transport attachment");
         runtime.sif_transport_attached=true;
     }
+    std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
+    unsigned boot_heap_allocations=0;
     bool supports(std::string_view path) const {for(const auto& m:definitions_)if(m.path==path)return true;return false;}
     unsigned epoch() const {return epoch_;}
     IopRuntime runtime;

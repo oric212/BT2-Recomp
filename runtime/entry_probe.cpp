@@ -1,4 +1,7 @@
 #include "ps2_runtime.h"
+#ifdef BT2_NATIVE_IOP
+#include "module_service.h"
+#endif
 #include "ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #ifdef BT2_KERNEL_PAYLOAD
@@ -23,7 +26,7 @@ void require(bool value, const char* message) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
+        if (argc != 3 && argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11 && argc != 12 && argc != 13 && argc != 14 && argc != 15 && argc != 16 && argc != 17 && argc != 18 && argc != 19 && argc != 20) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const bool cd_mode = argc >= 17;
         const bool bind_mode = argc >= 16;
         const bool snapshot_mode = argc >= 4;
@@ -147,6 +150,20 @@ int main(int argc, char** argv) {
             capture.seekg(0);
             if (!capture.read(reinterpret_cast<char*>(&word), 4)) throw std::runtime_error("SIF RPC checkpoint read failed");
             runtime.supplySifRpcState(word);
+        }
+        if(argc>=19) {
+            std::ifstream capture(argv[18],std::ios::binary|std::ios::ate);
+            if(!capture || capture.tellg()!=64)throw std::runtime_error("Invalid IOP heap bind evidence");
+            std::array<std::uint8_t,64> evidence;capture.seekg(0);
+            if(!capture.read(reinterpret_cast<char*>(evidence.data()),64))throw std::runtime_error("IOP heap evidence read failed");
+            runtime.supplyHeapBind(evidence);
+        }
+        if(argc>=20) {
+            std::ifstream capture(argv[19],std::ios::binary|std::ios::ate);
+            if(!capture || (capture.tellg()!=68 && capture.tellg()!=88))throw std::runtime_error("Invalid heap allocation evidence");
+            std::vector<std::uint8_t> evidence(static_cast<std::size_t>(capture.tellg()));capture.seekg(0);
+            if(!capture.read(reinterpret_cast<char*>(evidence.data()),evidence.size()))throw std::runtime_error("Heap allocation evidence read failed");
+            runtime.supplyHeapAllocation(evidence);
         }
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start = 0x00387E80, zero_end = 0x0043058F;
@@ -428,7 +445,7 @@ int main(int argc, char** argv) {
                         "SCMD call-semaphore boundary differs");
             } else {
                 require(runtime.semaphore_deletions == 4+runtime.serviceOperations() && runtime.semaphore_waits == 5+runtime.serviceOperations() && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)
-                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations())), "SCMD media-mode cleanup differs");
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -479,7 +496,7 @@ int main(int argc, char** argv) {
                     require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations() && runtime.reset_smflag_writes == 1
+                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers && runtime.reset_smflag_writes == 1
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
@@ -666,6 +683,9 @@ int main(int argc, char** argv) {
                 << ",\"native_iop_error\":" << std::quoted(runtime.native_iop_error)
                 << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
                 << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
+                << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
+                << ",\"heap_calls\":" << runtime.heap_calls
+                << ",\"heap_binds\":" << runtime.heap_binds
                 << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
                 << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes
                 << ",\"post_sif_phase\":" << runtime.post_sif.phase
@@ -697,9 +717,18 @@ int main(int argc, char** argv) {
             for(unsigned i=0;i<((stop_selector==0x40 || stop_selector==0x77)?8u:0u);++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4);
             report << "],\"packet_words\":[";
             for(unsigned i=0;i<16;++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3A97C0+i*4);
+            report << "],\"heap_client_words\":[";
+            for(unsigned i=0;i<10;++i)report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3AC840+i*4);
             report << "],\"reset_packet_words\":[";
             for(unsigned i=0;i<26;++i) report << (i?",":"") << runtime.read32(runtime.memory().data(),0x3ACC40+i*4);
-            report << "]}\n"; return 0;
+            report << "]}\n";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.heap_calls && runtime.native_iop) {
+                std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);
+                if(!dump.write(reinterpret_cast<const char*>(runtime.native_iop->runtime.ram.data()),runtime.native_iop->runtime.ram.size()))throw std::runtime_error("Native IOP checkpoint write failed");
+            }
+#endif
+            return 0;
         }
         if (bind_mode) {
             require(stopped && !stop_target && !stop_handler && runtime.sif_bind_callbacks == 1

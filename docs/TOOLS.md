@@ -518,3 +518,25 @@ python tools/iop/verify_rpc_startup.py --profile cri-adxi --native work/iop/cri-
 The first comparison uses ignored `work/iop/libsd-initialized-native.json` at the post-init/pre-master-volume boundary plus the final native module report. It verifies provenance/hook/publication, eight transferred halfwords, 394 stable configuration values, immediate key readbacks and the three read-only low ABI words. Four dynamic ENDX registers are excluded; playback/general DMA is not verified. The CRI comparison includes all normalized module data/BSS without exclusions and both workers.
 
 After `expand_startup.py` selects a newly reached EE entry, run `python tools/ps2recomp/prepare_runtime.py` before reconfiguring CMake. This preserves raw generated output and prepares the selected runtime source with checked deterministic routing and hash receipts.
+
+
+## Boot IOP heap handler and transfer
+
+Generate FILEIO from the supplied, disc-matched IOPRP image before configuring optional native targets:
+
+```powershell
+python tools/iop/generate_boot_heap.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+```
+
+The boot heap handler is translated at 0x140000 and invoked only for the checked first allocation. Its boot entry/worker is not executed or counted as resident. Generated files and receipts stay under ignored work/iop/.
+
+Use the existing explicit local PCSX2/BIOS/disc command with capture points `fileio-bind-after` (heap service despite its historical name), `heap-alloc-after`, and `heap-copy-after`. Each traps its unique caller after completion. Heap client/service buffer stability uses the correct client 0x3AC840 rather than LOADFILE's client. Validate and prepare the private checkpoint bundles:
+
+```powershell
+python tools/capture_ee/verify_heap_bind.py --capture work/pcsx2-capture/fileio-bind-after --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/bt2-generation/heap-bind.bin
+python tools/capture_ee/verify_heap_copy.py --capture work/pcsx2-capture/heap-copy-after --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/bt2-generation/heap-allocation.bin
+```
+
+The copy verifier also verifies the allocation and bind, producing an 88-byte allocation/copy bundle. Allocation alone uses `verify_heap_allocation.py --capture work/pcsx2-capture/heap-alloc-after` and the same disc/output arguments, producing 68 bytes. Append heap-bind.bin and heap-allocation.bin after the existing SCMD bundle in the optional entry-probe invocation. With heap execution, the probe writes an ignored IOP RAM sidecar at `<STOP_REPORT>.iop.bin`; use `--native work/bt2-generation/entry-stop.json` on the copy verifier to compare native phases/client/destination.
+
+The pipeline now accepts `--heap-bind-capture`, `--heap-allocation-capture`, `--heap-copy-capture` and `--heap-disc`, in addition to the existing explicit startup/LOADFILE captures. Supply the three directories above and the user's local disc. It checks prerequisite evidence/environment and passes prepared bundles automatically. No general heap allocator, file operations or physical DMA scheduling is implied.

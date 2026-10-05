@@ -39,6 +39,12 @@ int main() {
         check(service.runtime.spu2_reset_status_reads==2 && service.runtime.spu2_pending_key_off==std::array<std::uint32_t,2>{0xFFFFFF,0xFFFFFF});
         check(service.runtime.spu2_io_transfer_completed && service.runtime.spu2_sound_ram.size()==8 && service.runtime.native_export_results.at("libsd:4")==0);
         check(service.runtime.interrupts.size()==4 && service.runtime.abi_read_only_words.size()==3);
+        rejected([&]{service.allocateBootHeap(2,0x360);});rejected([&]{service.allocateBootHeap(1,0x361);});
+        check(!service.boot_heap_allocations && service.runtime.steps==30839);
+        const auto heap=service.allocateBootHeap(1,0x360);check(heap==0xCE500 && service.boot_heap_allocations==1 && service.residents.size()==13);
+        service.runtime.check(heap,0x400);rejected([&]{service.runtime.check(heap+0x400,1);});
+        check(!service.runtime.providers.contains({"sysmem",4}));const auto heap_steps=service.runtime.steps;
+        rejected([&]{service.allocateBootHeap(1,0x360);});check(service.runtime.steps==heap_steps);
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

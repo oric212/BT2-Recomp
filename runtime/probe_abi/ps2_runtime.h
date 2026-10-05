@@ -148,6 +148,17 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
+            && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
+        if(code==0 && selector==0x76 && heap_copy_supplied && heap_transfers==1 && !heap_dma_polls) {
+            if(iop_epoch!=1 || context->pc!=0x32F008 || context->r[4].low!=0x50001 || context->r[29].low!=initial_sp-144)
+                throw UnsupportedSyscall(selector,context->pc);
+            ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
+        }
+        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && !heap_calls
+            && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
+        if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
+            && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
         if(code==0 && selector==0x77 && post_loadfile.versions==1 && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1) {
             receiveNativeModule(rdram,context);return;
         }
@@ -572,7 +583,10 @@ public:
                 && address==initial_sp-384 && maximum==1 && initial==0 && option==0x3838D8;
             const bool fresh_loader_call_sema=post_loadfile.binds==1 && semaphores.size()==7 && maximum==1 && initial==0
                 && option==0x3838E8 && address==initial_sp-(post_loadfile.versions?384:464);
-            if (attributes != 0 && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
+                && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
+                && read32(rdram,0x3AC864)==0;
+            if (attributes != 0 && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -618,7 +632,8 @@ public:
                     || (post_cd.scmd_binds==1 && !post_cd.modes && semaphores[id].option==0x3838D8)
                     || (post_cd.modes==1 && !post_loadfile.binds && semaphores[id].option==0x3838E8)
                     || (post_loadfile.binds && !post_loadfile.versions && semaphores[id].option==0x3838D8)
-                    || (post_loadfile.versions==1 && semaphores[id].option==0x3838E8));
+                    || (post_loadfile.versions==1 && semaphores[id].option==0x3838E8)
+                    || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
                     || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup))
                 throw UnsupportedSyscall(selector, context->pc);
@@ -1029,7 +1044,28 @@ public:
 #ifdef BT2_NATIVE_IOP
     std::shared_ptr<NativeIopService> native_iop;
 #endif
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads;}
+    unsigned heap_binds=0,heap_calls=0;
+    bool heap_allocation_supplied=false,heap_copy_supplied=false;
+    unsigned heap_transfers=0,heap_dma_polls=0;
+    void supplyHeapAllocation(std::span<const std::uint8_t> evidence) {
+        constexpr std::array<std::uint32_t,17> expected={0x400,0x3AC880,0x80000008,0,0,0,0,0x3AC840,0x8000000A,0,0,0,0,0,0,0,0xCE500};
+        if(heap_allocation_supplied || (evidence.size()!=sizeof(expected) && evidence.size()!=sizeof(expected)+20) || std::memcmp(evidence.data(),expected.data(),sizeof(expected)))
+            throw std::runtime_error("IOP heap allocation evidence differs or repeated");
+        if(evidence.size()==sizeof(expected)+20) {
+            constexpr std::array<std::uint32_t,5> copy={0x369F90,0xCE500,0x360,0,0xFFFFFFFF};
+            if(std::memcmp(evidence.data()+sizeof(expected),copy.data(),sizeof(copy)))throw std::runtime_error("Heap copy evidence differs");
+            heap_copy_supplied=true;
+        }
+        heap_allocation_supplied=true;
+    }
+    bool heap_bind_supplied=false;
+    void supplyHeapBind(std::span<const std::uint8_t> evidence) {
+        constexpr std::array<std::uint32_t,16> expected={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};
+        if(heap_bind_supplied || evidence.size()!=sizeof(expected) || std::memcmp(evidence.data(),expected.data(),sizeof(expected)))
+            throw std::runtime_error("IOP heap bind evidence differs or repeated");
+        heap_bind_supplied=true;
+    }
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1339,6 +1375,9 @@ private:
         if(bind)++post_loadfile.binds;else ++post_loadfile.versions;
         ++sif_dma_submissions;context->r[2].low=0x30000+post_loadfile.operations();
     }
+    void receiveHeapBind(std::uint8_t* rdram,R5900Context* context);
+    void receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context);
+    void receiveHeapCopy(std::uint8_t* rdram,R5900Context* context);
     void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
         const bool bind=!post_cd.scmd_binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
         if(context->r[29].low!=d || d!=initial_sp-(bind?432:448) || context->r[5].low!=(bind?1u:2u)

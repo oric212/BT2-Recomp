@@ -191,3 +191,30 @@ class McmanReturnCaptureTests(unittest.TestCase):
         self.assertEqual((address,marker),(0x100434,0xB73B))
         self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
         self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+
+class HeapBindReturnCaptureTests(unittest.TestCase):
+    def test_unique_return_preserves_result_and_stack(self):
+        address,trap,marker=capture_trap('fileio-bind-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x1005A4,0xB747))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+
+class HeapAllocationReturnCaptureTests(unittest.TestCase):
+    def test_original_allocation_return_is_published(self):
+        address,trap,marker=capture_trap('heap-alloc-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x3205D4,0xB748))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+
+class HeapCopyReturnCaptureTests(unittest.TestCase):
+    def test_trap_follows_the_completed_poll_loop(self):
+        address,trap,marker=capture_trap('heap-copy-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x320620,0xB749))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)

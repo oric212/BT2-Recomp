@@ -12,6 +12,8 @@
 #include "cdvdstm_native.h"
 #include "sounds_native.h"
 #include "cri_adxi_native.h"
+#include "fileio_boot_native.h"
+void bt2_iop_fileio_boot(IopRuntime&,IopContext&);
 void bt2_iop_cri_adxi(IopRuntime&,IopContext&);
 void bt2_iop_sounds(IopRuntime&,IopContext&);
 void bt2_iop_cdvdstm(IopRuntime&,IopContext&);
@@ -200,4 +202,30 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
             for(unsigned irq:{9u,36u,40u})if(!rt.enabled_interrupts.contains(irq) || !rt.interrupts.at(irq).enabled || rt.interrupts.at(irq).gp!=iop_libsd_gp)
                 throw std::runtime_error("Native LIBSD IRQ ownership differs");
         }}};
+}
+
+
+std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
+    if(epoch!=epoch_ || failed_ || boot_heap_allocations || size!=0x360 || residents.size()!=13)
+        throw std::runtime_error("Unsupported boot IOP heap allocation");
+    try {
+        // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
+        runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
+            iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}});
+        runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
+        runtime.providers[{"sysmem",4}]=[this,size](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations)
+                throw std::runtime_error("Unsupported native AllocSysMemory request");
+            // Captured first block; 256-byte rounding. Other allocations/modes remain checked failures.
+            rt.map(0xCE500,std::vector<std::uint8_t>((size+255)&~255u));
+            ++boot_heap_allocations;return 0xCE500u;
+        };
+        IopContext c;c.pc=iop_fileio_boot_base+0x27D4;c.set(4,1);c.set(5,iop_fileio_boot_base+0x4050);c.set(6,4);
+        c.set(28,iop_fileio_boot_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);
+        runtime.execute(runtime,c);runtime.providers.erase({"sysmem",4});
+        if(c.pc!=IopRuntime::sentinel || c.get(2)!=iop_fileio_boot_base+0x3FE0 || !boot_heap_allocations
+            || runtime.read(c.get(2),4)!=0xCE500)throw std::runtime_error("Native FILEIO heap handler effects differ");
+        return runtime.read(c.get(2),4);
+    } catch(...) {runtime.providers.erase({"sysmem",4});failed_=true;throw;}
 }

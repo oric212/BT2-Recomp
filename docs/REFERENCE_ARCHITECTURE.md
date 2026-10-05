@@ -151,4 +151,14 @@ Guarded isolated local captures independently publish the first actual status LH
 
 ### Bounded LIBSD initialization and CRI residency
 
-Consulted pinned PS2SDK FREESD/SPU2 definitions, intrman/thbase/sysclib contracts and PCSX2 SPU2 register, IOP hardware read and DMA handling. Adapted only storage/address progression, owned interrupt state and cooperative lower-priority worker startup; guarded BT2 captures establish reached values and final effects. No implementation copied. Initial FIFO transfer, LIBSD return 0 and CRI resident result 2 are independently compared; general sound DMA, envelopes, effects and playback remain unimplemented. The next generated call binds server 0x80000003 and requires the separate FILE_IO_STARTUP_PLAN.md service/protocol evidence.
+Consulted pinned PS2SDK FREESD/SPU2 definitions, intrman/thbase/sysclib contracts and PCSX2 SPU2 register, IOP hardware read and DMA handling. Adapted only storage/address progression, owned interrupt state and cooperative lower-priority worker startup; guarded BT2 captures establish reached values and final effects. No implementation copied. Initial FIFO transfer, LIBSD return 0 and CRI resident result 2 are independently compared; general sound DMA, envelopes, effects and playback remain unimplemented. The next generated call binds server 0x80000003 and requires the separate IOP_HEAP_STARTUP_PLAN.md service/protocol evidence.
+
+
+### IOP heap service correction and bind evidence
+
+Pinned PS2SDK [IOP FILEIO source](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/fs/fileio/src/fileio.c) registers the heap service as 0x80000003; ordinary file I/O is 0x80000001. The previous server classification was incorrect. Local IOPRP FILEIO code relocation, module ownership, tagged sleeping worker, service queue and unique EE bind return establish this specific BT2 service. An authored reference-backed bind adapter executes the already generated RPC_END callback; it does not recompile/execute FILEIO startup or grant successful heap/file requests. Adapted the existing checked RPC path without copying SDK/reference code. Follow IOP_HEAP_STARTUP_PLAN.md for reached requests.
+
+
+### First heap allocation and owned transfer
+
+Pinned FILEIO heap handler and [sysmem allocation](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e531dd8f060250b07f2a5ac6dea5/iop/system/sysmem/src/sysmem.c) establish allocation mode 0 and 256-byte rounding. Local captures establish BT2's first size 864, returned block 0xCE500, RPC result and exact subsequent copy. The authored generator extracts only user-local disc-matched FILEIO and reuses our translator; its real handler executes against a scoped owned allocation provider. No public implementation copied. The worker/boot entry is not run or counted as another native resident. First copy is synchronous logical transport with its own token, independently compared against reference bytes; hardware DMA timing and general allocation are not claimed. The copied payload is an embedded IRX, now reaching the distinct module-buffer loader boundary.

@@ -238,6 +238,10 @@ def main():
     parser.add_argument('--post-sif-captures',type=Path)
     parser.add_argument('--post-cd-captures',type=Path)
     parser.add_argument('--loadfile-captures',type=Path)
+    parser.add_argument('--heap-bind-capture',type=Path,help='Guarded IOP heap bind capture directory; requires LOADFILE evidence and explicit local disc.')
+    parser.add_argument('--heap-copy-capture',type=Path,help='Guarded first heap transfer/completion capture; requires allocation evidence.')
+    parser.add_argument('--heap-allocation-capture',type=Path,help='Guarded first heap allocation capture; requires heap bind evidence.')
+    parser.add_argument('--heap-disc',type=Path,help='User-local disc for heap-service/IOPRP identity validation.')
     args = parser.parse_args()
     if args.sif_rpc_state_capture and not args.sif_dma_after_capture:
         parser.error('--sif-rpc-state-capture requires --sif-dma-after-capture')
@@ -434,6 +438,16 @@ def main():
     timer_capture = verify_timer_capture(args.timer3_capture) if args.timer3_capture else None
     snapshot_provenance = verify_snapshot(args.kernel_snapshot) if args.kernel_snapshot else None
     folder = ROOT / "work/bt2-generation"
+    heap_allocation_bundle=None
+    heap_bundle=None
+    if args.heap_bind_capture:
+        if not loadfile or not args.heap_disc:raise ValueError('Heap bind requires LOADFILE captures and --heap-disc')
+        from verify_heap_bind import verify as verify_heap_bind
+        heap_bundle=folder/'heap-bind.bin'
+        verify_heap_bind(ROOT,args.heap_bind_capture,args.heap_disc,heap_bundle)
+        heap_environment=json.loads((args.heap_bind_capture/'capture.json').read_text(encoding='utf-8'))
+        if any(heap_environment[k]!=gs_field[1][k] for k in ('pcsx2_sha256','bios_sha256','disc_sha256')):
+            raise ValueError('Heap bind environment differs from startup')
     folder.mkdir(parents=True, exist_ok=True)
     if not args.reuse_generated:
         run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_map.py")])
@@ -442,6 +456,15 @@ def main():
     from expand_startup import verify_extra
     verify_extra()
     run([sys.executable, str(ROOT / "tools/ps2recomp/prepare_runtime.py")])
+    if args.heap_allocation_capture:
+        if not heap_bundle:raise ValueError('Heap allocation requires heap bind evidence')
+        from verify_heap_allocation import verify as verify_heap_allocation
+        heap_allocation_bundle=folder/'heap-allocation.bin'
+        verify_heap_allocation(ROOT,args.heap_allocation_capture,args.heap_disc,heap_allocation_bundle)
+    if args.heap_copy_capture:
+        if not heap_allocation_bundle:raise ValueError('Heap copy requires allocation evidence')
+        from verify_heap_copy import verify as verify_heap_copy
+        verify_heap_copy(ROOT,args.heap_copy_capture,args.heap_disc,heap_allocation_bundle)
     kernel_generation = None
     if timer_capture:
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py")])
@@ -451,7 +474,7 @@ def main():
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py"), "--payload", "startup"])
         startup_kernel_generation = json.loads((ROOT / "work/kernel-generation-startup/generation.manifest.json").read_text(encoding="utf-8"))
     build = ROOT / "build/probe"
-    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF"), "-DBT2_BUILD_STARTUP_KERNEL_PAYLOAD=" + ("ON" if osd_readback else "OFF")], folder / "configure.log")
+    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF"), "-DBT2_BUILD_STARTUP_KERNEL_PAYLOAD=" + ("ON" if osd_readback else "OFF")] + (["-DBT2_LINK_NATIVE_IOP=ON"] if heap_bundle else []), folder / "configure.log")
     run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
     run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler|generated-buffer-fill|generated-timer-write|generated-copy-handler"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
@@ -512,9 +535,13 @@ def main():
             bundle = folder / 'scmd-bind.bin'
             bundle.write_bytes(scmd_bind[0])
             entry_command.append(str(bundle))
+        if heap_bundle:entry_command.append(str(heap_bundle))
+        if heap_allocation_bundle:entry_command.append(str(heap_allocation_bundle))
         run(entry_command)
         entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
+        "heap_bind_provenance": json.loads(heap_bundle.with_suffix('.json').read_text(encoding='utf-8')) if heap_bundle else None,
+        "heap_allocation_provenance": json.loads(heap_allocation_bundle.with_suffix('.json').read_text(encoding='utf-8')) if heap_allocation_bundle else None,
         "gif_provenance": gif[1] if gif else None,
         "gif_sync_provenance": gif_sync[1] if gif_sync else None,
         "post_cd_provenance": post_cd[1] if post_cd else None,

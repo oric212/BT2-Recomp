@@ -6,13 +6,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05
 
 The optional EE probe completes **thirteen native IOP module loads**, including CRI_ADXI. LIBSD `sceSdInit` returns 0 after the bounded initial sound RAM transfer and register setup. CRI_ADXI returns resident result 2; its relocated code, full normalized data/BSS and two waiting workers match a local retail capture. No displayed frame, audio playback or complete boot yet.
 
-Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **91/91 capture tests**, independent transfer/configuration checks and CRI residency comparison. Proprietary inputs, captures and generated code remain ignored.
+Latest verification: MSVC builds, **14/14 CTests**, **11/11 IOP tooling tests**, **94/94 capture tests**, **43/43 recompilation tooling tests**, independent heap bind/allocation/copy checks. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-After CRI residency, generated `FUN_00336CD8` reaches the RPC bind for **server 0x80000003**, client 0x3AC840. Current stop: **CreateSema selector 0x40 at EE PC 0x32EC68**; the adapter rejects the new call's stack attributes. Full checkpoint: **696 calls / 691 returns**, **thirteen residents**, **30,839 cumulative IOP instructions / 125 physical entry targets / twelve waiting workers**.
+The IOP heap service binds, its translated FILEIO handler allocates **864 bytes**, and the first EE-to-IOP copy/completion finishes. Native destination bytes match the local reference capture. Correction: server **0x80000003** is the heap service hosted by FILEIO, not ordinary file I/O.
 
-This enters the file I/O RPC subsystem. Follow the [file I/O startup plan](FILE_IO_STARTUP_PLAN.md): establish the local service, bind reply and owned request routing before accepting that semaphore/bind. Sound scope is limited to eight initial FIFO halfwords, one completion poll and captured initialization configuration; general sound DMA, sample processing and playback remain unsupported. [SPU2 initialization](SPU2_INITIALIZATION_PLAN.md) is complete within that scope; sectors, asset loading, Vblank production and presentation remain incomplete.
+Startup now requests **LOADFILE operation 6 (module from memory)** through `FUN_003373F0`, using the copied IRX at **0xCE500**. Current stop: **CreateSema selector 0x40 at EE PC 0x32EC68**, parameters at **0x1FFEB70**. Full checkpoint: **736 calls / 729 returns**, **thirteen residents**, **30,889 cumulative IOP instructions / 126 physical entry targets / twelve waiting workers**. Boot FILEIO heap-handler execution adds 50 IOP instructions; its boot entry/worker is not run natively or counted as another resident.
+
+Follow the new [memory-backed module loading plan](MODULE_BUFFER_STARTUP_PLAN.md). The [heap scope](IOP_HEAP_STARTUP_PLAN.md) supports only the first captured allocation and copy; general allocation/free, file reads, physical DMA timing and buffer-module residency remain unsupported. Assets, Vblank production, audio playback and presentation remain incomplete.
 
 ## Key counts
 

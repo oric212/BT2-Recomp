@@ -15,7 +15,7 @@ All local captures, instrumented binaries and generated retail-derived source re
 
 The earlier first-FIFO boundary at 0x940CC is resolved. Eight halfwords are stored in owned sound RAM at word addresses 0x2800..0x2807, TSA advances to 0x2808, and the captured first status poll returns 0x80. LIBSD returns 0 after voice/core configuration; 394 stable configuration registers match an independent initialized reference snapshot. Dynamic ENDX values are excluded from that comparison, with only explicit immediate clear readbacks supported.
 
-CRI_ADXI returns resident result 2. Relocated code, complete normalized data/BSS and its Vblank/RPC workers match a local return capture. No sample processing, general sound transfers, IRQ delivery or audio playback is established. Startup now reaches the separate [file I/O RPC boundary](FILE_IO_STARTUP_PLAN.md).
+CRI_ADXI returns resident result 2. Relocated code, complete normalized data/BSS and its Vblank/RPC workers match a local return capture. No sample processing, general sound transfers, IRQ delivery or audio playback is established. Startup now reaches the separate [file I/O RPC boundary](IOP_HEAP_STARTUP_PLAN.md).
 
 ## Sound RAM transaction pass
 

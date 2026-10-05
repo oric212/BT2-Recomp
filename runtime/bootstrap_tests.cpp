@@ -1062,6 +1062,26 @@ int main() {
                 && SRA32(UINT32_MAX, 32) == UINT32_MAX && SRA32(0x7FFFFFFF, 1) == 0x3FFFFFFF);
         require(FPU_ADD_S(0, 0) == 0);
         reject([] { (void)FPU_ADD_S(1, 0); });
+        PS2Runtime heap_evidence_runtime;
+        const std::array<std::uint32_t,16> heap_reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};
+        auto heap_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(heap_reply.data()),sizeof(heap_reply));
+        reject([&] {heap_evidence_runtime.supplyHeapBind(heap_bytes.first(60));});
+        auto wrong_heap=heap_reply;wrong_heap[9]+=4;
+        reject([&] {heap_evidence_runtime.supplyHeapBind(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong_heap.data()),sizeof(wrong_heap)));});
+        require(!heap_evidence_runtime.heap_bind_supplied && !heap_evidence_runtime.heap_binds);
+        heap_evidence_runtime.supplyHeapBind(heap_bytes);
+        require(heap_evidence_runtime.heap_bind_supplied && !heap_evidence_runtime.heap_binds);
+        reject([&] {heap_evidence_runtime.supplyHeapBind(heap_bytes);});
+        PS2Runtime heap_allocation_runtime;
+        const std::array<std::uint32_t,17> allocation_evidence={0x400,0x3AC880,0x80000008,0,0,0,0,0x3AC840,0x8000000A,0,0,0,0,0,0,0,0xCE500};
+        auto allocation_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(allocation_evidence.data()),sizeof(allocation_evidence));
+        reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes.first(64));});
+        auto wrong_allocation=allocation_evidence;wrong_allocation[16]+=4;
+        reject([&]{heap_allocation_runtime.supplyHeapAllocation(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong_allocation.data()),sizeof(wrong_allocation)));});
+        require(!heap_allocation_runtime.heap_allocation_supplied && !heap_allocation_runtime.heap_copy_supplied);
+        heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);
+        require(heap_allocation_runtime.heap_allocation_supplied && !heap_allocation_runtime.heap_copy_supplied);
+        reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);});
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
