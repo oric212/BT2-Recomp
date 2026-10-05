@@ -540,3 +540,16 @@ python tools/capture_ee/verify_heap_copy.py --capture work/pcsx2-capture/heap-co
 The copy verifier also verifies the allocation and bind, producing an 88-byte allocation/copy bundle. Allocation alone uses `verify_heap_allocation.py --capture work/pcsx2-capture/heap-alloc-after` and the same disc/output arguments, producing 68 bytes. Append heap-bind.bin and heap-allocation.bin after the existing SCMD bundle in the optional entry-probe invocation. With heap execution, the probe writes an ignored IOP RAM sidecar at `<STOP_REPORT>.iop.bin`; use `--native work/bt2-generation/entry-stop.json` on the copy verifier to compare native phases/client/destination.
 
 The pipeline now accepts `--heap-bind-capture`, `--heap-allocation-capture`, `--heap-copy-capture` and `--heap-disc`, in addition to the existing explicit startup/LOADFILE captures. Supply the three directories above and the user's local disc. It checks prerequisite evidence/environment and passes prepared bundles automatically. No general heap allocator, file operations or physical DMA scheduling is implied.
+
+### First embedded module and cleanup
+
+Use the existing capture command with `--capture-point module-buffer-after`, `heap-free-after` and `dmac-startup-after`. These unique return checkpoints require the user's explicit local disc and produce ignored capture directories. Then run:
+
+```powershell
+python tools/iop/generate_embedded.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/capture_ee/verify_module_buffer.py
+```
+
+The generator validates the retail ELF hash/file-backed source segment, full transferred IRX, relocated entry, independent loader return/metadata, local disc hash and disc-matched CDVDMAN version. Its `.cpp`, `.h` and receipts remain in ignored `work/iop/`. Optional native targets require this source alongside the thirteen module sources and boot FILEIO source. Regenerate it before building those targets. No additional entry-probe argument is required: the existing heap evidence enables the bounded owned buffer load and free.
+
+After the full native probe, add `--native work/bt2-generation/entry-stop.json` to the verifier. Native IDs are authored and differ from retail IDs; the embedded module returns 1 and is not retained as a resident. Freed code/heap bytes may remain as diagnostic residue, but native ownership checks reject accesses. The verifier compares code/returns and bounded DMAC setup; it does not establish full boot, VIF execution or presentation.

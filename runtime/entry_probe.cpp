@@ -318,7 +318,10 @@ int main(int argc, char** argv) {
         catch (const UnsupportedGuestMemory& stop) {
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
-            if(runtime.post_sif.supplied) throw; // Fresh transport accepts no unknown memory access.
+            const bool vif_handoff=runtime.native_module_loads==14 && runtime.heap_frees==1 && runtime.dmac_startup_writes==3
+                && stop.address==0x10003C10 && stop.size==4 && context.pc==0x30FF70 && context.r[29].low==runtime.initial_sp-32;
+            if(runtime.post_sif.supplied && !vif_handoff) throw; // Only the explicit new VIF subsystem boundary is accepted.
+            if(vif_handoff) { /* Preserve the checked memory stop below; no VIF request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -685,6 +688,9 @@ int main(int argc, char** argv) {
                 << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
                 << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
                 << ",\"heap_calls\":" << runtime.heap_calls
+                << ",\"heap_frees\":" << runtime.heap_frees
+                << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
+                << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
                 << ",\"heap_binds\":" << runtime.heap_binds
                 << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
                 << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes

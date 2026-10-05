@@ -1,4 +1,5 @@
 #include "module_service.h"
+#include "embedded_native.h"
 #include <iostream>
 void check(bool value){if(!value)throw std::runtime_error("Native IOP service test differs");}
 template<class F> void rejected(F f){bool failed=false;try{f();}catch(const std::runtime_error&){failed=true;}check(failed);}
@@ -45,6 +46,18 @@ int main() {
         service.runtime.check(heap,0x400);rejected([&]{service.runtime.check(heap+0x400,1);});
         check(!service.runtime.providers.contains({"sysmem",4}));const auto heap_steps=service.runtime.steps;
         rejected([&]{service.allocateBootHeap(1,0x360);});check(service.runtime.steps==heap_steps);
+        rejected([&]{service.loadBootBuffer(2,heap);});rejected([&]{service.loadBootBuffer(1,heap);});
+        check(service.runtime.steps==heap_steps && !service.buffer_loads);
+        std::copy(iop_embedded_file.begin(),iop_embedded_file.end(),service.runtime.ram.begin()+heap);
+        rejected([&]{service.loadBootBuffer(1,heap+4);});
+        const auto embedded=service.loadBootBuffer(1,heap);
+        check(embedded.id==14 && embedded.result==1 && service.buffer_loads==1 && service.residents.size()==13);
+        rejected([&]{service.runtime.check(0xCE930,4);});service.runtime.check(heap,864);
+        const auto embedded_steps=service.runtime.steps;
+        rejected([&]{service.loadBootBuffer(1,heap);});check(service.runtime.steps==embedded_steps);
+        rejected([&]{service.freeBootHeap(2,heap);});rejected([&]{service.freeBootHeap(1,heap+4);});
+        check(service.freeBootHeap(1,heap)==0 && service.boot_heap_frees==1 && !service.runtime.providers.contains({"sysmem",5}));
+        rejected([&]{service.runtime.check(heap,1);});rejected([&]{service.freeBootHeap(1,heap);});
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

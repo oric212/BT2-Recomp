@@ -15,4 +15,8 @@ The complete 864-byte buffer matches the prepared local ELF data at 0x369F90 and
 5. Compare loaded code/startup effects and acknowledge only scoped validated residency. Rerun through later generated startup toward asset loading/draw submission.
 6. Stop only for a new major subsystem, unavailable evidence/access or speculative changes. Build/test, update PROG/history, review authored changes, commit and push.
 
-General LOADFILE buffer support, arbitrary IRX/overlays and file reads are not implemented by this plan. Proprietary-derived output remains ignored.
+## Verified bounded completion
+
+The 864-byte local payload identifies itself as `ck01`: one neutral entry range, one CDVDMAN ordinal-50 import and two relocations. It equals the retail ELF source, owned transferred bytes and independent module-return capture. Its entry queries command -9 (CDVDMAN version); the disc-matched module header supplies 0x225. Actual translated entry returns **1**, matching the retail return. SDK modload frees/unlinks result & 3 == 1, so this is **nonresident**, not a fourteenth resident. The native loaded image relinquishes ownership; the original heap source remains owned until the real translated FILEIO operation-2 handler frees it, returning 0 as captured.
+
+Generated EE resumes through both helpers and bounded global DMAC setup. Continue with [initial VIF/VU startup](VIF_STARTUP_PLAN.md). General LOADFILE buffer support, arbitrary IRX/overlays and file reads remain unimplemented. Proprietary-derived output remains ignored.

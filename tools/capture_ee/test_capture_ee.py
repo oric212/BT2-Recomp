@@ -218,3 +218,27 @@ class HeapCopyReturnCaptureTests(unittest.TestCase):
         self.assertEqual((address,marker),(0x320620,0xB749))
         self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
         self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+class ModuleBufferReturnCaptureTests(unittest.TestCase):
+    def test_unique_buffer_load_return(self):
+        address,trap,marker=capture_trap('module-buffer-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x320630,0xB74A))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+class HeapFreeReturnCaptureTests(unittest.TestCase):
+    def test_unique_owned_free_return(self):
+        address,trap,marker=capture_trap('heap-free-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x320650,0xB74B))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+class DmacStartupCaptureTests(unittest.TestCase):
+    def test_unique_setup_return(self):
+        address,trap,marker=capture_trap('dmac-startup-after')
+        words=struct.unpack('<8I',trap)
+        self.assertEqual((address,marker),(0x1005B4,0xB74C))
+        self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
+        self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)

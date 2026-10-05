@@ -1082,6 +1082,16 @@ int main() {
         heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);
         require(heap_allocation_runtime.heap_allocation_supplied && !heap_allocation_runtime.heap_copy_supplied);
         reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);});
+        PS2Runtime dmac;dmac.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
+        R5900Context dc;dc.r[29].low=dmac.initial_sp-32;dc.pc=0x28B2B4;
+        reject([&]{dmac.Store32(dmac.memory().data(),&dc,0x1000E000,1);});
+        dmac.heap_frees=1;dmac.native_module_loads=14;
+        dmac.Store32(dmac.memory().data(),&dc,0x1000E000,1);dc.pc=0x28B2B8;
+        reject([&]{dmac.Store32(dmac.memory().data(),&dc,0x1000E020,0);});
+        dmac.Store32(dmac.memory().data(),&dc,0x1000E020,0x83FF0002);dmac.dmac_mask=0xA00000;
+        dmac.write32(dmac.memory().data(),0x1000E010,0);
+        require(dmac.dmac_startup_writes==3 && dmac.dmac_control==1 && dmac.dmac_priority==0x83FF0002 && dmac.dmac_mask==0xA00000);
+        reject([&]{dmac.write32(dmac.memory().data(),0x1000E010,0);});
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

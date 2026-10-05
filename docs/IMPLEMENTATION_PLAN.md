@@ -49,7 +49,7 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 
 ## Repository workflow
 
-Current next step: validate the copied embedded IRX through [memory-backed module startup](MODULE_BUFFER_STARTUP_PLAN.md). The first IOP heap bind, translated allocation handler and owned copy/completion are verified; [heap scope](IOP_HEAP_STARTUP_PLAN.md) remains bounded. Thirteen native module residents and bounded LIBSD initialization are verified; general heap allocation/free, sound playback, disc sectors, assets and presentation remain incomplete. Follow [disc-streaming scope](CDVD_STREAMING_PLAN.md) when sector requests are reached. Controller workers remain parked on owned Vblank events without a timing producer.
+Current next step: complete the bounded [initial VIF/VU startup](VIF_STARTUP_PLAN.md). The first embedded module entry, nonresident cleanup, heap free and global DMAC setup are verified. Fourteen module-load RPCs complete with thirteen residents. General heap allocation, arbitrary buffer modules, sound playback, disc sectors, assets and presentation remain incomplete. Follow [disc-streaming scope](CDVD_STREAMING_PLAN.md) when sector requests are reached. Controller workers remain parked on owned Vblank events without a timing producer.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 
@@ -60,4 +60,4 @@ Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the resu
 
 ### Current subsystem handoff
 
-Bounded LIBSD initialization and CRI_ADXI residency are verified; thirteen native module loads complete. The first heap allocation/copy now completes. Follow [buffer-module startup](MODULE_BUFFER_STARTUP_PLAN.md) from actual LOADFILE operation 6 toward asset loading. Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.
+The first owned heap/module-buffer lifecycle completes. VIF1 reset/control and FIFO command processing are the next separate subsystem: follow [VIF startup](VIF_STARTUP_PLAN.md). Full sound transfers/playback remain separate work. Current measured counts and evidence are in PROG.md and the October history.

@@ -63,6 +63,10 @@ public:
         runtime.sif_transport_attached=true;
     }
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
+    Resident loadBootBuffer(unsigned epoch,unsigned pointer);
+    std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
+    unsigned buffer_loads=0;
+    unsigned boot_heap_frees=0;
     unsigned boot_heap_allocations=0;
     bool supports(std::string_view path) const {for(const auto& m:definitions_)if(m.path==path)return true;return false;}
     unsigned epoch() const {return epoch_;}

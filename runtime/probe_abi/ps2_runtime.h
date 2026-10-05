@@ -35,6 +35,8 @@ struct R5900Context {
     std::uint64_t hi = 0, lo = 0, hi1 = 0, lo1 = 0;
     std::uint32_t sa = 0, fcr31 = 0, cop0_status = 0, branch_pc = 0;
     std::uint32_t cop0_epc = 0, cop0_errorepc = 0;
+    // Generated ABI storage only; VIF/VU reset execution remains gated at first MMIO.
+    std::uint32_t vu0_fbrst = 0;
     bool ll_bit = false;
     bool in_delay_slot = false;
     std::array<float, 32> f{};
@@ -150,6 +152,8 @@ public:
 #ifdef BT2_NATIVE_IOP
         if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
+        if(code==0 && selector==0x77 && native_module_loads==14 && heap_calls==1 && !heap_frees
+            && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97E0)==2) {receiveHeapFree(rdram,context);return;}
         if(code==0 && selector==0x76 && heap_copy_supplied && heap_transfers==1 && !heap_dma_polls) {
             if(iop_epoch!=1 || context->pc!=0x32F008 || context->r[4].low!=0x50001 || context->r[29].low!=initial_sp-144)
                 throw UnsupportedSyscall(selector,context->pc);
@@ -582,7 +586,9 @@ public:
             const bool fresh_loader_bind_sema=post_cd.modes==1 && semaphores.size()==7
                 && address==initial_sp-384 && maximum==1 && initial==0 && option==0x3838D8;
             const bool fresh_loader_call_sema=post_loadfile.binds==1 && semaphores.size()==7 && maximum==1 && initial==0
-                && option==0x3838E8 && address==initial_sp-(post_loadfile.versions?384:464);
+                && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
+                    || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
+                    || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
@@ -768,6 +774,11 @@ public:
 
     void write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
         address = uncachedWordAddress(rdram, address);
+        // The generated DMAC setup writes zero to STAT in its return delay slot.
+        // STAT is W1C/toggle, so zero preserves the existing interrupt mask.
+        if(address==0x1000E010 && dmac_startup_writes==2 && value==0 && heap_frees==1) {
+            checkMemory(rdram,0,0);++dmac_startup_writes;return;
+        }
         // Observed Timer 2 startup store only; no counter advancement or scheduling.
         if (address == 0xB0001010 && timer2_mode_supplied_ && timer2_mode_reads == 1
                 && !timer2_mode_writes && value == 0x382) {
@@ -1044,7 +1055,9 @@ public:
 #ifdef BT2_NATIVE_IOP
     std::shared_ptr<NativeIopService> native_iop;
 #endif
-    unsigned heap_binds=0,heap_calls=0;
+    unsigned heap_binds=0,heap_calls=0,heap_frees=0;
+    unsigned dmac_startup_writes=0;
+    std::uint32_t dmac_control=0,dmac_priority=0;
     bool heap_allocation_supplied=false,heap_copy_supplied=false;
     unsigned heap_transfers=0,heap_dma_polls=0;
     void supplyHeapAllocation(std::span<const std::uint8_t> evidence) {
@@ -1065,7 +1078,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls;}
+    unsigned serviceOperations() const {return post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
@@ -1114,6 +1127,9 @@ public:
     std::uint32_t dmac_mask = 0, dmac_enable_calls = 0, dmac_disable_calls = 0, dmac_removals = 0;
 
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
+    void Store128(std::uint8_t* rdram,R5900Context*,std::uint32_t address,const ProbeGpr& value) {
+        write128(rdram,address,value); // Checked RAM only; no VIF/GIF FIFO support.
+    }
     void handleBreak(std::uint8_t*,R5900Context*) {
         throw std::runtime_error("Unsupported guest BREAK instruction");
     }
@@ -1139,6 +1155,14 @@ public:
         ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
     }
     void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+        if(heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
+            if(address==0x1000E000 && context->pc==0x28B2B4 && !dmac_startup_writes && value==1) {
+                checkMemory(rdram,0,0);dmac_control=value;++dmac_startup_writes;return;
+            }
+            if(address==0x1000E020 && context->pc==0x28B2B8 && dmac_startup_writes==1 && value==0x83FF0002) {
+                checkMemory(rdram,0,0);dmac_priority=value;++dmac_startup_writes;return;
+            }
+        }
         if(address==0x1000F000 && gs_interrupt_supplied_ && gs_crt_calls==1
             && context->r[29].low==initial_sp-656 && value==4
             && ((context->pc==0x32F10C && !gs_interrupt.acknowledgements)
@@ -1353,6 +1377,7 @@ private:
     }
 #ifdef BT2_NATIVE_IOP
     void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
+    void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);
 #endif
     void receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context) {
         const bool bind=!post_loadfile.binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);

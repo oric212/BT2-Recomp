@@ -41,6 +41,14 @@ int main() {
         rt.heap_transfers=1;c.r[3].low=0x76;c.pc=0x32F008;c.r[4].low=0x50002;stop();check(!rt.heap_dma_polls);
         c.r[4].low=0x50001;rt.iop_epoch=2;stop();check(!rt.heap_dma_polls);rt.iop_epoch=1;rt.handleSyscall(rt.memory().data(),&c,0);
         check(rt.heap_dma_polls==1 && c.r[2].low==UINT64_MAX);stop();check(rt.heap_dma_polls==1);
+        c.r[3].low=0x77;c.pc=0x32F028;c.r[5].low=2;c.r[4].low=rt.initial_sp-640;c.r[29].low=c.r[4].low;
+        rt.write32(rt.memory().data(),0x3A97E0,6);rt.semaphores[7].option=0x3838E8;
+        const auto buffer_before=std::vector<std::uint8_t>(rt.memory().begin(),rt.memory().end());stop();
+        check(rt.native_module_loads==13 && std::equal(buffer_before.begin(),buffer_before.end(),rt.memory().begin()));
+        rt.native_module_loads=14;c.r[4].low=rt.initial_sp-544;c.r[29].low=c.r[4].low;
+        rt.write32(rt.memory().data(),0x3A97DC,0x3AC840);rt.write32(rt.memory().data(),0x3A97E0,2);
+        const auto free_before=std::vector<std::uint8_t>(rt.memory().begin(),rt.memory().end());stop();
+        check(!rt.heap_frees && !rt.native_iop->boot_heap_frees && std::equal(free_before.begin(),free_before.end(),rt.memory().begin()));
         std::cout<<"Malformed/stale requests and failed native loads leave EE packet, result and semaphore pending.\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

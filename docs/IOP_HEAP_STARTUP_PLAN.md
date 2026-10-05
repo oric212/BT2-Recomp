@@ -19,3 +19,8 @@ Native heap client, handler result, allocation, copy and completion are compared
 ## Next boundary
 
 Generated startup reaches LOADFILE operation 6 for the copied buffer. Follow [memory-backed module loading](MODULE_BUFFER_STARTUP_PLAN.md), validating identity, relocation and entry effects before residency. Continue through related blockers, test/update progress and commit/push at pass end. Inputs, captures and generated code remain ignored; unknown functions retain neutral names.
+
+
+## First source-block cleanup verified
+
+After the embedded module's nonresident return, generated FUN_00336EC8/FUN_00336E50 requests heap operation 2 for the owned 0xCE500 block. Unique retail return at 0x320650 records result 0. The translated FILEIO handler executes 49 further IOP instructions, invokes a scoped FreeSysMemory provider once and relinquishes the full rounded 0x400-byte source range. Stale epochs, wrong pointers, repeated free and accesses to released ownership reject. This completes only the first allocation/copy/load/free lifecycle; general allocation/free and FILEIO boot/worker execution remain unsupported. Continue at VIF_STARTUP_PLAN.md.

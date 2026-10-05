@@ -13,6 +13,8 @@
 #include "sounds_native.h"
 #include "cri_adxi_native.h"
 #include "fileio_boot_native.h"
+#include "embedded_native.h"
+void bt2_iop_embedded(IopRuntime&,IopContext&);
 void bt2_iop_fileio_boot(IopRuntime&,IopContext&);
 void bt2_iop_cri_adxi(IopRuntime&,IopContext&);
 void bt2_iop_sounds(IopRuntime&,IopContext&);
@@ -228,4 +230,54 @@ std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
             || runtime.read(c.get(2),4)!=0xCE500)throw std::runtime_error("Native FILEIO heap handler effects differ");
         return runtime.read(c.get(2),4);
     } catch(...) {runtime.providers.erase({"sysmem",4});failed_=true;throw;}
+}
+
+NativeIopService::Resident NativeIopService::loadBootBuffer(unsigned epoch,unsigned pointer) {
+    if(epoch!=epoch_ || failed_ || pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads || residents.size()!=13)
+        throw std::runtime_error("Unsupported native memory module load");
+    runtime.check(pointer,864);
+    if(!std::equal(iop_embedded_file.begin(),iop_embedded_file.end(),runtime.ram.begin()+pointer))
+        throw std::runtime_error("Owned embedded IRX bytes differ");
+    // The SDK's command -9 returns the CDVDMAN version. This captured startup
+    // profile is 0x225 from the disc-matched IOPRP module header; support is
+    // restricted to this module's exact import PC.
+    const auto previous=runtime.providers.at({"cdvdman",50});
+    unsigned queries=0;
+    try {
+        runtime.map(0xCE930,iop_embedded_image);
+        runtime.providers[{"cdvdman",50}]=[&](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0xFFFFFFF7)return previous(rt,c);
+            if(c.pc!=0xCE984 || c.get(5)!=0x1FFEF0 || queries++)throw std::runtime_error("Embedded CDVD version query differs");
+            return 0x225u;
+        };
+        entry={};entry.pc=0xCE930;entry.set(28,0xD69B0);entry.set(29,0x1FFF00);entry.set(31,IopRuntime::sentinel);
+        bt2_iop_embedded(runtime,entry);
+        runtime.providers[{"cdvdman",50}]=previous;
+        if(entry.pc!=IopRuntime::sentinel || entry.get(2)!=1 || queries!=1)
+            throw std::runtime_error("Embedded nonresident completion differs");
+        // modload result & 3 == 1 releases the loaded image. Keep the source heap
+        // separately owned; freed code bytes are diagnostic residue only.
+        std::erase(runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{0xCE930,0xCE9C0});
+        ++buffer_loads;return {next_id_++,entry.get(2)};
+    }catch(...) {runtime.providers[{"cdvdman",50}]=previous;failed_=true;throw;}
+}
+
+std::uint32_t NativeIopService::freeBootHeap(unsigned epoch,unsigned pointer) {
+    if(epoch!=epoch_ || failed_ || pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads!=1 || boot_heap_frees)
+        throw std::runtime_error("Unsupported native boot heap free");
+    runtime.check(pointer,0x400);
+    unsigned frees=0;
+    try {
+        runtime.write(iop_fileio_boot_base+0x4050,pointer,4);
+        runtime.providers[{"sysmem",5}]=[&](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=pointer || frees++)throw std::runtime_error("Native FreeSysMemory ownership differs");
+            std::erase(rt.ranges,std::pair<std::uint32_t,std::uint32_t>{pointer,pointer+0x400});return 0u;
+        };
+        IopContext c;c.pc=iop_fileio_boot_base+0x27D4;c.set(4,2);c.set(5,iop_fileio_boot_base+0x4050);c.set(6,4);
+        c.set(28,iop_fileio_boot_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
+        runtime.providers.erase({"sysmem",5});
+        if(c.pc!=IopRuntime::sentinel || c.get(2)!=iop_fileio_boot_base+0x3FE0 || runtime.read(c.get(2),4) || frees!=1)
+            throw std::runtime_error("Native FILEIO free handler effects differ");
+        ++boot_heap_frees;return 0;
+    }catch(...) {runtime.providers.erase({"sysmem",5});failed_=true;throw;}
 }
