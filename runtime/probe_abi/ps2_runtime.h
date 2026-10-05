@@ -658,7 +658,15 @@ public:
             const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
                 && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
                 && read32(rdram,0x3AC864)==0;
-            if (attributes != 0 && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            // The actual bind helper writes only max/init/option. An isolated
+            // retail return confirms semaphore 10 with different unused attr residue.
+            const bool disc_bind_sema=mc_rpc_calls==2 && mc_rpc_binds==1 && semaphores.size()==10
+                && !disc_bind_semaphores && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838D8
+                && context->pc==0x32EC68 && context->r[31].low==0x332814
+                && context->r[17].low==0x3A8780 && static_cast<std::uint32_t>(context->r[19].low)==0x80000597
+                && read32(rdram,0x3A8780)==0x203A97C0 && read32(rdram,0x3A8784)==42;
+            if (disc_bind_sema) ++disc_bind_semaphores;
+            if (attributes != 0 && !disc_bind_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -1427,6 +1435,7 @@ public:
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
     unsigned priority_changes = 0;
+    unsigned disc_bind_semaphores=0;
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;

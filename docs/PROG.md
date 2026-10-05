@@ -1,16 +1,16 @@
 # Current progress
 
-Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-05.
+Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06.
 
 ## Current status
 
-The optional EE probe executes original generated BT2 code through platform startup, fourteen module-load paths (thirteen resident IOP modules), two owned IOP heap allocations, bounded sound/DBCMAN initialization and the initial MCSERV exchanges. The absent-card query now completes through real native IOP code, timed waits, secondary SIF transfer and generated EE callback/cleanup. **No game assets loaded, displayed frame or audio playback.**
+The optional EE probe executes original generated BT2 code through platform startup, fourteen module-load paths (thirteen resident IOP modules), two owned IOP heap allocations, bounded sound/DBCMAN initialization and the initial MCSERV exchanges. The absent-card query now completes through real native IOP code, timed waits, secondary SIF transfer and generated EE callback/cleanup. The following generated filesystem registration/setup path now reaches the first disc-search service bind. **No game assets loaded, displayed frame or native audio playback.**
 
-Verified: MSVC builds, **14/14 CTests**, **113/113 capture tests**, **46/46 recompilation tests**, **13/13 IOP tooling tests**, and nine independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **14/14 CTests**, **115/115 capture tests**, **46/46 recompilation tests**, **13/13 IOP tooling tests**, and ten independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-Execution reaches **FUN_002FD500**, currently a map gap, from indirect call **0x2F94D8**, arguments [0x2F92D0,0], in the following filesystem registration/diagnostic path. Discover this execution-observed entry, regenerate/link and inspect its real next requirement. Keep neutral names; do not substitute device/file-read success.
+Execution now reaches an unsupported **disc-search service bind to 0x80000597**, RPC ID **42**, client **0x3A8780**, at SIF submission **0x32F028** (selector **0x77**). The earlier FUN_002FD500 map gap and seventeen reached entry bindings have been passed. The owned bind semaphore is created; the service reply has not been delivered. Independent retail captures verify initialization, semaphore creation and bind return. The next major subsystem needs a bounded disc-search compatibility design: service ownership/request delivery, local ISO metadata lookup, response transfer and generated cleanup. No successful native lookup or sector read is inferred.
 
 The [timed query scope](IOP_TIMED_WAIT_PLAN.md) completes five 300-us delays, priority dispatch, five FIFO probes, five alarm registrations / four real callbacks, an owned **192-byte secondary copy / one poll**, primary result **-11**, and generated **FUN_0031DD60** completion. Independent isolated captures with both cards disabled verify the result and transport.
 
@@ -18,8 +18,8 @@ Remaining ownership: the SDRDRV helper is parked on a pending reverse EE bind to
 
 ## Key counts
 
-- **8,580** provisional EE map entries / **8,583** raw generated C++/header files; boundaries remain unverified. **15 additional reached entry bindings** linked this pass; these are not fifteen restored gameplay functions.
-- Latest full checkpoint: **1,359 EE calls / 1,354 returns**, **41,799 native IOP instructions / 163 physical entry targets / thirteen waiting workers**.
+- **8,581** provisional EE map entries / **8,584** raw generated C++/header files; boundaries remain unverified. **17 additional reached entry bindings** linked this pass; these are not seventeen restored gameplay functions.
+- Latest full checkpoint: **1,423 EE calls / 1,411 returns**, **41,799 native IOP instructions / 163 physical entry targets / twelve ordinary waiting workers plus the parked reverse-bind helper**.
 - **111 distinct EE functions entered / 107 completed** at the earlier unique-count checkpoint; updated distinct totals have not been measured. Call totals are execution events, not working-function counts.
 - **Fourteen module-load paths / thirteen resident modules**, two captured IOP allocations, four EE startup pools, four DBCMAN binds/commands, and completed initial sound/MCSERV exchanges. Module discovery/relocation counts are in the history.
 - Card query: **six DMA pairs / five timed FIFO probes**. No mounted-card filesystem support.

@@ -7,6 +7,14 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_disc_semaphore_hook_preserves_earlier_clients(self):
+        blob=texture_stub('rpc-disc-bind-sema');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        self.assertEqual(w[:2],(0x3C18003A,0x37188780))
+        self.assertEqual(w[2]&0xFFFF0000,0x16380000)
+        early=3+(w[2]&65535)
+        self.assertEqual(w[early:],(0x04410003,0xAE220008,0x08000000|(0x33281C>>2),0,0x08000000|(0x33282C>>2),0))
+        self.assertEqual((w[14]&0x3FFFFFF)<<2,FRESH_BIND_STUB+56)
+
     def test_second_slot_capture_preserves_first_call(self):
         blob=texture_stub('rpc-dbc-port1-before');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
         early=4+(w[3]&65535)

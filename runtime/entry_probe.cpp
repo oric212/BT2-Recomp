@@ -471,7 +471,7 @@ int main(int argc, char** argv) {
             const bool pending_mc_query=runtime.mc_rpc_calls==1 && semas==10 && ((stop_selector==0x77 && context.pc==0x32F028) || (stop_target==0x31DD60 && stop_source==0x332354))
                 && runtime.read32(runtime.memory().data(),0x3A97DC)==0x3A6F80
                 && runtime.read32(runtime.memory().data(),0x3A97E0)==1;
-            const bool mc_local_semas=runtime.dbc_rpc_calls==4 && (semas==10 || pending_mc_bind)
+            const bool mc_local_semas=runtime.dbc_rpc_calls==4 && (semas==10 || pending_mc_bind || (runtime.disc_bind_semaphores==1 && semas==11 && runtime.semaphores[10].option==0x3838D8 && !runtime.semaphores[10].count))
                 && runtime.semaphores[8].maximum==1 && runtime.semaphores[8].count==(pending_mc_query?0u:1u-runtime.mc_lock_waits-runtime.mc_lock_polls+runtime.mc_lock_signals)
                 && runtime.semaphores[8].option==0x3824C8 && runtime.semaphores[9].maximum==1
                 && runtime.semaphores[9].count==0 && runtime.semaphores[9].option==0x3824D8;
@@ -741,6 +741,8 @@ int main(int argc, char** argv) {
 #ifdef BT2_NATIVE_IOP
                 << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
+                << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores
+                << ",\"stop_ra\":" << GPR_U32(&context,31) << ",\"stop_s1\":" << GPR_U32(&context,17) << ",\"stop_s3\":" << GPR_U32(&context,19)
                 << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
                 << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)
                 << ",\"mc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->mc_dma_polls:0)

@@ -459,6 +459,23 @@ int main() {
             semaphore_runtime.handleSyscall(nullptr, &semaphore_context, 0);
             require(semaphore_context.r[2].low == UINT64_MAX && semaphore_context.r[2].high == 0x5678);
         }
+        {
+            PS2Runtime disc;disc.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            R5900Context dc{}; auto* dm=disc.memory().data();
+            disc.initial_sp=0x1FFED60;disc.mc_rpc_calls=2;disc.mc_rpc_binds=1;
+            disc.semaphores.resize(10);dc.pc=0x32EC68;dc.r[3].low=0x40;
+            dc.r[4].low=disc.initial_sp-592;require(dc.r[4].low==0x1FFEB10);dc.r[31].low=0x332814;
+            dc.r[17].low=0x3A8780;dc.r[19].low=0xFFFFFFFF80000597;
+            disc.write32(dm,0x3A8780,0x203A97C0);disc.write32(dm,0x3A8784,42);
+            for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<std::uint32_t>(dc.r[4].low)+4*i,
+                std::array<std::uint32_t,6>{144,1,0,0x80808080,1,0x3838D8}[i]);
+            dc.r[19].low=0x80000596;reject([&]{disc.handleSyscall(dm,&dc,0);});
+            require(disc.disc_bind_semaphores==0 && disc.semaphores.size()==10);
+            dc.r[19].low=0xFFFFFFFF80000597;disc.handleSyscall(dm,&dc,0);
+            require(dc.r[2].low==10 && disc.disc_bind_semaphores==1 && disc.semaphores[10].count==0
+                && disc.semaphores[10].maximum==1 && disc.semaphores[10].option==0x3838D8);
+            reject([&]{disc.handleSyscall(dm,&dc,0);});
+        }
         context.r[3].low = 0x40;
         context.r[4].low = 0x600;
         context.r[2].high = 0x1234;
