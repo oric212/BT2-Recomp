@@ -366,3 +366,10 @@ std::vector<std::uint8_t> NativeIopService::executeRegisteredRpc(std::uint32_t s
         return {runtime.ram.begin()+IopRuntime::physical(c.get(2)),runtime.ram.begin()+IopRuntime::physical(c.get(2))+result_size};
     } catch(...) {runtime.current_thread=0;failed_=true;throw;}
 }
+
+std::vector<std::uint8_t> NativeIopService::callMcRpc(unsigned epoch,std::span<const std::uint8_t> input) {
+    if(epoch!=epoch_ || failed_ || mc_rpc_requests || dbc_rpc_requests!=4 || input.size()!=48
+        || std::any_of(input.begin(),input.end(),[](auto b){return b!=0;}))throw std::runtime_error("MCSERV outside observed initial request");
+    auto response=executeRegisteredRpc(0x80000400,0xFE,input,12,0x3A6F80,0x3A8540);
+    ++mc_rpc_requests;return response;
+}

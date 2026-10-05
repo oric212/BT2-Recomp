@@ -605,3 +605,7 @@ New isolated capture points: `rpc-dbc-second-bind-after`, `rpc-dbc-command-befor
 ### Initial DBCMAN reverse transfer
 
 `capture_ee.py --capture-point rpc-dbc-setup-before --capture-dbc-dma` captures an explicitly redirected immutable diagnostic source, actual SIF submission/poll and EE readback using the isolated local interpreter. Requires local PCSX2, BIOS and disc arguments. All output is ignored. Related captures: rpc-dbc-next-before/after, rpc-dbc-port1-before (preserves the first slot call), rpc-dbc-slots-after (second parent return). Run `python tools/capture_ee/verify_dbc_dma.py --native work/bt2-generation/entry-stop.json` and `verify_dbc_rpc.py` with the same argument for owned transport and the completed four-request group. These tools do not equate live device bytes or timing.
+
+### MCSERV startup evidence
+
+`capture_ee.py` accepts `rpc-mc-bind-after`, `rpc-mc-command-before` `rpc-mc-command-after` and `rpc-mc-query-before` using the existing local BIOS/disc arguments. `python tools/capture_ee/verify_mc_rpc.py --native work/bt2-generation/entry-stop.json` checks the independent initialization input/result and owned native client/code. Captures and derived files stay ignored; card operations and timing are not inferred.

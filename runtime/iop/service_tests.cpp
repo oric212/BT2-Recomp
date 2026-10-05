@@ -145,6 +145,16 @@ int main() {
             check(service.dbc_rpc_requests==3+slot && service.dbc_dma_submissions==1 && service.dbc_dma_polls==1);
             check(std::equal(source.begin(),source.end(),service.dbc_dma_payload.begin()));
         }
+        std::array<std::uint8_t,48> mc_input{};
+        const auto mc_before=service.runtime.ram;
+        rejected([&]{service.callMcRpc(2,mc_input);});check(service.runtime.ram==mc_before);
+        auto bad_mc=mc_input;bad_mc[0]=1;
+        rejected([&]{service.callMcRpc(1,bad_mc);});check(service.runtime.ram==mc_before);
+        const std::array<std::uint32_t,3> mc_expected={0,0x210,0x226};
+        const auto mc_reply=service.callMcRpc(1,mc_input);
+        check(mc_reply.size()==12 && std::memcmp(mc_reply.data(),mc_expected.data(),12)==0 && service.mc_rpc_requests==1);
+        const auto mc_after=service.runtime.ram;
+        rejected([&]{service.callMcRpc(1,mc_input);});check(service.runtime.ram==mc_after);
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

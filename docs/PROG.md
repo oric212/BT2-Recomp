@@ -10,7 +10,7 @@ Latest verification: MSVC builds, **14/14 CTests**, **13/13 IOP tooling tests**,
 
 ## Current blocker and next step
 
-The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,228 EE calls / 1,220 returns**, **32,482 IOP instructions / 144 physical entry targets / twelve waiting workers and one ready helper**.
+The copied embedded IRX (`ck01`) executes natively and returns **1 (nonresident)**. Its CDVDMAN version query uses the disc-matched **0x225** header value. The loaded image is released, then the translated FILEIO handler frees the owned source block. **Fourteen module-load RPC paths complete; thirteen modules remain resident.** Three reached global DMAC setup writes complete without inventing interrupt events. Latest checkpoint: **1,263 EE calls / 1,255 returns**, **32,616 IOP instructions / 150 physical entry targets / twelve waiting workers and one ready helper**.
 
 The bounded VIF setup completes: **seven configuration commands / eight words / two FIFO writes**, one VU reset pulse and one idle GIF reset. Independently captured register readbacks match. The second GS reset/IMR/CRT setup also returns, preserving existing VRAM. No VU microprogram executes.
 
@@ -24,7 +24,9 @@ The [EE thread-start scope](EE_THREAD_START_PLAN.md) now completes: owned ID 3 q
 
 DBCMAN's **four binds / four commands** complete through real native handlers and generated cleanup: 0x80001363, 0x80001304 and two 0x80001301 requests. The bounded **128-byte IOP-to-EE copy / one completion poll** completes using owned native source bytes; an immutable payload record verifies EE readback. Independent retail transport evidence uses an explicitly redirected diagnostic source copy, so live device bytes and physical scheduling are not equated. Both related request/result shapes match independent captures. See [completed reverse DMA scope](DBCMAN_DMA_PLAN.md).
 
-Current blocker: a new **MCSERV bind to 0x80000400**, RPC ID 39 / client 0x3A6F80, EE SifSetDma 0x77 / PC 0x32F028. Generated helpers create two local semaphores and hold their lock; the bind remains pending without a fabricated reply. This memory-card protocol is a separate subsystem scope. Next: capture its bind and first reached request, consult reference contracts, and establish a bounded implementation plan. No assets loaded, displayed frame or audio playback.
+The bounded [MCSERV initialization exchange](MCSERV_RPC_PLAN.md) now completes: bind 0x80000400 / ID 39, real native command 0xFE / ID 40, and generated RPC_END/wait/delete. The actual 12-byte reply **[0,0x210,0x226]** matches independent local captures; invalid inputs, wrong epoch and duplicate requests are rejected. Generated startup continues through additional helpers.
+
+Current blocker: **asynchronous MCSERV command 1**, ID 41 / client 0x3A6F80, EE SifSetDma 0x77 / PC 0x32F028. Independent capture validates the 48-byte input (word 7 = 0x3A7480; all other words zero). The request carries a 4-byte primary result at 0x3A8540 and guest callback FUN_0031DD60 / argument 0x3A7480. No temporary call semaphore, reply or callback is fabricated. This introduces asynchronous card-query/data delivery and needs separate evidence/design beyond the completed initialization exchange. No assets loaded, displayed frame or audio playback.
 
 The [heap capacity/layout scope](IOP_HEAP_CAPACITY_PLAN.md) records completed second-allocation evidence. General allocation, arbitrary buffer modules, file reads and physical DMA timing remain incomplete.
 
