@@ -10,7 +10,8 @@
   <a href="#progress">Progress</a> &nbsp;·&nbsp;
   <a href="#building">Build</a> &nbsp;·&nbsp;
   <a href="#documentation">Documentation</a> &nbsp;·&nbsp;
-  <a href="docs/progress/ACTIVE_PASS.md">Active work</a>
+  <a href="docs/progress/ACTIVE_PASS.md">Active work</a> &nbsp;·&nbsp;
+  <a href="#credits--license">Credits &amp; license</a>
 </p>
 
 BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 using PS2Recomp and a custom compatibility runtime. The initial target is the North American release, **SLUS-21441**; the first major gameplay goal is a **playable versus battle**.
@@ -75,3 +76,28 @@ Dependency checkouts, generated translations and analysis output live in ignored
 | [Tools and evidence](docs/TOOLS.md) | Local tooling; [reverse-engineering notes](docs/REVERSE_ENGINEERING.md) |
 | [History](docs/progress/2026-10.md) | Detailed pass records; [tracking rules](docs/PROGRESS_TRACKING.md) |
 | [Content and licenses](docs/LEGAL.md) | Local game-file policy and dependency licenses |
+## AI tools and manual testing
+
+Development of this project involves AI tools for coding, investigation and documentation. AI-assisted changes will be reviewed and tested manually, alongside automated tests and comparisons against the original game's behavior. Unverified work is labeled in the progress records; use of AI does not establish correctness or mean that all current changes have passed manual testing.
+
+## Credits & license
+
+### Project
+
+- [oric212](https://github.com/oric212) — project owner and maintainer.
+
+### Tools and references
+
+| Project | Contribution |
+| --- | --- |
+| [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors | Static recompilation toolchain; GPL-3.0 |
+| [BT3-Recomp](https://github.com/z3xox/BT3-Recomp) by z3xox and contributors | Primary architectural and tooling reference |
+| [Chronicle](https://github.com/TheMoonPeople/Chronicle) by TheMoonPeople and contributors | Reverse-engineering and progress-reporting reference |
+| [God of War Recomp](https://github.com/KIexster/god-of-war-recomp) by KIexster and contributors | Component status-map presentation reference |
+| [PCSX2](https://github.com/PCSX2/pcsx2) and [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Behavioral comparison and reverse-engineering tools |
+
+Reference projects inform architecture and investigation; BT2-specific behavior is validated against local evidence. Dependency versions and licenses are recorded in [the content and license documentation](docs/LEGAL.md).
+
+### License and game ownership
+
+This repository is **GPL-3.0** (see [LICENSE](LICENSE)). *Dragon Ball Z: Budokai Tenkaichi 2* © Spike / Bandai Namco. This project is not affiliated with or endorsed by them; it exists for preservation and interoperability and distributes no game content. Game code is recompiled locally during the generation/build workflow from files supplied from the user's own disc image; proprietary-derived generated code is not distributed in this repository.

@@ -1,5 +1,7 @@
 # Game content and dependency licenses
 
+Authored project code is licensed under GNU GPL version 3; see the root [LICENSE](../LICENSE). Third-party components retain their respective licenses. This license does not grant rights to proprietary game content.
+
 No proprietary game content belongs in this repository: disc images, retail executables, models, textures, music, voices, movies, or other extracted assets. Users provide their own game files locally.
 
 Store local game content under ignored `game_data/` or `rom/`. Store generated code derived from the retail executable under ignored `game/generated/` or `generated/`; committing it requires an explicit future decision. Store analysis output under ignored `research/` or `work/`.
