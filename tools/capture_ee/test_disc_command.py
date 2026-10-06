@@ -39,6 +39,7 @@ class DiscCommandTests(unittest.TestCase):
         names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
         r=dict(console_messages=6,console_messages_text=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n'],disc_rpc_calls=6,disc_dma_submissions=6,ncmd_read_calls=1,disc_read_calls=1,native_iop_error='')
         self.assertTrue(completed_directory_diagnostics(r))
+        self.assertTrue(completed_directory_diagnostics(dict(r,console_messages=7,console_messages_text=r['console_messages_text']+['later startup message\n'])))
         for key,value in [('console_messages',5),('console_messages_text',r['console_messages_text'][::-1]),('disc_rpc_calls',5),('ncmd_read_calls',0),('native_iop_error','failed')]:self.assertFalse(completed_directory_diagnostics(dict(r,**{key:value})))
 
     def test_callback_entry_observer_never_calls_or_publishes_completion(self):

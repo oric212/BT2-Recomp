@@ -63,6 +63,13 @@ def route_fast_halfword_reads(source):
     return text,count
 
 
+def route_fast_byte_reads(source):
+    # Keep the generated LB/LBU cast; only route its literal address through checked RAM.
+    text,count=re.subn(r'\bFAST_READ8\((0x[0-9A-Fa-f]+u)\)',r'READ8(\1)',source)
+    if 'FAST_READ8(' in text:raise ValueError('Unrecognized generated fast byte read')
+    return text,count
+
+
 def build_memory(data, metadata, size=32 * 1024 * 1024):
     memory = bytearray(size)
     occupied = []
@@ -120,10 +127,11 @@ def main():
         if address in (0x32F4B0,0x32F5F0) and (cache_count,tag_count)!=(4,2):
             raise ValueError('Reached indexed cache helper shape/count differs')
         text,halfword_count=route_fast_halfword_reads(text)
+        text,byte_count=route_fast_byte_reads(text)
         destination=patched/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

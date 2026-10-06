@@ -248,3 +248,8 @@ Original CRI 0x40C now exposes a priority-39 child start from its priority-48 bo
 ## CRI child start and AutoDMA handoff (2026-10-06)
 
 Consulted the pinned BT3 cooperative IOP notes, public PS2SDK StartThread/WaitSema ownership, intrman.c/intrman.h and kerr.h for nested suspend state and KE_CPUDI (-102). Adapted the existing bounded retained-parent event-preemption pattern to the observed CRI child start. Independent original StartThread/WaitSema return captures verify the parent/child handoff. Pinned PCSX2 RegTable maps ADMAS to retained AutoDMACtrl; Dma/ReadInput identify a separate AutoDMA ownership path. The initial CHCR read and requested ADMAS write are captured independently. No reference implementation was copied; active transfer/playback requires CRI_AUTODMA_PLAN.md.
+
+
+## First CRI AutoDMA transaction and constructor batch (2026-10-06)
+
+Applied the previously inspected pinned PCSX2 DMA/ReadInput and PS2SDK block-transfer ownership patterns to independent BT2 register/API observations. Implemented only accepted initial-half programming and immutable pending ownership; no reference code copied or completion inferred. Original CRI constructs sixteen object pairs. The fifth heap request now exposes broader address-space capacity work; see CRI_SECOND_CHANNEL_PLAN.md before relocating further images.

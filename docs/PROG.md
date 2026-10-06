@@ -4,29 +4,27 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 
 ## Current status
 
-The optional native EE probe completes bounded platform/module startup, initial sound/DBCMAN exchanges, the absent-card query, disc bind/readiness and **the first real sector read**. Original translated IOP code transfers 4096 local ISO bytes and runs its owned completion callback; generated EE callback/cleanup clears the busy flag. Original game code parses the 64-byte directory index, completes all five listed file metadata lookups and returns to the main entry continuation. CRI bind, original command-2 stream-slot allocation and command 0x403 complete, with a third owned IOP heap block. Both reached EE indexed cache scans execute through checked coherent-memory hooks. **No archive contents decoded, presented game frame or native audio playback.**
+Original translated CRI command 0x40C, the fourth IOP heap allocation and all **sixteen 0x422/0x400 constructor pairs** now complete through generated EE cleanup: **35 CRI calls completed**. The first owned 2048-byte AutoDMA half is programmed and remains pending. No DMA consumption, completion IRQ, native audio or presented game frame is claimed. Initial directory-sector loading and all five listed metadata lookups remain complete.
 
-Verified: MSVC builds, **16/16 CTests**, **136/136 capture tests**, **49/49 recompilation tests**, **13/13 IOP tooling tests**, and fourteen independent evidence validators on the completed cache/0x403 checkpoint, plus the new 0x40C boundary validator. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **16/16 CTests**, **141 capture tests**, **50 recompilation tests**, **13 IOP tooling tests**, independent original AutoDMA/constructor evidence and three relocated module comparisons. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The current boundary is **CRI command 0x40C / first SPU2 AutoDMA enable**: native PC **0x92DB8**, halfword write **1** to **0x1F9001B0**. The runtime rejects it before altering ADMAS. **No AutoDMA transfer or native 0x40C completion is claimed**.
+At **selector 0x77 / EE PC 0x32F028**, the fifth heap request needs **0x8D0 bytes at captured pointer 0x191700**. Its rounded interval overlaps translated FILEIO. The request is not accepted. The original call-36 capture establishes the subsequent second-channel command 2.
 
-This pass completes the bounded higher-priority CRI child start and first WaitSema, parent restoration, nested interrupt-state handling and captured initial DMA-control/ADMAS reads. The child is now parked at **0x17463C**, entry **0x16D890**, priority **39**, while its priority-48 RPC parent continues. See [child-start evidence](CRI_THREAD_START_PLAN.md).
+Next: inventory later second-channel allocations and choose a consistent bounded IOP layout before admitting the fifth request. See [second-channel capacity plan](CRI_SECOND_CHANNEL_PLAN.md) and [first AutoDMA evidence](CRI_AUTODMA_PLAN.md). Moving another image without establishing capacity would be speculative.
 
-Next: establish owned initial AutoDMA buffer/transfer, register programming and completion/callback lifetime. See [AutoDMA scope](CRI_AUTODMA_PLAN.md). Original transfer arguments are core 0 / mode **0xC000** / **4096 bytes**; the observed initial buffer is zero-filled. Command 0x403 remains complete; 0x40C and subsequent 0x422 remain incomplete.
-
-Remaining ownership: the SDRDRV helper is parked on a reverse EE bind to **0x80000704**. Logical IOP time is **1900 us**; the fifth card alarm remains armed at **2000 us**. General cross-CPU scheduling, later timer delivery, mounted cards and sound playback remain incomplete. An EE child is ready but has not executed.
+Remaining: SDRDRV reverse bind to 0x80000704, general scheduling/timer delivery, mounted cards, archive payload loading, audio consumption and presentation. Logical IOP time remains 1900 us; the fifth card alarm is armed for 2000 us. An EE child is ready but has not executed.
 
 ## Key counts
 
-- **8,584** provisional EE map entries / **8,587** raw generated C++/header files; boundaries remain provisional. **No new EE entries linked this pass; 9 linked in the preceding pass**; several initialization frames remain pending. This is not a count of fully restored gameplay functions.
-- Latest full checkpoint: **2,422 EE calls / 2,411 returns**, **50,805 native IOP instructions / 210 physical entry targets**, including the unfinished 0x40C handler. Earlier twelve ordinary workers and the reverse-bind helper remain parked; the new priority-39 child is parked on its first semaphore.
-- Earlier distinct-function checkpoint: **111 entered / 107 completed**; current distinct totals have not been remeasured. Calls/returns are execution events.
-- **Fourteen module-load paths / thirteen resident modules**, three owned IOP allocations, four EE startup pools and completed initial sound/MCSERV exchanges.
-- Disc: **one two-sector read / one original IOP callback / four logical read DMA jobs**, plus **six metadata lookups/transfers** (index and five listed files). Captured physical polling counts/timing are not equated with native logical transport.
-- Card: **six DMA pairs / five timed FIFO probes**; no mounted-card filesystem support.
-- **Three GS packets / two startup draws / 573,440 sprite pixels**; no presented game frame or VU microprogram execution.
+- **8,584 provisional EE map entries / 8,587 raw generated files**. **10 more EE entries linked this pass**, 200 extra selected entries in total. Fully restored gameplay-function totals are unknown.
+- Full checkpoint: **3,415 EE calls / 3,405 returns**, **61,054 IOP instructions / 213 physical entry targets**; **10,249 additional IOP instructions** this pass. These are execution events, not restored-function counts.
+- Earlier distinct checkpoint: **111 entered / 107 completed**; current distinct totals have not been remeasured.
+- Fourteen module-load paths / thirteen resident modules; **four owned IOP heap allocations**, four EE startup pools; CRI child parked on its first semaphore.
+- Disc: one two-sector read, original completion callback, four logical read DMA jobs and six metadata lookups/transfers. No archive payload decoded.
+- Card: six DMA pairs / five timed FIFO probes; no mounted-card filesystem support.
+- GS: three packets / two startup draws / 573,440 sprite pixels; no presented frame or VU microprogram execution.
 
 ## Milestones
 

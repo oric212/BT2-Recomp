@@ -800,11 +800,19 @@ int main(int argc, char** argv) {
 #ifdef BT2_NATIVE_IOP
             if(runtime.native_iop) {
                 const auto& rt=runtime.native_iop->runtime;
-                for(const auto& [id,t]:rt.threads)if(t.entry==0x16D890) {
+                for(const auto& [id,t]:rt.threads)if(t.entry==0x1AC890) {
                     report<<id<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option
                           <<","<<t.waiting<<","<<t.ready<<","<<t.wait_semaphore<<","<<t.context.pc<<","<<t.context.get(31);
                     break;
                 }
+            }
+#endif
+            report<<"],\"spu2_auto_dma_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {
+                const auto& d=runtime.native_iop->runtime.spu2_auto_dma;
+                report<<d.configured<<","<<d.pending<<","<<d.owner<<","<<d.program_stage<<","<<d.readbacks
+                      <<","<<d.source<<","<<d.madr<<","<<d.bcr<<","<<d.chcr<<","<<d.initial_half.size();
             }
 #endif
             report<<"],\"ee_sound_context\":[";

@@ -72,3 +72,8 @@ The reached EE indexed cache scope now completes both original helpers and comma
 ## CRI child start and AutoDMA handoff (2026-10-06)
 
 The bounded CRI higher-priority child start/first wait is now validated. Current 0x40C execution reaches first AutoDMA enable; follow CRI_AUTODMA_PLAN.md to establish initial buffer, transfer programming and interrupt/callback ownership before acknowledging it. General playback remains incomplete.
+
+
+## First-channel completion and capacity handoff (2026-10-06)
+
+Original 0x40C and all sixteen 0x422/0x400 pairs now complete with an owned pending initial AutoDMA half. Follow [CRI_SECOND_CHANNEL_PLAN.md](CRI_SECOND_CHANNEL_PLAN.md): establish later allocation evidence and a consistent IOP ownership layout before admitting the fifth heap request. Its captured pointer overlaps translated FILEIO. Audio consumption/completion remains a separate unimplemented scope.

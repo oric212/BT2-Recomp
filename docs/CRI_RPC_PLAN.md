@@ -49,3 +49,8 @@ The fourteen earlier-scope evidence validators run against ignored `cache-comple
 ## CRI child start and AutoDMA handoff (2026-10-06)
 
 The bounded 0x40C child start now completes its original first WaitSema and restores the RPC parent. Native execution continues through nested interrupt handling and captured initial DMA control/ADMAS reads, then rejects ADMAS enable (halfword 1 at 0x1F9001B0, PC 0x92DB8). No 0x40C result or generated cleanup is substituted. Follow CRI_AUTODMA_PLAN.md; earlier commands 2/0x403 remain complete.
+
+
+## Completed first-channel constructor group (2026-10-06)
+
+The full generated EE path completes 35 CRI calls: initial command 2, 0x403, 0x40C and sixteen 0x422/0x400 pairs. Exact input buffers, phase ordering and owned original result pointers are gated. The initial AutoDMA half remains pending. The next fifth heap request is rejected before dispatch because its captured interval overlaps FILEIO; follow CRI_SECOND_CHANNEL_PLAN.md.

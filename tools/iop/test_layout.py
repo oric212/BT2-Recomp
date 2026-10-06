@@ -14,9 +14,9 @@ class LayoutTests(unittest.TestCase):
         return folder
     def test_conflicting_heap_stack_module_and_out_of_ram(self):
         with tempfile.TemporaryDirectory() as d,redirect_stdout(StringIO()):
-            root=Path(d);folder=self.fixture(root);self.assertEqual(len(verify(root)),19)
+            root=Path(d);folder=self.fixture(root);self.assertEqual(len(verify(root)),20)
             p=folder/'module0_native.json';original=json.loads(p.read_text())
-            for base in [0x2000,0xCE500,0x14FD00,0x1B0000,0x1E0000,0x200000]:
+            for base in [0x2000,0xCE500,0x14FD00,0x150600,0x1D4B00,0x1E0000,0x200000]:
                 changed={**original,'base':base};p.write_text(json.dumps(changed))
                 with self.assertRaises(ValueError):verify(root)
     def test_provenance_and_missing_image(self):

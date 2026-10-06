@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads
+from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -40,6 +40,13 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertEqual(count,1);self.assertIn('READ16(0x1234u)',text)
         self.assertEqual(route_fast_halfword_reads(text),(text,0))
         with self.assertRaises(ValueError):route_fast_halfword_reads('FAST_READ16(variable)')
+
+    def test_fast_byte_load_preserves_signed_and_unsigned_casts(self):
+        source='(int8_t)FAST_READ8(0x1234u); (uint8_t)FAST_READ8(0x5678u);'
+        text,count=route_fast_byte_reads(source)
+        self.assertEqual(count,2);self.assertEqual(text,'(int8_t)READ8(0x1234u); (uint8_t)READ8(0x5678u);')
+        self.assertEqual(route_fast_byte_reads(text),(text,0))
+        with self.assertRaises(ValueError):route_fast_byte_reads('FAST_READ8(variable)')
 
     def load(self, address=4, memory_size=8, file_size=4, offset=0):
         return {"virtual_address": address, "memory_size": memory_size,

@@ -234,17 +234,17 @@ int main() {
         };
         IopContext start;start.set(4,1);check(scheduling.import("thbase",6,start)==0 && order==std::vector<unsigned>{1,3,2} && !scheduling.current_thread);
         {
-            IopRuntime m;install_iop_kernel_providers(m);m.map(0x175A84,std::vector<std::uint8_t>(4));
-            m.write(0x175A84,0x30001,4);m.semaphores.emplace(0x30001,IopRuntime::Semaphore{0,0,0,1});
-            m.threads.emplace(1,IopRuntime::Thread{0,0,0x1687D4,0x1000,0x800,48,0x17DDF0,{}});
-            m.threads.emplace(2,IopRuntime::Thread{0,0,0x16D890,0x2000,0x800,39,0x17DDF0,{}});
-            m.rpc_queues.emplace(0x176D80,IopRuntime::RpcQueue{1,{0x90000200}});
-            m.rpc_servers.emplace(0x90000200,IopRuntime::RpcServer{0x176D30,0x90000200,0x168720,0x1767C0,0x176D80,0x17DDF0});
-            m.current_thread=1;IopContext parent;parent.pc=0x1745F0;parent.set(4,2);parent.set(5,0);parent.set(16,0xAABBCCDD);
+            IopRuntime m;install_iop_kernel_providers(m);m.map(0x1B4A84,std::vector<std::uint8_t>(4));
+            m.write(0x1B4A84,0x30001,4);m.semaphores.emplace(0x30001,IopRuntime::Semaphore{0,0,0,1});
+            m.threads.emplace(1,IopRuntime::Thread{0,0,0x1A77D4,0x1000,0x800,48,0x1BCDF0,{}});
+            m.threads.emplace(2,IopRuntime::Thread{0,0,0x1AC890,0x2000,0x800,39,0x1BCDF0,{}});
+            m.rpc_queues.emplace(0x1B5D80,IopRuntime::RpcQueue{1,{0x90000200}});
+            m.rpc_servers.emplace(0x90000200,IopRuntime::RpcServer{0x1B5D30,0x90000200,0x1A7720,0x1B57C0,0x1B5D80,0x1BCDF0});
+            m.current_thread=1;IopContext parent;parent.pc=0x1B35F0;parent.set(4,2);parent.set(5,0);parent.set(16,0xAABBCCDD);
             const auto parent_registers=parent.r;
             m.execute=[](IopRuntime& rt,IopContext& child) {
-                check(rt.current_thread==2 && child.pc==0x16D890 && child.get(4)==0 && child.get(28)==0x17DDF0 && child.get(29)==0x27E0);
-                child.pc=0x17463C;child.set(4,0x30001);child.set(31,0x16D8D0);rt.import("thsemap",8,child);
+                check(rt.current_thread==2 && child.pc==0x1AC890 && child.get(4)==0 && child.get(28)==0x1BCDF0 && child.get(29)==0x27E0);
+                child.pc=0x1B363C;child.set(4,0x30001);child.set(31,0x1AC8D0);rt.import("thsemap",8,child);
                 throw std::runtime_error("Child wait did not yield");
             };
             check(m.import("thbase",6,parent)==0 && m.current_thread==1 && parent.r==parent_registers);
@@ -261,7 +261,7 @@ int main() {
             IopRuntime m;m.map(0x1000,std::vector<std::uint8_t>(68));m.write(0x1024,0x40C,4);
             m.rpc_servers.emplace(0x90000200,IopRuntime::RpcServer{0x1000,0x90000200,0,0,0x2000,0});
             m.rpc_queues.emplace(0x2000,IopRuntime::RpcQueue{1,{0x90000200}});m.current_thread=1;
-            m.threads.emplace(2,IopRuntime::Thread{0,0,0x16D890,0,0x800,39,0x17DDF0,{}});
+            m.threads.emplace(2,IopRuntime::Thread{0,0,0x1AC890,0,0x800,39,0x1BCDF0,{}});
             auto& child=m.threads.at(2);child.waiting=true;child.wait_semaphore=0x30001;
             m.spu2_fifo_halfwords=8;m.spu2_reset_status_reads=2;m.spu2_io_status_reads=1;m.executing_pc=0x92250;
             bool denied=false;try {m.read(0x1F8010C8,2);}catch(const std::runtime_error&){denied=true;}check(denied && !m.spu2_dma_idle_reads);
@@ -270,6 +270,24 @@ int main() {
             denied=false;try {m.read(0x1F8010C8,4);}catch(const std::runtime_error&){denied=true;}check(denied && m.spu2_dma_idle_reads==1);
             m.spu2_configuration[0x1F9001B0]=0;check(m.read(0x1F9001B0,2)==0);
             denied=false;try {m.write(0x1F9001B0,1,2);}catch(const std::runtime_error&){denied=true;}check(denied && m.spu2_configuration.at(0x1F9001B0)==0);
+            m.map(0x95328,std::vector<std::uint8_t>(0x680));m.map(0x20000,std::vector<std::uint8_t>(4096,0x5A));
+            m.write(0x95328,0x1600,4);m.write(0x95978,0x20000,4);m.write(0x95980,2048,4);
+            m.interrupts.emplace(36,IopRuntime::Interrupt{1,0x927E8,0x95328,true,0});
+            m.spu2_io_transfer_completed=true;m.cpu_interrupts_enabled=false;m.executing_pc=0x92DB8;
+            m.write(0x1F9001B0,1,2);check(m.spu2_auto_dma.configured && !m.spu2_auto_dma.pending);
+            auto refuse=[&](unsigned address,unsigned value,unsigned width){bool rejected=false;try{m.write(address,value,width);}catch(const std::runtime_error&){rejected=true;}check(rejected);};
+            m.executing_pc=0x92E30;refuse(0x1F8010C8,0x1000201,4);check(m.spu2_auto_dma.program_stage==0);
+            m.executing_pc=0x92DE8;refuse(0x1F8010C0,0x20004,4);check(m.spu2_auto_dma.program_stage==0);
+            m.write(0x1F8010C0,0x20000,4);
+            m.executing_pc=0x92DF4;refuse(0x1F8010C4,17,2);check(m.spu2_auto_dma.program_stage==1);m.write(0x1F8010C4,16,2);
+            m.executing_pc=0x92E2C;m.write(0x1F8010C6,32,2);
+            m.executing_pc=0x92E30;m.write(0x1F8010C8,0x1000201,4);
+            check(m.spu2_auto_dma.pending && m.spu2_auto_dma.bcr==0x200010 && m.spu2_auto_dma.initial_half==std::vector<std::uint8_t>(2048,0x5A));
+            m.write(0x20000,0,4);check(m.spu2_auto_dma.initial_half[0]==0x5A); // Submission snapshot has its own lifetime.
+            refuse(0x1F8010C8,0x1000201,4);check(m.spu2_auto_dma.chcr==0x1000201);
+            m.executing_pc=0x92E34;check(m.read(0x1F8010C8,4)==0x1000201 && m.spu2_auto_dma.readbacks==1);
+            denied=false;try{m.read(0x1F8010C8,4);}catch(const std::runtime_error&){denied=true;}check(denied);
+            check(!m.in_interrupt && !m.cpu_interrupts_enabled && m.spu2_sound_ram.empty());
         }
         IopRuntime card;install_iop_kernel_providers(card);
         card.map(0x1000,std::vector<std::uint8_t>(32));card.map(0x32020,std::vector<std::uint8_t>(144));

@@ -647,3 +647,10 @@ Run `python tools/capture_ee/verify_disc_read.py --disc "rom/Dragon Ball Z - Bud
 
 
 Provisional map preparation now recognizes one bounded word-table switch idiom: explicit unsigned index bound, default branch, scaled index, file-backed table load and `jr` with a NOP delay slot. Every table entry must be aligned and land in an existing candidate body span; gaps remain isolated unreachable NOPs. Changed bounds, control words, truncated tables, out-of-body targets and targets in padding remain quarantined. This permits generation of the actually reached formatter path without relaxing arbitrary computed jumps or copying an implementation from a reference project.
+
+
+## CRI AutoDMA and constructor evidence
+
+`capture_cri_thread.py` supports original `program`, `transfer`, `irq` and `volume` observers in addition to earlier start/wait boundaries. `capture_ee.py --capture-point rpc-cri-nth-before --cri-call-index N --absent-cards` observes a selected original CRI request (1..64); supply existing explicit local PCSX2/BIOS/disc arguments. Observers publish original behavior; they do not inject successful replies.
+
+`python tools/capture_ee/verify_cri_autodma.py --native work/bt2-generation/entry-stop.json` checks original capture provenance, transfer programming, pending owned DMA and the sixteen constructor pairs. For current relocated disc workspace, add `--workspace 0x1D4B00` to `verify_disc_read.py`. Private inputs, capture RAM and generated translations stay ignored.

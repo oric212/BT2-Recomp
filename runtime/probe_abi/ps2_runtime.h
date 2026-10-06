@@ -151,7 +151,7 @@ public:
         if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls==1 || cri_rpc_calls==2) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
+        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls>=1 && cri_rpc_calls<=34) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
         if(code==0 && selector==0x77 && cri_rpc_binds==1 && !cri_rpc_calls && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
         if(code==0 && selector==0x77 && ncmd_ready_calls==1 && !ncmd_read_calls && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
@@ -179,7 +179,7 @@ public:
                 throw UnsupportedSyscall(selector,context->pc);
             ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
         }
-        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1))
+        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1))
             && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
             && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
@@ -667,7 +667,13 @@ public:
                 && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
-            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=2 && heap_calls==3 && semaphores.size()==10 && address==initial_sp-512 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x355C70 && read32(rdram,0x3A97E0)==(cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
+            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=34 && heap_calls==(cri_rpc_calls>=3?4u:3u)
+                && semaphores.size()==10 && address==initial_sp-(cri_rpc_calls>=3?(cri_rpc_calls&1?544u:592u):512u) && maximum==1 && initial==0
+                && option==0x3838E8 && context->r[17].low==0x355C70
+                && read32(rdram,0x3A97E0)==(cri_rpc_calls>=3?(cri_rpc_calls&1?0x422u:0x400u):cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
+            const bool fourth_heap_sema=heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1
+                && semaphores.size()==10 && address==initial_sp-496 && maximum==1 && initial==0 && option==0x3838E8
+                && context->pc==0x32EC68 && context->r[31].low==0x332AD0 && context->r[17].low==0x3AC840;
             const bool third_heap_sema=heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1 && semaphores.size()==10 && address==initial_sp-480 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x3AC840;
             const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
                 && semaphores.size()==7 && address==initial_sp-288 && maximum==1 && initial==0 && option==0x3838E8;
@@ -694,7 +700,7 @@ public:
                 && context->r[19].low==1 && read32(rdram,0x369594)==45;
             if(ncmd_bind_sema)++ncmd_bind_semaphores;
             if (disc_bind_sema) ++disc_bind_semaphores;
-            if (attributes != 0 && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -746,7 +752,7 @@ public:
                     || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8)
                     || (sounds_rpc_binds==1 && semaphores[id].option==0x3838D8));
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls==3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
+                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;

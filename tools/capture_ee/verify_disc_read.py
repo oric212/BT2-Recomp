@@ -6,7 +6,7 @@ from verify_disc_startup import require,words
 from verify_disc_command import ENV
 from verify_sound_rpc import completed_directory_diagnostics
 
-def verify(root,disc,sector_bytes=None,native=None):
+def verify(root,disc,sector_bytes=None,native=None,workspace=0x1B0000):
     base=root/'work/pcsx2-capture'
     baseline=json.loads((base/'rpc-mc-callback-before-absent-cards/capture.json').read_text(encoding='utf-8'))
     captures={}
@@ -57,8 +57,8 @@ def verify(root,disc,sector_bytes=None,native=None):
         require(len(ee)==32*1024*1024 and ee[0x39DE80:0x39EE80]==tokenized,'Generated directory tokenization differs from local ISO')
         require(words(ee,0x369580,1)==(4096,) and words(ee,0x3683F4,1)==(0,) and words(ee,0x3694C0,36)==(0,0,0x39DE80,0x39EE80)+tuple([0]*32),'Native progress/generated callback effects differ')
         require(words(ee,0x369590,10)==(0,46,0xFFFFFFFF,0,0,0x43DB8,0x38BDF0,0x31ECF8,0x3694C0,0x43418),'Native async cleanup differs')
-        require(iop[0x1B2254:0x1B2254+2048]==payload[:2048] and iop[0x1B2A64:0x1B2A64+2048]==payload[2048:],'Native owned source buffer differs')
+        require(iop[workspace+0x2254:workspace+0x2254+2048]==payload[:2048] and iop[workspace+0x2A64:workspace+0x2A64+2048]==payload[2048:],'Native owned source buffer differs')
         print('Native original IOP read, ISO bytes, ordered secondary transfers and generated EE callback/cleanup independently verified.')
     print('Original read acceptance, callback return, framing, timeout, synchronization and transport independently verified.')
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--disc',type=Path,required=True);p.add_argument('--sector-bytes',type=Path);p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.disc,a.sector_bytes,a.native)
+    p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--disc',type=Path,required=True);p.add_argument('--sector-bytes',type=Path);p.add_argument('--native',type=Path);p.add_argument('--workspace',type=lambda x:int(x,0),default=0x1B0000);a=p.parse_args();verify(a.root,a.disc,a.sector_bytes,a.native,a.workspace)

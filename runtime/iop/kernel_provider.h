@@ -188,9 +188,9 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(!memory.cpu_interrupts_enabled)throw std::runtime_error("IOP semaphore wait with interrupts disabled");
         if(!found->second.count) {
             const auto owner=memory.threads.find(memory.current_thread);
-            if(owner!=memory.threads.end() && owner->second.entry==0x16D890 && owner->second.priority==39
-                && owner->second.gp==0x17DDF0 && c.pc==0x17463C && c.get(31)==0x16D8D0
-                && c.get(4)==memory.read(0x175A84,4) && !memory.in_interrupt) {
+            if(owner!=memory.threads.end() && owner->second.entry==0x1AC890 && owner->second.priority==39
+                && owner->second.gp==0x1BCDF0 && c.pc==0x1B363C && c.get(31)==0x1AC8D0
+                && c.get(4)==memory.read(0x1B4A84,4) && !memory.in_interrupt) {
                 auto& t=owner->second;t.waiting=true;t.ready=false;t.wait_semaphore=c.get(4);
                 throw IopYield{}; // Preserve the original import continuation for a future owned wake.
             }
@@ -324,8 +324,8 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             const auto server=memory.rpc_servers.find(0x90000200);
             if(server==memory.rpc_servers.end() || !memory.rpc_queues.contains(server->second.queue)
                 || memory.rpc_queues.at(server->second.queue).thread!=parent || memory.threads.at(parent).priority!=48
-                || c.pc!=0x1745F0 || c.get(5) || found->second.entry!=0x16D890
-                || found->second.priority!=39 || found->second.gp!=0x17DDF0 || found->second.stacksize!=0x800
+                || c.pc!=0x1B35F0 || c.get(5) || found->second.entry!=0x1AC890
+                || found->second.priority!=39 || found->second.gp!=0x1BCDF0 || found->second.stacksize!=0x800
                 || !memory.cpu_interrupts_enabled || memory.in_interrupt)
                 throw std::runtime_error("Higher-priority nested IOP start outside CRI scope");
         }
@@ -336,7 +336,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             try {memory.execute(memory,t.context);memory.current_thread=parent;throw std::runtime_error("Unexpected CRI child completion");}
             catch(const IopYield&) {
                 memory.current_thread=parent;
-                if(!t.waiting || t.ready || t.wait_semaphore!=memory.read(0x175A84,4) || t.context.pc!=0x17463C)
+                if(!t.waiting || t.ready || t.wait_semaphore!=memory.read(0x1B4A84,4) || t.context.pc!=0x1B363C)
                     throw std::runtime_error("CRI child did not park at observed first semaphore");
                 return 0u;
             }

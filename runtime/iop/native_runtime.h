@@ -49,6 +49,12 @@ public:
     std::uint32_t cdvd_interrupt_event=0;
     unsigned data_cache_flushes=0;
     unsigned spu2_dma_idle_reads=0;
+    struct Spu2AutoDma {
+        bool configured=false,pending=false;
+        unsigned owner=0,program_stage=0,readbacks=0;
+        std::uint32_t source=0,madr=0,bcr=0,chcr=0;
+        std::vector<std::uint8_t> initial_half;
+    } spu2_auto_dma;
     std::map<std::uint32_t,std::uint32_t> spu2_configuration;
     std::set<unsigned> enabled_interrupts;
     std::array<std::uint32_t,2> spu2_pending_key_off{},spu2_pending_key_on{};
@@ -132,14 +138,25 @@ public:
         blocked_address=address;throw std::runtime_error("Unimplemented IOP memory/hardware access");
     }
     static std::uint32_t physical(std::uint32_t address) {return address&0x1FFFFFFF;}
+    bool ownedCriStartup() const {
+        const auto server=rpc_servers.find(0x90000200);
+        const auto child=std::find_if(threads.begin(),threads.end(),[](const auto& row){return row.second.entry==0x1AC890;});
+        return server!=rpc_servers.end() && rpc_queues.contains(server->second.queue)
+            && current_thread==rpc_queues.at(server->second.queue).thread && child!=threads.end()
+            && child->second.waiting && !child->second.ready && child->second.wait_semaphore;
+    }
     std::uint32_t read(std::uint32_t address,unsigned size) {
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(size==4 && p==0x1F801014 && executing_pc==0x920B0 && spu2_auto_dma.configured
+            && ownedCriStartup() && sound_bus.contains(p))return sound_bus.at(p);
+        if(size==4 && p==0x1F8010C8 && executing_pc==0x92E34 && spu2_auto_dma.pending
+            && ownedCriStartup() && !spu2_auto_dma.readbacks) {++spu2_auto_dma.readbacks;return spu2_auto_dma.chcr;}
         if(size==4 && p==0x1F8010C8 && executing_pc==0x92250 && !spu2_dma_idle_reads
             && spu2_fifo_halfwords==8 && spu2_reset_status_reads==2 && spu2_io_status_reads==1) {
             const auto server=rpc_servers.find(0x90000200);
-            const auto child=std::find_if(threads.begin(),threads.end(),[](const auto& row){return row.second.entry==0x16D890;});
+            const auto child=std::find_if(threads.begin(),threads.end(),[](const auto& row){return row.second.entry==0x1AC890;});
             if(server==rpc_servers.end() || !rpc_queues.contains(server->second.queue)
                 || current_thread!=rpc_queues.at(server->second.queue).thread || read(server->second.descriptor+36,4)!=0x40C
                 || child==threads.end() || !child->second.waiting || child->second.ready || !child->second.wait_semaphore)
@@ -194,14 +211,47 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(size==2 && p==0x1F9001B0 && value==1 && executing_pc==0x92DB8) {
+            if(!ownedCriStartup() || !spu2_io_transfer_completed || spu2_dma_idle_reads!=1 || spu2_auto_dma.configured
+                || cpu_interrupts_enabled || in_interrupt || spu2_configuration.at(p)!=0
+                || read(0x95328,4)!=0x1600 || read(0x95970,4)!=0 || read(0x95980,4)!=2048)
+                throw std::runtime_error("AutoDMA enable outside observed CRI loop setup");
+            const auto source=read(0x95978,4);check(source,4096);
+            if(!interrupts.contains(36) || !interrupts.at(36).enabled || interrupts.at(36).handler!=0x927E8
+                || interrupts.at(36).argument!=0x95328)throw std::runtime_error("AutoDMA lacks owned LIBSD completion handler");
+            spu2_auto_dma.configured=true;spu2_auto_dma.owner=current_thread;spu2_auto_dma.source=source;
+            spu2_configuration[p]=1;return;
+        }
+        if(spu2_auto_dma.configured && ownedCriStartup() && current_thread==spu2_auto_dma.owner) {
+            auto& d=spu2_auto_dma;
+            if(size==4 && p==0x1F801014 && executing_pc==0x920C0 && sound_bus.contains(p)
+                && value==(sound_bus.at(p)&0xF0FFFFFF)) {sound_bus[p]=value;return;}
+            if(size==4 && p==0x1F8010C0 && executing_pc==0x92DE8 && d.program_stage==0 && value==d.source) {
+                check(value,2048);d.madr=value;d.program_stage=1;return;
+            }
+            if(size==2 && p==0x1F8010C4 && executing_pc==0x92DF4 && d.program_stage==1 && value==16) {
+                d.bcr=value;d.program_stage=2;return;
+            }
+            if(size==2 && p==0x1F8010C6 && executing_pc==0x92E2C && d.program_stage==2 && value==32) {
+                d.bcr|=value<<16;d.program_stage=3;return;
+            }
+            if(size==4 && p==0x1F8010C8 && executing_pc==0x92E30 && d.program_stage==3 && !d.pending && value==0x1000201) {
+                check(d.madr,2048);d.initial_half.assign(ram.begin()+d.madr,ram.begin()+d.madr+2048);
+                d.chcr=value;d.pending=true;d.program_stage=4;return;
+            }
+        }
         if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_io_transfer_completed) {
             const auto offset=(p-0x1F900000)&0x3FF;
             const bool routing=offset>=0x188 && offset<=0x196 && !(offset&1) && value==((offset&2)?0xFFu:0xFFFFu);
-            const bool core=(offset==0x19A && (value==0xC000 || value==0xC001));
+            const bool core_parameter=(offset==0x19A && (value==0xC000 || value==0xC001));
             const bool effects_end=offset==0x33C && value==(p<0x1F900400?0xEu:0xFu);
+            if((p==0x1F90076C || p==0x1F90076E) && value==0x7FFF && executing_pc==0x936E8
+                && spu2_auto_dma.pending && spu2_auto_dma.readbacks==1 && ownedCriStartup() && cpu_interrupts_enabled) {
+                spu2_configuration[p]=value;return;
+            }
             const bool volume=((p>=0x1F900760 && p<=0x1F90076E) || (p>=0x1F900788 && p<=0x1F900796)) && !(p&1)
                 && (value==0 || ((p==0x1F900760 || p==0x1F900762 || p==0x1F900788 || p==0x1F90078A) && value==0x3FFF) || ((p==0x1F900790 || p==0x1F900792) && value==0x7FFF));
-            if(routing || core || effects_end || volume || (p==0x1F9007C0 && value==0xC032)
+            if(routing || core_parameter || effects_end || volume || (p==0x1F9007C0 && value==0xC032)
                 || (offset==0x198 && value==(p<0x1F900400?0xFF0u:0xFFCu))) {spu2_configuration[p]=value;return;}
             const bool parameter=offset<0x180 && !(offset&1) && ((offset%16==4 && value==0x3FFF)
                 || ((offset%16==0 || offset%16==2 || offset%16==6 || offset%16==8) && value==0));

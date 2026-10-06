@@ -7,6 +7,14 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_indexed_cri_capture_counts_only_target_client(self):
+        for index in (1,10,36,64):
+            with patch('capture_ee.CRI_CALL_INDEX',index):
+                blob=texture_stub('rpc-cri-nth-before');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+                self.assertIn(0x24180000|index,w)
+                self.assertEqual(w[0:2],(0x3C180035,0x37185C70))
+                self.assertEqual(w[-4:-2],(0x27BDFF40,0xFFB10030))
+
     def test_cache_capture_keeps_original_tag_read_and_and(self):
         blob=texture_stub('rpc-cache-after')
         self.assertEqual(len(blob),0xA00)

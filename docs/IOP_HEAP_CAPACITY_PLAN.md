@@ -31,3 +31,8 @@ The initial conflict was broader than FILEIO: MODSESQ2, CDVDSTM, SOUNDS and CRI_
 The first allocation/copy/nonresident module/free lifecycle remains tested. The second allocation requires that completed lifecycle, exact size 0x81800, fresh epoch and thirteen residents. Overlap is rejected before service memory mutation or instruction execution. The actual FILEIO handler executes fifty additional IOP instructions, returns 0xCE500 and the real generated RPC_END/cleanup completes. Independent return/result checks pass. Allocated contents remain undefined; no general allocator behavior is inferred.
 
 `verify_second_heap.py --native work/bt2-generation/entry-stop.json` now validates completion rather than requiring the obsolete conflict. Final checkpoint 983 calls / 975 returns, 31,001 IOP instructions. Next scope: [SDRDRV RPC delivery](SDRDRV_RPC_PLAN.md). The earlier boundary text above is retained as historical evidence.
+
+
+## Fourth allocation verified; fifth collision (2026-10-06)
+
+The original fourth request of 0x41040 bytes completes at 0x150600 after checked image/workspace relocation. Its rounded interval ends at 0x191700. The next original request is 0x8D0 at 0x191700 and conflicts with FILEIO; it is not admitted. Follow CRI_SECOND_CHANNEL_PLAN.md for a broader capacity inventory before choosing further placements.

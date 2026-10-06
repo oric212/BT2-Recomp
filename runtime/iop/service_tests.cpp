@@ -43,7 +43,7 @@ int main(int argc,char** argv) {
                 const auto prior=service.runtime.ram;const auto steps=service.runtime.steps;
                 rejected([&]{service.callCriCreate(2,input);});rejected([&]{service.callCriCreate(1,input.first(12));});
                 check(service.runtime.ram==prior && service.runtime.steps==steps);
-                const auto response=service.callCriCreate(1,input);unsigned slot;std::memcpy(&slot,response.data(),4);check(slot==0x1768C0 && service.cri_create_calls==1);
+                const auto response=service.callCriCreate(1,input);unsigned slot;std::memcpy(&slot,response.data(),4);check(slot==0x1B58C0 && service.cri_create_calls==1);
                 const auto completed=service.runtime.ram;rejected([&]{service.callCriCreate(1,input);});check(service.runtime.ram==completed);
                 check(service.callCriControl(1).empty() && service.cri_control_calls==1);
                 const auto controlled=service.runtime.ram;rejected([&]{service.callCriControl(1);});check(service.runtime.ram==controlled);
@@ -55,20 +55,53 @@ int main(int argc,char** argv) {
                 rejected([&]{service.callCriControl(1,0x40C,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong_configuration.data()),12));});
                 rejected([&]{service.callCriControl(1,0x422,configuration_bytes);});
                 check(service.runtime.ram==controlled);
-                bool adma_blocked=false;
-                try {service.callCriControl(1,0x40C,configuration_bytes);}
-                catch(const std::runtime_error& e) {
-                    adma_blocked=std::string(e.what())=="Unimplemented IOP memory/hardware access" && service.runtime.executing_pc==0x92DB8
-                        && service.runtime.blocked_address==0x1F9001B0 && service.runtime.access_width==2
-                        && service.runtime.access_kind=="write" && service.runtime.access_value==1;
-                }
+                const auto initialized=service.callCriControl(1,0x40C,configuration_bytes);
+                check(initialized.size()==12);
+                const std::array<unsigned,3> initialized_words={0,1,0};
+                check(std::equal(initialized.begin(),initialized.end(),reinterpret_cast<const std::uint8_t*>(initialized_words.data())));
                 const auto& child=service.runtime.threads.at(0x2000E);
-                check(adma_blocked && service.cri_control_calls==1 && child.entry==0x16D890 && child.waiting && !child.ready
-                    && child.wait_semaphore==service.runtime.read(0x175A84,4) && child.context.pc==0x17463C
-                    && child.context.get(31)==0x16D8D0 && !service.runtime.current_thread && service.runtime.spu2_dma_idle_reads==1 && service.runtime.spu2_configuration.at(0x1F9001B0)==0);
+                check(service.cri_control_calls==2 && child.entry==0x1AC890 && child.waiting && !child.ready
+                    && child.wait_semaphore==service.runtime.read(0x1B4A84,4) && child.context.pc==0x1B363C
+                    && child.context.get(31)==0x1AC8D0 && !service.runtime.current_thread && service.runtime.spu2_dma_idle_reads==1
+                    && service.runtime.spu2_configuration.at(0x1F9001B0)==1);
+                const auto& d=service.runtime.spu2_auto_dma;
+                check(d.configured && d.pending && d.program_stage==4 && d.readbacks==1 && d.source==0x1B5FC0
+                    && d.madr==d.source && d.bcr==0x200010 && d.chcr==0x1000201 && d.initial_half==std::vector<std::uint8_t>(2048));
+                check(service.runtime.native_export_results.at("libsd:18")==2048);
+                check(service.runtime.cpu_interrupts_enabled && !service.runtime.in_interrupt
+                    && service.runtime.spu2_configuration.at(0x1F90076C)==0x7FFF && service.runtime.spu2_configuration.at(0x1F90076E)==0x7FFF);
                 rejected([&]{service.callCriControl(1,0x40C,configuration_bytes);});
+                const auto before_fourth=service.runtime.ram;const auto before_fourth_steps=service.runtime.steps;
+                rejected([&]{service.allocateBootHeap(2,0x41040);});rejected([&]{service.allocateBootHeap(1,0x41000);});
+                check(service.runtime.ram==before_fourth && service.runtime.steps==before_fourth_steps);
+                service.runtime.map(0x150600,std::vector<std::uint8_t>(4));
+                const auto conflicting_fourth=service.runtime.ram;
+                rejected([&]{service.allocateBootHeap(1,0x41040);});
+                check(service.runtime.ram==conflicting_fourth && service.runtime.steps==before_fourth_steps && service.boot_heap_allocations==3);
+                std::erase(service.runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{0x150600,0x150604});
+                check(service.allocateBootHeap(1,0x41040)==0x150600 && service.boot_heap_allocations==4);
+                for(unsigned index=0;index<16;++index) {
+                    const std::array<unsigned,3> stream={1,0x150640+index*0x4100,0x100};
+                    auto bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(stream.data()),12);
+                    const auto before_stream=service.runtime.ram;const auto before_steps=service.runtime.steps;
+                    rejected([&]{service.callCriControl(2,0x422,bytes);});
+                    auto wrong=stream;wrong[1]+=4;
+                    rejected([&]{service.callCriControl(1,0x422,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong.data()),12));});
+                    check(service.runtime.ram==before_stream && service.runtime.steps==before_steps);
+                    const auto streamed=service.callCriControl(1,0x422,bytes);
+                    unsigned stream_handle=0;check(streamed.size()==4);std::memcpy(&stream_handle,streamed.data(),4);
+                    check(stream_handle==0x1BBA40+index*0x30 && service.cri_control_calls==3+index*2);
+                    const std::array<unsigned,4> attach={0x364B08+index*0x30,stream_handle,1,0x365900+index*0x14};
+                    const auto attached=service.callCriControl(1,0x400,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(attach.data()),16));
+                    unsigned attachment=0;check(attached.size()==4);std::memcpy(&attachment,attached.data(),4);
+                    check(attachment==0x1BC580+index*0x14 && service.cri_control_calls==4+index*2);
+                }
+                check(service.runtime.spu2_auto_dma.pending && service.runtime.spu2_auto_dma.chcr==0x1000201
+                    && child.waiting && !child.ready && service.cri_control_calls==34);
+                const auto batch_done=service.runtime.ram;rejected([&]{service.callCriControl(1,0x422,configuration_bytes);});
+                check(service.runtime.ram==batch_done);
                 std::ofstream out(argv[3],std::ios::binary);out.write(reinterpret_cast<const char*>(service.runtime.ram.data()),service.runtime.ram.size());check(bool(out));
-                std::cout<<"Original CRI create/control complete; 0x40C child parks and reaches unimplemented AutoDMA enable.\n";return 0;
+                std::cout<<"Original CRI 0x40C and all sixteen 0x422/0x400 pairs complete; initial AutoDMA half remains pending.\n";return 0;
             }
             std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
             std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;
