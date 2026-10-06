@@ -91,3 +91,12 @@ python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso
 The probe executes generated EE and translated IOP code, performs reads against your ISO and reports the execution boundary, distinct entries, call/return events and sound/heap counters. It stops at an unsupported or checked runtime boundary; reaching that boundary is not a full game boot.
 
 The private report is written to `work/bt2-generation/entry-stop.json`. RAM sidecars and generated outputs also stay ignored. A completed entry means at least one invocation returned normally; it does not establish full function correctness or gameplay. See [current progress](PROG.md) and [the active-pass handoff](progress/ACTIVE_PASS.md) for the last verified checkpoint and pending work.
+### Diagnostic sound-worker path
+
+After preparing the developer checkpoint above, run:
+
+```powershell
+python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO" --sound-worker
+```
+
+This executes the generated sound worker through registration/first wait and the translated IOP reverse-bind continuation through its first sleep. It writes a separate ignored `sound-worker-stop.json` report. Main's priority request remains pending; the diagnostic EE stack is cancelled at the boundary. It does not establish correct startup scheduling, callback completion, audio playback or a presented frame. The normal command keeps its own report and measurement.

@@ -258,3 +258,9 @@ Applied the previously inspected pinned PCSX2 DMA/ReadInput and PS2SDK block-tra
 ## Second CRI channel ownership layout (2026-10-06)
 
 Reconsulted the retained pinned BT3 native IOP notes (per-image placements, translated imports and owned RPC delivery) and pinned PS2SDK sysmem.c (256-byte rounding). Adapted placement into disjoint authored gaps, preserving captured BT2 heap results and 2 MiB bounds. The native diagnostic kernel uses host providers; it does not load the retail low-memory kernel into those gaps. Both relocated resident images pass normalized original startup comparisons. No reference implementation copied. Second-channel inputs/results come from independent local BT2 captures, not BT3.
+
+## Retained EE execution and reverse-bind diagnostic (2026-10-06)
+
+Reconsulted the pinned BT3 runtime's fiber/guest-wait interfaces (single host thread, explicit park/dispatch and owned thread lifetime) and the local pinned PS2SDK IOP sifrpc.c RPC_END/client/packet ownership and thbase SleepThread ordinal 24. Windows [CreateFiberEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createfiberex) and [ConvertThreadToFiberEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-convertthreadtofiberex) provide the host stack mechanism. Authored frame retention, cancellation/unwind, failure propagation and per-dispatch return ownership are independently tested; no reference implementation copied.
+
+BT2 captures establish actual registration, blocking reverse-bind return/client and subsequent first sleep. They also show the sound child runs during the earlier SOUNDS bind. Our late probe validates generated code and retained stacks; enabling it as the normal scheduler would assume an ordering contradicted by the original. Queued EE/IOP completion and earlier dispatch need the separate EE_RPC_SCHEDULING_PLAN.md design.

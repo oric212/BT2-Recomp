@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
         if (!input.read(reinterpret_cast<char*>(image.data()), static_cast<std::streamsize>(image.size())))
             throw std::runtime_error("Could not read guest image");
         PS2Runtime runtime;
+        runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.loadMemory(image);
         if (snapshot_mode) {
             std::ifstream kernel(argv[3], std::ios::binary | std::ios::ate);
@@ -352,6 +353,7 @@ int main(int argc, char** argv) {
         std::uint32_t stop_target = 0, stop_source = 0, stop_resume = 0;
         try { runtime.callFunction(0x00100008, context); }
         catch (const UnsupportedGuestBranch& stop) {
+            if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Branch target/source/resume: " << std::hex << stop.target << "/" << stop.source_pc << "/" << stop.resume_pc << "\n";
             if (!bind_mode) throw;
             stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
@@ -367,6 +369,7 @@ int main(int argc, char** argv) {
             throw;
         }
         catch (const UnsupportedGuestMemory& stop) {
+            if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
             const bool vif_handoff=runtime.native_module_loads==14 && runtime.heap_frees==1 && runtime.dmac_startup_writes==3
@@ -409,6 +412,7 @@ int main(int argc, char** argv) {
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
+            if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             if (bind_mode) std::cerr << "Syscall selector/handler/pc: " << std::hex << stop.selector << "/" << stop.handler << "/" << context.pc << "\n";
             else if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 464
@@ -917,6 +921,15 @@ int main(int argc, char** argv) {
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
                 << ",\"ee_pool_pointers\":[" << runtime.read32(runtime.memory().data(),0x38A628) << "," << runtime.read32(runtime.memory().data(),0x38A62C) << "," << runtime.read32(runtime.memory().data(),0x38A630) << "," << runtime.read32(runtime.memory().data(),0x38A634) << "]"
+                << ",\"ee_sound_probe_attempted\":" << runtime.ee_sound_probe_attempted
+                << ",\"ee_sound_probe_waits\":" << runtime.ee_sound_probe_waits
+#ifdef BT2_NATIVE_IOP
+                << ",\"ee_sound_bind_returns\":" << (runtime.native_iop?runtime.native_iop->ee_sound_bind_returns:0)
+#endif
+                << ",\"ee_sound_probe_parent_pc\":" << runtime.ee_sound_probe_parent.pc
+                << ",\"ee_sound_probe_frontier\":[" << runtime.ee_sound_probe_frontier.pc << "," << runtime.ee_sound_probe_frontier.r[28].low
+                << "," << runtime.ee_sound_probe_frontier.r[29].low << "," << runtime.ee_sound_probe_frontier.r[31].low
+                << "," << runtime.ee_sound_probe_frontier.r[16].low << "," << runtime.ee_sound_probe_frontier.cop0_status << "]"
                 << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"main_thread_queries\":" << runtime.main_thread_queries << ",\"startup_worker_state\":" << jsonStartupThreads(runtime)
                 << ",\"startup_worker_queries\":" << runtime.startup_worker_queries << ",\"startup_worker_starts\":" << runtime.startup_worker_starts
                 << ",\"startup_ready_queries\":" << runtime.startup_ready_queries
@@ -1314,7 +1327,16 @@ int main(int argc, char** argv) {
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << (osd_readback_mode ? stop_selector : GPR_U32(&context, 3))
                << ",\"write_value\":" << (osd_readback_mode ? 0 : runtime.timer2_mode_writes ? 0x382 : 0)
                << ",\"osd_config_reads\":" << runtime.osd_config_reads << ",\"osd_config_sets\":" << runtime.osd_config_sets
-               << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"main_thread_queries\":" << runtime.main_thread_queries << ",\"startup_worker_state\":" << jsonStartupThreads(runtime)
+               << ",\"ee_sound_probe_attempted\":" << runtime.ee_sound_probe_attempted
+                << ",\"ee_sound_probe_waits\":" << runtime.ee_sound_probe_waits
+#ifdef BT2_NATIVE_IOP
+                << ",\"ee_sound_bind_returns\":" << (runtime.native_iop?runtime.native_iop->ee_sound_bind_returns:0)
+#endif
+                << ",\"ee_sound_probe_parent_pc\":" << runtime.ee_sound_probe_parent.pc
+                << ",\"ee_sound_probe_frontier\":[" << runtime.ee_sound_probe_frontier.pc << "," << runtime.ee_sound_probe_frontier.r[28].low
+                << "," << runtime.ee_sound_probe_frontier.r[29].low << "," << runtime.ee_sound_probe_frontier.r[31].low
+                << "," << runtime.ee_sound_probe_frontier.r[16].low << "," << runtime.ee_sound_probe_frontier.cop0_status << "]"
+                << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"main_thread_queries\":" << runtime.main_thread_queries << ",\"startup_worker_state\":" << jsonStartupThreads(runtime)
                 << ",\"startup_worker_queries\":" << runtime.startup_worker_queries << ",\"startup_worker_starts\":" << runtime.startup_worker_starts
                 << ",\"startup_ready_queries\":" << runtime.startup_ready_queries
                 << ",\"startup_worker_suspends\":" << runtime.startup_worker_suspends << ",\"startup_worker_priority_changes\":" << runtime.startup_worker_priority_changes << ",\"priority_changes\":" << runtime.priority_changes

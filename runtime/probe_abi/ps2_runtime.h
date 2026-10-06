@@ -13,6 +13,7 @@
 #include <vector>
 #include <immintrin.h>
 #include "intc_checkpoint.h"
+#include "retained_ee_stack.h"
 #include "gif_dma_staging.h"
 #include "post_reset_sif.h"
 #include "vif_startup.h"
@@ -77,6 +78,14 @@ public:
         throw UnsupportedVuStatus();
     }
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
+    // Diagnostic handoff: retain the parent while running the ready sound child.
+    // The priority request remains pending; the first wait is a checked boundary.
+    void probeReadySoundThread(std::uint8_t*, R5900Context*);
+    bool ee_sound_dispatch_probe = false, ee_sound_probe_attempted = false;
+    R5900Context ee_sound_probe_frontier{}, ee_sound_probe_parent{};
+    unsigned ee_sound_probe_waits = 0;
+    RetainedEeStack* active_ee_stack = nullptr;
+
     enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump, IndirectJump=TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
 
@@ -380,7 +389,23 @@ public:
             ++osd_config_reads;
             return; // SDK declares void; preserve the result register.
         }
+        if (code == 0 && selector == 0x32 && active_ee_stack && current_thread_id==3) {
+            if(context->pc!=0x32EB88 || context->r[29].low!=0x3A6C80
+                || context->r[28].low!=0x38BDF0 || context->r[16].low!=0x3A6D00
+                || read32(rdram,0x3A6C90)!=0x100250
+                || read32(rdram,0x3A6D00)!=3 || read32(rdram,0x3A6D08)!=0x3A6D18
+                || read32(rdram,0x3A6D18)!=0x80000704 || read32(rdram,0x3A6D1C)!=0x3153F0
+                || read32(rdram,0x3A6D20)!=0x3A6CC0)
+                throw UnsupportedSyscall(selector,context->pc);
+            ++ee_sound_probe_waits;
+            ee_sound_probe_frontier=*context;
+            active_ee_stack->yield();
+            // No owned wake transaction exists yet.
+            throw std::runtime_error("Unvalidated EE sound wake");
+        }
         if (code == 0 && selector == 0x29 && context->r[4].low==1) {
+            if(ee_sound_dispatch_probe && context->r[5].low==24) probeReadySoundThread(rdram,context);
+
             // Only the main thread is runnable; created threads remain dormant.
             const bool startup_priority_two=texture_gif.phase==8 && timer1_setup_writes==1 && context->pc==0x32EAF8
                 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005EC && context->r[5].low==2;

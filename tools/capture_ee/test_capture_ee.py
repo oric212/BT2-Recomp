@@ -7,6 +7,13 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_reverse_bind_observer_runs_original_api_and_can_resume(self):
+        from capture_ee_reverse_bind import hook
+        for terminal in (True,False):
+            blob=hook(0x1DA24,terminal);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+            self.assertIn(0x0C000000|(0x1DA24>>2),w)
+            self.assertEqual(w[-4:],(0x24190001,0xAF190000,0x1000FFFF,0) if terminal else (0x8F1F001C,0,0x03E00008,0))
+
     def test_last_helper_observer_preserves_earlier_shared_invocation(self):
         for point,pair in [('rpc-helper7-ready-status',(0x8FA30000,0x24020008)),('rpc-helper7-suspend-after',(0x0040882D,0x0220102D))]:
             w=struct.unpack('<'+str(len(texture_stub(point))//4)+'I',texture_stub(point))
@@ -16,7 +23,7 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(w[-2],0x08000000|((TEXTURE_POINTS[point][0]+8)>>2))
 
     def test_rpc_child_terminal_capture_freezes_after_register_publication(self):
-        for point in ('rpc-ee-server-registered','rpc-ee-server-wait'):
+        for point in ('rpc-ee-server-registered','rpc-ee-server-wait','rpc-ee-callback-before'):
             blob=texture_stub(point);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
             expected=(0x40196000,0xAF190028,0xAF10002C,0xAF1C0030,0x42000039,0x0000000F)
             self.assertEqual(w[8:14],expected)

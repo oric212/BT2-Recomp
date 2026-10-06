@@ -31,3 +31,13 @@ The bounded worker group passes native execution, ownership tests and capture co
 ## Required scheduler design gate
 
 The current EE dispatcher uses synchronous C++ invocations and shared return validation. Starting a different CPU at the priority syscall must not erase or replay the active main invocation, lose its guest continuation or treat a child SleepThread as a successful function return. Define explicit per-thread execution/continuation ownership, suspended versus ready versus waiting states and the pending reverse-bind completion transition. First-wait RAM alone cannot substitute for owned queue registration, wait delivery or preserved parent context. The current header's four-worker group provides bounded ready/suspended records, not this scheduler.
+
+## Diagnostic execution verified (2026-10-06)
+
+A Windows retained stack now preserves native guest frames across yield and resumes only for explicit diagnostic cancellation. Separate child return validation/depth/exit ownership leave the main invocation intact. Generated entry 0x315380, queue registration 0x332BB0, server registration 0x332C48, loop 0x333060, request inspection 0x332E40 and SleepThread wrapper 0x32EB80 execute to first wait. Child GP/SP/s0/saved exit and registration match independent original captures. Sleep is not counted as a successful return.
+
+A separate actual SDRDRV blocking BindRpc observation confirms input [0x8A2D0, 0x80000704, 0], result 0 and client buffer/server 0x3A6CC0 / 0x3A6D18. A second observer lets that original API return and captures the first SleepThread call (RA module+0xF24, SP 64 bytes below bind caller). The native pending request resumes once through the real translated helper and parks at 0xA1304 / RA 0xA0F24. Unknown/stale registrations, wrong epoch, malformed request and duplicate completion are rejected.
+
+The diagnostic has 302 entered / 295 completed EE entries and 81,641 IOP instructions; normal startup remains 296 / 292. No live EE wake or command callback completion is supplied. The EE stack is deliberately cancelled at the report boundary; owned ready-thread records are not promoted to a general waiting/scheduler model.
+
+The original first-wait capture's shared outgoing request is the SOUNDS bind, RPC ID 29, client 0x6351C0 and service 0x02000004. Main-priority-before already contains the completed IOP reverse-bind client. Therefore late dispatch at the final priority request is validation tooling, not the original scheduling order. Follow [queued RPC scheduling](EE_RPC_SCHEDULING_PLAN.md) before enabling normal startup dispatch. The terminal callback-entry capture did not reach its marker in the isolated run; no callback payload or lifecycle is inferred.

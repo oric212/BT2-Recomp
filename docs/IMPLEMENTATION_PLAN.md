@@ -87,3 +87,7 @@ Both further captured heap allocations and second command-2 / 0x40A setup now co
 ## Four-helper completion and scheduler design gate (2026-10-06)
 
 The capacity/worker pass is verified. Both later heaps, second stream setup, four StartThread/priority transitions and the first/last helper suspensions complete. Full EE startup stops at the main priority request 2 → 24 with 296 / 292 distinct coverage. Follow EE_SOUND_SCHEDULING_PLAN.md to define retained per-thread continuation ownership and reverse-RPC delivery before dispatching the ready child. Original registration/first-wait snapshots exist; live callback timing and bind ownership still need modeling and evidence. The five second-channel pairs remain isolated service proof, not full EE coverage.
+
+## Retained sound diagnostic and queued transport handoff (2026-10-06)
+
+The generated sound registration/first EE wait and actual native IOP reverse bind/first sleep are independently verified in a separate diagnostic scope. Normal startup remains at the pending main priority request. Original first-wait evidence places sound dispatch during the earlier SOUNDS bind, so late dispatch cannot be promoted as the live scheduler. Follow [EE_RPC_SCHEDULING_PLAN.md](EE_RPC_SCHEDULING_PLAN.md) for persistent invocation ownership and queued EE/IOP completion at the actual blocked-main phase, then follow ready helpers and actual execution blockers.

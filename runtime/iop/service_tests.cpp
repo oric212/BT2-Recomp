@@ -325,6 +325,28 @@ int main(int argc,char** argv) {
         const auto failed_query=service.runtime.ram;const auto failed_steps=service.runtime.steps;
         rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48));});
         check(service.runtime.ram==failed_query && service.runtime.steps==failed_steps);
+
+        const auto bind_before=service.runtime.ram;
+        rejected([&]{service.completeEeSoundBind(2,ee_memory);});
+        rejected([&]{service.completeEeSoundBind(1,ee_memory);});
+        check(service.runtime.ram==bind_before && !service.ee_sound_bind_returns);
+        auto store_ee=[&](unsigned address,unsigned value){std::memcpy(ee_memory.data()+address,&value,4);};
+        // Synthetic owned registration fixture; full generated registration is compared separately.
+        store_ee(0x3A6D00,3);store_ee(0x3A6D08,0x3A6D18);store_ee(0x3A6D18,0x80000704);
+        store_ee(0x3A6D1C,0x3153F0);store_ee(0x3A6D20,0x3A6CC0);
+        const auto packet_id=service.runtime.read(0x1FF418,4);
+        service.runtime.write(0x1FF418,3,4);
+        rejected([&]{service.completeEeSoundBind(1,ee_memory);});
+        check(!service.ee_sound_bind_returns);service.runtime.write(0x1FF418,packet_id,4);
+        service.completeEeSoundBind(1,ee_memory);
+        check(service.ee_sound_bind_returns==1 && !service.runtime.pending_ee_bind.thread
+            && helper.waiting && !helper.ready && !helper.wait_ee_bind && helper.context.pc==0xA1304
+            && helper.context.get(31)==0xA0F24 && service.runtime.current_thread==0
+            && service.runtime.read(0xA1CA0,4)==0 && service.runtime.read(0xA1CB4,4)==0x3A6CC0
+            && service.runtime.read(0xA1CC4,4)==0x3A6D18
+            && !service.runtime.providers.contains({"sifcmd",15}) && !service.runtime.providers.contains({"thbase",24}));
+        const auto bind_complete=service.runtime.ram;
+        rejected([&]{service.completeEeSoundBind(1,ee_memory);});check(service.runtime.ram==bind_complete);
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

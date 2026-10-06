@@ -1277,6 +1277,28 @@ int main() {
         require(disc_alias.read64(disc_ram,0x203A8600)==0x123456789ABCDEF0);
         reject([&]{disc_alias.read64(disc_ram,0x203A8620);});
         reject([&]{disc_alias.read64(disc_ram,0x203A8601);});
+
+        PS2Runtime sound_dispatch;
+        sound_dispatch.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        sound_dispatch.thread_initialized=true;sound_dispatch.current_thread_id=1;sound_dispatch.main_thread_priority=2;
+        sound_dispatch.heap_calls=6;sound_dispatch.cri_rpc_calls=37;
+        sound_dispatch.startup_worker_starts=4;sound_dispatch.startup_worker_priority_changes=4;sound_dispatch.startup_worker_suspends=2;
+        sound_dispatch.threads.resize(6);
+        auto& sound_child=sound_dispatch.threads[1];sound_child.id=3;sound_child.ready=true;sound_child.entry=0x315380;sound_child.current_priority=5;
+        sound_child.context.cop0_status=0x10001;sound_child.context.r[29].low=0x3A6CA0;sound_child.context.r[28].low=0x38BDF0;sound_child.context.r[31].low=0x100250;
+        R5900Context parent;parent.pc=0x32EAF8;parent.r[31].low=0x2EEA34;parent.r[4].low=1;parent.r[5].low=24;
+        auto sound_parent_before=parent;
+        sound_child.suspended=true;
+        reject([&]{sound_dispatch.probeReadySoundThread(sound_dispatch.memory().data(),&parent);});
+        require(!sound_dispatch.ee_sound_probe_attempted && sound_dispatch.current_thread_id==1);
+        sound_child.suspended=false;
+        bool missing_child=false;
+        try {sound_dispatch.probeReadySoundThread(sound_dispatch.memory().data(),&parent);}
+        catch(const UnsupportedGuestBranch& e){missing_child=e.target==0x315380;}
+        require(missing_child && sound_dispatch.ee_sound_probe_attempted && !sound_dispatch.ee_sound_probe_waits
+            && sound_dispatch.current_thread_id==1 && sound_dispatch.main_thread_priority==2
+            && parent.pc==sound_parent_before.pc && parent.r[31].low==sound_parent_before.r[31].low && parent.r[2].low==sound_parent_before.r[2].low
+            && !sound_dispatch.active_ee_stack && !sound_dispatch.completed_functions.contains(0x315380));
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

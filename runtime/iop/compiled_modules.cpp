@@ -669,3 +669,58 @@ std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch,std::u
         ++cri_control_calls;return response;
     }catch(...){failed_=true;throw;}
 }
+
+void NativeIopService::completeEeSoundBind(unsigned epoch,std::span<const std::uint8_t> ee) {
+    auto& rt=runtime;const auto pending=rt.pending_ee_bind;
+    if(epoch!=epoch_ || failed_ || ee_sound_bind_returns || ee.size()!=32u*1024*1024
+        || rt.current_thread || rt.timed_wait_owner || pending.client!=0xA1CA0 || pending.server_id!=0x80000704
+        || pending.packet!=0x1FF400 || pending.rpc_id!=2 || !rt.threads.contains(pending.thread))
+        throw std::runtime_error("Reverse bind lacks owned pending request");
+    auto word=[&](unsigned address){std::uint32_t value;std::memcpy(&value,ee.data()+address,4);return value;};
+    if(word(0x3A6D00)!=3 || word(0x3A6D08)!=0x3A6D18 || word(0x3A6D18)!=pending.server_id
+        || word(0x3A6D1C)!=0x3153F0 || word(0x3A6D20)!=0x3A6CC0)
+        throw std::runtime_error("Reverse bind lacks generated EE registration");
+    auto& thread=rt.threads.at(pending.thread);
+    if(!thread.waiting || thread.ready || !thread.wait_ee_bind || thread.context.pc!=0xA1244
+        || thread.entry!=0xA0FF0 || thread.priority!=24 || thread.context.get(28)!=thread.gp || thread.gp!=0xA94E0
+        || rt.providers.contains({"sifcmd",15}) || rt.providers.contains({"thbase",24}))
+        throw std::runtime_error("Reverse bind helper continuation differs");
+    const std::array<unsigned,10> client={pending.packet,2,0,0,0,0,0,0,0,0};
+    const std::array<unsigned,9> packet={64,0,0x80000009,0,6,pending.packet,2,pending.client,pending.server_id};
+    for(unsigned n=0;n<client.size();++n)if(rt.read(pending.client+4*n,4)!=client[n])throw std::runtime_error("Reverse bind client differs");
+    for(unsigned n=0;n<packet.size();++n)if(rt.read(pending.packet+4*n,4)!=packet[n])throw std::runtime_error("Reverse bind packet differs");
+    rt.providers[{"sifcmd",15}]=[this,pending](IopRuntime& running,IopContext& c) {
+        if(ee_sound_bind_returns || running.current_thread!=pending.thread || c.pc!=0xA1244
+            || c.get(4)!=pending.client || c.get(5)!=pending.server_id || c.get(6))
+            throw std::runtime_error("Reverse bind completion outside retained API");
+        // Original blocking API and client capture plus SDK RPC_END ownership:
+        // publish registered EE pointers, release the request, then return zero.
+        running.write(pending.client,0,4);running.write(pending.client+20,0x3A6CC0,4);
+        running.write(pending.client+36,0x3A6D18,4);
+        running.write(pending.packet+16,4,4);running.write(pending.packet+24,0,4);
+        running.pending_ee_bind={};++ee_sound_bind_returns;return 0u;
+    };
+    rt.providers[{"thbase",24}]=[this,pending](IopRuntime& running,IopContext& c)->unsigned {
+        auto& owner=running.threads.at(pending.thread);
+        if(ee_sound_bind_returns!=1 || running.current_thread!=pending.thread || c.pc!=0xA1304
+            || c.get(31)!=0xA0F24 || c.get(28)!=owner.gp || owner.waiting || !owner.ready
+            || running.pending_ee_bind.thread || running.read(pending.client,4)
+            || running.read(pending.client+20,4)!=0x3A6CC0 || running.read(pending.client+36,4)!=0x3A6D18)
+            throw std::runtime_error("SDRDRV first sleep outside completed reverse bind");
+        owner.waiting=true;owner.ready=false;owner.wait_ee_bind=false;
+        throw IopYield{}; // Actual blocking boundary; no wake or successful return.
+    };
+    rt.current_thread=pending.thread;thread.waiting=false;thread.wait_ee_bind=false;thread.ready=true;
+    try {
+        rt.execute(rt,thread.context);
+        throw std::runtime_error("Unexpected reverse-bind helper exit");
+    } catch(const IopYield&) {
+        if(!thread.waiting || thread.ready) {
+            rt.current_thread=0;rt.providers.erase({"sifcmd",15});rt.providers.erase({"thbase",24});
+            throw std::runtime_error("Reverse-bind helper yielded without owned wait");
+        }
+    } catch(...) {
+        failed_=true;rt.current_thread=0;rt.providers.erase({"sifcmd",15});rt.providers.erase({"thbase",24});throw;
+    }
+    rt.current_thread=0;rt.providers.erase({"sifcmd",15});rt.providers.erase({"thbase",24});
+}
