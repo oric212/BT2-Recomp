@@ -12,45 +12,47 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 | Native host, retail validation and recompilation pipeline | ✅ Verified |
 | Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
 | Initial disc read and metadata lookups | ✅ Verified |
-| Complete startup and thread scheduling | 🔧 In progress — four helpers verified; queued RPC scheduling pending |
+| Complete startup and thread scheduling | 🔧 In progress — queued sound bind verified; priority handoff pending |
 | Game asset loading and first presented frame | ⏳ Pending |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
 **Current blocker:** main `ChangeThreadPriority(1, 24)` at EE PC `0x32EAF8`.
 
-**Last measured, 2026-10-06:** **296 EE entries entered / 292 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
+**Last measured, 2026-10-06:** **302 EE entries entered / 295 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
 
-**Separate diagnostic:** generated sound registration and EE/IOP first waits verified: **302 / 295** EE coverage, one real reverse-bind completion. Main has not resumed.
+**Separate helper diagnostic:** **312 / 298** EE coverage; reaches thread 5's original priority request. These counts are excluded from the normal checkpoint.
 <!-- progress-summary:end -->
 
 ## Measured execution and subsystem evidence
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 296 distinct entered / 292 completed; kernel 2 / 2; 3,892 call events / 3,887 returns |
-| Mapping | 8,584 provisional EE entries; 8,587 raw generated files; 232 extra entries selected (six added for the diagnostic sound path) |
-| IOP | 61,612 instructions; 213 physical entry targets; 14 load paths / 13 resident modules |
-| Memory / threads | Six IOP heap allocations; four EE startup pools; helper starts/priorities 4/4, suspensions 2; sound child and helpers 5/6 ready, unexecuted |
+| EE | 302 distinct entered / 295 completed; kernel 2 / 2; 3,903 call events / 3,897 returns |
+| Mapping | 8,585 provisional EE entries; 8,588 raw generated files; 242 extra entries selected |
+| IOP | 81,640 instructions; 214 physical entry targets; 14 load paths / 13 resident modules |
+| Memory / threads | Six IOP heap allocations; four EE startup pools; helper starts/priorities 4/4, suspensions 2; sound child parked; helpers 5/6 ready, unexecuted |
 | Disc | One two-sector read; original completion callback; six metadata lookups/transfers; no archive payload decoded |
 | Sound | 37 CRI calls; first 2,048-byte AutoDMA half programmed; no consumption / completion IRQ / native playback verified |
 | Cards | Six DMA pairs / five timed FIFO probes; absent-card path only |
 | GS | Three packets / two startup draws / 573,440 sprite pixels; startup clears only; no presented frame or VU execution |
 
-Previous measured checkpoint → current: distinct EE **291 / 286 → 296 / 292**; calls/returns **3,855 / 3,848 → 3,892 / 3,887**. Across the completed capacity/worker pass, CRI calls advanced **35 → 37**, heaps **4 → 6**, IOP instructions **61,054 → 61,612**, and selected extras **200 → 226**. Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE **296 / 292 → 302 / 295**, calls/returns **3,892 / 3,887 → 3,903 / 3,897**, IOP instructions **61,612 → 81,640**. Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
-Verified: current MSVC entry/ALL builds, **17/17 CTests**, **146 capture tests**, **52 recompilation tests**, **13 IOP tooling tests**, **16 original/native startup comparisons**, the 22-row ownership layout and isolated second-channel service validation. Four worker contexts, their ready/suspended states and priorities match the captured scope. Five later CRI constructor pairs remain service-only coverage; the full EE checkpoint is still 37 calls. Proprietary inputs and generated output remain ignored.
+Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **153 capture tests**, **55 recompilation tests**, **13 IOP tooling tests**, **16 existing original/native startup comparisons**, queued sound-bind comparison and two separate diagnostic comparisons. Proprietary inputs and generated output remain ignored.
 
 ## Current blocker and next step
 
-Full native startup stops at **ChangeThreadPriority, selector 0x29 / EE PC 0x32EAF8**, requesting main priority **2 → 24**. The request is deliberately not acknowledged: ready thread 3 at priority 5 must execute before main continues.
+Normal startup stops at **ChangeThreadPriority(1, 24), selector 0x29 / PC 0x32EAF8**. Main priority remains 2; its request is not yet acknowledged.
 
-A guarded diagnostic now executes the original child registration/loop on a retained stack, reaches its first SleepThread, completes the actual native IOP reverse bind and parks SDRDRV at its captured first sleep. Its EE stack is cancelled at the diagnostic boundary; no main resume or general scheduler is claimed. Original captures show registration while main binds SOUNDS (RPC ID 29), earlier than this diagnostic handoff. Replace immediate RPC completion with owned queued completion and dispatch at that earlier blocking point; see [queued RPC scheduling plan](EE_RPC_SCHEDULING_PLAN.md). See [EE sound scheduling plan](EE_SOUND_SCHEDULING_PLAN.md) and [resume handoff](progress/ACTIVE_PASS.md). Do not substitute a successful return for dispatch.
+The SOUNDS bind now queues at submission. Main's actual WaitSema dispatches the generated sound child on a retained owned stack; its registration and first SleepThread are verified. Original RPC completion resumes main once. The IOP reverse bind subsequently completes and its helper parks at the captured first sleep.
 
-Remaining in normal startup: timely SDRDRV reverse bind to 0x80000704, general scheduling/timer delivery, mounted cards, archive payload loading, audio consumption and presentation. Logical IOP time remains 1900 us; the fifth card alarm is armed for 2000 us. The sound child and helpers 5/6 are ready but unexecuted; helpers 4/7 are suspended.
+The separate `--startup-workers` diagnostic reaches helper 5's **ChangeThreadPriority(5, 1)**. Original captures establish helper priorities 16/18, temporary priority 1 and restore requests. Next: implement bounded main priority admission and helper critical-priority ownership, then continue eligible helper execution. Provisional first-wait guards have not yet been reached natively. See [RPC scheduling plan](EE_RPC_SCHEDULING_PLAN.md) and [resume handoff](progress/ACTIVE_PASS.md).
+
+Remaining: general scheduling/timer delivery, sound wakes and command processing, mounted cards, archive payload loading, audio consumption and presentation. Complete startup and a presented game frame remain unverified.
 
 Run the measured checkpoint using the [startup probe instructions](BUILDING.md): `python tools/ps2recomp/run_startup_probe.py --disc <local-ISO-path>`.
 

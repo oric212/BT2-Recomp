@@ -3,7 +3,7 @@ import argparse,hashlib,json,struct
 from pathlib import Path
 from capture_ee import EXPECTED_SHA
 from capture_sio2_dma import CODE,SCRATCH,pack
-from verify_sound_rpc import require,words,completed_card_query
+from verify_sound_rpc import require,words,completed_card_query,queued_sound_bind_completed
 
 def verify(root,native):
     baseline=json.loads((root/'work/pcsx2-capture/heap-second-after/capture.json').read_text(encoding='utf-8'))
@@ -28,8 +28,12 @@ def verify(root,native):
     require(fifo['transmit']==[0x81,0x52,0] and fifo['reply']==[255]*3 and fifo['command']==0xC0342 and fifo['status']==0x1D100,'Actual absent-card FIFO differs')
     r=json.loads(native.read_text(encoding='utf-8'));require(completed_card_query(r),'Native query lifecycle differs')
     nr=Path(str(native)+'.iop.bin').read_bytes()
-    require(words(nr,0xA1CA0,10)==(0x1FF400,2,0,0,0,0,0,0,0,0),'Native pending bind client differs')
-    require(words(nr,0x1FF400,9)==(64,0,0x80000009,0,6,0x1FF400,2,0xA1CA0,0x80000704),'Native pending bind packet differs')
+    if queued_sound_bind_completed(r):
+        require(words(nr,0xA1CA0,10)==(0,2,0,0,0,0x3A6CC0,0,0,0,0x3A6D18),'Native completed bind client differs')
+        require(words(nr,0x1FF400,9)==(64,0,0x80000009,0,4,0x1FF400,0,0xA1CA0,0x80000704),'Native released bind packet differs')
+    else:
+        require(words(nr,0xA1CA0,10)==(0x1FF400,2,0,0,0,0,0,0,0,0),'Native pending bind client differs')
+        require(words(nr,0x1FF400,9)==(64,0,0x80000009,0,6,0x1FF400,2,0xA1CA0,0x80000704),'Native pending bind packet differs')
     require(len(r['mc_dma_payload_words'])==48 and r['mc_dma_payload_words']==r['mc_dma_ee_words'],'Owned secondary copy readback differs')
     # Only the requested primary result is defined for absent cards. Do not compare undefined stack fields.
     p=root/'work/pcsx2-capture/rpc-mc-callback-before-absent-cards';m=json.loads((p/'capture.json').read_text(encoding='utf-8'));ee=(p/'ee-ram.bin').read_bytes()
@@ -38,7 +42,7 @@ def verify(root,native):
     require('Slot1_Enable = false' in settings and 'Slot2_Enable = false' in settings,'Callback capture enables a card')
     require(r['mc_result_words'][0]==words(ee,0x3A8540,1)[0]==0xFFFFFFF5,'Actual absent-card primary result differs')
     require(words(ee,0x3A94C0,16)==(0x400,0x3A8540,0x80000008,0,0,0,0,0x3A6F80,0x8000000A,0,0,0,0,0,0,0),'Actual async reply packet differs')
-    print('Five timed probes, actual delay/alarm/FIFO, owned pending bind and absent-card primary result verified. Physical scheduling/undefined secondary fields are not equated.')
+    print('Five timed probes, actual delay/alarm/FIFO, owned reverse-bind state and absent-card primary result verified. Physical scheduling/undefined secondary fields are not equated.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path,default=Path('work/bt2-generation/entry-stop.json'));a=p.parse_args();verify(a.root,a.native)

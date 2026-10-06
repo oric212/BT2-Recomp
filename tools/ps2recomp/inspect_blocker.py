@@ -4,13 +4,27 @@ import json
 from run_pipeline import ROOT, verify_generated
 
 
+def body_contains(address, candidate):
+    """Ghidra ranges have inclusive ends; omitted ranges retain legacy extent behavior."""
+    if 'body_ranges' not in candidate:
+        return candidate['start'] <= address < candidate['end_exclusive']
+    for span in candidate['body_ranges']:
+        first,last=span.split('-')
+        start,end=int(first,16),int(last,16)
+        if end<start:raise ValueError('Invalid analysis body range')
+        if start<=address<=end:return True
+    return False
+
+
 def classify(address, rows, functions, excluded):
     containing = [row for row in rows if row["start"] <= address < row["end"]]
     exact = any(row["start"] == address for row in containing)
-    candidates = [row for row in functions if row["start"] <= address < row["end_exclusive"]]
+    bounding = [row for row in functions if row["start"] <= address < row["end_exclusive"]]
+    candidates = [row for row in bounding if body_contains(address,row)]
     return {"address": address, "neutral_name": f"FUN_{containing[0]['start'] if len(containing) == 1 else address:08X}",
             "map_status": "mapped entry" if exact else "inside mapped function" if containing else "map gap",
             "mapped_ranges": containing, "analysis_candidates": candidates,
+            "bounding_gap_candidates": [row for row in bounding if not body_contains(address,row)],
             "requires_kernel_payload_mapping": 0x80000000 <= address < 0x80080000,
             "exclusions": [row for row in excluded if row["start"] <= address < row["end"]]}
 
@@ -36,7 +50,7 @@ def main():
     export = json.loads((ROOT / "work/ghidra/exports/analysis.json").read_text(encoding="utf-8"))
     manifest = json.loads((folder / "candidates.manifest.json").read_text(encoding="utf-8"))
     result = classify(address, rows, export["functions"], manifest["excluded"])
-    result["limitations"] = "Range membership only; no boundary, handler semantics or execution is inferred."
+    result["limitations"] = "Actual analysis body membership is separated from bounding gaps. Exclusions retain bounding quarantine metadata; no boundary, handler semantics or execution is inferred."
     (folder / "blocker-map.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"Reached {result['neutral_name']}: {result['map_status']}; see {folder / 'blocker-map.json'}.")
 

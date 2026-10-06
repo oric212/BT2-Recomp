@@ -27,12 +27,28 @@ def later_dbc_dma_boundary(r):
         and r.get('native_iop_pc')==0x621DC and r.get('selector')==0x77 and r.get('pc')==0x32F028
         and r.get('packet_words',[])[6:10]==[36,0x3A03C0,0x80001304,144])
 
+def queued_sound_bind_completed(r):
+    """Recognize the owned earlier bind/retained child, independent of later boundary."""
+    return (r.get('queued_sound_submissions')==1 and r.get('queued_sound_completions')==1
+        and r.get('sound_thread_waiting')==1 and r.get('sound_dispatch_bind_id')==29
+        and r.get('sound_dispatch_wait_ra')==0x332874 and r.get('sound_dispatch_wait_sp')==0x1FFECB0
+        and r.get('ee_sound_probe_attempted')==0 and r.get('ee_sound_probe_waits')==0
+        and r.get('ee_sound_probe_parent_pc')==0 and r.get('ee_sound_bind_returns')==1
+        and r.get('pending_ee_bind')==[0]*5 and r.get('native_iop_error')==''
+        and r.get('ee_sound_context')==[3,0,0x32EB88,0x38BDF0,0x3A6C80,0x333098,0,0x10001]
+        and r.get('ee_sound_probe_frontier')==[0x32EB88,0x38BDF0,0x3A6C80,0x333098,0x3A6D00,0x10001]
+        and r.get('sound_thread_words',[])[7:9]==[1,0]
+        and len(r.get('sound_iop_context',[]))==5
+        and r['sound_iop_context']==[0xA1304,0xA0F24,0xA94E0,0x1E7588,0])
+
 def completed_card_query(r):
     return (r.get('mc_query_requests')==1 and r.get('mc_dma_submissions')==1 and r.get('mc_dma_polls')==1
         and r.get('timed_waits')==5 and r.get('timed_wakes')==5 and r.get('timed_dispatches')==1
         and r.get('logical_time_us')==1900 and r.get('card_alarm_fires')==4 and r.get('card_alarm_sets')==5
         and r.get('sio2_card_fifo_packets')==5 and r.get('sio2_card_transfer_counts')==[6,6]
-        and r.get('pending_ee_bind')==[0x2000E,0xA1CA0,0x80000704,0x1FF400,2])
+        and ((r.get('pending_ee_bind')==[0x2000E,0xA1CA0,0x80000704,0x1FF400,2]
+            and not r.get('queued_sound_submissions',0) and not r.get('queued_sound_completions',0))
+            or queued_sound_bind_completed(r)))
 
 def later_mc_dma_boundary(r):
     return (r.get('dbc_rpc_binds')==4 and r.get('dbc_rpc_calls')==4 and r.get('mc_rpc_binds')==1

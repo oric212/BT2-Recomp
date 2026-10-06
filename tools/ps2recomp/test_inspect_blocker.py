@@ -34,3 +34,31 @@ class BlockerTests(unittest.TestCase):
         self.assertEqual(stop_address(stop), 0x33A818)
         stop.update(status='blocked at unsupported syscall', access='syscall')
         self.assertEqual(stop_address(stop), 0x80075038)
+
+    def test_disconnected_body_gap_is_not_analysis_ownership(self):
+        candidate={'start':0x100,'end_exclusive':0x208,'body_ranges':['00000100-00000107','00000200-00000207']}
+        excluded={'start':0x100,'end':0x208,'reason':'noncontiguous_or_invalid'}
+        result=classify(0x150,[],[candidate],[excluded])
+        self.assertEqual(result['analysis_candidates'],[])
+        self.assertEqual(result['bounding_gap_candidates'],[candidate])
+        self.assertEqual(result['exclusions'],[excluded])
+        self.assertEqual(result['map_status'],'map gap')
+        self.assertEqual(result['neutral_name'],'FUN_00000150')
+        for address in [0x100,0x107,0x200,0x207]:
+            result=classify(address,[],[candidate],[excluded])
+            self.assertEqual(result['analysis_candidates'],[candidate])
+            self.assertEqual(result['bounding_gap_candidates'],[])
+        self.assertEqual(classify(0x208,[],[candidate],[excluded])['analysis_candidates'],[])
+
+    def test_real_separate_entry_inside_other_candidate_extent_is_preserved(self):
+        disconnected={'start':0x100,'end_exclusive':0x208,'body_ranges':['00000100-00000107','00000200-00000207']}
+        actual={'start':0x150,'end_exclusive':0x160,'body_ranges':['00000150-0000015f']}
+        result=classify(0x150,[{'start':0x150,'end':0x160}],[disconnected,actual],[])
+        self.assertEqual(result['analysis_candidates'],[actual])
+        self.assertEqual(result['bounding_gap_candidates'],[disconnected])
+        self.assertEqual(result['map_status'],'mapped entry')
+
+    def test_empty_explicit_body_does_not_imply_extent_membership(self):
+        result=classify(0x104,[],[{'start':0x100,'end_exclusive':0x120,'body_ranges':[]}],[])
+        self.assertEqual(result['analysis_candidates'],[])
+        self.assertEqual(len(result['bounding_gap_candidates']),1)

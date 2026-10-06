@@ -100,3 +100,13 @@ python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO" --
 ```
 
 This executes the generated sound worker through registration/first wait and the translated IOP reverse-bind continuation through its first sleep. It writes a separate ignored `sound-worker-stop.json` report. Main's priority request remains pending; the diagnostic EE stack is cancelled at the boundary. It does not establish correct startup scheduling, callback completion, audio playback or a presented frame. The normal command keeps its own report and measurement.
+
+## Separate helper scheduling diagnostic
+
+Normal startup includes the verified queued sound bind and retained parked sound child. To investigate the next helper boundary separately, run:
+
+```powershell
+python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO" --startup-workers
+```
+
+The ignored report is `work/bt2-generation/startup-workers-stop.json`. Its counts are diagnostic coverage only: main priority admission and general scheduling remain pending. Use the command without diagnostic flags for the normal checkpoint.

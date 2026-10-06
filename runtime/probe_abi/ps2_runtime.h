@@ -18,6 +18,8 @@
 #include "post_reset_sif.h"
 #include "vif_startup.h"
 #include "texture_gif_startup.h"
+#include <memory>
+struct EeExecutionOwner;
 #ifdef BT2_NATIVE_IOP
 #include <memory>
 class NativeIopService;
@@ -85,6 +87,16 @@ public:
     R5900Context ee_sound_probe_frontier{}, ee_sound_probe_parent{};
     unsigned ee_sound_probe_waits = 0;
     RetainedEeStack* active_ee_stack = nullptr;
+    bool ee_queued_sound_rpc=false, sound_thread_waiting=false;
+    struct QueuedSoundsBind { bool pending=false;unsigned epoch=0;std::array<unsigned,16> reply{}; } queued_sounds_bind;
+    unsigned queued_sound_submissions=0,queued_sound_completions=0,sound_dispatch_bind_id=0;
+    std::uint32_t sound_dispatch_wait_ra=0,sound_dispatch_wait_sp=0;
+    unsigned startup_worker_dispatches=0,startup_worker_status_queries=0,startup_worker_waits=0;
+    R5900Context startup_dispatch_parent{};
+    void dispatchReadyStartupWorkers(std::uint8_t*,R5900Context*);
+    void queueSoundsBind(R5900Context*,const std::array<unsigned,16>&);
+    void finishQueuedSoundsBind(std::uint8_t*,R5900Context*);
+
 
     enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump, IndirectJump=TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
@@ -389,6 +401,24 @@ public:
             ++osd_config_reads;
             return; // SDK declares void; preserve the result register.
         }
+        if(code==0 && selector==0x30 && current_thread_id==5 && active_ee_stack) {
+            if(context->pc!=0x32EB68 || context->r[4].low!=7 || context->r[5].low!=0x34E3E0
+                || context->r[29].low!=0x34E3E0 || context->r[31].low!=0x2EE494 || context->cop0_status!=0x10001
+                || main_thread_priority!=2 || threads.size()!=6 || threads[5].id!=7
+                || !threads[5].suspended || threads[5].ready || threads[5].current_priority!=25 || startup_worker_status_queries)
+                throw UnsupportedSyscall(selector,context->pc);
+            // This generated caller consumes only status; preserve the unused descriptor fields.
+            write32(rdram,0x34E3E0,8);context->r[2].low=8;++startup_worker_status_queries;return;
+        }
+        if(code==0 && selector==0x32 && current_thread_id==5 && active_ee_stack) {
+            if(context->pc!=0x32EB88 || context->r[29].low!=0x34E430 || context->r[31].low!=0x2EE00C
+                || context->r[28].low!=0x38BDF0 || context->r[16].low!=1 || context->cop0_status!=0x10001
+                || startup_worker_status_queries!=1 || startup_worker_waits || read32(rdram,0x34E468)!=0x100250
+                || read32(rdram,0x34BBD0)!=1 || read32(rdram,0x34BBA8) || read32(rdram,0x34BC88))
+                throw UnsupportedSyscall(selector,context->pc);
+            threads[3].ready=false;threads[3].context=*context;++startup_worker_waits;
+            active_ee_stack->yield();throw std::runtime_error("Unvalidated startup worker wake");
+        }
         if (code == 0 && selector == 0x32 && active_ee_stack && current_thread_id==3) {
             if(context->pc!=0x32EB88 || context->r[29].low!=0x3A6C80
                 || context->r[28].low!=0x38BDF0 || context->r[16].low!=0x3A6D00
@@ -397,7 +427,10 @@ public:
                 || read32(rdram,0x3A6D18)!=0x80000704 || read32(rdram,0x3A6D1C)!=0x3153F0
                 || read32(rdram,0x3A6D20)!=0x3A6CC0)
                 throw UnsupportedSyscall(selector,context->pc);
-            ++ee_sound_probe_waits;
+            if(ee_queued_sound_rpc) {
+                if(sound_thread_waiting || !queued_sounds_bind.pending) throw UnsupportedSyscall(selector,context->pc);
+                sound_thread_waiting=true;threads.at(1).ready=false;threads.at(1).context=*context;
+            } else ++ee_sound_probe_waits;
             ee_sound_probe_frontier=*context;
             active_ee_stack->yield();
             // No owned wake transaction exists yet.
@@ -405,6 +438,9 @@ public:
         }
         if (code == 0 && selector == 0x29 && context->r[4].low==1) {
             if(ee_sound_dispatch_probe && context->r[5].low==24) probeReadySoundThread(rdram,context);
+            if(ee_queued_sound_rpc && context->r[5].low==24 && sound_thread_waiting) {
+                dispatchReadyStartupWorkers(rdram,context);return;
+            }
 
             // Only the main thread is runnable; created threads remain dormant.
             const bool startup_priority_two=texture_gif.phase==8 && timer1_setup_writes==1 && context->pc==0x32EAF8
@@ -516,7 +552,7 @@ public:
         if(code==0 && selector==0x30 && cri_rpc_calls==37 && context->r[4].low==1) {
             const auto out=static_cast<std::uint32_t>(context->r[5].low);
             if(main_thread_queries || heap_calls!=6 || !thread_initialized || current_thread_id!=1 || main_thread_priority!=2
-                || threads.size()!=2 || !threads[1].ready || threads[1].id!=3 || semaphores.size()!=10
+                || threads.size()!=2 || (ee_queued_sound_rpc ? (!sound_thread_waiting || threads[1].ready || queued_sound_completions!=1) : !threads[1].ready) || threads[1].id!=3 || semaphores.size()!=10
                 || context->pc!=0x32EB68 || context->r[31].low!=0x2EE9FC || context->r[29].low!=out || out!=initial_sp-144
                 || context->cop0_status!=0x10001 || thread_arguments[0]!=0x38BDF0
                 || stack_base+thread_arguments[2]!=ram_size-4096)
@@ -871,6 +907,7 @@ public:
             }
             auto& semaphore = semaphores[id];
             if (selector == 0x44) {
+                if(!semaphore.count && queued_sounds_bind.pending) finishQueuedSoundsBind(rdram,context);
                 if (!semaphore.count) throw UnsupportedSyscall(selector, context->pc);
                 --semaphore.count;
                 ++semaphore_waits;
@@ -1999,4 +2036,9 @@ private:
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;
     bool timer2_mode_supplied_ = false, intc_mask_supplied_ = false, timer2_readback_supplied_ = false;
     std::uint32_t timer2_readback_expected_ = 0;
+    friend struct EeExecutionOwner;
+    // Destroy before the invocation/memory members: cancellation needs both alive.
+    std::shared_ptr<EeExecutionOwner> sound_execution_;
+    std::vector<std::shared_ptr<EeExecutionOwner>> worker_executions_;
+
 };

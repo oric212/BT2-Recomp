@@ -27,16 +27,16 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Native host, retail validation and recompilation pipeline | ✅ Verified |
 | Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
 | Initial disc read and metadata lookups | ✅ Verified |
-| Complete startup and thread scheduling | 🔧 In progress — four helpers verified; queued RPC scheduling pending |
+| Complete startup and thread scheduling | 🔧 In progress — queued sound bind verified; priority handoff pending |
 | Game asset loading and first presented frame | ⏳ Pending |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
 **Current blocker:** main `ChangeThreadPriority(1, 24)` at EE PC `0x32EAF8`.
 
-**Last measured, 2026-10-06:** **296 EE entries entered / 292 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
+**Last measured, 2026-10-06:** **302 EE entries entered / 295 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
 
-**Separate diagnostic:** generated sound registration and EE/IOP first waits verified: **302 / 295** EE coverage, one real reverse-bind completion. Main has not resumed.
+**Separate helper diagnostic:** **312 / 298** EE coverage; reaches thread 5's original priority request. These counts are excluded from the normal checkpoint.
 <!-- progress-summary:end -->
 
 [Detailed measurements](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)

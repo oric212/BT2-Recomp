@@ -1,7 +1,7 @@
 """Validate the reached EE sound thread query/start; keep evidence bundles local."""
 import argparse,json,struct
 from pathlib import Path
-from verify_sound_rpc import capture,words,require
+from verify_sound_rpc import capture,words,require,queued_sound_bind_completed
 from capture_ee import MARKER
 
 def verify(root,output=None,native=None):
@@ -20,7 +20,7 @@ def verify(root,output=None,native=None):
         output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(struct.pack('<14I',0x70030C11,3,*info))
     if native:
         r=json.loads(native.read_text(encoding='utf-8'))
-        require(r['sound_thread_starts']==1 and r['ee_sound_context']==[3,1,0x315380,0x38BDF0,0x3A6CA0,0x100250,0,0x10001],'Native ready EE context differs')
+        require(r['sound_thread_starts']==1 and ((r['ee_sound_context']==[3,1,0x315380,0x38BDF0,0x3A6CA0,0x100250,0,0x10001] and not r.get('queued_sound_submissions',0)) or queued_sound_bind_completed(r)),'Native ready/owned parked EE context differs')
         require(r['sounds_rpc_binds']==1 and r['sounds_client_words'][:5]==[0,30,7,0,0] and r['sounds_client_words'][5] and r['sounds_client_words'][9],'Native SOUNDS owned bind differs')
     completed,retail_iop=capture(root,'sound-service-call-after',baseline)
     require(words(completed,MARKER+8,4)==(0,0,0x1FFED10,0),'SOUNDS first caller return differs')
@@ -36,8 +36,8 @@ def verify(root,output=None,native=None):
     dbc_client=words(dbc,0x3A03C0,10)
     require(words(dbc,MARKER+8,4)==(0,0,0x1FFEC40,0) and dbc_client==(0,31,7,0,0,0x7AB38,0,0,0,0x7AA10),'DBCMAN forward bind return differs')
     require(words(dbc_iop,dbc_client[9],1)==(0x80001300,),'DBCMAN forward registration differs')
-    print('EE dormant query, IE/EIE publication, saved context and StartThread return validated'+(' against native ready-state transition.' if native else '.'))
-    print('Ready state does not prove worker execution, scheduling timing or sound callbacks.')
+    print('EE dormant query, IE/EIE publication, saved context and StartThread return validated'+(' against native '+('retained first-wait ownership.' if queued_sound_bind_completed(r) else 'ready-state transition.') if native else '.'))
+    print('Startup context and retained first wait do not establish general scheduling timing or sound callbacks.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--output',type=Path);p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.output,a.native)

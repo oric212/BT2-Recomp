@@ -26,3 +26,7 @@ A live scheduler cannot be enabled by moving the diagnostic's successful effects
 ## Limits and stop conditions
 
 Do not use captured queue RAM as native registration, acknowledge priority 24 while skipping ready workers, replay main/child entries on resume, count parked functions as returned, or claim a completed command callback from a bind. The callback-entry observation timed out; handler payload/lifetime and later wake ownership remain unknown. Stop at a genuinely new reached subsystem, unavailable required evidence/access, or a speculative change after using available captures/tooling/references.
+
+## Verified queued completion and next priority work
+
+Normal startup now verifies queued SOUNDS completion, retained generated sound ownership and the original IOP reverse bind/first sleep. Main priority 24 is still pending. The separate helper diagnostic reaches priority request (5,1). Next implement main priority admission before helper dispatch, retain previous priority 2 for the API return, then own helper critical priority 1 and restores 16/18. Helper first-wait guards are provisional; helper 6 mapping remains pending. RAM flag 0x34BC84 and conditional BGCOLOR store 0x120000E0 must not be treated as CSR timing evidence.

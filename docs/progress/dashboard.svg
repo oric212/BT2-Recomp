@@ -43,24 +43,24 @@
 <text x="52" y="386" font-size="13" font-weight="600" fill="#1e293b">Disc metadata</text>
 <text x="37" y="404" font-size="11.5" fill="#64748b">Initial read and lookups complete</text></g>
 <text x="334" y="100" font-size="15" font-weight="600" fill="#334155">Runtime</text>
-<g><title>EE threads and scheduling: Partial / active. 4 helpers verified; dispatch pending</title>
+<g><title>EE threads and scheduling: Partial / active. Sound parked; helpers pending</title>
 <rect x="334" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="123" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="134" r="3.5" fill="#b77912"/>
 <text x="362" y="138" font-size="13" font-weight="600" fill="#1e293b">EE threads and scheduling</text>
-<text x="347" y="156" font-size="11.5" fill="#64748b">4 helpers verified; dispatch pending</text></g>
+<text x="347" y="156" font-size="11.5" fill="#64748b">Sound parked; helpers pending</text></g>
 <g><title>Original IOP modules: Partial / active. 13 resident; bounded execution</title>
 <rect x="334" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="185" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="196" r="3.5" fill="#b77912"/>
 <text x="362" y="200" font-size="13" font-weight="600" fill="#1e293b">Original IOP modules</text>
 <text x="347" y="218" font-size="11.5" fill="#64748b">13 resident; bounded execution</text></g>
-<g><title>SIF / RPC / DMA: Partial / active. Reverse RPC still incomplete</title>
+<g><title>SIF / RPC / DMA: Partial / active. Sound bind complete; wakes pending</title>
 <rect x="334" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="247" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="258" r="3.5" fill="#b77912"/>
 <text x="362" y="262" font-size="13" font-weight="600" fill="#1e293b">SIF / RPC / DMA</text>
-<text x="347" y="280" font-size="11.5" fill="#64748b">Reverse RPC still incomplete</text></g>
+<text x="347" y="280" font-size="11.5" fill="#64748b">Sound bind complete; wakes pending</text></g>
 <g><title>CRI sound setup: Partial / active. 37 calls; AutoDMA half pending</title>
 <rect x="334" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>

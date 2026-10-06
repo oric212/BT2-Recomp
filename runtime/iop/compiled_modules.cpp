@@ -315,7 +315,7 @@ std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint3
     if(transfer) {
         if(ee_memory.size()!=32u*1024*1024 || dbc_dma_submissions || dbc_dma_polls || runtime.providers.contains({"sifman",7}) || runtime.providers.contains({"sifman",8}))
             throw std::runtime_error("DBCMAN DMA endpoint outside initial owned scope");
-        runtime.providers[{"sifman",7}]=[this,ee_memory](IopRuntime& rt,IopContext& c) {
+            runtime.providers[{"sifman",7}]=[this,ee_memory](IopRuntime& rt,IopContext& c) {
             const auto descriptor=c.get(4);
             if(c.pc!=0x621DC || c.get(5)!=1 || c.get(28)!=0x6A720 || descriptor!=0x1E1EE0 || dbc_dma_submissions)
                 throw std::runtime_error("Unsupported DBCMAN reverse DMA submission");
@@ -387,7 +387,7 @@ std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span
     std::array<std::uint32_t,12> expected{};expected[7]=0x3A7480;
     if(epoch!=epoch_ || failed_ || mc_rpc_requests!=1 || mc_query_requests || input.size()!=48
         || std::memcmp(input.data(),expected.data(),48))throw std::runtime_error("MCSERV query outside captured profile");
-    if(ee_memory.size()!=32u*1024*1024 || runtime.pending_ee_bind.thread || runtime.providers.contains({"sifcmd",15}) || runtime.providers.contains({"sifman",7}) || runtime.providers.contains({"sifman",8}))
+    if(ee_memory.size()!=32u*1024*1024 || (ee_sound_server_owned && runtime.providers.contains({"thbase",24})) || runtime.pending_ee_bind.thread || runtime.providers.contains({"sifcmd",15}) || runtime.providers.contains({"sifman",7}) || runtime.providers.contains({"sifman",8}))
         throw std::runtime_error("Card timed dispatch requires owned EE RPC endpoint");
     runtime.providers[{"sifcmd",15}]=[this,ee_memory](IopRuntime& rt,IopContext& c)->std::uint32_t {
         if(c.pc!=0xA1244 || c.get(4)!=0xA1CA0 || c.get(5)!=0x80000704 || c.get(6)
@@ -395,18 +395,42 @@ std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span
             || rt.threads.at(rt.current_thread).entry!=0xA0FF0 || rt.threads.at(rt.current_thread).priority!=24)
             throw std::runtime_error("IOP EE bind outside reached SDRDRV helper");
         std::uint32_t registered;std::memcpy(&registered,ee_memory.data()+0x3A6D18,4);
-        if(registered)throw std::runtime_error("Pending EE bind scope requires the observed unregistered server");
+        if(registered && !ee_sound_server_owned)throw std::runtime_error("EE bind lacks owned registration");
         constexpr unsigned packet=0x1FF400;
         rt.check(0xA1CA0,40);rt.check(packet,64);
         if(rt.read(0xA1CA0,4) || rt.read(0xA1CC4,4))throw std::runtime_error("Duplicate native EE sound bind");
-        // Owned logical outgoing request. No response/server pointer or API return is supplied.
+        // Own the outgoing request before either parking it or completing against the registered EE server.
         const std::array<std::uint32_t,16> request={64,0,0x80000009,0,6,packet,2,0xA1CA0,0x80000704};
         for(unsigned n=0;n<request.size();++n)rt.write(packet+n*4,request[n],4);
         rt.write(0xA1CA0,packet,4);rt.write(0xA1CA4,2,4);rt.write(0xA1CA8,0,4);
+        if(ee_sound_server_owned) {
+            std::uint32_t server,handler,buffer;
+            std::memcpy(&server,ee_memory.data()+0x3A6D18,4);
+            std::memcpy(&handler,ee_memory.data()+0x3A6D1C,4);
+            std::memcpy(&buffer,ee_memory.data()+0x3A6D20,4);
+            if(server!=0x80000704 || handler!=0x3153F0 || buffer!=0x3A6CC0 || ee_sound_bind_returns)
+                throw std::runtime_error("Owned EE registration changed before bind completion");
+            rt.write(0xA1CA0,0,4);rt.write(0xA1CB4,buffer,4);rt.write(0xA1CC4,0x3A6D18,4);
+            rt.write(packet+16,4,4);rt.write(packet+24,0,4);
+            ++ee_sound_bind_returns;return 0;
+        }
         rt.pending_ee_bind={rt.current_thread,0xA1CA0,0x80000704,packet,2};
         auto& t=rt.threads.at(rt.current_thread);t.ready=false;t.waiting=true;t.wait_ee_bind=true;
         throw IopYield{};
     };
+    if(ee_sound_server_owned) {
+        if(runtime.providers.contains({"thbase",24}))throw std::runtime_error("Sound sleep provider already owned");
+        runtime.providers[{"thbase",24}]=[this](IopRuntime& rt,IopContext& c)->unsigned {
+            if(!rt.threads.contains(rt.current_thread))throw std::runtime_error("Sound sleep lacks owned thread");
+            auto& owner=rt.threads.at(rt.current_thread);
+            if(ee_sound_bind_returns!=1 || c.pc!=0xA1304 || c.get(31)!=0xA0F24
+                || owner.entry!=0xA0FF0 || owner.priority!=24 || c.get(28)!=owner.gp
+                || owner.waiting || !owner.ready || rt.pending_ee_bind.thread
+                || rt.read(0xA1CA0,4) || rt.read(0xA1CB4,4)!=0x3A6CC0 || rt.read(0xA1CC4,4)!=0x3A6D18)
+                throw std::runtime_error("Queued sound bind reached unvalidated IOP sleep");
+            owner.waiting=true;owner.ready=false;owner.wait_ee_bind=false;throw IopYield{};
+        };
+    }
     runtime.providers[{"sifman",7}]=[this,ee_memory](IopRuntime& rt,IopContext& c) {
         if(c.pc!=0x51064 || c.get(4)!=0x1E1778 || c.get(5)!=1 || mc_dma_submissions
             || rt.timed_wakes!=5 || rt.card_alarm_fires!=4 || rt.sio2_card_fifo_packets!=5)
@@ -424,7 +448,7 @@ std::vector<std::uint8_t> NativeIopService::callMcQuery(unsigned epoch,std::span
             throw std::runtime_error("MCSERV secondary DMA poll differs");
         ++mc_dma_polls;return UINT32_MAX;
     };
-    const auto cleanup=[&]{runtime.providers.erase({"sifcmd",15});runtime.providers.erase({"sifman",7});runtime.providers.erase({"sifman",8});};
+    const auto cleanup=[&]{runtime.providers.erase({"sifcmd",15});runtime.providers.erase({"sifman",7});runtime.providers.erase({"sifman",8});if(ee_sound_server_owned)runtime.providers.erase({"thbase",24});};
     std::vector<std::uint8_t> response;
     try {response=executeRegisteredRpc(0x80000400,1,input,4,0x3A6F80,0x3A8540);cleanup();}
     catch(...) {cleanup();throw;}
@@ -723,4 +747,15 @@ void NativeIopService::completeEeSoundBind(unsigned epoch,std::span<const std::u
         failed_=true;rt.current_thread=0;rt.providers.erase({"sifcmd",15});rt.providers.erase({"thbase",24});throw;
     }
     rt.current_thread=0;rt.providers.erase({"sifcmd",15});rt.providers.erase({"thbase",24});
+}
+
+void NativeIopService::ownEeSoundServer(unsigned epoch,std::span<const std::uint8_t> ee) {
+    if(epoch!=epoch_ || failed_ || ee_sound_server_owned || ee_sound_bind_returns
+        || ee.size()!=32u*1024*1024 || runtime.pending_ee_bind.thread || mc_query_requests)
+        throw std::runtime_error("EE sound registration outside queued bind phase");
+    auto word=[&](unsigned address){std::uint32_t value;std::memcpy(&value,ee.data()+address,4);return value;};
+    if(word(0x3A6D00)!=3 || word(0x3A6D08)!=0x3A6D18 || word(0x3A6D18)!=0x80000704
+        || word(0x3A6D1C)!=0x3153F0 || word(0x3A6D20)!=0x3A6CC0)
+        throw std::runtime_error("EE sound registration not produced by generated worker");
+    ee_sound_server_owned=true;
 }

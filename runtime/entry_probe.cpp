@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Could not read guest image");
         PS2Runtime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
+        runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
         runtime.loadMemory(image);
         if (snapshot_mode) {
             std::ifstream kernel(argv[3], std::ios::binary | std::ios::ate);
@@ -828,6 +829,13 @@ int main(int argc, char** argv) {
                 report<<handle<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option<<","<<t.waiting<<","<<t.ready;
             }
 #endif
+            report<<"],\"sound_iop_context\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.sound_rpc_calls && runtime.native_iop) {
+                auto& rt=runtime.native_iop->runtime;const auto& t=rt.threads.at(rt.read(0xA14CC,4));
+                report<<t.context.pc<<","<<t.context.get(31)<<","<<t.context.get(28)<<","<<t.context.get(29)<<","<<t.wait_ee_bind;
+            }
+#endif
             report<<"],\"cri_thread_words\":[";
 #ifdef BT2_NATIVE_IOP
             if(runtime.native_iop) {
@@ -921,6 +929,16 @@ int main(int argc, char** argv) {
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
                 << ",\"ee_pool_pointers\":[" << runtime.read32(runtime.memory().data(),0x38A628) << "," << runtime.read32(runtime.memory().data(),0x38A62C) << "," << runtime.read32(runtime.memory().data(),0x38A630) << "," << runtime.read32(runtime.memory().data(),0x38A634) << "]"
+                << ",\"startup_worker_dispatches\":" << runtime.startup_worker_dispatches
+                << ",\"startup_worker_status_queries\":" << runtime.startup_worker_status_queries
+                << ",\"startup_worker_waits\":" << runtime.startup_worker_waits
+                << ",\"startup_dispatch_parent_pc\":" << runtime.startup_dispatch_parent.pc
+                << ",\"queued_sound_submissions\":" << runtime.queued_sound_submissions
+                << ",\"queued_sound_completions\":" << runtime.queued_sound_completions
+                << ",\"sound_thread_waiting\":" << runtime.sound_thread_waiting
+                << ",\"sound_dispatch_bind_id\":" << runtime.sound_dispatch_bind_id
+                << ",\"sound_dispatch_wait_ra\":" << runtime.sound_dispatch_wait_ra
+                << ",\"sound_dispatch_wait_sp\":" << runtime.sound_dispatch_wait_sp
                 << ",\"ee_sound_probe_attempted\":" << runtime.ee_sound_probe_attempted
                 << ",\"ee_sound_probe_waits\":" << runtime.ee_sound_probe_waits
 #ifdef BT2_NATIVE_IOP

@@ -23,11 +23,33 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(w[-2],0x08000000|((TEXTURE_POINTS[point][0]+8)>>2))
 
     def test_rpc_child_terminal_capture_freezes_after_register_publication(self):
-        for point in ('rpc-ee-server-registered','rpc-ee-server-wait','rpc-ee-callback-before'):
+        for point in ('rpc-ee-server-registered','rpc-ee-server-wait','rpc-ee-callback-before','rpc-helper5-first-wait','rpc-helper6-first-wait'):
             blob=texture_stub(point);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
             expected=(0x40196000,0xAF190028,0xAF10002C,0xAF1C0030,0x42000039,0x0000000F)
             self.assertEqual(w[8:14],expected)
             self.assertEqual(w[-2],0x08000000|((FRESH_BIND_STUB+(len(w)-2)*4)>>2))
+
+    def test_helper6_flag_observer_publishes_actual_load(self):
+        point='rpc-helper6-flag-before'
+        self.assertEqual(TEXTURE_POINTS[point],(0x2EE0C0,0xB7A3))
+        blob=texture_stub(point);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        self.assertIn(0xAF030034,w)
+        self.assertLess(w.index(0x0000000F),w.index(0xAF030034))
+        self.assertEqual(w[-2],0x08000000|((FRESH_BIND_STUB+(len(w)-2)*4)>>2))
+
+    def test_critical_capture_selects_thread_and_resumes_original_calls(self):
+        for thread in (5,6):
+            for phase in ('critical-before','critical-after','restore-before'):
+                point=f'rpc-helper{thread}-{phase}'
+                blob=texture_stub(point);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+                self.assertEqual(w[0],0x24180000|thread)
+                early=2+(w[1]&0xFFFF)
+                if phase=='critical-after':
+                    self.assertEqual(w[early:early+2],(0x3C030035,0xAC623490))
+                else:
+                    self.assertEqual(w[early+2],0x08000000|(0x32EAF0>>2))
+                    self.assertEqual(w[early+3],0x2610BBF8 if phase=='critical-before' else 0x0040202D)
+                self.assertIn(0x42000039,w)
 
     def test_earlier_helper_lifecycle_capture_points(self):
         for point,address,marker in [('rpc-helper-created',0x2EE51C,0xB796),('rpc-helper-started',0x2EE538,0xB797),

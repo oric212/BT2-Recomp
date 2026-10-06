@@ -20,11 +20,14 @@ def summary(report):
             f"boundary selector={report['selector']:#x}, PC={report['pc']:#x}, target={report['target']:#x}.\n"
             "Completion counts are observed invocation returns, not full gameplay correctness or startup completion.")
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');a=p.parse_args()
-    cmd=command(ROOT,a.disc.resolve());env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None)
-    report=ROOT/'work/bt2-generation'/('sound-worker-stop.json' if a.sound_worker else 'entry-stop.json');cmd[2]=str(report)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--startup-workers',action='store_true',help='Diagnostic eligible-worker trace; priority admission remains pending.');a=p.parse_args()
+    if a.sound_worker and a.startup_workers:p.error('Choose one diagnostic scope')
+    cmd=command(ROOT,a.disc.resolve());env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None);env.pop('BT2_EE_STARTUP_WORKER_PROBE',None)
+    report=ROOT/'work/bt2-generation'/('sound-worker-stop.json' if a.sound_worker else 'startup-workers-stop.json' if a.startup_workers else 'entry-stop.json');cmd[2]=str(report)
     if a.sound_worker:env['BT2_EE_SOUND_DISPATCH_PROBE']='1'
+    if a.startup_workers:env['BT2_EE_STARTUP_WORKER_PROBE']='1'
     subprocess.run(cmd,cwd=ROOT,env=env,check=True)
     print(summary(json.loads(report.read_text(encoding='utf-8'))))
+    if a.startup_workers:print('Diagnostic worker scope only: main priority remains pending; failed worker frames unwind and parked stacks cancel at teardown.')
     if a.sound_worker:print('Diagnostic sound-worker scope only: main priority request is pending; the EE stack is cancelled after the checked wait.')
 if __name__=='__main__':main()

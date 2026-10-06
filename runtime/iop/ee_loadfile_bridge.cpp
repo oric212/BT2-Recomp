@@ -173,6 +173,7 @@ void PS2Runtime::receiveSoundRpc(std::uint8_t* rdram,R5900Context* context) {
             throw UnsupportedSyscall(0x77,context->pc);
         rt.check(server.descriptor,68);rt.check(server.handler,4);rt.check(server.buffer,4);
         const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x6351C0,0x80000009,server.descriptor,server.buffer,0,0,0,0,0};
+        if(ee_queued_sound_rpc) {queueSoundsBind(context,reply);return;}
         for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
         deliverRpcEnd(rdram,context,0x6351C0,7,server.descriptor,server.buffer);
         ++sounds_rpc_binds;++sif_dma_submissions;context->r[2].low=0x60003;return;

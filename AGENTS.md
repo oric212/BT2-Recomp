@@ -38,3 +38,7 @@ Preserve aggressive subsystem-scale passes while usage is plentiful. Reduce scop
 ## Progress and interrupted-pass tracking
 
 Follow docs/PROGRESS_TRACKING.md. Read docs/progress/ACTIVE_PASS.md when resuming unfinished work; record pending changes and remaining verification before an interruption. Keep docs/PROG.md's verified checkpoint distinct from unverified implementation. Export only allowlisted counters from ignored startup reports, synchronize the marked README dashboard with tools/docs/sync_progress.py, and run its --check before progress commits. Detailed completed outcomes belong in monthly history. Never count isolated service coverage as full startup coverage.
+
+## Parallel evidence gathering
+
+Use sub-agents when useful for independent investigation, reference comparison, capture analysis or test design. Keep scheduler, RPC and runtime state changes coordinated by the primary agent. Parallelize evidence gathering and assign clear file ownership for independent tooling/test edits; avoid speculative parallel runtime edits and concurrent native builds/probes.

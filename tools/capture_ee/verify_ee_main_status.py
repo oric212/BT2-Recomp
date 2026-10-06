@@ -3,6 +3,7 @@ import argparse,hashlib,json
 from pathlib import Path
 from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_stub
 from verify_cri_autodma import require,words
+from verify_sound_rpc import queued_sound_bind_completed
 
 def verify(root,native):
     environment=None;captures={}
@@ -50,7 +51,7 @@ def verify(root,native):
     for entry,stack,size in [(0x2EDE58,0x34BC90,0x800),(0x2EDF48,0x34D490,0x1000),(0x2EE050,0x34E490,0x1000),(0x2EE140,0x34F490,0x2000)]:
         saved=stack+size-0x2A0
         require([words(ee,saved+reg*16,1)[0] for reg in (28,29,30,31)]==[0x38BDF0,stack+size-32,stack+size-32,0x100250],'Owned four-worker reset context differs')
-    require(r['ee_sound_context'][:2]==[3,1] and 0x80000704 in r['pending_ee_bind'],'Required ready EE child/reverse bind lost')
+    require((r['ee_sound_context'][:2]==[3,1] and 0x80000704 in r['pending_ee_bind']) or queued_sound_bind_completed(r),'Required owned EE child/reverse bind lost')
     print('Verified consumed main status and all four owned worker lifecycle transitions; main priority change 2 -> 24 remains blocked pending actual EE dispatch/reverse RPC ownership.')
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',type=Path,required=True);a=p.parse_args();verify(Path(__file__).resolve().parents[2],a.native)

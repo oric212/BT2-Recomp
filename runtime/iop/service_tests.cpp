@@ -347,6 +347,16 @@ int main(int argc,char** argv) {
             && !service.runtime.providers.contains({"sifcmd",15}) && !service.runtime.providers.contains({"thbase",24}));
         const auto bind_complete=service.runtime.ram;
         rejected([&]{service.completeEeSoundBind(1,ee_memory);});check(service.runtime.ram==bind_complete);
+        NativeIopService early(1,bt2_compiled_iop_modules());
+        rejected([&]{early.ownEeSoundServer(2,ee_memory);});check(!early.ee_sound_server_owned);
+        auto bad_registration=ee_memory;std::fill_n(bad_registration.begin()+0x3A6D1C,4,0);
+        rejected([&]{early.ownEeSoundServer(1,bad_registration);});check(!early.ee_sound_server_owned);
+        early.ownEeSoundServer(1,ee_memory);check(early.ee_sound_server_owned && !early.ee_sound_bind_returns);
+        rejected([&]{early.ownEeSoundServer(1,ee_memory);});check(!early.ee_sound_bind_returns);
+        early.mc_rpc_requests=1;early.runtime.providers[{"thbase",24}]=[](IopRuntime&,IopContext&){return 0u;};
+        const auto provider_count=early.runtime.providers.size();
+        rejected([&]{early.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(mc_query_input.data()),48),ee_memory);});
+        check(early.runtime.providers.size()==provider_count && !early.runtime.providers.contains({"sifcmd",15}));
         NativeIopService blocked(1,bt2_compiled_iop_modules());blocked.runtime.providers.erase({"thevent",4});
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty());const auto steps=blocked.runtime.steps;
         rejected([&]{blocked.load(1,path);});check(blocked.residents.empty() && blocked.runtime.steps==steps);

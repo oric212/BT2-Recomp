@@ -1,35 +1,19 @@
-# Resume handoff: queued RPC scheduling
+# Resume handoff: EE priority ownership
 
-Updated: 2026-10-06. **Retained sound-worker diagnostic and reverse-bind pass verified.**
+Updated: 2026-10-06. **Pass verified and ready to commit.**
 
-## Verified checkpoints
+Normal checkpoint: **302 entered / 295 completed**, kernel 2/2, 3,903 calls / 3,897 returns, 81,640 IOP instructions, 37 CRI calls, six heaps. Main ChangeThreadPriority(1,24), selector 0x29 / PC 0x32EAF8 remains pending at priority 2.
 
-Normal startup remains **296 entered / 292 completed**, kernel 2/2, 3,892 calls / 3,887 returns, 61,612 IOP instructions, 37 CRI calls and six heap allocations. Main ChangeThreadPriority(1, 24), selector 0x29 / PC 0x32EAF8, remains pending.
+Queued SOUNDS completion now runs the original sound child at main's real bind wait, preserves its parked owned stack and resumes main once. The IOP reverse bind completes and its helper parks at the original first sleep. Separate --startup-workers diagnostic reaches 312/298 and helper 5's ChangeThreadPriority(5,1); separate --sound-worker retains its earlier diagnostic scope.
 
-Separate `--sound-worker` diagnostic: **302 / 295**, 3,903 calls / 3,897 returns, **81,641 IOP instructions**. Generated sound queue/server/loop reaches first EE SleepThread at 0x32EB88. One actual native reverse bind completes and SDRDRV parks at its original first IOP sleep, 0xA1304 / RA 0xA0F24. The EE diagnostic stack is cancelled while child return ownership is still selected; main does not resume. Six extra generated entries are selected, now 232.
+## Next implementation
 
-## Important ordering finding
+Read ../PROG.md, ../EE_RPC_SCHEDULING_PLAN.md and ../REFERENCE_ARCHITECTURE.md. Admit main's priority 24 with owned previous-priority return before eligible dispatch. Implement observed helper critical/restore ownership (5:16→1→16; 6:18→1→18). Native helper first-wait guards are provisional/unreached. Helper 6 entry 0x2EE050 remains unmapped; use existing discovery tooling at the observed target. Do not skip eligible helpers or fabricate successful scheduler returns.
 
-The original child's first-wait capture still contains the earlier SOUNDS bind (RPC ID 29 / client 0x6351C0 / service 0x02000004). Original main-priority-before already has the completed reverse-bind client. Our synchronous RPC completion prevented earlier dispatch. Do not enable the late diagnostic as the normal scheduler or acknowledge priority 24 by skipping eligible helpers.
+Helper 6 reads RAM flag 0x34BC84; its conditional hardware store targets BGCOLOR 0x120000E0. It does not read GS CSR. Both flag captures are zero. Original restore requests are captured; restore API returns are not.
 
-## Next pass
+## Verification and evidence
 
-Read `../PROG.md`, `../EE_RPC_SCHEDULING_PLAN.md`, `../EE_SOUND_SCHEDULING_PLAN.md` and `../REFERENCE_ARCHITECTURE.md`. Implement persistent per-thread invocation ownership and queued EE/IOP RPC completion at the earlier blocked-main bind phase. Preserve the main continuation and actual sound wait. Follow subsequent helpers 5/6 and execution blockers; their bodies remain unverified. Do not invent command callbacks or wake ownership.
+Serialized MSVC entry/ALL builds; 17/17 CTests; 153 capture, 55 recompilation and 13 IOP tests; 16 existing comparisons plus queued sound and two diagnostic comparisons passed. Final reports: ignored work/bt2-generation/{entry-stop,sound-worker-stop,startup-workers-stop}.json. Logs: work/iop/queued-final-*.log. Original helper evidence: work/pcsx2-capture/rpc-helper{5,6}-*; queued sound comparisons use the existing reverse-bind and first-wait captures.
 
-The new design changes transport scheduling. The current diagnostic is verified validation tooling, not an interrupted unverified scheduler patch.
-
-## Verification and private evidence
-
-- MSVC entry/ALL builds; 17/17 CTests; 146 capture tests; 52 recompilation tests; 13 IOP tooling tests.
-- Sixteen existing normal-startup comparisons and separate `verify_ee_sound_dispatch.py` comparison.
-- Actual bind and first-sleep captures under `work/pcsx2-capture/sound-init-before-absent-cards-ee-reverse-bind[-wait]/`.
-- Reports: `work/bt2-generation/entry-stop.json` and separate `sound-worker-stop.json`, with ignored RAM sidecars.
-- Logs under `work/iop/ee-sound-*` and `ee-reverse-bind-*`. Callback-entry observation timed out; no payload/lifecycle conclusion.
-
-```powershell
-python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO"
-python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO" --sound-worker
-python tools/capture_ee/verify_ee_sound_dispatch.py --native work/bt2-generation/sound-worker-stop.json
-```
-
-After a verified pass, update normal and diagnostic scopes separately, append monthly evidence, review, commit and push. No presentation or native playback is verified.
+Map: 8,585 entries / 8,588 raw files / 242 selected extras. Monthly history retains full findings. No startup completion, native audio playback or presented game frame is verified.
