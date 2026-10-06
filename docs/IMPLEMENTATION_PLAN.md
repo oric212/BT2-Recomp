@@ -91,3 +91,7 @@ The capacity/worker pass is verified. Both later heaps, second stream setup, fou
 ## Retained sound diagnostic and queued transport handoff (2026-10-06)
 
 The generated sound registration/first EE wait and actual native IOP reverse bind/first sleep are independently verified in a separate diagnostic scope. Normal startup remains at the pending main priority request. Original first-wait evidence places sound dispatch during the earlier SOUNDS bind, so late dispatch cannot be promoted as the live scheduler. Follow [EE_RPC_SCHEDULING_PLAN.md](EE_RPC_SCHEDULING_PLAN.md) for persistent invocation ownership and queued EE/IOP completion at the actual blocked-main phase, then follow ready helpers and actual execution blockers.
+
+## Priority admission and interrupt/load handoff (2026-10-06)
+
+Main's priority admission, helper 5/6 critical sections and first waits, CRI stream-buffer copies and VBLANK_START registration are verified in normal startup. Main now polls its first asynchronous request. Follow [EE_INTERRUPT_LOAD_PLAN.md](EE_INTERRUPT_LOAD_PLAN.md) for owned interrupt delivery, parked-thread wakes and request progress.

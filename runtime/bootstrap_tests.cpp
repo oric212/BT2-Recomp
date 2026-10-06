@@ -1299,6 +1299,41 @@ int main() {
             && sound_dispatch.current_thread_id==1 && sound_dispatch.main_thread_priority==2
             && parent.pc==sound_parent_before.pc && parent.r[31].low==sound_parent_before.r[31].low && parent.r[2].low==sound_parent_before.r[2].low
             && !sound_dispatch.active_ee_stack && !sound_dispatch.completed_functions.contains(0x315380));
+        {
+            // Admitted-main thread semantics: previous-priority returns, status codes, TH_SELF,
+            // and fail-closed transitions whenever a strictly higher-priority thread would run.
+            PS2Runtime sched;sched.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=sched.memory().data();
+            sched.thread_initialized=true;sched.current_thread_id=1;sched.main_thread_priority=24;sched.main_priority_admissions=1;
+            sched.threads.resize(6);
+            for(unsigned n=0;n<6;++n){auto& t=sched.threads[n];t.id=n+2;t.current_priority=n==2?8u:20u;t.context.pc=n?0x100000u:0u;}
+            sched.threads[2].suspended=true;                                    // ID 4: started, suspended
+            sched.threads[3].waiting=true;sched.threads[3].current_priority=16; // ID 5: sleeping
+            auto call=[&](unsigned selector,unsigned a0,unsigned a1) {
+                R5900Context c{};c.pc=0x32EAF8;c.r[3].low=selector;c.r[4].low=a0;c.r[5].low=a1;
+                sched.handleSyscall(ram,&c,0);return static_cast<unsigned>(c.r[2].low);
+            };
+            require(call(0x29,0,1)==24 && sched.main_thread_priority==1);
+            require(call(0x30,4,0x1000)==8 && sched.read32(ram,0x1000)==8 && call(0x30,5,0x1000)==4 && call(0x30,2,0x1000)==0x10);
+            require(call(0x39,4,0)==4 && !sched.threads[2].suspended && sched.threads[2].ready && call(0x30,4,0x1000)==2);
+            reject([&]{call(0x39,4,0);});
+            reject([&]{call(0x29,1,24);});                                       // Ready ID 4 (8) would preempt.
+            require(sched.main_thread_priority==1);
+            require(call(0x37,4,0)==4 && sched.threads[2].suspended && !sched.threads[2].ready && call(0x29,0,24)==1);
+            reject([&]{call(0x30,9,0x1000);});reject([&]{call(0x30,1,0x1000);});reject([&]{call(0x37,1,0);});
+            sched.threads[3].waiting=false;sched.threads[3].ready=true;         // Ready ID 5 (16) above main.
+            reject([&]{call(0x39,4,0);});
+            require(sched.threads[2].suspended && !sched.threads[2].ready && sched.scheduled_resumes==1 && sched.scheduled_suspends==1);
+            // VBLANK_START registration requires the explicit mask checkpoint; no delivery is modeled.
+            reject([&]{call(0x14,2,0);});
+            sched.supplyIntcMask(0x1802);
+            reject([&]{call(0x10,2,0);});                                        // Null handler.
+            R5900Context add{};add.pc=0x32E948;add.r[3].low=0x10;add.r[4].low=2;add.r[5].low=0x1006D8;add.r[6].low=UINT64_MAX;add.r[28].low=0x38BDF0;
+            sched.handleSyscall(ram,&add,0);
+            require(add.r[2].low==1 && sched.intc_handlers.back().address==0x1006D8 && sched.intc_handlers.back().gp==0x38BDF0);
+            reject([&]{sched.handleSyscall(ram,&add,0);});                       // Second cause-2 handler is unobserved.
+            require(call(0x14,2,0)==1 && call(0x14,2,0)==0 && (sched.intc_mask&4) && call(0x15,2,0)==1 && call(0x15,2,0)==0);
+            reject([&]{call(0x14,3,0);});
+        }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

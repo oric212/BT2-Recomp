@@ -30,3 +30,7 @@ Do not use captured queue RAM as native registration, acknowledge priority 24 wh
 ## Verified queued completion and next priority work
 
 Normal startup now verifies queued SOUNDS completion, retained generated sound ownership and the original IOP reverse bind/first sleep. Main priority 24 is still pending. The separate helper diagnostic reaches priority request (5,1). Next implement main priority admission before helper dispatch, retain previous priority 2 for the API return, then own helper critical priority 1 and restores 16/18. Helper first-wait guards are provisional; helper 6 mapping remains pending. RAM flag 0x34BC84 and conditional BGCOLOR store 0x120000E0 must not be treated as CSR timing evidence.
+
+## Priority admission completed
+
+Main's priority 24 is admitted with previous priority 2 returned. Helpers 5/6 run through their observed critical/restore sequences to the captured first waits, and main resumes. This plan's scope is complete. Interrupt delivery, wakes and the first asynchronous request continue in [EE_INTERRUPT_LOAD_PLAN.md](EE_INTERRUPT_LOAD_PLAN.md).

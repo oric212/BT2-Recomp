@@ -28,7 +28,11 @@ def verify(root,native):
     require(r['indexed_cache_operations']>=256 and r['indexed_cache_tag_reads']==r['indexed_cache_operations'] and r['indexed_cache_tag_reads']%128==0,'Native indexed scan incomplete')
     require(r['cri_rpc_calls']>=2 and not r['native_iop_error'],'Native cache caller/control cleanup incomplete')
     owned=Path(str(native)+'.ee.bin').read_bytes()
-    require(owned[0x365BC0:0x366440]==ee[0x365BC0:0x366440],'Coherent cache range differs')
+    if r.get('cri_stream_transfers',0):
+        # Later helper fills reuse this exact 0x880-byte stream buffer; its owned IOP copy must match.
+        iop=Path(str(native)+'.iop.bin').read_bytes()
+        require(iop[0x14FD40:0x14FD40+0x880]==owned[0x365BC0:0x366440],'Transferred stream buffer differs')
+    else:require(owned[0x365BC0:0x366440]==ee[0x365BC0:0x366440],'Coherent cache range differs')
     print('Verified both indexed ways, original caller return and coherent native range; physical cache timing remains unvalidated.')
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--native',required=True,type=Path);args=parser.parse_args()

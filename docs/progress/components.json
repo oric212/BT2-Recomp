@@ -9,9 +9,9 @@
       {"name": "Disc metadata", "status": "verified", "note": "Initial read and lookups complete"}
     ]},
     {"name": "Runtime", "items": [
-      {"name": "EE threads and scheduling", "status": "partial", "note": "Sound parked; helpers pending"},
+      {"name": "EE threads and scheduling", "status": "partial", "note": "Priority admitted; no wakes"},
       {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
-      {"name": "SIF / RPC / DMA", "status": "partial", "note": "Sound bind complete; wakes pending"},
+      {"name": "SIF / RPC / DMA", "status": "partial", "note": "Binds, stream copies; no wakes"},
       {"name": "CRI sound setup", "status": "partial", "note": "37 calls; AutoDMA half pending"},
       {"name": "Memory cards", "status": "partial", "note": "Absent-card queries only"}
     ]},

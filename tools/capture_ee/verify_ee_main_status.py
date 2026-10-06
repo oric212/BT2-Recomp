@@ -38,20 +38,27 @@ def verify(root,native):
     require(words(wait,MARKER+16,1)==(0x3A6C80,) and words(wait,MARKER+40,3)==(0x70030C11,0x3A6D00,0x38BDF0),'Original RPC child first wait context differs')
     require(words(wait,0x3A6D00,3)==(3,0,0x3A6D18) and words(wait,0x3A6D18,3)==(0x80000704,0x3153F0,0x3A6CC0),'Original RPC child first wait registration differs')
     r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes()
-    require(r['main_thread_queries']==1 and r['main_thread_priority']==2 and r['cri_rpc_calls']==37 and r['heap_calls']==6,'Native main status phase differs')
+    # After admission, main runs at 24 and helpers 5/6 have executed; verify_startup_workers.py
+    # compares that later scope. Earlier lifecycle evidence below still applies to IDs 4 and 7.
+    admitted=r.get('main_priority_admissions')==1
+    require(r['main_thread_queries']==1 and r['main_thread_priority']==(24 if admitted else 2) and r['cri_rpc_calls']==37 and r['heap_calls']==6
+        and (not admitted or r['main_priority_previous']==2),'Native main status phase differs')
     # Later helper frames reuse the main query buffer; validate its successful query counter, not stale stack bytes.
     require(r['startup_ready_queries']==2 and r['startup_worker_suspends']==2,'Owned ready query/suspension counts differ')
-    require(r['selector']==0x29 and r['pc']==0x32EAF8 and r['arguments']==[1,24] and r['ee_thread_count']==6,'Native main-priority boundary differs')
+    require(r['ee_thread_count']==6 and (admitted or (r['selector']==0x29 and r['pc']==0x32EAF8 and r['arguments']==[1,24])),'Native main-priority boundary differs')
     require(all(r[k]==4 for k in ('startup_worker_queries','startup_worker_starts','startup_worker_priority_changes')),'Four-worker lifecycle counters differ')
     expected_states=[[4,0x2EDE58,0,1,8,0x38BDF0,0x34C470,0x100250],
                      [5,0x2EDF48,1,0,16,0x38BDF0,0x34E470,0x100250],
                      [6,0x2EE050,1,0,18,0x38BDF0,0x34F470,0x100250],
                      [7,0x2EE140,0,1,25,0x38BDF0,0x351470,0x100250]]
-    require(r['startup_worker_state']==expected_states,'Owned ready/suspended worker contexts differ')
+    states=[t[:8] for t in r['startup_worker_state']]
+    require(states==expected_states or (admitted and [states[0],states[3]]==[expected_states[0],expected_states[3]]),'Owned ready/suspended worker contexts differ')
+    # Executed helpers reuse their stacks over the reset context; only unexecuted IDs remain checkable.
     for entry,stack,size in [(0x2EDE58,0x34BC90,0x800),(0x2EDF48,0x34D490,0x1000),(0x2EE050,0x34E490,0x1000),(0x2EE140,0x34F490,0x2000)]:
+        if admitted and entry in (0x2EDF48,0x2EE050):continue
         saved=stack+size-0x2A0
         require([words(ee,saved+reg*16,1)[0] for reg in (28,29,30,31)]==[0x38BDF0,stack+size-32,stack+size-32,0x100250],'Owned four-worker reset context differs')
     require((r['ee_sound_context'][:2]==[3,1] and 0x80000704 in r['pending_ee_bind']) or queued_sound_bind_completed(r),'Required owned EE child/reverse bind lost')
-    print('Verified consumed main status and all four owned worker lifecycle transitions; main priority change 2 -> 24 remains blocked pending actual EE dispatch/reverse RPC ownership.')
+    print('Verified consumed main status and owned worker lifecycle transitions'+(' before admitted priority 2 -> 24.' if admitted else '; main priority change 2 -> 24 remains pending.'))
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',type=Path,required=True);a=p.parse_args();verify(Path(__file__).resolve().parents[2],a.native)

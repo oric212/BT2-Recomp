@@ -87,6 +87,28 @@ class BoundedSwitchTests(unittest.TestCase):
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*changed)))
         self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<17I',*words[:-1])))
 
+    def test_moved_index_beql_switch_with_padding_after_jump(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # DADDU v1,v0,zero / SLTIU / BEQL / annulled LD delay / SLL / LUI / ADDU / LW / JR v1 / delay, NOP gap.
+        words=[0,0x0040182D,0x2C620002,0x50400008,0xDFB00000,0x00031080,0x3C030000,0x00621821,0x8C631048,0x00600008,0,0,
+               0x10000002,0,0x03E00008,0,0,0,0x1030,0x1038]
+        candidate={'start':0x1000,'end_exclusive':0x1040,'body_size':60,'contiguous_aligned':False,'body_ranges':['1000-102b','1030-103f']}
+        pack=lambda w:struct.pack('<20I',*w)
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(words)))
+        for index,value in [(1,0x0040182F),(3,0x54400008),(4,0x03E00008),(5,0x000310C0),(19,0x102C),(18,0x1040)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
+
+    def test_padding_after_return_before_tail_path(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x40,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # BEQ to the tail path / return path ending JR RA + delay / NOP gap / tail J + delay.
+        words=[0x10000005,0,0x24020001,0x03E00008,0,0,0x08000400,0]
+        candidate={'start':0x1000,'end_exclusive':0x1020,'body_size':28,'contiguous_aligned':False,'body_ranges':['1000-1013','1018-101f']}
+        pack=lambda w:struct.pack('<8I',*w)
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(words)))
+        for index,value in [(0,0x10000004),(3,0x03200008),(4,0x10000000),(5,0x24020002)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
 if __name__ == "__main__":
     unittest.main()

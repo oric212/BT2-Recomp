@@ -1,19 +1,15 @@
-# Resume handoff: EE priority ownership
+# Resume handoff: interrupt delivery, wakes and first asynchronous load
 
-Updated: 2026-10-06. **Pass verified and ready to commit.**
+Updated: 2026-10-06. **Previous pass verified and committed; next pass not started.**
 
-Normal checkpoint: **302 entered / 295 completed**, kernel 2/2, 3,903 calls / 3,897 returns, 81,640 IOP instructions, 37 CRI calls, six heaps. Main ChangeThreadPriority(1,24), selector 0x29 / PC 0x32EAF8 remains pending at priority 2.
+Normal checkpoint: **429 entered / 420 completed**, kernel 2/2, 4,729 calls / 4,723 returns, 81,640 IOP instructions, 37 CRI calls, six heaps. Boundary: main's first idle call in its asynchronous request poll loop, `0x1007F0 → 0x2EF218` (checked stop; `load_poll_boundaries` = 1).
 
-Queued SOUNDS completion now runs the original sound child at main's real bind wait, preserves its parked owned stack and resumes main once. The IOP reverse bind completes and its helper parks at the original first sleep. Separate --startup-workers diagnostic reaches 312/298 and helper 5's ChangeThreadPriority(5,1); separate --sound-worker retains its earlier diagnostic scope.
+Main priority 24 is admitted with previous priority 2 returned. Helpers 5/6 are parked at their captured first SleepThread; IDs 4 and 7 are suspended; sound child 3 is sleeping. A VBLANK_START handler (0x1006D8) is registered and cause 2 enabled; no interrupt is delivered.
 
 ## Next implementation
 
-Read ../PROG.md, ../EE_RPC_SCHEDULING_PLAN.md and ../REFERENCE_ARCHITECTURE.md. Admit main's priority 24 with owned previous-priority return before eligible dispatch. Implement observed helper critical/restore ownership (5:16→1→16; 6:18→1→18). Native helper first-wait guards are provisional/unreached. Helper 6 entry 0x2EE050 remains unmapped; use existing discovery tooling at the observed target. Do not skip eligible helpers or fabricate successful scheduler returns.
-
-Helper 6 reads RAM flag 0x34BC84; its conditional hardware store targets BGCOLOR 0x120000E0. It does not read GS CSR. Both flag captures are zero. Original restore requests are captured; restore API returns are not.
+Follow [EE_INTERRUPT_LOAD_PLAN.md](../EE_INTERRUPT_LOAD_PLAN.md). First trace the request handle state machine (0x300CD0 and callees) and VBlank handler 0x1006D8 → 0x2EF0D8 against new original captures. Then implement owned VBlank delivery at explicit scheduling points and wakes of retained parked stacks. Do not fabricate request completion or CRI acknowledgements.
 
 ## Verification and evidence
 
-Serialized MSVC entry/ALL builds; 17/17 CTests; 153 capture, 55 recompilation and 13 IOP tests; 16 existing comparisons plus queued sound and two diagnostic comparisons passed. Final reports: ignored work/bt2-generation/{entry-stop,sound-worker-stop,startup-workers-stop}.json. Logs: work/iop/queued-final-*.log. Original helper evidence: work/pcsx2-capture/rpc-helper{5,6}-*; queued sound comparisons use the existing reverse-bind and first-wait captures.
-
-Map: 8,585 entries / 8,588 raw files / 242 selected extras. Monthly history retains full findings. No startup completion, native audio playback or presented game frame is verified.
+Reports: ignored `work/bt2-generation/entry-stop.json` (normal) and `sound-worker-stop.json` (separate diagnostic). Helper comparison: `tools/capture_ee/verify_startup_workers.py`. At this later phase, `verify_disc_read.py` and `verify_spu2_initialization.py` also fail on the previous pass's late reports (reused IOP sector buffer; missing report field). `verify_cri_rpc.py`, `verify_cri_preemption.py` and `verify_second_heap.py` describe earlier checkpoints only. Make those phase-aware in a later tooling pass.

@@ -1,6 +1,7 @@
 #pragma once
 
 // Authored bootstrap adapter for generated probes. Broader PS2 APIs fail explicitly.
+#include <string>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -94,6 +95,16 @@ public:
     unsigned startup_worker_dispatches=0,startup_worker_status_queries=0,startup_worker_waits=0;
     R5900Context startup_dispatch_parent{};
     void dispatchReadyStartupWorkers(std::uint8_t*,R5900Context*);
+    // Scheduler scope opened by main's admitted priority request. Dispatched workers use
+    // kernel thread semantics; any transition requiring preemption fails closed.
+    bool startup_scheduler_active=false;
+    unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
+    std::uint32_t main_priority_previous=0;
+    unsigned cri_stream_transfers=0,load_poll_boundaries=0;
+    bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
+    void requireNoPreemption(std::uint32_t,const R5900Context*) const;
+    bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
+    unsigned vblank_handler_registrations=0,vblank_enable_calls=0,vblank_disable_calls=0;
     void queueSoundsBind(R5900Context*,const std::array<unsigned,16>&);
     void finishQueuedSoundsBind(std::uint8_t*,R5900Context*);
 
@@ -171,7 +182,14 @@ public:
             context->pc = resume;
             return;
         }
+        if(code==0 && ((startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7)
+                || (main_priority_admissions && !startup_scheduler_active && current_thread_id==1))
+            && handleScheduledThreadSyscall(rdram,selector,context)) return;
+        if(code==0 && main_priority_admissions && !startup_scheduler_active && current_thread_id==1
+            && handleAdmittedIntcSyscall(rdram,selector,context)) return;
 #ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7)
+            {receiveCriStream(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
@@ -401,24 +419,6 @@ public:
             ++osd_config_reads;
             return; // SDK declares void; preserve the result register.
         }
-        if(code==0 && selector==0x30 && current_thread_id==5 && active_ee_stack) {
-            if(context->pc!=0x32EB68 || context->r[4].low!=7 || context->r[5].low!=0x34E3E0
-                || context->r[29].low!=0x34E3E0 || context->r[31].low!=0x2EE494 || context->cop0_status!=0x10001
-                || main_thread_priority!=2 || threads.size()!=6 || threads[5].id!=7
-                || !threads[5].suspended || threads[5].ready || threads[5].current_priority!=25 || startup_worker_status_queries)
-                throw UnsupportedSyscall(selector,context->pc);
-            // This generated caller consumes only status; preserve the unused descriptor fields.
-            write32(rdram,0x34E3E0,8);context->r[2].low=8;++startup_worker_status_queries;return;
-        }
-        if(code==0 && selector==0x32 && current_thread_id==5 && active_ee_stack) {
-            if(context->pc!=0x32EB88 || context->r[29].low!=0x34E430 || context->r[31].low!=0x2EE00C
-                || context->r[28].low!=0x38BDF0 || context->r[16].low!=1 || context->cop0_status!=0x10001
-                || startup_worker_status_queries!=1 || startup_worker_waits || read32(rdram,0x34E468)!=0x100250
-                || read32(rdram,0x34BBD0)!=1 || read32(rdram,0x34BBA8) || read32(rdram,0x34BC88))
-                throw UnsupportedSyscall(selector,context->pc);
-            threads[3].ready=false;threads[3].context=*context;++startup_worker_waits;
-            active_ee_stack->yield();throw std::runtime_error("Unvalidated startup worker wake");
-        }
         if (code == 0 && selector == 0x32 && active_ee_stack && current_thread_id==3) {
             if(context->pc!=0x32EB88 || context->r[29].low!=0x3A6C80
                 || context->r[28].low!=0x38BDF0 || context->r[16].low!=0x3A6D00
@@ -429,7 +429,7 @@ public:
                 throw UnsupportedSyscall(selector,context->pc);
             if(ee_queued_sound_rpc) {
                 if(sound_thread_waiting || !queued_sounds_bind.pending) throw UnsupportedSyscall(selector,context->pc);
-                sound_thread_waiting=true;threads.at(1).ready=false;threads.at(1).context=*context;
+                sound_thread_waiting=true;threads.at(1).ready=false;threads.at(1).waiting=true;threads.at(1).context=*context;
             } else ++ee_sound_probe_waits;
             ee_sound_probe_frontier=*context;
             active_ee_stack->yield();
@@ -946,6 +946,12 @@ public:
             context->pc = target;
             ++returns;
             return true;
+        }
+        last_branch_source_=source;last_branch_target_=target;
+        if(target==0x2EF218 && source==0x1007F0 && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {
+            // Main's asynchronous load poll found the request incomplete. Progress needs interrupt,
+            // timer and thread-wake delivery, which are unmodeled; stop before the idle call.
+            ++load_poll_boundaries;throw UnsupportedGuestBranch(target,source,resume);
         }
         const auto found = functions_.find(target);
         if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
@@ -1632,7 +1638,9 @@ public:
 
     bool eeCheckpointDue() {
         // One observed null-bind retry executes a 2^20+1-iteration guest loop.
-        if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u)) throw std::runtime_error("Bootstrap execution budget exceeded");
+        if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u))
+            throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
+                +", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
     }
 
@@ -1645,6 +1653,7 @@ public:
     struct DormantThread {
         std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
         bool ready=false;R5900Context context{};std::uint32_t current_priority=0;bool suspended=false;
+        bool waiting=false;unsigned wakeups=0; // Waiting means SleepThread; other wait kinds are unmodeled.
     };
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
@@ -1814,6 +1823,7 @@ private:
     void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
     void receiveMcRpc(std::uint8_t*,R5900Context*);
     void receiveCriControl(std::uint8_t*,R5900Context*);
+    void receiveCriStream(std::uint8_t*,R5900Context*);
     void receiveCriCreate(std::uint8_t*,R5900Context*);
     void receiveCriBind(std::uint8_t*,R5900Context*);
     void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);
@@ -2032,6 +2042,7 @@ private:
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;
     unsigned checkpoints_ = 0, dispatch_depth_ = 0;
+    std::uint32_t last_branch_source_ = 0, last_branch_target_ = 0;
     bool timer3_mode_supplied_ = false;
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;
     bool timer2_mode_supplied_ = false, intc_mask_supplied_ = false, timer2_readback_supplied_ = false;

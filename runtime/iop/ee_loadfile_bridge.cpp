@@ -1,5 +1,6 @@
 #include "ps2_runtime.h"
 #include "module_service.h"
+#include <algorithm>
 void PS2Runtime::receiveNativeModule(std::uint8_t* rdram,R5900Context* context) {
         const auto d=static_cast<std::uint32_t>(context->r[4].low);
         const bool buffer=read32(rdram,0x3A97E0)==6;
@@ -471,6 +472,29 @@ void PS2Runtime::receiveCriCreate(std::uint8_t* rdram,R5900Context* context) {
     deliverRpcEnd(rdram,context,0x355C70,10,server.descriptor,server.buffer);
     ++cri_rpc_calls;++sif_dma_submissions;context->r[2].low=0x780002;
     native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
+}
+
+void PS2Runtime::receiveCriStream(std::uint8_t* rdram,R5900Context* context) {
+    // Raw EE->IOP copy of a CRI stream buffer registered by original create commands 0/1.
+    // Attribute 0 requests no IOP notification; IOP consumption and acknowledgement are unmodeled.
+    const auto d=static_cast<std::uint32_t>(context->r[4].low);
+    if(!native_iop || iop_epoch!=1 || native_iop->cri_create_calls!=2 || context->pc!=0x32F028
+        || context->r[5].low!=1 || d<48 || d%4)
+        throw UnsupportedSyscall(0x77,context->pc);
+    checkMemory(rdram,d-48,68);
+    struct Pair {std::uint32_t slot,buffer,iop;};
+    constexpr std::array<Pair,2> pairs={{{0x1B58C0,0x365BC0,0x14FD40},{0x1B5904,0x35FD00,0x191740}}};
+    const auto object=d-48;const auto slot=read32(rdram,object+4);
+    const auto pair=std::find_if(pairs.begin(),pairs.end(),[&](const Pair& p){return p.slot==slot;});
+    if(pair==pairs.end() || read32(rdram,object+12)!=pair->buffer || read32(rdram,object+24)!=pair->iop
+        || read32(rdram,object+28)!=0x880 || (read32(rdram,object)&0xFF00))
+        throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<std::uint32_t,4> descriptor={pair->buffer,pair->iop,0x880,0};
+    for(unsigned n=0;n<4;++n)if(read32(rdram,d+n*4)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
+    checkMemory(rdram,pair->buffer,0x880);native_iop->runtime.check(pair->iop,0x880);
+    std::copy_n(memory_.data()+pair->buffer,0x880,native_iop->runtime.ram.data()+pair->iop);
+    ++cri_stream_transfers;++sif_dma_submissions;
+    context->r[2].low=0x790000+cri_stream_transfers; // Owned logical transfer token.
 }
 
 void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
