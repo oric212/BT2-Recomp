@@ -2,9 +2,60 @@
 
 Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06.
 
-## Current status
+## Verified checkpoint
 
-The user-confirmed native startup probe completes **37 CRI calls and six IOP heap allocations**, including second-channel creation and command 0x40A. The first channel's sixteen constructor pairs remain complete. The first owned 2048-byte AutoDMA half is programmed and remains pending. No DMA consumption, completion IRQ, native audio or presented game frame is claimed. Initial directory-sector loading and all five listed metadata lookups remain complete.
+<!-- progress-summary:start -->
+**Verified checkpoint: native startup probe; complete startup remains unfinished.**
+Last measured: **2026-10-06**, using the local game ISO and prepared startup inputs.
+
+![Measured native startup dashboard](progress/dashboard.svg)
+
+| Area | Verified result |
+| --- | --- |
+| EE execution | **291 distinct entries entered / 286 completed**; kernel **2 / 2** |
+| Runtime activity | **3,855 calls / 3,848 returns**; **61,612 IOP instructions** |
+| Sound setup | **37 CRI calls**, **six IOP heap allocations**; first AutoDMA half pending |
+| Disc access | Directory-sector read and initial metadata lookups work |
+| Graphics | Two startup clears consumed; **no presented game frame** |
+| Current blocker | Worker `ReferThreadStatus`: selector `0x30`, EE PC `0x32EB68` |
+| Active work | Worker status/start/priority changes **implemented locally, not yet verified** |
+| Next gate | Finish worker tests/build, rerun startup, compare captures and record the new boundary |
+
+Counts describe observed execution, not fully restored gameplay functions or a percentage of completion. Audio playback, complete startup and gameplay are not verified.
+
+```mermaid
+flowchart LR
+    A["Local validation<br/>Verified"] --> B["Map and generation<br/>Working; provisional map"]
+    B --> C["Native startup execution<br/>Verified to checked boundary"]
+    C --> D["Worker scheduling<br/>Active; latest changes unverified"]
+    D --> E["Archive payload loading<br/>Not verified"]
+    E --> F["Game draw and presentation<br/>No presented frame"]
+    F --> G["Title/menu and battle<br/>Not reached"]
+    classDef verified fill:#173c2c,stroke:#4ade80,color:#fff
+    classDef active fill:#493b16,stroke:#fbbf24,color:#fff
+    classDef future fill:#242b36,stroke:#94a3b8,color:#fff
+    class A,B,C verified
+    class D active
+    class E,F,G future
+```
+
+This is the main startup path, not a strict dependency graph; audio and other runtime services develop alongside it.
+
+| Subsystem | Evidence / measurement | Status |
+| --- | --- | --- |
+| Mapping / generation | 8,584 provisional EE entries; 8,587 raw generated files; 221 extra entries selected | Tooling working; map remains provisional |
+| IOP execution | 213 physical entry targets; 14 module-load paths / 13 resident modules | Bounded execution verified |
+| EE memory / threads | Four startup pools; one child ready but unexecuted | Scheduling incomplete |
+| Disc loading | One two-sector read; original completion callback; six metadata lookups/transfers | Initial metadata verified; archive payload pending |
+| Memory cards | Six DMA pairs; five timed FIFO probes | Absent-card path verified; mounted filesystem pending |
+| Audio transport | First owned 2,048-byte AutoDMA half programmed | Consumption / IRQ / native playback unverified |
+| GS sink | Three packets; two startup draws; 573,440 sprite pixels | Startup clears verified; presentation absent |
+| End-to-end game | No title screen, input-driven battle or completed match | Not reached |
+
+**Change from the preceding measured checkpoint:** CRI calls **35 → 37**, heaps **4 → 6**, EE call events **3,415 → 3,855**, IOP instructions **61,054 → 61,612**. The older **111 / 107** distinct count is from an earlier checkpoint; it is not a same-pass delta.
+<!-- progress-summary:end -->
+
+## Verification
 
 The last completed pass passed MSVC builds and **16/16 CTests**. Current tooling checks passed **142 capture tests**, **52 recompilation tests** and **13 IOP tooling tests**. Later worker changes are still under verification; their final build/test result is pending. Proprietary inputs, captures and generated code remain ignored.
 
@@ -15,16 +66,6 @@ Latest user-confirmed run stops at **ReferThreadStatus, selector 0x30 / EE PC 0x
 Next: verify the bounded worker status/start/priority changes, then measure the resulting scheduling boundary. See [EE sound scheduling plan](EE_SOUND_SCHEDULING_PLAN.md) and [second-channel evidence](CRI_SECOND_CHANNEL_PLAN.md). Pending changes are not counted as working.
 
 Remaining: SDRDRV reverse bind to 0x80000704, general scheduling/timer delivery, mounted cards, archive payload loading, audio consumption and presentation. Logical IOP time remains 1900 us; the fifth card alarm is armed for 2000 us. An EE child is ready but has not executed.
-
-## Key counts
-
-- **8,584 provisional EE map entries / 8,587 raw generated files**. **221 extra selected entries** in the measured checkpoint. Fully restored gameplay-function totals are unknown.
-- Full checkpoint: **3,855 EE calls / 3,848 returns**, **61,612 IOP instructions / 213 physical entry targets**. These are execution events, not restored-function counts.
-- Measured distinct coverage: **291 EE entered / 286 completed**, plus **2 kernel entered / 2 completed**. Counts are unique addresses with observed entries/returns; they do not establish complete function correctness. The earlier 111 / 107 snapshot is preserved in history.
-- Fourteen module-load paths / thirteen resident modules; **six owned IOP heap allocations**, four EE startup pools; CRI child parked on its first semaphore.
-- Disc: one two-sector read, original completion callback, four logical read DMA jobs and six metadata lookups/transfers. No archive payload decoded.
-- Card: six DMA pairs / five timed FIFO probes; no mounted-card filesystem support.
-- GS: three packets / two startup draws / 573,440 sprite pixels; no presented frame or VU microprogram execution.
 
 Run the measured checkpoint using the [startup probe instructions](BUILDING.md): `python tools/ps2recomp/run_startup_probe.py --disc <local-ISO-path>`.
 
@@ -44,6 +85,10 @@ Run the measured checkpoint using the [startup probe instructions](BUILDING.md):
 - [ ] Character select and battle load.
 - [ ] Playable versus battle.
 - [ ] Audio and full match.
+
+## Active pass and tracking
+
+See [active-pass handoff](progress/ACTIVE_PASS.md) for pending files, verification steps and resume instructions. See [tracking rules](PROGRESS_TRACKING.md) for status definitions and README synchronization. New changes enter the verified checkpoint only after their required checks pass.
 
 ## History and working rules
 

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title desc">
+<title id="title">BT2 measured startup dashboard</title>
+<desc id="desc">Bounded startup counters. Worker changes remain unverified; there is no presented game frame.</desc>
+<rect width="900" height="420" rx="14" fill="#111827"/>
+<g font-family="Segoe UI,Arial,sans-serif" fill="#f1f5f9">
+<text x="24" y="36" font-size="22" font-weight="700">BT2 • Measured native startup</text>
+<text x="24" y="62" font-size="14" fill="#cbd5e1">2026-10-06 • Observed execution; complete startup remains unfinished</text>
+<rect x="24" y="84" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="38" y="109" font-size="14" fill="#cbd5e1">Distinct EE entries</text>
+<text x="38" y="139" font-size="24" font-weight="700">291 / 286</text>
+<text x="38" y="162" font-size="13" fill="#94a3b8">entered / completed</text>
+<rect x="312" y="84" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="326" y="109" font-size="14" fill="#cbd5e1">IOP execution</text>
+<text x="326" y="139" font-size="24" font-weight="700">61,612</text>
+<text x="326" y="162" font-size="13" fill="#94a3b8">instructions executed</text>
+<rect x="600" y="84" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="614" y="109" font-size="14" fill="#cbd5e1">Sound setup</text>
+<text x="614" y="139" font-size="24" font-weight="700">37 CRI calls</text>
+<text x="614" y="162" font-size="13" fill="#94a3b8">6 heap allocations</text>
+<rect x="24" y="196" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="38" y="221" font-size="14" fill="#cbd5e1">EE execution events</text>
+<text x="38" y="251" font-size="24" font-weight="700">3,855 / 3,848</text>
+<text x="38" y="274" font-size="13" fill="#94a3b8">calls / returns</text>
+<rect x="312" y="196" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="326" y="221" font-size="14" fill="#cbd5e1">Disc startup</text>
+<text x="326" y="251" font-size="24" font-weight="700">1 read / 6 RPC</text>
+<text x="326" y="274" font-size="13" fill="#94a3b8">bounded metadata path</text>
+<rect x="600" y="196" width="272" height="96" rx="9" fill="#1e293b"/>
+<text x="614" y="221" font-size="14" fill="#cbd5e1">GS startup sink</text>
+<text x="614" y="251" font-size="24" font-weight="700">3 packets / 2 draws</text>
+<text x="614" y="274" font-size="13" fill="#94a3b8">no presented game frame</text>
+<rect x="24" y="318" width="848" height="76" rx="9" fill="#40351a"/>
+<text x="38" y="345" font-size="16" fill="#fde68a">Measured boundary: selector 0x30 • EE PC 0x32EB68</text>
+<text x="38" y="370" font-size="14">Active: worker status/start/priority changes • final verification pending</text>
+</g></svg>

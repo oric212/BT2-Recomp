@@ -6,7 +6,60 @@ A native Windows x64 port of Dragon Ball Z: Budokai Tenkaichi 2 using static rec
 
 ## Current status
 
-The C++20 host builds with CMake and MSVC. Provisional mapping, local PS2Recomp generation and generated startup execution work through checked runtime boundaries. The scoped software GS sink consumes two startup color/depth clear requests; main startup then reaches SIF transport reinitialization after the IOP reboot. Game boot, displayed frames, gameplay and audio remain incomplete. The local retail revision is confirmed through official Redump disc checksums and an embedded-executable match; see [current progress](docs/PROG.md).
+<!-- progress-summary:start -->
+**Verified checkpoint: native startup probe; complete startup remains unfinished.**
+Last measured: **2026-10-06**, using the local game ISO and prepared startup inputs.
+
+![Measured native startup dashboard](docs/progress/dashboard.svg)
+
+| Area | Verified result |
+| --- | --- |
+| EE execution | **291 distinct entries entered / 286 completed**; kernel **2 / 2** |
+| Runtime activity | **3,855 calls / 3,848 returns**; **61,612 IOP instructions** |
+| Sound setup | **37 CRI calls**, **six IOP heap allocations**; first AutoDMA half pending |
+| Disc access | Directory-sector read and initial metadata lookups work |
+| Graphics | Two startup clears consumed; **no presented game frame** |
+| Current blocker | Worker `ReferThreadStatus`: selector `0x30`, EE PC `0x32EB68` |
+| Active work | Worker status/start/priority changes **implemented locally, not yet verified** |
+| Next gate | Finish worker tests/build, rerun startup, compare captures and record the new boundary |
+
+Counts describe observed execution, not fully restored gameplay functions or a percentage of completion. Audio playback, complete startup and gameplay are not verified.
+
+```mermaid
+flowchart LR
+    A["Local validation<br/>Verified"] --> B["Map and generation<br/>Working; provisional map"]
+    B --> C["Native startup execution<br/>Verified to checked boundary"]
+    C --> D["Worker scheduling<br/>Active; latest changes unverified"]
+    D --> E["Archive payload loading<br/>Not verified"]
+    E --> F["Game draw and presentation<br/>No presented frame"]
+    F --> G["Title/menu and battle<br/>Not reached"]
+    classDef verified fill:#173c2c,stroke:#4ade80,color:#fff
+    classDef active fill:#493b16,stroke:#fbbf24,color:#fff
+    classDef future fill:#242b36,stroke:#94a3b8,color:#fff
+    class A,B,C verified
+    class D active
+    class E,F,G future
+```
+
+This is the main startup path, not a strict dependency graph; audio and other runtime services develop alongside it.
+
+| Subsystem | Evidence / measurement | Status |
+| --- | --- | --- |
+| Mapping / generation | 8,584 provisional EE entries; 8,587 raw generated files; 221 extra entries selected | Tooling working; map remains provisional |
+| IOP execution | 213 physical entry targets; 14 module-load paths / 13 resident modules | Bounded execution verified |
+| EE memory / threads | Four startup pools; one child ready but unexecuted | Scheduling incomplete |
+| Disc loading | One two-sector read; original completion callback; six metadata lookups/transfers | Initial metadata verified; archive payload pending |
+| Memory cards | Six DMA pairs; five timed FIFO probes | Absent-card path verified; mounted filesystem pending |
+| Audio transport | First owned 2,048-byte AutoDMA half programmed | Consumption / IRQ / native playback unverified |
+| GS sink | Three packets; two startup draws; 573,440 sprite pixels | Startup clears verified; presentation absent |
+| End-to-end game | No title screen, input-driven battle or completed match | Not reached |
+
+**Change from the preceding measured checkpoint:** CRI calls **35 → 37**, heaps **4 → 6**, EE call events **3,415 → 3,855**, IOP instructions **61,054 → 61,612**. The older **111 / 107** distinct count is from an earlier checkpoint; it is not a same-pass delta.
+<!-- progress-summary:end -->
+
+[Current progress](docs/PROG.md) · [Active-pass handoff](docs/progress/ACTIVE_PASS.md) · [Detailed history](docs/progress/2026-10.md) · [Tracking rules](docs/PROGRESS_TRACKING.md)
+
+The retail revision is confirmed against Redump disc checksums and an embedded-executable match. The host builds with CMake and MSVC; startup testing requires locally prepared ignored inputs. See [build and startup test instructions](docs/BUILDING.md).
 
 Game files are not included. Users supply files from their own copy locally under ignored `game_data/` or `rom/`. Never commit proprietary content or generated code derived from the retail executable.
 

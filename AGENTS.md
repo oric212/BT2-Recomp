@@ -34,3 +34,7 @@ Read and write documentation explicitly as UTF-8. Preserve historical entries wh
 ## Usage-aware passes
 
 Preserve aggressive subsystem-scale passes while usage is plentiful. Reduce scope for the five-hour allowance only when remaining usage is low; do not use it to justify small passes routinely. Check the actual allowance before making that decision.
+
+## Progress and interrupted-pass tracking
+
+Follow docs/PROGRESS_TRACKING.md. Read docs/progress/ACTIVE_PASS.md when resuming unfinished work; record pending changes and remaining verification before an interruption. Keep docs/PROG.md's verified checkpoint distinct from unverified implementation. Export only allowlisted counters from ignored startup reports, synchronize the marked README dashboard with tools/docs/sync_progress.py, and run its --check before progress commits. Detailed completed outcomes belong in monthly history. Never count isolated service coverage as full startup coverage.
