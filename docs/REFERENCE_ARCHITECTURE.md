@@ -236,3 +236,10 @@ Pinned PS2SDK [EE libcdvd.c](https://github.com/ps2dev/ps2sdk/blob/ac92a9f657d2e
 The pinned BT3 boot-service/translated-handler pattern informs the CDVDFSV adapter. Every relocated code range, the captured server/handler and retained GP match the local disc's module. Public PS2SDK CDVDMAN SC(-10) acquires/clears a file-search event bit for a nonzero parameter and releases it for zero, returning that parameter. The adapter models one serialized owned request and restores earlier providers afterward; it does not execute the boot entry or register a resident CDVDFSV worker. No reference implementation copied.
 
 Original BT2/CDVDFSV code selects layer-zero search ordinal 84 from its 300-byte request. Its accepted SIF submission sends 36 bytes; on this path it does not call sceSifDmaStat. Independent submission and EE-return captures verify the metadata and result separately. The host supplies bounded ISO9660 metadata only. Unused filename padding differs legitimately between fresh native RAM and retail residue. Sector data, repeated search and asynchronous disc timing remain unsupported.
+
+
+### Reached EE indexed cache scans and CRI child-start boundary
+
+Reviewed pinned BT3 coherent native-memory/cache configuration and the pinned PCSX2 CACHE implementation linked in EE_CACHE_TRANSFER_PLAN.md. Adapted explicit invalid logical tags and checked indexed ordering to owned coherent RAM; original BT2 translated branches remain intact. Two independent full scans publish both ways and caller returns. PCSX2's flags-only TagLo behavior cannot validate physical PS2 tag addresses or cache timing. No reference implementation was copied.
+
+Original CRI 0x40C now exposes a priority-39 child start from its priority-48 borrowed RPC worker. Existing bounded MCSERV/SIO2 event preemption informs parent ownership, but does not establish the new child-start lifecycle or first wait. CRI_THREAD_START_PLAN.md records the evidence and required scheduling design; the runtime explicitly rejects this transition.

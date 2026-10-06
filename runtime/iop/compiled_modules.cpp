@@ -630,8 +630,16 @@ std::vector<std::uint8_t> NativeIopService::callCriCreate(unsigned epoch,std::sp
     ++cri_create_calls;return response;
 }
 
-std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch) {
-    if(epoch!=epoch_ || failed_ || cri_create_calls!=1 || cri_control_calls)throw std::runtime_error("CRI control outside observed lifecycle");
-    try {auto response=executeRegisteredRpc(0x90000200,0x403,{},0,0x355C70,0x39DD80);++cri_control_calls;return response;}
+std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
+    if(epoch!=epoch_ || failed_ || cri_create_calls!=1 || cri_control_calls>1
+        || command!=(cri_control_calls?0x40Cu:0x403u)
+        || input.size()!=(cri_control_calls?12u:0u))
+        throw std::runtime_error("CRI control outside observed lifecycle");
+    if(command==0x40C) {
+        const std::array<unsigned,3> expected={0xBB80,0xFFFF,0xFFFF};
+        for(unsigned n=0;n<3;++n) {unsigned word;std::memcpy(&word,input.data()+n*4,4);
+            if(word!=expected[n])throw std::runtime_error("CRI 0x40C input differs");}
+    }
+    try {auto response=executeRegisteredRpc(0x90000200,command,input,command==0x40C?12u:0u,0x355C70,0x39DD80);++cri_control_calls;return response;}
     catch(...){failed_=true;throw;}
 }

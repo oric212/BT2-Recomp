@@ -151,7 +151,7 @@ public:
         if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && cri_rpc_binds==1 && cri_rpc_calls==1 && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
+        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls==1 || cri_rpc_calls==2) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
         if(code==0 && selector==0x77 && cri_rpc_binds==1 && !cri_rpc_calls && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
         if(code==0 && selector==0x77 && ncmd_ready_calls==1 && !ncmd_read_calls && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
@@ -667,7 +667,7 @@ public:
                 && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
-            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=1 && heap_calls==3 && semaphores.size()==10 && address==initial_sp-512 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x355C70 && read32(rdram,0x3A97E0)==(cri_rpc_calls?0x403u:2u);
+            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=2 && heap_calls==3 && semaphores.size()==10 && address==initial_sp-512 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x355C70 && read32(rdram,0x3A97E0)==(cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
             const bool third_heap_sema=heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1 && semaphores.size()==10 && address==initial_sp-480 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x3AC840;
             const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
                 && semaphores.size()==7 && address==initial_sp-288 && maximum==1 && initial==0 && option==0x3838E8;
@@ -1035,6 +1035,40 @@ public:
         checkMemory(rdram, address, 64);
         ++data_cache_lines;
     }
+    // Owned EE RAM is coherent: no delayed cache writes or valid logical lines.
+    // This is the reached indexed two-way scan, not physical R5900 cache emulation.
+    void indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
+                          std::uint32_t operation, std::uint32_t address) {
+        const auto begin=static_cast<std::uint32_t>(ctx->r[4].low);
+        const auto end=static_cast<std::uint32_t>(ctx->r[5].low);
+        const auto way=address&1u;
+        if ((address&~1u)>0xFC0 || (address&0x3Eu) || begin>end
+            || (begin&63u) || (end&63u) || (ctx->cop0_status&0x10000u))
+            throw std::runtime_error("Unsupported indexed cache range/status");
+        checkMemory(rdram,begin,static_cast<std::size_t>(end)-begin+64u);
+        if (operation==0x10u) {
+            const auto slot=indexed_cache_tag_reads%128u;
+            const auto expected=(slot/2u)*64u+(slot&1u);
+            if (indexed_cache_tag_ready || address!=expected
+                || (ctx->pc!=(way?0x32F500u:0x32F4C4u) && ctx->pc!=(way?0x32F640u:0x32F604u)))
+                throw std::runtime_error("Indexed cache scan order differs");
+            indexed_cache_tag_ready=true;
+        } else if (operation==0x14u || operation==0x16u) {
+            // Invalid coherent tags cannot select a nonzero owned EE range.
+            throw std::runtime_error("Unexpected indexed writeback for invalid native tag");
+        } else throw std::runtime_error("Unsupported indexed CACHE operation");
+        ++indexed_cache_operations;
+    }
+    std::uint32_t readCacheTagLo(R5900Context* ctx) {
+        const auto way=indexed_cache_tag_reads&1u;
+        if (!indexed_cache_tag_ready || (ctx->pc!=(way?0x32F508u:0x32F4CCu) && ctx->pc!=(way?0x32F648u:0x32F60Cu)))
+            throw std::runtime_error("TagLo read without matching indexed load");
+        indexed_cache_tag_ready=false;
+        ++indexed_cache_tag_reads;
+        return 0; // Explicit invalid tag; verified against both captured indexed ways.
+    }
+    unsigned indexed_cache_operations=0, indexed_cache_tag_reads=0;
+    bool indexed_cache_tag_ready=false;
     unsigned data_cache_lines = 0;
     static constexpr std::size_t sif_iop_size = 2 * 1024 * 1024;
     void supplySifRpcState(std::uint32_t word) {

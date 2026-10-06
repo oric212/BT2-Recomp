@@ -471,21 +471,24 @@ void PS2Runtime::receiveCriCreate(std::uint8_t* rdram,R5900Context* context) {
 void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<unsigned>(context->r[4].low);
     auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x90000200);
-    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || cri_rpc_calls!=1
-        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-656 || context->r[5].low!=1
+    const bool payload=cri_rpc_calls==2;
+    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (cri_rpc_calls!=1 && cri_rpc_calls!=2)
+        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-656 || context->r[5].low!=(payload?2u:1u)
         || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
-    const std::array<unsigned,4> desc={0x203A97C0,0x1E640,64,0x44};
-    const std::array<unsigned,14> packet={64,0,0x8000000A,0,5,0x203A97C0,55,0x355C70,0x403,0,0x39DD80,0,1,server.descriptor};
-    for(unsigned n=0;n<4;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<unsigned,8> desc={0x39DC80,server.buffer,12,0,0x203A97C0,0x1E640,64,0x44};
+    const auto start=payload?0u:4u;
+    for(unsigned n=start;n<8;++n)if(read32(rdram,d+(n-start)*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+    const auto command=payload?0x40Cu:0x403u;
+    const std::array<unsigned,14> packet={payload?0xC40u:64u,payload?server.buffer:0u,0x8000000A,0,5,0x203A97C0,payload?56u:55u,0x355C70,command,payload?12u:0u,0x39DD80,payload?12u:0u,1,server.descriptor};
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;
-    try {response=native_iop->callCriControl(iop_epoch);}
+    try {response=native_iop->callCriControl(iop_epoch,command,payload?std::span<const std::uint8_t>(memory_.data()+0x39DC80,12):std::span<const std::uint8_t>{});}
     catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
     std::copy(response.begin(),response.end(),memory_.begin()+0x39DD80);
-    const std::array<unsigned,16> reply={0,0,0x80000008,0,0,0,0,0x355C70,0x8000000A,0,0,0,0,0,0,0};
+    const std::array<unsigned,16> reply={payload?0xC00u:0u,payload?0x39DD80u:0u,0x80000008,0,0,0,0,0x355C70,0x8000000A,0,0,0,0,0,0,0};
     for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,0x355C70,10,server.descriptor,server.buffer);
-    ++cri_rpc_calls;++sif_dma_submissions;context->r[2].low=0x780003;
+    ++cri_rpc_calls;++sif_dma_submissions;context->r[2].low=0x780002+cri_rpc_calls-1;
     native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
 }

@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control
+from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -24,6 +24,22 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertIn('dataCacheLine(rdram, ADD32(GPR_U32(ctx, 8), 0x40u))', text)
         self.assertEqual(route_data_cache(text), (text, 0))
         self.assertEqual(route_data_cache(source.replace('0x18,', '0x19,')), (source.replace('0x18,', '0x19,'), 0))
+
+    def test_indexed_cache_preserves_explicit_tag_reads(self):
+        source='// 0x1234: 0xbcd00001  cache       0x10, 0x1($a2)\nctx->pc = 0x1234u;\n// CACHE instruction (ignored)\nSET_GPR_S32(ctx, 2, (int32_t)ctx->cop0_taglo);'
+        text,count,reads=route_indexed_cache(source)
+        self.assertEqual((count,reads),(1,1))
+        self.assertIn('indexedDataCache(rdram, ctx, 0x10u',text)
+        self.assertIn('readCacheTagLo(ctx)',text)
+        self.assertEqual(route_indexed_cache(text),(text,0,0))
+        with self.assertRaises(ValueError):route_indexed_cache(source.replace('0x10,','0x11,'))
+        with self.assertRaises(ValueError):route_indexed_cache('ctx->cop0_taglo = 0;')
+
+    def test_fast_halfword_load_uses_checked_owned_ram(self):
+        text,count=route_fast_halfword_reads('SET_GPR_ZE32(ctx, 2, (uint16_t)FAST_READ16(0x1234u));')
+        self.assertEqual(count,1);self.assertIn('READ16(0x1234u)',text)
+        self.assertEqual(route_fast_halfword_reads(text),(text,0))
+        with self.assertRaises(ValueError):route_fast_halfword_reads('FAST_READ16(variable)')
 
     def load(self, address=4, memory_size=8, file_size=4, offset=0):
         return {"virtual_address": address, "memory_size": memory_size,

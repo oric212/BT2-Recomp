@@ -7,6 +7,25 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_cache_capture_keeps_original_tag_read_and_and(self):
+        blob=texture_stub('rpc-cache-after')
+        self.assertEqual(len(blob),0xA00)
+        self.assertEqual(struct.unpack_from('<128I',blob,0x800),(0xDEADBEEF,)*128)
+        for offset,way,resume in ((0x100,0,0x32F4D4),(0x180,1,0x32F510)):
+            words=struct.unpack_from('<9I',blob,offset)
+            self.assertEqual(words[0],0x4002E000)
+            self.assertEqual(words[5],0xAF420000|(way*0x100))
+            self.assertEqual(words[6],0x00471024)
+            self.assertEqual((words[7]&0x3FFFFFF)<<2,resume)
+
+    def test_invalidate_capture_resumes_original_addu(self):
+        blob=texture_stub('rpc-cache-invalidate-after')
+        for offset,resume in ((0x100,0x32F614),(0x180,0x32F650)):
+            words=struct.unpack_from('<9I',blob,offset)
+            self.assertEqual(words[0],0x4002E000)
+            self.assertEqual(words[6],0x00471024)
+            self.assertEqual((words[7]&0x3FFFFFF)<<2,resume)
+
     def test_disc_semaphore_hook_preserves_earlier_clients(self):
         blob=texture_stub('rpc-disc-bind-sema');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
         self.assertEqual(w[:2],(0x3C18003A,0x37188780))

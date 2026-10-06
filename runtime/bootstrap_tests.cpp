@@ -54,6 +54,31 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 
 }
 int main() {
+    {
+        PS2Runtime cache; cache.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size)); R5900Context ctx;
+        ctx.r[4].low=0x1000;ctx.r[5].low=0x1040;
+        ctx.pc=0x32F4CC;
+        reject([&]{cache.readCacheTagLo(&ctx);});
+        for (unsigned slot=0;slot<128;++slot) {
+            const unsigned way=slot&1u,address=(slot/2)*64+way;
+            ctx.pc=way?0x32F500:0x32F4C4;
+            if (!slot) {
+                reject([&]{cache.indexedDataCache(cache.memory().data(),&ctx,0x10,address+64);});
+                ctx.cop0_status=0x10000;
+                reject([&]{cache.indexedDataCache(cache.memory().data(),&ctx,0x10,address);});
+                ctx.cop0_status=0;
+                require(cache.indexed_cache_operations==0);
+            }
+            cache.indexedDataCache(cache.memory().data(),&ctx,0x10,address);
+            reject([&]{cache.indexedDataCache(cache.memory().data(),&ctx,0x10,address);});
+            ctx.pc=way?0x32F508:0x32F4CC;
+            require(cache.readCacheTagLo(&ctx)==0);
+            reject([&]{cache.readCacheTagLo(&ctx);});
+        }
+        require(cache.indexed_cache_tag_reads==128 && cache.indexed_cache_operations==128);
+        reject([&]{cache.indexedDataCache(cache.memory().data(),&ctx,0x14,0);});
+    }
+
     try {
         {
             PS2Runtime console;console.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));

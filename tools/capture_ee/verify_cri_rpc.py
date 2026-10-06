@@ -39,7 +39,9 @@ def verify(root,native):
     r=json.loads(native.read_text(encoding='utf-8'))
     require(r.get('cri_rpc_binds')==1 and r.get('cri_rpc_calls') in (1,2) and r.get('native_iop_error')=='','Native CRI lifecycle differs')
     ee=Path(str(native)+'.ee.bin').read_bytes();ni=Path(str(native)+'.iop.bin').read_bytes()
-    require(words(ee,0x355C70,1)==(0,) and words(ee,0x355C84,1)==(0x1767C0,) and words(ee,0x355C94,1)==(0x176D30,),'Native CRI bind ownership differs')
+    pending_third=(r.get('cri_rpc_calls')==2 and r.get('selector')==0x40 and r.get('pc')==0x32EC68
+        and r.get('packet_words',[0]*9)[6:12]==[56,0x355C70,0x40C,12,0x39DD80,12])
+    require(words(ee,0x355C70,1)==((0x203A97C0 if pending_third else 0),) and words(ee,0x355C84,1)==(0x1767C0,) and words(ee,0x355C94,1)==(0x176D30,),'Native CRI bind ownership differs')
     require(words(ee,0x39DD80,1)==(0x1768C0,),'Native CRI slot differs')
     # Compare stable slot fields; internal function pointers relocate with the module.
     retail=list(words(iop,0xC67F0,12));actual=list(words(ni,0x1768C0,12))

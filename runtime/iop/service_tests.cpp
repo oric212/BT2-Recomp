@@ -47,8 +47,26 @@ int main(int argc,char** argv) {
                 const auto completed=service.runtime.ram;rejected([&]{service.callCriCreate(1,input);});check(service.runtime.ram==completed);
                 check(service.callCriControl(1).empty() && service.cri_control_calls==1);
                 const auto controlled=service.runtime.ram;rejected([&]{service.callCriControl(1);});check(service.runtime.ram==controlled);
+                const std::array<unsigned,3> configuration={0xBB80,0xFFFF,0xFFFF};
+                const auto configuration_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(configuration.data()),12);
+                rejected([&]{service.callCriControl(2,0x40C,configuration_bytes);});
+                rejected([&]{service.callCriControl(1,0x40C,configuration_bytes.first(8));});
+                auto wrong_configuration=configuration;wrong_configuration[0]=44100;
+                rejected([&]{service.callCriControl(1,0x40C,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong_configuration.data()),12));});
+                rejected([&]{service.callCriControl(1,0x422,configuration_bytes);});
+                check(service.runtime.ram==controlled);
+                bool preemption_blocked=false;
+                try {service.callCriControl(1,0x40C,configuration_bytes);}
+                catch(const std::runtime_error& e) {
+                    preemption_blocked=std::string(e.what())=="Higher-priority nested IOP start needs preemption";
+                    std::cout<<"Observed CRI 0x40C boundary: "<<e.what()<<" pc="<<std::hex<<service.runtime.executing_pc<<std::dec<<"\n";
+                    for(const auto& [id,t]:service.runtime.threads)
+                        if(!t.ready && !t.waiting)std::cout<<"Unstarted child id="<<id<<" entry="<<std::hex<<t.entry<<" gp="<<t.gp<<" stack="<<t.stack<<" size="<<t.stacksize<<std::dec<<" priority="<<t.priority<<"\n";
+                }
+                check(preemption_blocked && service.cri_control_calls==1 && !service.runtime.current_thread);
+                rejected([&]{service.callCriControl(1,0x40C,configuration_bytes);});
                 std::ofstream out(argv[3],std::ios::binary);out.write(reinterpret_cast<const char*>(service.runtime.ram.data()),service.runtime.ram.size());check(bool(out));
-                std::cout<<"Original CRI create returned owned slot; epoch, size and duplicate rejection preserve RAM.\n";return 0;
+                std::cout<<"Original CRI create/control complete; 0x40C reaches checked nested-preemption boundary.\n";return 0;
             }
             std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
             std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;

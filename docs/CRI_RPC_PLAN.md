@@ -33,3 +33,14 @@ The real translated CRI handler executes on its retained worker GP/stack and ret
 The next command 0x403 has zero input/result bytes and returns normally in retail and the isolated native original-handler test. Its full EE path is not yet validated: generated cache maintenance intervenes before submission. The authored adapter remains strictly gated and its full transport awaits that cache contract. A third retail capture reaches command 0x40C with twelve input/output bytes and inputs `[0xBB80, 0xFFFF, 0xFFFF]`; no meaning or native completion is inferred.
 
 Full checkpoint: 2381 calls / 2374 returns, 43416 IOP instructions / 172 targets. See [EE cache scope](EE_CACHE_TRANSFER_PLAN.md) for the new major subsystem boundary. No stream payload or native audio playback is claimed.
+
+
+## Cache/control completion and next scheduling boundary (2026-10-06)
+
+Both reached cache helpers now execute after independent both-way TagLo/caller validation. Full command 0x403 now runs its original handler and generated RPC_END cleanup; its native completion count advances to two CRI calls. Additional reached entries and checked generated constant halfword reads carry execution to command 0x40C, with the independently captured twelve-byte input.
+
+The full native 0x40C path transfers the original input and executes the real handler, then stops at thbase:6 / 0x1745F0. A priority-39 child (entry 0x16D890, GP 0x17DDF0, stack 0x1E6E00/0x800) would preempt its priority-48 borrowed CRI worker. Explicit rejection leaves completion count at two; failed native services reject retry. The isolated original-handler test verifies this same boundary and preflight rejection of wrong epoch, command, size and input. It does not report 0x40C success.
+
+A fourth retail request captures 0x422, twelve input bytes `[1, 0x150640, 0x100]`, four result bytes, caller return 0x2FD1F8. It observes the preceding 0x40C result `[0, 1, 0]`; no native return or meaning is substituted. Follow [the new child-start scope](CRI_THREAD_START_PLAN.md) before dispatching this worker.
+
+The fourteen earlier-scope evidence validators run against ignored `cache-completed.json`, retained at the next command's semaphore boundary with no IOP failure. A separate `verify_cri_preemption.py` validates the latest failing full checkpoint. This keeps completed cache/0x403 claims separate from the unsupported scheduler transition.

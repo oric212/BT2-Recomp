@@ -744,6 +744,8 @@ int main(int argc, char** argv) {
             report << ",\"console_messages_text\":[";
             for(unsigned n=0;n<runtime.ee_console_messages.size();++n){if(n)report<<",";report<<jsonString(runtime.ee_console_messages[n]);}
             report << "]"
+                << ",\"indexed_cache_operations\":" << runtime.indexed_cache_operations
+                << ",\"indexed_cache_tag_reads\":" << runtime.indexed_cache_tag_reads
                 << ",\"ee_status\":" << context.cop0_status
                 << ",\"ee_thread_count\":" << runtime.threads.size()
                 << ",\"sound_thread_starts\":" << runtime.sound_thread_starts

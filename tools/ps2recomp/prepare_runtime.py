@@ -43,6 +43,26 @@ def route_data_cache(source):
         f'runtime->dataCacheLine(rdram, ADD32(GPR_U32(ctx, 8), 0x{match[2]}u));', source)
 
 
+def route_indexed_cache(source):
+    pattern=(r'(// 0x[0-9a-f]+: 0x[0-9a-f]+  cache       0x(10|14|16), 0x([01])\(\$a2\)'
+             r'\s+ctx->pc = 0x[0-9A-Fa-f]+u;\s+)// CACHE instruction \(ignored\)')
+    text,count=re.subn(pattern,lambda m:m[1]+
+        f'runtime->indexedDataCache(rdram, ctx, 0x{m[2]}u, ADD32(GPR_U32(ctx, 6), 0x{m[3]}u));',source)
+    text,reads=re.subn(r'SET_GPR_S32\(ctx, (\d+), \(int32_t\)ctx->cop0_taglo\);',
+        lambda m:f'SET_GPR_S32(ctx, {m[1]}, (int32_t)runtime->readCacheTagLo(ctx));',text)
+    if 'ctx->cop0_taglo' in text:raise ValueError('Unrecognized generated TagLo access')
+    if count or reads:
+        if 'CACHE instruction (ignored)' in text:raise ValueError('Unsupported CACHE mixed with indexed TagLo')
+    return text,count,reads
+
+
+def route_fast_halfword_reads(source):
+    # Generated constant-address loads retain the checked owned-RAM read path.
+    text,count=re.subn(r'\bFAST_READ16\((0x[0-9A-Fa-f]+u)\)',r'READ16(\1)',source)
+    if 'FAST_READ16(' in text:raise ValueError('Unrecognized generated fast halfword read')
+    return text,count
+
+
 def build_memory(data, metadata, size=32 * 1024 * 1024):
     memory = bytearray(size)
     occupied = []
@@ -96,10 +116,14 @@ def main():
         text,count=route_tail_calls(source.read_text(encoding='utf-8'))
         text,vu_count=route_vu_status(text)
         text,control_count=route_vu_control(text)
+        text,cache_count,tag_count=route_indexed_cache(text)
+        if address in (0x32F4B0,0x32F5F0) and (cache_count,tag_count)!=(4,2):
+            raise ValueError('Reached indexed cache helper shape/count differs')
+        text,halfword_count=route_fast_halfword_reads(text)
         destination=patched/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

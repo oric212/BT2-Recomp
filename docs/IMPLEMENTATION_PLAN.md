@@ -64,3 +64,6 @@ The first owned heap/module-buffer lifecycle completes. Bounded [VIF startup](VI
 
 
 The bounded disc scope now completes the directory-sector read, generated parsing and all five listed metadata lookups. CRI bind, its third owned heap block and original stream-slot allocation now complete through generated EE cleanup. The next boundary is [EE cache maintenance](EE_CACHE_TRANSFER_PLAN.md), before full delivery of the isolated-tested CRI 0x403 command. Follow [CRI protocol evidence](CRI_RPC_PLAN.md); do not infer streaming, audio playback or presentation.
+
+
+The reached EE indexed cache scope now completes both original helpers and command 0x403 through generated cleanup. Original command 0x40C reaches higher-priority nested IOP StartThread, with no substituted result. Establish [CRI child-start/preemption ownership](CRI_THREAD_START_PLAN.md), capture its first wait and retain the active borrowed RPC parent before extending scheduling. Current counts and the separate completed-scope/failing-boundary validation records are in PROG.md.
