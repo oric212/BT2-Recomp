@@ -6,7 +6,7 @@ from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_
 def completed_directory_diagnostics(r):
     names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
     expected=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n']
-    return (r.get('console_messages')==len(r.get('console_messages_text',[])) and r.get('console_messages_text',[])[:6]==expected and r.get('disc_rpc_calls')==6 and r.get('disc_dma_submissions')==6 and r.get('ncmd_read_calls')==1 and r.get('disc_read_calls')==1 and r.get('native_iop_error')=='')
+    return (r.get('console_messages')==len(r.get('console_messages_text',[])) and r.get('console_messages_text',[])[:6]==expected and r.get('disc_rpc_calls')==6 and r.get('disc_dma_submissions')==6 and r.get('ncmd_read_calls',0)>=1 and r.get('disc_read_calls')==r.get('ncmd_read_calls') and r.get('native_iop_error')=='')
 
 def require(condition,message):
     if not condition:raise ValueError(message)

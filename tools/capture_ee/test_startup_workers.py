@@ -11,7 +11,7 @@ def report():
         'ee_sound_probe_frontier':[0x32EB88,0x38BDF0,0x3A6C80,0x333098,0x3A6D00,0x10001],
         'sound_thread_words':[0]*7+[1,0],'sound_iop_context':[0xA1304,0xA0F24,0xA94E0,0x1E7588,0],
         'main_priority_admissions':1,'main_priority_previous':2,'startup_scheduler_active':0,'startup_dispatch_parent_pc':0x32EAF8,
-        'startup_worker_dispatches':2,'startup_worker_waits':2,'scheduled_resumes':11,'scheduled_suspends':11,
+        'startup_worker_dispatches':2,'startup_worker_waits':4,'worker_resumes':2,'scheduled_resumes':11,'scheduled_suspends':11,
         'scheduled_priority_changes':22,'cri_stream_transfers':2,
         'startup_worker_state':[[4,0x2EDE58,0,1,8,0x38BDF0,0x34C470,0x100250,0],
             [5,0x2EDF48,0,0,16,0x38BDF0,0x34E430,0x2EE00C,1],[6,0x2EE050,0,0,18,0x38BDF0,0x34F430,0x2EE100,1],

@@ -100,11 +100,16 @@ public:
     bool startup_scheduler_active=false;
     unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
     std::uint32_t main_priority_previous=0;
-    unsigned cri_stream_transfers=0,load_poll_boundaries=0;
+    unsigned cri_stream_transfers=0,load_poll_idles=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
     bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     unsigned vblank_handler_registrations=0,vblank_enable_calls=0,vblank_disable_calls=0;
+    bool in_interrupt_=false;
+    unsigned vblank_deliveries=0,worker_wakes=0,worker_resumes=0,worker_sleep_returns=0;
+    bool handleInterruptSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
+    void deliverVblank(std::uint8_t*,R5900Context*);
+    void runReadyThreads(std::uint8_t*,R5900Context*);
     void queueSoundsBind(R5900Context*,const std::array<unsigned,16>&);
     void finishQueuedSoundsBind(std::uint8_t*,R5900Context*);
 
@@ -182,22 +187,29 @@ public:
             context->pc = resume;
             return;
         }
+        if(code==0 && in_interrupt_) {
+            if(handleInterruptSyscall(rdram,selector,context))return;
+            throw UnsupportedSyscall(selector,context->pc); // Interrupt context fails closed.
+        }
         if(code==0 && ((startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7)
                 || (main_priority_admissions && !startup_scheduler_active && current_thread_id==1))
             && handleScheduledThreadSyscall(rdram,selector,context)) return;
         if(code==0 && main_priority_admissions && !startup_scheduler_active && current_thread_id==1
             && handleAdmittedIntcSyscall(rdram,selector,context)) return;
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7)
-            {receiveCriStream(rdram,context);return;}
+        if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7
+            && isCriStreamSubmission(rdram,context)) {receiveCriStream(rdram,context);return;}
+        if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7
+            && read32(rdram,0x3A97DC)==0x369F40) {receiveScmdCall(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
         if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls>=1 && cri_rpc_calls<=41 && cri_rpc_calls!=35) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
         if(code==0 && selector==0x77 && cri_rpc_binds==1 && (!cri_rpc_calls || (cri_rpc_calls==35 && heap_calls==5)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
-        if(code==0 && selector==0x77 && ncmd_ready_calls==1 && !ncmd_read_calls && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
-        if(code==0 && selector==0x77 && ncmd_rpc_binds==1 && !ncmd_ready_calls
+        if(code==0 && selector==0x77 && ((ncmd_ready_calls==1 && !ncmd_read_calls) || (ncmd_read_calls && startup_scheduler_active))
+            && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
+        if(code==0 && selector==0x77 && ncmd_rpc_binds==1 && (!ncmd_ready_calls || (ncmd_read_calls && startup_scheduler_active))
             && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==14){receiveNcmdReady(rdram,context);return;}
 #endif
         if(code==0 && selector==0x77 && ncmd_bind_supplied && disc_rpc_calls==1 && !ncmd_rpc_binds && read32(rdram,0x3A97DC)==0x369590) {receiveNcmdBind(rdram,context);return;}
@@ -837,9 +849,13 @@ public:
                 && address==initial_sp-624 && maximum==1 && initial==0 && option==0x3838E8
                 && context->pc==0x32EC68 && context->r[31].low==0x332AD0 && context->r[17].low==0x369590
                 && context->r[19].low==1 && read32(rdram,0x369594)==45;
+            // After main's admitted priority: the SIF RPC library's own temporary call (RA 0x332AD0) or
+            // bind (RA 0x332814) semaphore; attr is uninitialized stack residue in that library.
+            const bool admitted_rpc_sema=main_priority_admissions && context->pc==0x32EC68 && maximum==1 && initial==0
+                && ((context->r[31].low==0x332AD0 && option==0x3838E8) || (context->r[31].low==0x332814 && option==0x3838D8));
             if(ncmd_bind_sema)++ncmd_bind_semaphores;
             if (disc_bind_sema) ++disc_bind_semaphores;
-            if (attributes != 0 && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !admitted_rpc_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -890,8 +906,13 @@ public:
                     || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8)
                     || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8)
                     || (sounds_rpc_binds==1 && semaphores[id].option==0x3838D8));
+            // After main's admitted priority: the SIF RPC library deletes its own newest temporary
+            // call/bind semaphore after completion.
+            const bool admitted_rpc_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
+                && (semaphores[id].option==0x3838E8 || semaphores[id].option==0x3838D8)
+                && (context->r[31].low==0x332B3C || context->r[31].low==0x33287C);
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                    || (!(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
+                    || (!admitted_rpc_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -949,9 +970,11 @@ public:
         }
         last_branch_source_=source;last_branch_target_=target;
         if(target==0x2EF218 && source==0x1007F0 && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {
-            // Main's asynchronous load poll found the request incomplete. Progress needs interrupt,
-            // timer and thread-wake delivery, which are unmodeled; stop before the idle call.
-            ++load_poll_boundaries;throw UnsupportedGuestBranch(target,source,resume);
+            // Main's asynchronous load poll found the request incomplete. Logical time model: one
+            // VBLANK_START per idle call, so woken helpers advance the request in observed order.
+            // No frame timing is claimed; the original needed 120 VBlanks for this request.
+            if(++load_poll_idles>1000)throw UnsupportedGuestBranch(target,source,resume);
+            deliverVblank(rdram,context);
         }
         const auto found = functions_.find(target);
         if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
@@ -1824,6 +1847,8 @@ private:
     void receiveMcRpc(std::uint8_t*,R5900Context*);
     void receiveCriControl(std::uint8_t*,R5900Context*);
     void receiveCriStream(std::uint8_t*,R5900Context*);
+    void receiveScmdCall(std::uint8_t*,R5900Context*);
+    bool isCriStreamSubmission(std::uint8_t*,const R5900Context*);
     void receiveCriCreate(std::uint8_t*,R5900Context*);
     void receiveCriBind(std::uint8_t*,R5900Context*);
     void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);

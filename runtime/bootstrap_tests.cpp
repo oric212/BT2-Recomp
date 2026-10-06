@@ -52,6 +52,22 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
     return_leaf(ram, ctx, runtime);
 }
 
+unsigned vblank_fixture_calls=0;
+void vblank_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    // Synthetic handler: checks the interrupt ABI, then wakes ID 5 through interrupt syscalls.
+    require(GPR_U32(ctx,4)==2 && GPR_U32(ctx,5)==0x1234 && GPR_U32(ctx,28)==0x38BDF0 && GPR_U32(ctx,29)==0x81FC0
+        && !(ctx->cop0_status&0x10001) && runtime->in_interrupt_);
+    auto call=[&](unsigned selector,unsigned a0,unsigned a1){
+        auto c=*ctx;c.r[3].low=static_cast<std::uint32_t>(selector);c.r[4].low=a0;c.r[5].low=a1;
+        runtime->handleSyscall(ram,&c,0);return static_cast<unsigned>(c.r[2].low);};
+    require(call(0xFFFFFFD1u,0,0)==1 && call(0xFFFFFFCFu,5,0x81F00)==4 && runtime->read32(ram,0x81F00)==4);
+    require(call(0xFFFFFFCCu,5,0)==5 && call(0xFFFFFFCFu,5,0x81F00)==2 && call(0xFFFFFFCCu,5,0)==5);
+    ++vblank_fixture_calls;ctx->r[2].low=0;
+    runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0, PS2Runtime::GuestBranchKind::Return, "synthetic handler return");
+}
+void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+    auto c=*ctx;c.r[3].low=0x29;c.r[4].low=0;c.r[5].low=1;runtime->handleSyscall(ram,&c,0); // Thread-context call.
+}
 }
 int main() {
     {
@@ -90,7 +106,7 @@ int main() {
             cpu.r[4].low=16;std::fill_n(console.memory().begin()+0x1100,4096,static_cast<std::uint8_t>('x'));
             reject([&]{console.handleSyscall(console.memory().data(),&cpu,0);});require(console.ee_console_messages.size()==1);
             require(std::bit_cast<std::uint32_t>(FPU_MOV_S(std::bit_cast<float>(0x80000000u)))==0x80000000u);
-            require(FPU_C_EQ_S(0.0f,-0.0f));reject([]{FPU_C_EQ_S(1.0f,0.0f);});
+            require(FPU_C_EQ_S(0.0f,-0.0f) && !FPU_C_EQ_S(1.0f,0.0f) && FPU_C_EQ_S(std::bit_cast<float>(1u),0.0f)); // Denormal equals zero.
         }
 
         {
@@ -1144,8 +1160,23 @@ int main() {
         require(SRL32(0xFFFFFFFF, 31) == 1 && SRL32(0xFFFFFFFF, 32) == 0xFFFFFFFF);
         require(SRA32(0x80000000, 31) == UINT32_MAX && SRA32(0x80000000, 0) == 0x80000000
                 && SRA32(UINT32_MAX, 32) == UINT32_MAX && SRA32(0x7FFFFFFF, 1) == 0x3FFFFFFF);
-        require(FPU_ADD_S(0, 0) == 0);
-        reject([] { (void)FPU_ADD_S(1, 0); });
+        {
+            // R5900 COP1: round toward zero, overflow clamps to +-max, denormals flush, CVT.W saturates.
+            const auto bits=[](float v){return std::bit_cast<std::uint32_t>(v);};
+            const float max=std::bit_cast<float>(0x7F7FFFFFu),third=std::bit_cast<float>(0x3EAAAAABu);
+            require(FPU_ADD_S(0, 0) == 0 && FPU_ADD_S(1.5f,2.25f)==3.75f);
+            require(bits(FPU_MUL_S(third,3.0f))==0x3F800000u && bits(FPU_ADD_S(1.0f,std::bit_cast<float>(0x33C00000u)))==0x3F800000u); // Nearest would give 0x3F800001.
+            require(bits(FPU_ADD_S(1.0f,-std::bit_cast<float>(0x33000000u)))==0x3F7FFFFFu); // 1 - 2^-25 chops.
+            require(bits(FPU_MUL_S(max,2.0f))==0x7F7FFFFFu && bits(FPU_MUL_S(-max,2.0f))==0xFF7FFFFFu);
+            require(bits(FPU_MUL_S(std::bit_cast<float>(0x00800000u),0.5f))==0u);  // Denormal result flushes.
+            require(bits(FPU_ADD_S(std::bit_cast<float>(0x7F800000u),1.0f))==0x7F7FFFFFu); // Inf operand clamps.
+            require(bits(FPU_CVT_S_W(16777217))==0x4B800000u);              // 2^24+1 chops to 2^24.
+            require(bits(FPU_SUB_S(1.0f,std::bit_cast<float>(0x33C00000u)))==0x3F7FFFFEu && FPU_SQRT_S(-4.0f)==2.0f
+                && bits(FPU_SQRT_S(2.0f))==0x3FB504F3u && bits(FPU_NEG_S(0.0f))==0x80000000u && FPU_ABS_S(-3.5f)==3.5f
+                && FPU_C_OLT_S(-1.0f,0.0f) && !FPU_C_OLT_S(std::bit_cast<float>(1u),0.0f) && FPU_C_OLE_S(0.0f,-0.0f));
+            require(FPU_CVT_W_S(-2.75f)==-2 && FPU_CVT_W_S(2.75f)==2 && FPU_CVT_W_S(3.0e9f)==INT32_MAX
+                && FPU_CVT_W_S(-3.0e9f)==INT32_MIN && FPU_CVT_W_S(std::bit_cast<float>(0x80000001u))==0);
+        }
         PS2Runtime start_boundary;R5900Context start_context{};
         start_boundary.registerFunction(0x32FDA0,return_leaf);start_boundary.sound_rpc_calls=1;
         start_context.r[2].low=0x1234;
@@ -1323,16 +1354,43 @@ int main() {
             sched.threads[3].waiting=false;sched.threads[3].ready=true;         // Ready ID 5 (16) above main.
             reject([&]{call(0x39,4,0);});
             require(sched.threads[2].suspended && !sched.threads[2].ready && sched.scheduled_resumes==1 && sched.scheduled_suspends==1);
+            sched.threads[3].ready=false;sched.threads[3].waiting=true;     // Re-park ID 5 before VBlank delivery.
             // VBLANK_START registration requires the explicit mask checkpoint; no delivery is modeled.
             reject([&]{call(0x14,2,0);});
-            sched.supplyIntcMask(0x1802);
+            sched.supplyIntcMask(0x1802);sched.registerFunction(0x1006D8,return_leaf); // Enabling delivers the latched VBlank.
             reject([&]{call(0x10,2,0);});                                        // Null handler.
             R5900Context add{};add.pc=0x32E948;add.r[3].low=0x10;add.r[4].low=2;add.r[5].low=0x1006D8;add.r[6].low=UINT64_MAX;add.r[28].low=0x38BDF0;
             sched.handleSyscall(ram,&add,0);
             require(add.r[2].low==1 && sched.intc_handlers.back().address==0x1006D8 && sched.intc_handlers.back().gp==0x38BDF0);
             reject([&]{sched.handleSyscall(ram,&add,0);});                       // Second cause-2 handler is unobserved.
-            require(call(0x14,2,0)==1 && call(0x14,2,0)==0 && (sched.intc_mask&4) && call(0x15,2,0)==1 && call(0x15,2,0)==0);
+            require(call(0x14,2,0)==1 && sched.vblank_deliveries==1 && call(0x14,2,0)==0 && (sched.intc_mask&4) && call(0x15,2,0)==1 && call(0x15,2,0)==0);
             reject([&]{call(0x14,3,0);});
+        }
+        {
+            // VBLANK_START delivery: chain ABI, interrupt-context wake semantics, banked wakeups
+            // and fail-closed thread-context syscalls. Woken ID 5 stays below main's priority here.
+            PS2Runtime irq;irq.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=irq.memory().data();
+            irq.thread_initialized=true;irq.current_thread_id=1;irq.main_thread_priority=24;irq.main_priority_admissions=1;
+            irq.threads.resize(6);
+            for(unsigned n=0;n<6;++n){auto& t=irq.threads[n];t.id=n+2;t.current_priority=30;t.context.pc=0x100000;}
+            irq.threads[3].waiting=true;
+            irq.supplyIntcMask(0x1802);irq.registerFunction(0x1006D8,vblank_fixture);
+            R5900Context main{};main.pc=0x32E9A8;main.cop0_status=0x10001;main.r[28].low=0x38BDF0;
+            reject([&]{irq.deliverVblank(ram,&main);});                    // Cause 2 still masked.
+            R5900Context add=main;add.r[3].low=0x10;add.r[4].low=2;add.r[5].low=0x1006D8;add.r[6].low=UINT64_MAX;add.r[7].low=0x1234;
+            irq.handleSyscall(ram,&add,0);
+            R5900Context enable=main;enable.r[3].low=0x14;enable.r[4].low=2;irq.handleSyscall(ram,&enable,0);
+            require(enable.r[2].low==1 && vblank_fixture_calls==1 && irq.vblank_deliveries==1 && !irq.in_interrupt_);
+            require(!irq.threads[3].waiting && irq.threads[3].ready && irq.threads[3].wakeups==1 && irq.worker_wakes==2);
+            require(main.pc==0x32E9A8 && irq.current_thread_id==1);
+            irq.handleSyscall(ram,&enable,0);require(enable.r[2].low==0 && irq.vblank_deliveries==1); // Not newly enabled.
+            reject([&]{R5900Context c=main;c.r[3].low=0xFFFFFFCCu;c.r[4].low=5;irq.handleSyscall(ram,&c,0);}); // Thread context.
+            PS2Runtime bad;bad.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            bad.thread_initialized=true;bad.current_thread_id=1;bad.main_thread_priority=24;bad.main_priority_admissions=1;
+            bad.supplyIntcMask(0x1806);bad.registerFunction(0x1006D8,vblank_bad_fixture);
+            R5900Context badadd=add;bad.handleSyscall(bad.memory().data(),&badadd,0);
+            reject([&]{bad.deliverVblank(bad.memory().data(),&main);});
+            require(!bad.in_interrupt_ && bad.vblank_deliveries==1);
         }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;

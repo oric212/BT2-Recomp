@@ -1,22 +1,22 @@
 {
-  "updated": "2026-10-06",
+  "updated": "2026-10-07",
   "groups": [
     {"name": "Foundation", "items": [
       {"name": "Native Windows host", "status": "verified", "note": "CMake / MSVC executable builds"},
       {"name": "Retail validation", "status": "verified", "note": "Disc and embedded ELF confirmed"},
       {"name": "Map and generation", "status": "verified", "note": "Provisional map; pipeline works"},
       {"name": "Generated startup", "status": "partial", "note": "Executes to a checked boundary"},
-      {"name": "Disc metadata", "status": "verified", "note": "Initial read and lookups complete"}
+      {"name": "Disc metadata", "status": "verified", "note": "Directory + 53 archive reads"}
     ]},
     {"name": "Runtime", "items": [
-      {"name": "EE threads and scheduling", "status": "partial", "note": "Priority admitted; no wakes"},
+      {"name": "EE threads and scheduling", "status": "partial", "note": "Admission, VBlank wakes"},
       {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
-      {"name": "SIF / RPC / DMA", "status": "partial", "note": "Binds, stream copies; no wakes"},
+      {"name": "SIF / RPC / DMA", "status": "partial", "note": "NCMD/SCMD calls; IOP ack pending"},
       {"name": "CRI sound setup", "status": "partial", "note": "37 calls; AutoDMA half pending"},
       {"name": "Memory cards", "status": "partial", "note": "Absent-card queries only"}
     ]},
     {"name": "Game", "items": [
-      {"name": "Archive payload loading", "status": "pending", "note": "No archive payload decoded"},
+      {"name": "Archive payload loading", "status": "partial", "note": "First AFS table loaded"},
       {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
       {"name": "GS rendering", "status": "partial", "note": "Startup clears only"},
       {"name": "Frame presentation", "status": "pending", "note": "No visible game frame"},

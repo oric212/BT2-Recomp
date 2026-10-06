@@ -174,10 +174,13 @@ bool PS2Runtime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t 
         context->r[2].low=t.id;return true;
     }
     if(selector==0x32) {
-        if(t.wakeups)throw UnsupportedSyscall(selector,context->pc); // No owned WakeupThread yet.
+        if(t.wakeups)throw UnsupportedSyscall(selector,context->pc); // Banked wakeups are not yet reached.
         t.ready=false;t.waiting=true;t.context=*context;++startup_worker_waits;
         active_ee_stack->yield();
-        throw std::runtime_error("Unvalidated startup worker wake");
+        // Only an owned wake readies a parked worker; the scheduler then resumes this stack.
+        if(t.waiting || !t.ready || t.suspended || current_thread_id!=t.id)
+            throw std::runtime_error("Unvalidated startup worker wake");
+        context->r[2].low=t.id;++worker_sleep_returns;return true; // SleepThread returns the caller ID.
     }
     return false;
 }
@@ -201,35 +204,104 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
         const auto id=static_cast<std::uint32_t>(intc_handlers.size());intc_handler_order.push_back(id);
         ++vblank_handler_registrations;context->r[2].low=id;return true;
     }
-    if(selector==0x14) {context->r[2].low=(intc_mask&bit)?0:1;intc_mask|=bit;++vblank_enable_calls;return true;}
+    if(selector==0x14) {
+        const bool newly=!(intc_mask&bit);
+        context->r[2].low=newly?1:0;intc_mask|=bit;++vblank_enable_calls;
+        // VBLANK_START latches in INTC_STAT while masked. Original evidence places the first handler
+        // entry after this enable and before main's next call, i.e. at the wrapper's EI.
+        if(newly && !vblank_deliveries)deliverVblank(rdram,context);
+        return true;
+    }
     context->r[2].low=(intc_mask&bit)?1:0;intc_mask&=~bit;++vblank_disable_calls;return true;
 }
 
-void PS2Runtime::dispatchReadyStartupWorkers(std::uint8_t*,R5900Context* parent) {
+bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
+    // Interrupt context: current_thread_id names the interrupted thread; no reschedule happens here.
+    const auto id=static_cast<std::uint32_t>(context->r[4].low);
+    if(selector==0xFFFFFFD1u) {context->r[2].low=current_thread_id;return true;} // iGetThreadId
+    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id)return false;
+    auto& t=threads[id-2];
+    if(selector==0xFFFFFFCFu) { // iReferThreadStatus
+        const auto out=static_cast<std::uint32_t>(context->r[5].low);
+        if(out%4)return false;
+        checkMemory(rdram,out,48);
+        const std::uint32_t status=t.suspended?(t.waiting?0xCu:8u):t.waiting?4u:t.ready?2u:0x10u;
+        write32(rdram,out,status);context->r[2].low=status;return true;
+    }
+    if(selector==0xFFFFFFCCu) { // iWakeupThread
+        if(id==current_thread_id || !t.context.pc)return false;
+        if(t.waiting) {t.waiting=false;t.ready=!t.suspended;}
+        else ++t.wakeups;
+        ++worker_wakes;context->r[2].low=id;return true;
+    }
+    return false;
+}
+
+void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
+    // Run registered VBLANK_START handlers in chain order with the kernel handler ABI
+    // (a0 cause, a1 argument, registered GP) on the captured kernel interrupt stack.
+    constexpr std::uint32_t cause=2,stack=0x81FC0,callback_return=0xFFFFFFF8;
+    if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
+        throw UnsupportedSyscall(0x14,interrupted->pc);
+    checkMemory(rdram,stack-0x800,0x800);
+    in_interrupt_=true;++vblank_deliveries;
+    try {
+        for(const auto id:intc_handler_order) {
+            const auto& h=intc_handlers.at(id-1);
+            if(h.cause!=cause)continue;
+            R5900Context ic{};ic.pc=h.address;ic.r[4].low=cause;ic.r[5].low=h.arg;ic.r[28].low=h.gp;
+            ic.r[29].low=stack;ic.r[31].low=callback_return;ic.cop0_status=interrupted->cop0_status&~0x10001u;
+            dispatchGuestBranch(rdram,&ic,h.address,interrupted->pc,callback_return,GuestBranchKind::DirectCall,"VBLANK_START handler");
+            if(static_cast<std::int32_t>(ic.r[2].low)<0)break; // A negative result ends the chain.
+        }
+    } catch(...) {in_interrupt_=false;throw;}
+    in_interrupt_=false;
+    runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
+}
+
+void PS2Runtime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
+    // Main is the parent host stack. Ready workers above main run in priority order: a new
+    // owner starts a started worker; a parked owner resumes only after an owned wake.
+    const auto saved=*parent;const bool nested=startup_scheduler_active;
+    if(current_thread_id!=1 || in_interrupt_)throw UnsupportedSyscall(0,parent->pc);
+    startup_scheduler_active=true;
+    try {
+        for(;;) {
+            auto next=threads.end();
+            for(auto t=threads.begin();t!=threads.end();++t)
+                if(t->ready && !t->suspended && !t->waiting && t->current_priority<main_thread_priority
+                    && (next==threads.end() || t->current_priority<next->current_priority))next=t;
+            if(next==threads.end())break;
+            const auto id=next->id;
+            auto found=std::find_if(worker_executions_.begin(),worker_executions_.end(),[&](const auto& o){return o->id==id;});
+            std::shared_ptr<EeExecutionOwner> owner;
+            if(found!=worker_executions_.end()) {
+                owner=*found;
+                if(owner->stack->state()!=RetainedEeStack::State::Waiting)throw UnsupportedSyscall(0,parent->pc);
+                ++worker_resumes;
+            } else {
+                if(id<4 || id>7)throw UnsupportedSyscall(0,parent->pc);
+                owner=std::make_shared<EeExecutionOwner>(*this,id);worker_executions_.push_back(owner);
+                ++startup_worker_dispatches;
+            }
+            try {owner->dispatch();}
+            catch(...) {threads.at(id-2).context=owner->context;*parent=owner->context;throw;}
+            if(owner->stack->state()!=RetainedEeStack::State::Waiting || !threads.at(id-2).waiting
+                || std::memcmp(parent,&saved,sizeof(*parent)))
+                throw std::runtime_error("Scheduler lost retained parent/worker ownership");
+        }
+    } catch(...) {startup_scheduler_active=nested;throw;}
+    startup_scheduler_active=nested;
+}
+
+void PS2Runtime::dispatchReadyStartupWorkers(std::uint8_t* rdram,R5900Context* parent) {
     if(current_thread_id!=1 || main_thread_priority!=2 || parent->pc!=0x32EAF8
         || parent->r[4].low!=1 || parent->r[5].low!=24 || parent->r[31].low!=0x2EEA34
         || queued_sound_completions!=1 || !sound_thread_waiting || threads.size()!=6 || startup_scheduler_active)
         throw UnsupportedSyscall(0x29,parent->pc);
     // Admit main's lower priority first; every ready thread above it runs before main resumes.
     startup_dispatch_parent=*parent;main_priority_previous=main_thread_priority;
-    main_thread_priority=24;++main_priority_admissions;startup_scheduler_active=true;
-    for(;;) {
-        auto next=threads.end();
-        for(auto t=threads.begin();t!=threads.end();++t)
-            if(t->ready && !t->suspended && !t->waiting && t->current_priority<main_thread_priority
-                && (next==threads.end() || t->current_priority<next->current_priority))next=t;
-        if(next==threads.end())break;
-        const auto id=next->id;
-        if(id<4 || id>7 || std::any_of(worker_executions_.begin(),worker_executions_.end(),[&](const auto& o){return o->id==id;}))
-            throw UnsupportedSyscall(0x29,parent->pc); // Re-dispatch of a parked worker requires an owned wake.
-        auto owner=std::make_shared<EeExecutionOwner>(*this,id);worker_executions_.push_back(owner);
-        ++startup_worker_dispatches;
-        try {owner->dispatch();}
-        catch(...) {threads.at(id-2).context=owner->context;*parent=owner->context;throw;}
-        if(owner->stack->state()!=RetainedEeStack::State::Waiting || !threads.at(id-2).waiting
-            || std::memcmp(parent,&startup_dispatch_parent,sizeof(*parent)))
-            throw std::runtime_error("Startup dispatch lost retained parent/worker ownership");
-    }
-    startup_scheduler_active=false;
+    main_thread_priority=24;++main_priority_admissions;
+    runReadyThreads(rdram,parent);
     parent->r[2].low=main_priority_previous;++priority_changes;
 }

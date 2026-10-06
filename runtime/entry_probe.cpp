@@ -525,8 +525,10 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls+runtime.ncmd_ready_calls+runtime.ncmd_read_calls
-                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls+runtime.cri_stream_transfers)), "SCMD media-mode cleanup differs");
+                // Pre-admission accounting; after main's admitted priority, helper RPC traffic is
+                // validated per request by its receiver instead of by these lifetime totals.
+                require(runtime.main_priority_admissions || (runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls+runtime.ncmd_ready_calls+runtime.ncmd_read_calls
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls+runtime.cri_stream_transfers))), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -577,7 +579,7 @@ int main(int argc, char** argv) {
                     require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls+runtime.cri_stream_transfers && runtime.reset_smflag_writes == 1
+                            && (runtime.main_priority_admissions || runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls+runtime.cri_stream_transfers) && runtime.reset_smflag_writes == 1
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
@@ -639,7 +641,8 @@ int main(int argc, char** argv) {
                                     && runtime.dmac_handlers.size()==1 && runtime.dmac_enable_calls==2,
                                     "Fresh CD ownership/completion differs");
                             }
-                            if(loader_progress || loader_target || loader_stop) require(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1
+                            // Earlier-phase snapshot; after main's admitted priority the game reuses these clients.
+                            if((loader_progress || loader_target || loader_stop) && !runtime.main_priority_admissions) require(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1
                                 && runtime.read32(runtime.memory().data(),0x369F40)==0 && runtime.read32(runtime.memory().data(),0x369F64)==0x434F0
                                 && runtime.read32(runtime.memory().data(),0x369F54)==0x439A8 && runtime.read32(runtime.memory().data(),0x3695C0)==1,
                                 "Fresh SCMD ownership/completion differs");
@@ -937,7 +940,9 @@ int main(int argc, char** argv) {
                 << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
                 << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
                 << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
-                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_boundaries\":" << runtime.load_poll_boundaries
+                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
+                << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
+                << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns
                 << ",\"startup_dispatch_parent_pc\":" << runtime.startup_dispatch_parent.pc
                 << ",\"queued_sound_submissions\":" << runtime.queued_sound_submissions
                 << ",\"queued_sound_completions\":" << runtime.queued_sound_completions

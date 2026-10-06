@@ -1,5 +1,6 @@
 #pragma once
 #include "ps2_runtime.h"
+#include "ps2_fpu.h"
 #include <bit>
 
 inline std::uint32_t GPR_U32(const R5900Context* context, unsigned index) {
@@ -82,16 +83,20 @@ inline ProbeGpr ps2_paddu32(ProbeGpr left, ProbeGpr right) {
     }
     return std::bit_cast<ProbeGpr>(a);
 }
-inline float FPU_ADD_S(float left, float right) {
-    // Entry only adds two freshly cleared registers. Broader EE FPU behavior is unsupported.
-    if (left != 0.0f || right != 0.0f) throw std::runtime_error("Unsupported bootstrap FPU operands");
-    return left + right;
-}
+// R5900 COP1: round-toward-zero, no Inf/NaN/denormals, saturating conversion (ps2_fpu.cpp).
+inline float FPU_ADD_S(float left, float right) { return ps2_fpu_add(left, right); }
+inline float FPU_MUL_S(float left, float right) { return ps2_fpu_mul(left, right); }
+inline float FPU_CVT_S_W(std::int32_t value) { return ps2_fpu_cvt_s_w(value); }
+inline std::int32_t FPU_CVT_W_S(float value) { return ps2_fpu_cvt_w_s(value); }
 inline float FPU_MOV_S(float value) {return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value));}
-inline bool FPU_C_EQ_S(float left,float right) {
-    if(left!=0.0f || right!=0.0f)throw std::runtime_error("Unsupported bootstrap FPU comparison operands");
-    return true; // Only the already supported cleared-register domain.
-}
+inline bool FPU_C_EQ_S(float left,float right) { return ps2_fpu_c_eq(left, right); }
+inline float FPU_SUB_S(float left, float right) { return ps2_fpu_sub(left, right); }
+inline float FPU_SQRT_S(float value) { return ps2_fpu_sqrt(value); }
+// NEG/ABS only change the sign bit, as on the EE FPU.
+inline float FPU_NEG_S(float value) { return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value) ^ 0x80000000u); }
+inline float FPU_ABS_S(float value) { return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value) & 0x7FFFFFFFu); }
+inline bool FPU_C_OLT_S(float left, float right) { return ps2_fpu_c_lt(left, right); }
+inline bool FPU_C_OLE_S(float left, float right) { return ps2_fpu_c_le(left, right); }
 inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = value; }
 
 #define READ16(address) runtime->read16(rdram, (address))

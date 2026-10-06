@@ -11,7 +11,7 @@ def first_read_request(b):
     return words(b,0x3684C0,6)==(0xE2A,2,0x39DE80,0x100,0x3694C0,0x369580)
 def ready_completed(r):
     return (disc_search_completed(r) and r.get('ncmd_rpc_binds')==1 and r.get('ncmd_bind_semaphores')==1
-            and r.get('ncmd_ready_calls')==1)
+            and r.get('ncmd_ready_calls',0)>=1) # Later readiness queries precede later archive reads.
 def verify(root,native,disc):
     base=root/'work/pcsx2-capture'
     baseline=json.loads((base/'rpc-mc-callback-before-absent-cards/capture.json').read_text(encoding='utf-8'))
@@ -58,7 +58,8 @@ def verify(root,native,disc):
         require(ready_completed(r),'Native readiness completion differs');i=Path(str(native)+'.iop.bin').read_bytes()
         if r.get('disc_read_calls')==1:
             ee=Path(str(native)+'.ee.bin').read_bytes();require(words(i,0x1A5830,1)==(4096,) and words(ee,0x368440,1)==(2,),'Original readiness result retention/read result reuse differs')
-        else:require(words(i,0x1A5830,1)==(2,),'Native original readiness result differs')
+        elif not r.get('disc_read_calls'):require(words(i,0x1A5830,1)==(2,),'Native original readiness result differs')
+        # Later reads reuse the handler's result slot; their transfers are compared by verify_vblank_wake.py.
     print('NCMD bind, readiness hardware/API/result and actual two-sector readback independently verified. Native sector completion is not claimed.')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path,default=Path('work/bt2-generation/entry-stop.json'));p.add_argument('--disc',type=Path,required=True);a=p.parse_args();verify(a.root,a.native,a.disc)

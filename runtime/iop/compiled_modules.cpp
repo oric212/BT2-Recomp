@@ -504,13 +504,21 @@ std::uint32_t NativeIopService::callDiscSearch(unsigned epoch,std::span<const st
 }
 
 std::uint32_t NativeIopService::callDiscReady(unsigned epoch) {
-    if(epoch!=epoch_ || failed_ || disc_search_calls!=1 || disc_ready_calls || runtime.disc_type_known
-        || runtime.read(iop_disc_base+0x6088,4))throw std::runtime_error("Unsupported owned disc readiness request");
+    // First query precedes the directory read; later queries follow the completed read and searches.
+    const bool first=!disc_ready_calls && disc_search_calls==1;
+    const bool repeat=disc_ready_calls && disc_read_calls && disc_search_calls==6;
+    // NCMD 14 sends no data, so a repeat leaves the previous read request in the receive buffer.
+    if(epoch!=epoch_ || failed_ || !(first || repeat) || runtime.disc_type_known
+        || (first && runtime.read(iop_disc_base+0x6088,4)))
+        throw std::runtime_error("Unsupported owned disc readiness request: ready="+std::to_string(disc_ready_calls)
+            +" read="+std::to_string(disc_read_calls)+" search="+std::to_string(disc_search_calls)
+            +" pending="+std::to_string(runtime.read(iop_disc_base+0x6088,4)));
     // One serialized readiness request owns acquire -> state queries -> release.
     // SC(-3)/SC(-12) ignore param; residual stack bytes are not input state.
     const auto saved=runtime.providers;unsigned stage=0;
     try {
-        runtime.disc_type_known=true;
+        // A repeat sees the same idle drive: identical disc-type/status register sequence.
+        runtime.disc_type_known=true;runtime.disc_type_reads=0;runtime.disc_ready_status_reads=0;
         runtime.providers[{"cdvdman",50}]=[&](IopRuntime& rt,IopContext& c) {
             if(c.pc!=iop_disc_base+0x4B68)throw std::runtime_error("Disc readiness import differs");
             const auto value=c.get(4)==0xFFFFFFF6?rt.read(c.get(5),4):0u;
@@ -528,17 +536,47 @@ std::uint32_t NativeIopService::callDiscReady(unsigned epoch) {
     }catch(const std::exception& e){const auto detail=std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc)+" / a0="+std::to_string(runtime.last_import_arguments[0])+" / a1="+std::to_string(runtime.last_import_arguments[1]);runtime.providers=saved;runtime.disc_type_known=false;failed_=true;throw std::runtime_error(detail);}
 }
 
+std::uint32_t NativeIopService::callDiscScmd(unsigned epoch,unsigned command) {
+    // Original CDVDFSV S-command handler (retail 0x41BC8, registered for 0x80000593). Only the
+    // reached no-input GetError (4) after the completed reads is admitted; it reads driver state.
+    if(epoch!=epoch_ || failed_ || command!=4 || disc_read_calls<2 || runtime.disc_type_known)
+        throw std::runtime_error("Unsupported owned S-command request");
+    const auto saved=runtime.providers;
+    try {
+        // Driver state after the completed owned reads: no error (as the read handler observed).
+        runtime.providers[{"cdvdman",8}]=[&](IopRuntime&,IopContext& c) {
+            if(c.pc!=iop_disc_base+0x4AD8)throw std::runtime_error("S-command error query differs");
+            return 0u;
+        };
+        IopContext c;c.pc=iop_disc_base+0x3E98;c.set(4,command);c.set(5,iop_disc_base+0x5C78);c.set(6,0);
+        c.set(28,iop_disc_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
+        if(c.pc!=IopRuntime::sentinel || !c.get(2))throw std::runtime_error("Original S-command handler completion differs");
+        runtime.providers=saved;++disc_scmd_calls;return runtime.read(c.get(2),4);
+    }catch(const std::exception& e){runtime.providers=saved;failed_=true;throw std::runtime_error(std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc)+" / a0="+std::to_string(runtime.last_import_arguments[0]));}
+}
+
 std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee,const std::string& path) {
+    // NCMD 1 input: LBN, sector count, EE destination, mode word, completion record, progress word.
+    // The first request is the observed directory read; later requests follow a readiness query
+    // and use the same original handler path with their own LBN/count/destination.
     const std::array<unsigned,6> expected={0xE2A,2,0x39DE80,0x100,0x3694C0,0x369580};
-    if(epoch!=epoch_ || failed_ || disc_ready_calls!=1 || disc_read_calls || input.size()!=sizeof(expected)
-        || std::memcmp(input.data(),expected.data(),sizeof(expected)) || ee.size()!=32*1024*1024)
-        throw std::runtime_error("Unsupported owned first disc read");
-    const auto payload=read_iso_sectors(path,expected[0],expected[1]);
+    std::array<unsigned,6> in{};
+    if(input.size()==sizeof(in))std::memcpy(in.data(),input.data(),sizeof(in));
+    const bool first=!disc_read_calls;
+    const bool repeat=disc_read_calls && disc_ready_calls>disc_read_calls; // A readiness query precedes each read.
+    if(epoch!=epoch_ || failed_ || input.size()!=sizeof(expected) || ee.size()!=32*1024*1024
+        || (first ? (disc_ready_calls!=1 || in!=expected)
+                  : (!repeat || !in[1] || in[1]>20 || in[2]%64 || in[2]<0x100000 || in[2]+in[1]*2048>ee.size()
+                     || (in[3]!=0 && in[3]!=0x100) || in[4]!=expected[4] || in[5]!=expected[5])))
+        throw std::runtime_error("Unsupported owned disc read");
+    const auto lbn=in[0],count=in[1],dest=in[2],mode=in[3],bytes=count*2048;
+    const unsigned dma_base=disc_read_dma_submissions,alarm_base=disc_read_alarm_cancels,set_base=disc_read_alarm_sets;
+    const auto payload=read_iso_sectors(path,lbn,count);
     const auto saved=runtime.providers;const auto event=runtime.next_event++;
     const auto wait=saved.at({"thevent",10});unsigned stage=0;bool accepted=false,callback=false;
     constexpr unsigned workspace=0x1D4B00,buffer=0x1D5B00,raw=buffer+0x1248,token=0x770001;
     try {
-        runtime.map(workspace,std::vector<std::uint8_t>(256));runtime.map(buffer,std::vector<std::uint8_t>(42128));
+        if(first){runtime.map(workspace,std::vector<std::uint8_t>(256));runtime.map(buffer,std::vector<std::uint8_t>(42128));}
         runtime.events.emplace(event,IopRuntime::Event{0,0,0});
         // Authored inactive shared workspace and owned FSV buffer. No live retail state is copied.
         runtime.write(iop_disc_base+0x5568,workspace,4);runtime.write(iop_disc_base+0x53A0,buffer,4);
@@ -552,27 +590,29 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
             if(stage==0 && command==0xFFFFFFF6 && rt.read(c.get(5),4)==1){++stage;return 1u;}
             if(stage==1 && command==0xFFFFFFFC){++stage;return 0u;}
             if(stage==2 && command==0xFFFFFFEA){++stage;return 1u;}
-            if(stage==3 && command==0xFFFFFFE9 && rt.read(c.get(5),4)==0xE2A){++stage;return 0xE2Au;}
+            if(stage==3 && command==0xFFFFFFE9 && rt.read(c.get(5),4)==lbn){++stage;return lbn;}
             if(stage==4 && command==0xFFFFFFF1){++stage;return 15000u;}
-            if(command==0xFFFFFFF6 && rt.read(c.get(5),4)==0 && callback && disc_read_dma_submissions){++stage;return 0u;}
+            if(command==0xFFFFFFF6 && rt.read(c.get(5),4)==0 && callback && disc_read_dma_submissions>dma_base){++stage;return 0u;}
             throw std::runtime_error("Unsupported read SC operation");
         };
         runtime.providers[{"thbase",35}]=[&](IopRuntime& rt,IopContext& c) {
-            if(stage!=5 || disc_read_alarm_sets || c.pc!=iop_disc_base+0x4980 || c.get(4)!=iop_disc_base+0x5548 || c.get(5)!=iop_disc_base+0x8C8 || c.get(6)!=c.get(4)
+            if(stage!=5 || disc_read_alarm_sets!=set_base || c.pc!=iop_disc_base+0x4980 || c.get(4)!=iop_disc_base+0x5548 || c.get(5)!=iop_disc_base+0x8C8 || c.get(6)!=c.get(4)
                 || rt.read(c.get(4),4)!=552960000 || rt.read(c.get(4)+4,4))throw std::runtime_error("Unsupported disc timeout registration");
             disc_read_alarm={rt.logical_time_us+15000000,c.get(5),c.get(6),c.get(28)};++disc_read_alarm_sets;return 0u;
         };
         runtime.providers[{"thbase",37}]=[&](IopRuntime&,IopContext& c) {
-            if(!callback || !disc_read_alarm.deadline || disc_read_alarm_cancels || c.pc!=iop_disc_base+0x4988 || c.get(4)!=disc_read_alarm.callback || c.get(5)!=disc_read_alarm.argument)
+            if(!callback || !disc_read_alarm.deadline || disc_read_alarm_cancels!=alarm_base || c.pc!=iop_disc_base+0x4988 || c.get(4)!=disc_read_alarm.callback || c.get(5)!=disc_read_alarm.argument)
                 throw std::runtime_error("Unsupported disc timeout cancellation");
             disc_read_alarm={};++disc_read_alarm_cancels;return 0u;
         };
         runtime.providers[{"cdvdman",63}]=[&](IopRuntime& rt,IopContext& c) {
-            if(stage!=5 || accepted || c.pc!=iop_disc_base+0x4B80 || c.get(4)!=0xE2A || c.get(5)!=2 || c.get(6)!=raw || c.get(7)!=iop_disc_base+0x54F0
-                || rt.read(c.get(29)+16,4)!=2 || rt.read(c.get(29)+20,4)!=iop_disc_base+0xB00 || rt.read(c.get(7),4)!=0x100)
-                throw std::runtime_error("Unsupported RV destination/mode/callback");
-            // Captured DVD records contain a 12-byte header, 2048 ISO bytes and four trailing bytes.
-            for(unsigned sector=0;sector<2;++sector){const auto at=raw+sector*2064,id=0x20030000+0xE2A+sector;
+            if(stage!=5 || accepted || c.pc!=iop_disc_base+0x4B80 || c.get(4)!=lbn || c.get(5)!=count || c.get(6)!=raw || c.get(7)!=iop_disc_base+0x54F0
+                || rt.read(c.get(29)+16,4)!=count || rt.read(c.get(29)+20,4)!=iop_disc_base+0xB00 || rt.read(c.get(7),4)!=mode)
+                throw std::runtime_error("Unsupported RV destination/mode/callback: buf="+std::to_string(c.get(6))+" modeptr="+std::to_string(c.get(7))
+                    +" arg5="+std::to_string(rt.read(c.get(29)+16,4))+" cb="+std::to_string(rt.read(c.get(29)+20,4))+" mode="+std::to_string(rt.read(c.get(7),4)));
+            // sceCdRV arg5 is the cache sector count (= sectors here). Captured DVD records contain a
+            // 12-byte header, 2048 ISO bytes and four trailing bytes.
+            for(unsigned sector=0;sector<count;++sector){const auto at=raw+sector*2064,id=0x20030000+lbn+sector;
                 for(unsigned n=0;n<4;++n)rt.write(at+n,(id>>(8*(3-n)))&255,1);
                 for(unsigned n=0;n<2048;++n)rt.write(at+12+n,payload[sector*2048+n],1);
             }
@@ -610,36 +650,37 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
         std::set<unsigned> polled;
         runtime.providers[{"sifman",7}]=[&](IopRuntime& rt,IopContext& c) {
             if(!callback || c.pc!=iop_disc_base+0x4A3C)throw std::runtime_error("Sector DMA before owned completion");
-            if(disc_read_dma_submissions==0) {
-                if(c.get(4)!=iop_disc_base+0x53E0 || c.get(5)!=2)throw std::runtime_error("Unsupported first sector DMA");
-                for(unsigned sector=0;sector<2;++sector) {
-                    const std::array<unsigned,4> d={raw+sector*2064+12,0x39DE80+sector*2048,2048,0};
+            const auto k=disc_read_dma_submissions-dma_base;
+            if(k==0) {
+                if(c.get(4)!=iop_disc_base+0x53E0 || c.get(5)!=count)throw std::runtime_error("Unsupported first sector DMA");
+                for(unsigned sector=0;sector<count;++sector) {
+                    const std::array<unsigned,4> d={raw+sector*2064+12,dest+sector*2048,2048,0};
                     for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+sector*16+n*4,4)!=d[n])throw std::runtime_error("Sector DMA descriptor differs");
                     for(unsigned n=0;n<2048;++n)ee[d[1]+n]=static_cast<std::uint8_t>(rt.read(d[0]+n,1));
                 }
             }else {
-                const bool progress=disc_read_dma_submissions==1 || disc_read_dma_submissions==3;
-                if(disc_read_dma_submissions>3 || c.get(5)!=1 || c.get(4)!=iop_disc_base+(progress?0x5508:0x54F8))throw std::runtime_error("Unsupported read completion DMA / batch="+std::to_string(disc_read_dma_submissions)+" src="+std::to_string(rt.read(c.get(4),4))+" dst="+std::to_string(rt.read(c.get(4)+4,4))+" bytes="+std::to_string(rt.read(c.get(4)+8,4))+" value="+std::to_string(rt.read(rt.read(c.get(4),4),4)));
+                const bool progress=k==1 || k==3;
+                if(k>3 || c.get(5)!=1 || c.get(4)!=iop_disc_base+(progress?0x5508:0x54F8))throw std::runtime_error("Unsupported read completion DMA / batch="+std::to_string(disc_read_dma_submissions)+" src="+std::to_string(rt.read(c.get(4),4))+" dst="+std::to_string(rt.read(c.get(4)+4,4))+" bytes="+std::to_string(rt.read(c.get(4)+8,4))+" value="+std::to_string(rt.read(rt.read(c.get(4),4),4)));
                 const std::array<unsigned,4> d={iop_disc_base+(progress?0x5818:0x5580),progress?0x369580u:0x3694C0u,progress?4u:144u,0};
                 for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+n*4,4)!=d[n])throw std::runtime_error("Read completion descriptor differs");
-                if(progress && rt.read(d[0],4)!=(disc_read_dma_submissions==1?0u:4096u))throw std::runtime_error("Read progress differs");
-                if(!progress && (rt.read(d[0],4) || rt.read(d[0]+4,4) || rt.read(d[0]+8,4)!=0x39DE80 || rt.read(d[0]+12,4)!=0x39EE80))throw std::runtime_error("Owned completion range differs");
+                if(progress && rt.read(d[0],4)!=(k==1?0u:bytes))throw std::runtime_error("Read progress differs");
+                if(!progress && (rt.read(d[0],4) || rt.read(d[0]+4,4) || rt.read(d[0]+8,4)!=dest || rt.read(d[0]+12,4)!=dest+bytes))throw std::runtime_error("Owned completion range differs");
                 for(unsigned n=0;n<d[2];++n)ee[d[1]+n]=static_cast<std::uint8_t>(rt.read(d[0]+n,1));
             }
             return token+disc_read_dma_submissions++;
         };
         runtime.providers[{"sifman",8}]=[&](IopRuntime&,IopContext& c) {
             if(c.pc==iop_disc_base+0x4A44 && c.get(4)==0)return 0xFFFFFFFFu; // No prior DMA exists in the fresh owned buffer.
-            if(c.pc!=iop_disc_base+0x4A44 || c.get(4)<token || c.get(4)>=token+disc_read_dma_submissions)throw std::runtime_error("Unsupported sector DMA poll");
+            if(c.pc!=iop_disc_base+0x4A44 || c.get(4)<token+dma_base || c.get(4)>=token+disc_read_dma_submissions)throw std::runtime_error("Unsupported sector DMA poll");
             if(polled.insert(c.get(4)).second)++disc_read_dma_polls;
             return 0xFFFFFFFFu; // These owned copies have completed; hardware poll counts are not equated.
         };
         IopContext c;c.pc=iop_disc_base+0x3ABC;c.set(4,1);c.set(5,iop_disc_base+0x6088);c.set(6,24);
         c.set(28,iop_disc_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
-        if(c.pc!=IopRuntime::sentinel || stage!=6 || !accepted || !callback || disc_read_dma_submissions!=4 || !disc_read_dma_polls || disc_read_alarm.deadline || disc_read_alarm_cancels!=1)
+        if(c.pc!=IopRuntime::sentinel || stage!=6 || !accepted || !callback || disc_read_dma_submissions!=dma_base+4 || !disc_read_dma_polls || disc_read_alarm.deadline || disc_read_alarm_cancels!=alarm_base+1)
             throw std::runtime_error("Original sector handler incomplete");
         // The original handler resubmits its updated progress word after the completion buffer.
-        if(runtime.read(iop_disc_base+0x5818,4)!=4096)throw std::runtime_error("Final owned progress differs");
+        if(runtime.read(iop_disc_base+0x5818,4)!=bytes)throw std::runtime_error("Final owned progress differs");
         runtime.providers=saved;runtime.disc_type_known=false;++disc_read_calls;return runtime.read(c.get(2),4);
     }catch(const std::exception& e){const auto detail=std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc)+" / a0="+std::to_string(runtime.last_import_arguments[0])+" / a1="+std::to_string(runtime.last_import_arguments[1]);runtime.providers=saved;runtime.disc_type_known=false;failed_=true;throw std::runtime_error(detail);}
 }

@@ -41,7 +41,7 @@ def verify(root,native):
     # After admission, main runs at 24 and helpers 5/6 have executed; verify_startup_workers.py
     # compares that later scope. Earlier lifecycle evidence below still applies to IDs 4 and 7.
     admitted=r.get('main_priority_admissions')==1
-    require(r['main_thread_queries']==1 and r['main_thread_priority']==(24 if admitted else 2) and r['cri_rpc_calls']==37 and r['heap_calls']==6
+    require(r['main_thread_queries']==1 and r['main_thread_priority'] in ((24,1) if admitted else (2,)) # 1 inside main's later critical section. and r['cri_rpc_calls']==37 and r['heap_calls']==6
         and (not admitted or r['main_priority_previous']==2),'Native main status phase differs')
     # Later helper frames reuse the main query buffer; validate its successful query counter, not stale stack bytes.
     require(r['startup_ready_queries']==2 and r['startup_worker_suspends']==2,'Owned ready query/suspension counts differ')
@@ -52,7 +52,9 @@ def verify(root,native):
                      [6,0x2EE050,1,0,18,0x38BDF0,0x34F470,0x100250],
                      [7,0x2EE140,0,1,25,0x38BDF0,0x351470,0x100250]]
     states=[t[:8] for t in r['startup_worker_state']]
-    require(states==expected_states or (admitted and [states[0],states[3]]==[expected_states[0],expected_states[3]]),'Owned ready/suspended worker contexts differ')
+    open_section=admitted and r['scheduled_resumes']>r['scheduled_suspends'] # Main inside its later critical section.
+    first=[4,0x2EDE58,1,0,8,0x38BDF0,0x34C470,0x100250] if open_section else expected_states[0]
+    require(states==expected_states or (admitted and [states[0],states[3]]==[first,expected_states[3]]),'Owned ready/suspended worker contexts differ')
     # Executed helpers reuse their stacks over the reset context; only unexecuted IDs remain checkable.
     for entry,stack,size in [(0x2EDE58,0x34BC90,0x800),(0x2EDF48,0x34D490,0x1000),(0x2EE050,0x34E490,0x1000),(0x2EE140,0x34F490,0x2000)]:
         if admitted and entry in (0x2EDF48,0x2EE050):continue

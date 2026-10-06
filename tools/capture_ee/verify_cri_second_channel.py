@@ -40,7 +40,7 @@ def verify(root,native,service_ram=None):
         require(words(refs[index][1],address,7)==words(retail,address,7),'Constructed object changed between independent captures')
     r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes();iop=Path(str(native)+'.iop.bin').read_bytes()
     require(r['cri_rpc_calls'] in (37,42) and r['heap_calls']==6 and not r['native_iop_error'],'Native second-channel setup incomplete')
-    require(words(ee,0x3AC880,1)==(0x192000,) and words(ee,0x39DD80,1)==(0x1B5E10 if r['cri_rpc_calls']==42 else 0x1B5904,) and words(ee,0x355C70,1)==(0,), 'Native setup result/cleanup differs')
+    require(words(ee,0x3AC880,1)==(0x192000,) and words(ee,0x39DD80,1)==(0x1B5E10 if r['cri_rpc_calls']==42 else 0x1B5904,) and (words(ee,0x355C70,1)==(0,) or (r['selector']==0x77 and words(ee,0x3A97DC,1)==(0x355C70,))), 'Native setup result/cleanup differs') # Later boundary may be the next CRI submission.
     if r['cri_rpc_calls']==37:
         require(service_ram is not None,'Five pairs require the separately executed service checkpoint')
         iop=service_ram.read_bytes();require(len(iop)==2*1024*1024,'Service RAM extent differs')

@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="478" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-06 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-07 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified scope</text>
 <circle cx="204" cy="59" r="4" fill="#b77912"/>
@@ -36,31 +36,31 @@
 <circle cx="41" cy="320" r="3.5" fill="#b77912"/>
 <text x="52" y="324" font-size="13" font-weight="600" fill="#1e293b">Generated startup</text>
 <text x="37" y="342" font-size="11.5" fill="#64748b">Executes to a checked boundary</text></g>
-<g><title>Disc metadata: Verified scope. Initial read and lookups complete</title>
+<g><title>Disc metadata: Verified scope. Directory + 53 archive reads</title>
 <rect x="24" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="371" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="41" cy="382" r="3.5" fill="#16835d"/>
 <text x="52" y="386" font-size="13" font-weight="600" fill="#1e293b">Disc metadata</text>
-<text x="37" y="404" font-size="11.5" fill="#64748b">Initial read and lookups complete</text></g>
+<text x="37" y="404" font-size="11.5" fill="#64748b">Directory + 53 archive reads</text></g>
 <text x="334" y="100" font-size="15" font-weight="600" fill="#334155">Runtime</text>
-<g><title>EE threads and scheduling: Partial / active. Priority admitted; no wakes</title>
+<g><title>EE threads and scheduling: Partial / active. Admission, VBlank wakes</title>
 <rect x="334" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="123" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="134" r="3.5" fill="#b77912"/>
 <text x="362" y="138" font-size="13" font-weight="600" fill="#1e293b">EE threads and scheduling</text>
-<text x="347" y="156" font-size="11.5" fill="#64748b">Priority admitted; no wakes</text></g>
+<text x="347" y="156" font-size="11.5" fill="#64748b">Admission, VBlank wakes</text></g>
 <g><title>Original IOP modules: Partial / active. 13 resident; bounded execution</title>
 <rect x="334" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="185" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="196" r="3.5" fill="#b77912"/>
 <text x="362" y="200" font-size="13" font-weight="600" fill="#1e293b">Original IOP modules</text>
 <text x="347" y="218" font-size="11.5" fill="#64748b">13 resident; bounded execution</text></g>
-<g><title>SIF / RPC / DMA: Partial / active. Binds, stream copies; no wakes</title>
+<g><title>SIF / RPC / DMA: Partial / active. NCMD/SCMD calls; IOP ack pending</title>
 <rect x="334" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="247" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="258" r="3.5" fill="#b77912"/>
 <text x="362" y="262" font-size="13" font-weight="600" fill="#1e293b">SIF / RPC / DMA</text>
-<text x="347" y="280" font-size="11.5" fill="#64748b">Binds, stream copies; no wakes</text></g>
+<text x="347" y="280" font-size="11.5" fill="#64748b">NCMD/SCMD calls; IOP ack pending</text></g>
 <g><title>CRI sound setup: Partial / active. 37 calls; AutoDMA half pending</title>
 <rect x="334" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>
@@ -74,12 +74,12 @@
 <text x="362" y="386" font-size="13" font-weight="600" fill="#1e293b">Memory cards</text>
 <text x="347" y="404" font-size="11.5" fill="#64748b">Absent-card queries only</text></g>
 <text x="644" y="100" font-size="15" font-weight="600" fill="#334155">Game</text>
-<g><title>Archive payload loading: Pending. No archive payload decoded</title>
+<g><title>Archive payload loading: Partial / active. First AFS table loaded</title>
 <rect x="644" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="123" width="3" height="36" rx="1.5" fill="#8793a5"/>
-<circle cx="661" cy="134" r="3.5" fill="#8793a5"/>
+<rect x="644" y="123" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="661" cy="134" r="3.5" fill="#b77912"/>
 <text x="672" y="138" font-size="13" font-weight="600" fill="#1e293b">Archive payload loading</text>
-<text x="657" y="156" font-size="11.5" fill="#64748b">No archive payload decoded</text></g>
+<text x="657" y="156" font-size="11.5" fill="#64748b">First AFS table loaded</text></g>
 <g><title>VU microprograms: Pending. Execution not verified</title>
 <rect x="644" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="185" width="3" height="36" rx="1.5" fill="#8793a5"/>

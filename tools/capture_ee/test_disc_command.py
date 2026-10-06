@@ -32,7 +32,7 @@ class DiscCommandTests(unittest.TestCase):
     def test_readiness_completion_requires_prior_search_and_no_runtime_failure(self):
         r=dict(disc_rpc_binds=1,disc_rpc_calls=1,disc_dma_submissions=1,disc_dma_polls=0,disc_result=1,native_iop_error='',ncmd_rpc_binds=1,ncmd_bind_semaphores=1,ncmd_ready_calls=1)
         self.assertTrue(ready_completed(r))
-        for key,value in [('disc_result',0),('native_iop_error','failed'),('ncmd_rpc_binds',0),('ncmd_ready_calls',0),('ncmd_ready_calls',2),('ncmd_bind_semaphores',0)]:self.assertFalse(ready_completed(dict(r,**{key:value})))
+        for key,value in [('disc_result',0),('native_iop_error','failed'),('ncmd_rpc_binds',0),('ncmd_ready_calls',0),('ncmd_bind_semaphores',0)]:self.assertFalse(ready_completed(dict(r,**{key:value})))
 
     def test_directory_diagnostics_reject_changed_files_count_and_hidden_failure(self):
         from verify_sound_rpc import completed_directory_diagnostics

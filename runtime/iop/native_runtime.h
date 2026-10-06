@@ -414,7 +414,8 @@ public:
             timed_wait_owner=0;++timed_wakes;current_thread=owner;return 0u;
         } catch(...) {current_thread=owner;throw;} // Keep the pending snapshot/deadline for diagnosis.
     }
-    void tick(IopContext& c) {executing_pc=c.pc;if(++steps>100000)throw std::runtime_error("IOP diagnostic budget exceeded");}
+    // Lifetime runaway guard; repeated owned disc requests legitimately accumulate steps.
+    void tick(IopContext& c) {executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {
         const auto key=std::make_pair(std::string(library),ordinal);
         imports.push_back(key.first+":"+std::to_string(ordinal));

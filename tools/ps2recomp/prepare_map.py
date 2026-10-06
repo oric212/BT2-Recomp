@@ -66,9 +66,9 @@ def has_tail_nop_gap(candidate, metadata, data):
 def bounded_word_switch(address,start,end,spans,metadata,data,word):
     """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom.
 
-    The index is formed by ADDIU v1,rs,imm or moved by DADDU v1,rs,zero. With BEQ, SLL is its
-    delay slot. With BEQL, the delay slot runs only on the out-of-range branch, so it may be
-    any non-control instruction and SLL follows it."""
+    Safety rests on the SLTIU v0,v1,N bound and its guard branch; the instruction producing v1
+    only has to be non-control. With BEQ, SLL is its delay slot. With BEQL, the delay slot runs
+    only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
     if address-start<28 or address+8>end or word(address)!=0x00600008 or word(address+4)!=0:return False
     tail=[word(address+n) for n in (-16,-12,-8,-4)]
     if tail[0]!=0x00031080 or (tail[1]&0xFFFF0000)!=0x3C030000 or tail[2]!=0x00621821 or (tail[3]&0xFFFF0000)!=0x8C630000:return False
@@ -79,7 +79,7 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x50400000 and not control(word(address-20)):branch=address-24
     else:return False
     index,bound=word(branch-8),word(branch-4)
-    if not((index&0xFC1F0000)==0x24030000 or (index&0xFC1FFFFF)==0x0000182D) or (bound&0xFFFF0000)!=0x2C620000:return False
+    if control(index) or (bound&0xFFFF0000)!=0x2C620000:return False
     count=bound&65535
     if not 1<=count<=256:return False
     immediate=word(branch)&65535;immediate=immediate-65536 if immediate&32768 else immediate

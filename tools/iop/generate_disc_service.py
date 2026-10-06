@@ -21,9 +21,11 @@ def main():
  f=root/'work/pcsx2-capture/rpc-ncmd-bind-after-absent-cards';m=json.loads((f/'capture.json').read_text(encoding='utf-8'));live=(f/'iop-ram.bin').read_bytes()
  if hashlib.sha256(live).hexdigest()!=m['iop_capture_sha256'] or any(m[k]!=baseline[k] for k in ('source_elf_sha256','pcsx2_sha256','bios_sha256','disc_sha256')):raise ValueError('NCMD capture identity differs')
  if any(live[retail+lo:retail+hi]!=actual[lo:hi] for lo,hi in r['code_ranges']) or struct.unpack_from('<3I',live,0x43418)!=(0x80000595,retail+0x3ABC,0x43DB8):raise ValueError('Retail NCMD code/handler differs')
- base=0x1A0000;memory=relocate(data,r,base);source=emit(memory,base,r['code_ranges'],r['imports'],{x['start'] for x in r['provisional_functions']}|{0x754,0x3ABC},symbol='bt2_iop_disc')
+ # The same module registers the S-command server; its handler is translated as a checked entry.
+ if struct.unpack_from('<3I',live,0x434F0)!=(0x80000593,retail+0x3E98,0x439A8):raise ValueError('Retail SCMD handler differs')
+ base=0x1A0000;memory=relocate(data,r,base);source=emit(memory,base,r['code_ranges'],r['imports'],{x['start'] for x in r['provisional_functions']}|{0x754,0x3ABC,0x3E98},symbol='bt2_iop_disc')
  out=root/'work/iop/disc_native.cpp';out.write_text(source,encoding='utf-8');out.with_suffix('.bin').write_bytes(memory)
  out.with_suffix('.h').write_text('#pragma once\nconstexpr unsigned iop_disc_base='+str(base)+',iop_disc_gp='+str(base+r['gp'])+';\ninline constexpr std::array<unsigned char,'+str(len(memory))+'> iop_disc_image={'+','.join(map(str,memory))+'};\n',encoding='utf-8')
- out.with_suffix('.json').write_text(json.dumps({'module_sha256':r['sha256'],'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'image_sha256':hashlib.sha256(memory).hexdigest(),'retail_base':retail,'base':base,'handler':base+0x754,'command_handler':base+0x3ABC,'limitations':'Checked translated search and command handlers; boot entry/residency not executed.'},indent=2)+'\n',encoding='utf-8')
+ out.with_suffix('.json').write_text(json.dumps({'module_sha256':r['sha256'],'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'image_sha256':hashlib.sha256(memory).hexdigest(),'retail_base':retail,'base':base,'handler':base+0x754,'command_handler':base+0x3ABC,'scmd_handler':base+0x3E98,'limitations':'Checked translated search, command and S-command handlers; boot entry/residency not executed.'},indent=2)+'\n',encoding='utf-8')
  print('Disc-matched search handler generated with independently checked retail code/GP; output ignored.')
 if __name__=='__main__':main()

@@ -33,3 +33,7 @@ Interrupt delivery, timed wakes and a wake-capable scheduler did not exist befor
 ## Limits and stop conditions
 
 Do not fabricate request completion, handle states, CRI acknowledgements or IOP data. Do not run interrupts on a free-running host timer. Do not resume a parked worker without an owned wake. Stop at a further new subsystem (for example, real archive decompression or GS presentation), when required evidence cannot be captured, or when the next change would be speculative.
+
+## Outcome (2026-10-07)
+
+Steps 1–5 are implemented and verified for the first request. The first VBlank is delivered at the cause-2 enable, matching original phase evidence. Helpers 5/6 wake and re-park, and one logical VBlank per idle call drives the CRI file system through original CDVDFSV readiness, read and error-query handlers. The loaded archive table is byte-identical to the original. IOP stream consumer acknowledgement remains open. Normal startup continues to the next CRI command service (see PROG.md).

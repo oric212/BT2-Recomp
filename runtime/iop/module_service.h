@@ -78,6 +78,8 @@ public:
     std::uint32_t freeBootHeap(unsigned epoch,unsigned pointer);
     std::uint32_t callDiscSearch(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory,const std::string& disc_path);
     std::uint32_t callDiscReady(unsigned epoch);
+    std::uint32_t callDiscScmd(unsigned epoch,unsigned command);
+    unsigned disc_scmd_calls=0;
     std::uint32_t callDiscRead(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee,const std::string& path);
     IopRuntime::Alarm disc_read_alarm;
     unsigned disc_read_alarm_sets=0,disc_read_alarm_cancels=0;
