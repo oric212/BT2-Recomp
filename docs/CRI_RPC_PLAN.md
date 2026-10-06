@@ -44,3 +44,8 @@ The full native 0x40C path transfers the original input and executes the real ha
 A fourth retail request captures 0x422, twelve input bytes `[1, 0x150640, 0x100]`, four result bytes, caller return 0x2FD1F8. It observes the preceding 0x40C result `[0, 1, 0]`; no native return or meaning is substituted. Follow [the new child-start scope](CRI_THREAD_START_PLAN.md) before dispatching this worker.
 
 The fourteen earlier-scope evidence validators run against ignored `cache-completed.json`, retained at the next command's semaphore boundary with no IOP failure. A separate `verify_cri_preemption.py` validates the latest failing full checkpoint. This keeps completed cache/0x403 claims separate from the unsupported scheduler transition.
+
+
+## CRI child start and AutoDMA handoff (2026-10-06)
+
+The bounded 0x40C child start now completes its original first WaitSema and restores the RPC parent. Native execution continues through nested interrupt handling and captured initial DMA control/ADMAS reads, then rejects ADMAS enable (halfword 1 at 0x1F9001B0, PC 0x92DB8). No 0x40C result or generated cleanup is substituted. Follow CRI_AUTODMA_PLAN.md; earlier commands 2/0x403 remain complete.

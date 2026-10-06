@@ -55,18 +55,20 @@ int main(int argc,char** argv) {
                 rejected([&]{service.callCriControl(1,0x40C,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong_configuration.data()),12));});
                 rejected([&]{service.callCriControl(1,0x422,configuration_bytes);});
                 check(service.runtime.ram==controlled);
-                bool preemption_blocked=false;
+                bool adma_blocked=false;
                 try {service.callCriControl(1,0x40C,configuration_bytes);}
                 catch(const std::runtime_error& e) {
-                    preemption_blocked=std::string(e.what())=="Higher-priority nested IOP start needs preemption";
-                    std::cout<<"Observed CRI 0x40C boundary: "<<e.what()<<" pc="<<std::hex<<service.runtime.executing_pc<<std::dec<<"\n";
-                    for(const auto& [id,t]:service.runtime.threads)
-                        if(!t.ready && !t.waiting)std::cout<<"Unstarted child id="<<id<<" entry="<<std::hex<<t.entry<<" gp="<<t.gp<<" stack="<<t.stack<<" size="<<t.stacksize<<std::dec<<" priority="<<t.priority<<"\n";
+                    adma_blocked=std::string(e.what())=="Unimplemented IOP memory/hardware access" && service.runtime.executing_pc==0x92DB8
+                        && service.runtime.blocked_address==0x1F9001B0 && service.runtime.access_width==2
+                        && service.runtime.access_kind=="write" && service.runtime.access_value==1;
                 }
-                check(preemption_blocked && service.cri_control_calls==1 && !service.runtime.current_thread);
+                const auto& child=service.runtime.threads.at(0x2000E);
+                check(adma_blocked && service.cri_control_calls==1 && child.entry==0x16D890 && child.waiting && !child.ready
+                    && child.wait_semaphore==service.runtime.read(0x175A84,4) && child.context.pc==0x17463C
+                    && child.context.get(31)==0x16D8D0 && !service.runtime.current_thread && service.runtime.spu2_dma_idle_reads==1 && service.runtime.spu2_configuration.at(0x1F9001B0)==0);
                 rejected([&]{service.callCriControl(1,0x40C,configuration_bytes);});
                 std::ofstream out(argv[3],std::ios::binary);out.write(reinterpret_cast<const char*>(service.runtime.ram.data()),service.runtime.ram.size());check(bool(out));
-                std::cout<<"Original CRI create/control complete; 0x40C reaches checked nested-preemption boundary.\n";return 0;
+                std::cout<<"Original CRI create/control complete; 0x40C child parks and reaches unimplemented AutoDMA enable.\n";return 0;
             }
             std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
             std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;

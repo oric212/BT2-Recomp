@@ -57,9 +57,9 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         memory.entry_targets.insert(entry);return id;
     };
     rt.providers[{"intrman",17}]=[](IopRuntime& memory,IopContext& c) {
-        if(!memory.cpu_interrupts_enabled)throw std::runtime_error("Nested IOP interrupt suspend unsupported");
-        if(c.get(4))memory.write(c.get(4),1,4);
-        memory.cpu_interrupts_enabled=false;return 0u;
+        const auto previous=memory.cpu_interrupts_enabled?1u:0u;
+        if(c.get(4))memory.write(c.get(4),previous,4);
+        memory.cpu_interrupts_enabled=false;return previous?0u:static_cast<std::uint32_t>(-102);
     };
     rt.providers[{"intrman",18}]=[](IopRuntime& memory,IopContext& c) {
         if(c.get(4)>1)throw std::runtime_error("Unsupported IOP interrupt state");
@@ -187,6 +187,13 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(found==memory.semaphores.end())throw std::runtime_error("Unknown IOP semaphore wait");
         if(!memory.cpu_interrupts_enabled)throw std::runtime_error("IOP semaphore wait with interrupts disabled");
         if(!found->second.count) {
+            const auto owner=memory.threads.find(memory.current_thread);
+            if(owner!=memory.threads.end() && owner->second.entry==0x16D890 && owner->second.priority==39
+                && owner->second.gp==0x17DDF0 && c.pc==0x17463C && c.get(31)==0x16D8D0
+                && c.get(4)==memory.read(0x175A84,4) && !memory.in_interrupt) {
+                auto& t=owner->second;t.waiting=true;t.ready=false;t.wait_semaphore=c.get(4);
+                throw IopYield{}; // Preserve the original import continuation for a future owned wake.
+            }
             if(c.pc!=0x31B94 || c.get(4)!=memory.read(0x33F10,4) || memory.card_alarm.callback!=0x29F84
                 || memory.card_alarm_fires>=5 || memory.card_alarm_waits>=5
                 || memory.timed_wakes!=memory.card_alarm_waits+1)
@@ -312,10 +319,29 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(found==memory.threads.end() || found->second.ready || found->second.waiting || !memory.execute)
             throw std::runtime_error("Unsupported IOP thread start");
         const auto parent=memory.current_thread;
-        if(parent && found->second.priority<memory.threads.at(parent).priority)
-            throw std::runtime_error("Higher-priority nested IOP start needs preemption");
+        const bool preempt=parent && found->second.priority<memory.threads.at(parent).priority;
+        if(preempt) {
+            const auto server=memory.rpc_servers.find(0x90000200);
+            if(server==memory.rpc_servers.end() || !memory.rpc_queues.contains(server->second.queue)
+                || memory.rpc_queues.at(server->second.queue).thread!=parent || memory.threads.at(parent).priority!=48
+                || c.pc!=0x1745F0 || c.get(5) || found->second.entry!=0x16D890
+                || found->second.priority!=39 || found->second.gp!=0x17DDF0 || found->second.stacksize!=0x800
+                || !memory.cpu_interrupts_enabled || memory.in_interrupt)
+                throw std::runtime_error("Higher-priority nested IOP start outside CRI scope");
+        }
         auto& t=found->second;t.context={};t.ready=true;t.context.pc=t.entry;t.context.set(4,c.get(5));
         t.context.set(28,t.gp);t.context.set(29,t.stack+t.stacksize-0x20);t.context.set(30,t.context.get(29));t.context.set(31,IopRuntime::sentinel);
+        if(preempt) {
+            memory.current_thread=found->first;
+            try {memory.execute(memory,t.context);memory.current_thread=parent;throw std::runtime_error("Unexpected CRI child completion");}
+            catch(const IopYield&) {
+                memory.current_thread=parent;
+                if(!t.waiting || t.ready || t.wait_semaphore!=memory.read(0x175A84,4) || t.context.pc!=0x17463C)
+                    throw std::runtime_error("CRI child did not park at observed first semaphore");
+                return 0u;
+            }
+            catch(...) {memory.current_thread=parent;throw;}
+        }
         if(parent)return 0u; // Lower/equal priority child stays ready until the current worker blocks.
         memory.current_thread=found->first;
         try {memory.execute(memory,t.context);memory.current_thread=0;throw std::runtime_error("Unexpected IOP thread completion");}

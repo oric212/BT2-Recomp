@@ -67,3 +67,8 @@ The bounded disc scope now completes the directory-sector read, generated parsin
 
 
 The reached EE indexed cache scope now completes both original helpers and command 0x403 through generated cleanup. Original command 0x40C reaches higher-priority nested IOP StartThread, with no substituted result. Establish [CRI child-start/preemption ownership](CRI_THREAD_START_PLAN.md), capture its first wait and retain the active borrowed RPC parent before extending scheduling. Current counts and the separate completed-scope/failing-boundary validation records are in PROG.md.
+
+
+## CRI child start and AutoDMA handoff (2026-10-06)
+
+The bounded CRI higher-priority child start/first wait is now validated. Current 0x40C execution reaches first AutoDMA enable; follow CRI_AUTODMA_PLAN.md to establish initial buffer, transfer programming and interrupt/callback ownership before acknowledging it. General playback remains incomplete.

@@ -48,6 +48,7 @@ public:
     std::uint32_t last_import_ra=0,last_import_sp=0;
     std::uint32_t cdvd_interrupt_event=0;
     unsigned data_cache_flushes=0;
+    unsigned spu2_dma_idle_reads=0;
     std::map<std::uint32_t,std::uint32_t> spu2_configuration;
     std::set<unsigned> enabled_interrupts;
     std::array<std::uint32_t,2> spu2_pending_key_off{},spu2_pending_key_on{};
@@ -75,7 +76,7 @@ public:
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;std::uint32_t gp=0;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;unsigned wait_semaphore=0;};
     std::map<unsigned,Thread> threads;
     std::uint64_t next_wait_order=0;
     std::uint64_t logical_time_us=0,timed_deadline_us=0;
@@ -135,6 +136,16 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="read";access_value=0;
         const auto p=physical(address);
+        if(size==4 && p==0x1F8010C8 && executing_pc==0x92250 && !spu2_dma_idle_reads
+            && spu2_fifo_halfwords==8 && spu2_reset_status_reads==2 && spu2_io_status_reads==1) {
+            const auto server=rpc_servers.find(0x90000200);
+            const auto child=std::find_if(threads.begin(),threads.end(),[](const auto& row){return row.second.entry==0x16D890;});
+            if(server==rpc_servers.end() || !rpc_queues.contains(server->second.queue)
+                || current_thread!=rpc_queues.at(server->second.queue).thread || read(server->second.descriptor+36,4)!=0x40C
+                || child==threads.end() || !child->second.waiting || child->second.ready || !child->second.wait_semaphore)
+                throw std::runtime_error("SPU DMA idle query outside observed CRI startup");
+            ++spu2_dma_idle_reads;return 0; // Captured initial CHCR; no DMA has been accepted by this owned device.
+        }
         if(size==1 && p==0x1F402005 && disc_type_known && executing_pc==0x1A3A38 && disc_type_reads==2 && !disc_ready_status_reads){++disc_ready_status_reads;return 0x4C;}
         if(size==1 && p==0x1F40200F && disc_type_known && ((executing_pc==0x1A3B1C && disc_type_reads==0) || (executing_pc==0x1A3A34 && disc_type_reads==1))){++disc_type_reads;return 0x14;}
         if(size==4 && abi_read_only_words.contains(p))return abi_read_only_words.at(p);
@@ -155,7 +166,7 @@ public:
         }
         if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_configuration.contains(p)) {
             const auto offset=(p-0x1F900000)&0x3FF;
-            if((p>=0x1F900760 && p<=0x1F900796) || (offset>=0x1C0 && offset<0x2E0 && (offset-0x1C0)%12<=2) || offset==0x19A || (offset<0x180 && (offset%16==0 || offset%16==2 || offset%16==4 || offset%16==6 || offset%16==8)))
+            if((p>=0x1F900760 && p<=0x1F900796) || (offset>=0x1C0 && offset<0x2E0 && (offset-0x1C0)%12<=2) || offset==0x19A || offset==0x1B0 || (offset<0x180 && (offset%16==0 || offset%16==2 || offset%16==4 || offset%16==6 || offset%16==8)))
                 return spu2_configuration.at(p); // Retained parameter register readback, no dynamic ENVX/status defaults.
         }
         if((p==0x1F8010F0 || p==0x1F801570) && size==4) {

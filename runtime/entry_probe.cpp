@@ -736,6 +736,13 @@ int main(int argc, char** argv) {
                 << ",\"native_module_loads\":" << runtime.native_module_loads
                 << ",\"native_module_request\":" << std::quoted(runtime.native_module_request)
                 << ",\"native_iop_error\":" << std::quoted(runtime.native_iop_error)
+#ifdef BT2_NATIVE_IOP
+                << ",\"native_iop_blocked_address\":" << (runtime.native_iop?runtime.native_iop->runtime.blocked_address:0)
+                << ",\"native_iop_access_width\":" << (runtime.native_iop?runtime.native_iop->runtime.access_width:0)
+                << ",\"native_iop_access_value\":" << (runtime.native_iop?runtime.native_iop->runtime.access_value:0)
+                << ",\"native_iop_access_kind\":\"" << (runtime.native_iop?runtime.native_iop->runtime.access_kind:"") << "\""
+                << ",\"spu2_dma_idle_reads\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_dma_idle_reads:0)
+#endif
                 << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
                 << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
                 << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
@@ -787,6 +794,17 @@ int main(int argc, char** argv) {
                 auto& rt=runtime.native_iop->runtime;
                 const auto handle=rt.read(0xA14CC,4);const auto& t=rt.threads.at(handle);
                 report<<handle<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option<<","<<t.waiting<<","<<t.ready;
+            }
+#endif
+            report<<"],\"cri_thread_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop) {
+                const auto& rt=runtime.native_iop->runtime;
+                for(const auto& [id,t]:rt.threads)if(t.entry==0x16D890) {
+                    report<<id<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option
+                          <<","<<t.waiting<<","<<t.ready<<","<<t.wait_semaphore<<","<<t.context.pc<<","<<t.context.get(31);
+                    break;
+                }
             }
 #endif
             report<<"],\"ee_sound_context\":[";

@@ -499,6 +499,7 @@ def main():
     parser.add_argument('--capture-first-pad-poll',action='store_true',help='Instrument the first IOP FIFO receive after SIO2D return; isolated interpreter profile only.')
     parser.add_argument('--capture-spu2-key-readback',choices=['on','off'],help='Terminal first LIBSD key-on readback after SOUNDS return.')
     parser.add_argument('--capture-spu2-initialized',action='store_true',help='Terminal LIBSD sceSdInit return and register snapshot after SOUNDS return.')
+    parser.add_argument('--capture-cri-thread',choices=['start','dma','adma'],nargs='?',const='start',help='Observe CRI StartThread and first WaitSema at third command.')
     parser.add_argument('--capture-cri-low-read',action='store_true',help='Terminal reached CRI low-memory argument read after SOUNDS return.')
     parser.add_argument('--capture-iop-card-alarm',action='store_true',help='Capture initial real card SetAlarm setup/return.')
     parser.add_argument('--capture-iop-card-fifo',action='store_true',help='Capture the first absent-card byte FIFO packet.')
@@ -548,6 +549,7 @@ def main():
     if args.capture_disc_type:folder=folder.with_name(folder.name+'-disc-type')
     if args.capture_disc_dma:folder=folder.with_name(folder.name+'-disc-dma')
     if args.capture_dbc_dma:folder=folder.with_name(folder.name+'-dbc-dma')
+    if args.capture_cri_thread:folder=folder.with_name(folder.name+'-cri-thread-'+args.capture_cri_thread)
     if args.capture_cri_low_read:folder=folder.with_name(folder.name+'-cri-low-read')
     if args.capture_spu2_transfer:folder=folder.with_name(folder.name+'-spu2-transfer')
     if args.capture_spu2_interrupts:folder=folder.with_name(folder.name+'-spu2-interrupts')
@@ -586,6 +588,9 @@ def main():
                 'SaveStateOnShutdown = false\nEnableDiscordPresence = false\n'
                 '[EmuCore/GS]\nRenderer = 11\n'
                 '[SPU2/Output]\nOutputModule = nullout\n')
+    if args.capture_cri_thread:
+        if args.capture_point!='rpc-cri-third-before' or not args.disc or not args.absent_cards or any(v for k,v in vars(args).items() if k.startswith('capture_') and k not in ('capture_point','capture_cri_thread')):raise ValueError('CRI thread capture requires isolated third command')
+        settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
     if args.capture_spu2_status or args.capture_spu2_interrupts or args.capture_spu2_transfer or args.capture_spu2_key_readback or args.capture_spu2_initialized or args.capture_cri_low_read:
         if args.capture_point!='sounds-module-after' or args.capture_first_pad_poll or (sum(map(bool,[args.capture_spu2_status,args.capture_spu2_interrupts,args.capture_spu2_transfer,args.capture_spu2_key_readback,args.capture_spu2_initialized,args.capture_cri_low_read]))>1):raise ValueError('SPU2 status capture requires SOUNDS checkpoint without FIFO capture')
         settings+='[EmuCore/CPU/Recompiler]\nEnableEE = false\nEnableIOP = false\n'
@@ -643,6 +648,10 @@ def main():
         log = (folder / 'pcsx2.log').read_text(encoding='utf-8', errors='replace')
         if f'DataRoot Directory: {profile}' not in log:
             raise ValueError('PCSX2 did not use the isolated data profile.')
+        if args.capture_cri_thread:
+            from capture_cri_thread import capture
+            capture(reader,pointer,iop_rva,original,folder,address,args)
+            return
         if args.capture_iop_card_alarm:
             from capture_card_alarm import capture
             capture(reader,pointer,iop_rva,original,folder,address,args)

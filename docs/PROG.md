@@ -6,20 +6,22 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 
 The optional native EE probe completes bounded platform/module startup, initial sound/DBCMAN exchanges, the absent-card query, disc bind/readiness and **the first real sector read**. Original translated IOP code transfers 4096 local ISO bytes and runs its owned completion callback; generated EE callback/cleanup clears the busy flag. Original game code parses the 64-byte directory index, completes all five listed file metadata lookups and returns to the main entry continuation. CRI bind, original command-2 stream-slot allocation and command 0x403 complete, with a third owned IOP heap block. Both reached EE indexed cache scans execute through checked coherent-memory hooks. **No archive contents decoded, presented game frame or native audio playback.**
 
-Verified: MSVC builds, **16/16 CTests**, **132/132 capture tests**, **49/49 recompilation tests**, **13/13 IOP tooling tests**, and fourteen independent evidence validators on the completed cache/0x403 checkpoint, plus the new 0x40C boundary validator. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **16/16 CTests**, **136/136 capture tests**, **49/49 recompilation tests**, **13/13 IOP tooling tests**, and fourteen independent evidence validators on the completed cache/0x403 checkpoint, plus the new 0x40C boundary validator. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The current boundary is **CRI command 0x40C / higher-priority nested IOP StartThread**, import PC **0x1745F0**. Original input `[0xBB80, 0xFFFF, 0xFFFF]` reaches the translated handler. It creates child entry **0x16D890**, GP **0x17DDF0**, priority **39**, stack size **0x800**, while the borrowed CRI worker has priority **48**. The runtime rejects nested preemption before starting the child; **no native 0x40C completion is claimed**.
+The current boundary is **CRI command 0x40C / first SPU2 AutoDMA enable**: native PC **0x92DB8**, halfword write **1** to **0x1F9001B0**. The runtime rejects it before altering ADMAS. **No AutoDMA transfer or native 0x40C completion is claimed**.
 
-Next: establish the child start/first wait and parent/RPC ownership under preemption. See [CRI thread-start scope](CRI_THREAD_START_PLAN.md). [Cache scope](EE_CACHE_TRANSFER_PLAN.md) now validates two original indexed scans, **256 tag loads/reads**, unchanged owned range and restored interrupts. [CRI RPC scope](CRI_RPC_PLAN.md) completes bind, command 2 and full command 0x403 cleanup. Retail's next request is 0x422; its buffer/streaming effects remain unimplemented.
+This pass completes the bounded higher-priority CRI child start and first WaitSema, parent restoration, nested interrupt-state handling and captured initial DMA-control/ADMAS reads. The child is now parked at **0x17463C**, entry **0x16D890**, priority **39**, while its priority-48 RPC parent continues. See [child-start evidence](CRI_THREAD_START_PLAN.md).
+
+Next: establish owned initial AutoDMA buffer/transfer, register programming and completion/callback lifetime. See [AutoDMA scope](CRI_AUTODMA_PLAN.md). Original transfer arguments are core 0 / mode **0xC000** / **4096 bytes**; the observed initial buffer is zero-filled. Command 0x403 remains complete; 0x40C and subsequent 0x422 remain incomplete.
 
 Remaining ownership: the SDRDRV helper is parked on a reverse EE bind to **0x80000704**. Logical IOP time is **1900 us**; the fifth card alarm remains armed at **2000 us**. General cross-CPU scheduling, later timer delivery, mounted cards and sound playback remain incomplete. An EE child is ready but has not executed.
 
 ## Key counts
 
-- **8,584** provisional EE map entries / **8,587** raw generated C++/header files; boundaries remain provisional. **9 additional reached EE entries linked this pass**; several initialization frames remain pending. This is not a count of fully restored gameplay functions.
-- Latest full checkpoint: **2,422 EE calls / 2,411 returns**, **43,632 native IOP instructions / 179 physical entry targets**, including the unfinished 0x40C handler. Earlier twelve ordinary workers and the reverse-bind helper remain parked; the new priority-39 child is created but unstarted.
+- **8,584** provisional EE map entries / **8,587** raw generated C++/header files; boundaries remain provisional. **No new EE entries linked this pass; 9 linked in the preceding pass**; several initialization frames remain pending. This is not a count of fully restored gameplay functions.
+- Latest full checkpoint: **2,422 EE calls / 2,411 returns**, **50,805 native IOP instructions / 210 physical entry targets**, including the unfinished 0x40C handler. Earlier twelve ordinary workers and the reverse-bind helper remain parked; the new priority-39 child is parked on its first semaphore.
 - Earlier distinct-function checkpoint: **111 entered / 107 completed**; current distinct totals have not been remeasured. Calls/returns are execution events.
 - **Fourteen module-load paths / thirteen resident modules**, three owned IOP allocations, four EE startup pools and completed initial sound/MCSERV exchanges.
 - Disc: **one two-sector read / one original IOP callback / four logical read DMA jobs**, plus **six metadata lookups/transfers** (index and five listed files). Captured physical polling counts/timing are not equated with native logical transport.

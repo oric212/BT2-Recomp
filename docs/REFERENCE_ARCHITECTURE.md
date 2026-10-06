@@ -243,3 +243,8 @@ Original BT2/CDVDFSV code selects layer-zero search ordinal 84 from its 300-byte
 Reviewed pinned BT3 coherent native-memory/cache configuration and the pinned PCSX2 CACHE implementation linked in EE_CACHE_TRANSFER_PLAN.md. Adapted explicit invalid logical tags and checked indexed ordering to owned coherent RAM; original BT2 translated branches remain intact. Two independent full scans publish both ways and caller returns. PCSX2's flags-only TagLo behavior cannot validate physical PS2 tag addresses or cache timing. No reference implementation was copied.
 
 Original CRI 0x40C now exposes a priority-39 child start from its priority-48 borrowed RPC worker. Existing bounded MCSERV/SIO2 event preemption informs parent ownership, but does not establish the new child-start lifecycle or first wait. CRI_THREAD_START_PLAN.md records the evidence and required scheduling design; the runtime explicitly rejects this transition.
+
+
+## CRI child start and AutoDMA handoff (2026-10-06)
+
+Consulted the pinned BT3 cooperative IOP notes, public PS2SDK StartThread/WaitSema ownership, intrman.c/intrman.h and kerr.h for nested suspend state and KE_CPUDI (-102). Adapted the existing bounded retained-parent event-preemption pattern to the observed CRI child start. Independent original StartThread/WaitSema return captures verify the parent/child handoff. Pinned PCSX2 RegTable maps ADMAS to retained AutoDMACtrl; Dma/ReadInput identify a separate AutoDMA ownership path. The initial CHCR read and requested ADMAS write are captured independently. No reference implementation was copied; active transfer/playback requires CRI_AUTODMA_PLAN.md.
