@@ -70,4 +70,4 @@ Reference: [Chronicle's progress workflow](https://github.com/TheMoonPeople/Chro
 
 Edit `progress/components.json` when scoped evidence changes, run `tools/docs/render_status.py`, then synchronize README. Keep labels short and state verified scope in each note. Keep detailed counters in PROG.md and the numeric snapshot; README displays the map, milestone table, current boundary and a few key measurements. There is no automatic inference that a whole SDK library or hardware subsystem works because some functions execute.
 
-The compact milestone table and grouped generated map adapt presentation ideas from [God of War Recomp's status breakdown](https://github.com/KIexster/god-of-war-recomp/blob/main/docs/estado/detalle.en.md). Our categories and evidence are BT2-specific; no generator implementation or weighted completion estimate was copied.
+The milestone table and component map describe BT2-specific evidence. No weighted completion estimate is used.

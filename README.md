@@ -93,7 +93,6 @@ Development of this project involves AI tools for coding, investigation and docu
 | [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors | Static recompilation toolchain; GPL-3.0 |
 | [BT3-Recomp](https://github.com/z3xox/BT3-Recomp) by z3xox and contributors | Primary architectural and tooling reference |
 | [Chronicle](https://github.com/TheMoonPeople/Chronicle) by TheMoonPeople and contributors | Reverse-engineering and progress-reporting reference |
-| [God of War Recomp](https://github.com/KIexster/god-of-war-recomp) by KIexster and contributors | Component status-map presentation reference |
 | [PCSX2](https://github.com/PCSX2/pcsx2) and [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Behavioral comparison and reverse-engineering tools |
 
 Reference projects inform architecture and investigation; BT2-specific behavior is validated against local evidence. Dependency versions and licenses are recorded in [the content and license documentation](docs/LEGAL.md).
