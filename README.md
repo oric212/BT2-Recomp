@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** main's next CRI command `0x408` (38th CRI call) after the first archive load.
+**Current blocker:** generated entry `0x2FFA00` after the first late CRI `0x408` pair (38th CRI call).
 
-**Last measured, 2026-10-07:** **510 EE entries entered / 499 completed**, **53 original IOP disc reads**, **105 logical VBlanks**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **511 EE entries entered / 502 completed**, **38 CRI calls**, **53 original IOP disc reads**, **105 logical VBlanks**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

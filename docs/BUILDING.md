@@ -109,4 +109,4 @@ Normal startup now admits main's ChangeThreadPriority(1, 24) and runs the ready 
 python tools/capture_ee/verify_startup_workers.py --native work/bt2-generation/entry-stop.json
 ```
 
-Helper wakes, interrupt delivery and timing remain unimplemented; reaching the reported boundary is not a full game boot.
+Owned helper wakes and logical VBlank delivery now drive the first archive-table load. Physical timing, IOP stream acknowledgement and full startup remain unverified; see the current progress page for the measured boundary.

@@ -18,9 +18,9 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-07
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** main's next CRI command `0x408` (38th CRI call) after the first archive load.
+**Current blocker:** generated entry `0x2FFA00` after the first late CRI `0x408` pair (38th CRI call).
 
-**Last measured, 2026-10-07:** **510 EE entries entered / 499 completed**, **53 original IOP disc reads**, **105 logical VBlanks**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **511 EE entries entered / 502 completed**, **38 CRI calls**, **53 original IOP disc reads**, **105 logical VBlanks**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->
@@ -29,16 +29,16 @@ Helper 5/6 execution is now part of normal startup; the former separate helper d
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 510 distinct entered / 499 completed; kernel 2 / 2; 74,373 call events / 74,359 returns |
-| Mapping | 8,699 provisional EE entries; 8,702 raw generated files; 440 extra entries selected |
-| IOP | 138,268 instructions; 216 physical entry targets; 14 load paths / 13 resident modules |
+| EE | 511 distinct entered / 502 completed; kernel 2 / 2; 74,419 call events / 74,411 returns |
+| Mapping | 8,699 provisional EE entries; 8,702 raw generated files; 441 extra entries selected |
+| IOP | 141,526 instructions; 247 physical entry targets; 14 load paths / 13 resident modules |
 | Memory / threads | Six IOP heap allocations; four EE startup pools; main priority 2 → 24 admitted; 105 logical VBLANK_START deliveries; 210 owned helper wakes/resumes |
 | Disc | Directory read plus 52 archive reads (53 total), 53 readiness queries and 52 error queries through original CDVDFSV handlers; first AFS table (0x6880 bytes) byte-identical to original |
-| Sound | 37 CRI calls; first 2,048-byte AutoDMA half programmed; two EE→IOP CRI stream-buffer copies; no consumption / completion IRQ / native playback verified |
+| Sound | 38 CRI calls (first late second-channel pair); first 2,048-byte AutoDMA half programmed; two EE→IOP CRI stream-buffer copies; no consumption / completion IRQ / native playback verified |
 | Cards | Six DMA pairs / five timed FIFO probes; absent-card path only |
 | GS | Three packets / two startup draws / 573,440 sprite pixels; startup clears only; no presented frame or VU execution |
 
-Previous normal checkpoint → current: distinct EE **429 / 420 → 510 / 499**, calls/returns **4,729 / 4,723 → 74,373 / 74,359**, IOP instructions **81,640 → 138,268**. Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE **510 / 499 → 511 / 502**, calls/returns **74,373 / 74,359 → 74,419 / 74,411**, IOP instructions **138,268 → 141,526**. Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
@@ -49,7 +49,7 @@ Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **157 ca
 
 Enabling VBLANK_START delivers the latched interrupt at once; original captures place it after the enable and before the request. Handlers run with the kernel ABI on the captured interrupt stack; iWakeupThread readies sleeping helpers 5/6, which preempt main and re-park. Main's request poll then uses one logical VBlank per idle call. Helper 6 drives `zs2us_1.afs` through original CDVDFSV readiness, read and error-query handlers. Main leaves the poll with the loaded 0x6880-byte table identical to the original capture (original: 120 VBlanks; timing not equated). The first R5900 FPU operations now use authored round-toward-zero, non-IEEE semantics.
 
-Normal startup stops at main's next CRI command `0x408` (38th CRI call). Next: continue CRI command service through the second-channel batch. The IOP stream consumer acknowledgement (original trailer counter 2) is not modeled. See [interrupt/load plan](EE_INTERRUPT_LOAD_PLAN.md) and the [resume handoff](progress/ACTIVE_PASS.md).
+The first late CRI `0x408` pair now completes through the original IOP handler, validated against the CRI client's live RPC ID: disc RPCs consume IDs in between. Normal startup stops at mapped generated entry `0x2FFA00`, which is not yet selected. Next: select it and continue the remaining four pairs. The IOP stream consumer acknowledgement (original trailer counter 2) is not modeled. See [interrupt/load plan](EE_INTERRUPT_LOAD_PLAN.md) and the [resume handoff](progress/ACTIVE_PASS.md).
 
 Remaining: IOP stream consumption, sound command processing, general timers, mounted cards, archive decompression/use, audio and presentation. Complete startup and a presented game frame remain unverified.
 

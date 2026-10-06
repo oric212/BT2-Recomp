@@ -549,6 +549,10 @@ void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x90000200);
     const bool channel=cri_rpc_calls>=36;
     const bool channel_setup=cri_rpc_calls==36;
+    const bool channel_pairs=channel && !channel_setup;
+    // Other clients consume packet IDs while the archive loads. Match this
+    // request to its live client instead of assuming consecutive CRI IDs.
+    const auto rpc_id=channel_pairs?read32(rdram,0x355C74):channel?cri_rpc_calls+57u:cri_rpc_calls>=3?cri_rpc_calls+55u:cri_rpc_calls>=2?56u:55u;
     const bool batch=cri_rpc_calls>=3 && !channel;
     const bool start=batch && !(cri_rpc_calls&1);
     const bool stream=batch && !start;
@@ -559,11 +563,16 @@ void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
         || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(channel_setup?592u:start?736u:stream?688u:656u) || context->r[5].low!=(payload?2u:1u)
         || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
+    if(channel_pairs && (!main_priority_admissions || current_thread_id!=1 || startup_scheduler_active
+        || main_thread_priority!=1 || !rpc_id || read32(rdram,0x355C70)!=0x203A97C0
+        || read32(rdram,0x355C78)!=10 || read32(rdram,0x355C84)!=server.buffer
+        || read32(rdram,0x355C94)!=server.descriptor))
+        throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> desc={0x39DC80,server.buffer,input_size,0,0x203A97C0,0x1E640,64,0x44};
     const auto descriptor_start=payload?0u:4u;
     for(unsigned n=descriptor_start;n<8;++n)if(read32(rdram,d+(n-descriptor_start)*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
     const auto command=channel?(channel_setup?0x40Au:0x408u):start?0x400u:stream?0x422u:payload?0x40Cu:0x403u;
-    const std::array<unsigned,14> packet={input_size==16?0x1040u:payload?0xC40u:64u,payload?server.buffer:0u,0x8000000A,0,5,0x203A97C0,channel?cri_rpc_calls+57u:batch?cri_rpc_calls+55u:payload?56u:55u,0x355C70,command,payload?input_size:0u,0x39DD80,output_size,1,server.descriptor};
+    const std::array<unsigned,14> packet={input_size==16?0x1040u:payload?0xC40u:64u,payload?server.buffer:0u,0x8000000A,0,5,0x203A97C0,rpc_id,0x355C70,command,payload?input_size:0u,0x39DD80,output_size,1,server.descriptor};
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;
     try {response=native_iop->callCriControl(iop_epoch,command,payload?std::span<const std::uint8_t>(memory_.data()+0x39DC80,input_size):std::span<const std::uint8_t>{});}

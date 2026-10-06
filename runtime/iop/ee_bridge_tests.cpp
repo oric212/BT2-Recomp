@@ -29,9 +29,73 @@ void syntheticMainWait(std::uint8_t* memory,R5900Context* c,PS2Runtime* rt) {
     check(!parked_guard_destructions && rt->sound_thread_waiting && rt->current_thread_id==1);
     c->pc=0x332874;
 }
+void lateCriPacketAdmission() {
+    // No compiled game fixture: admission must stop at the service's absent lifecycle,
+    // before dispatching an IOP handler or delivering a fabricated successful reply.
+    PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+    rt.native_iop=std::make_shared<NativeIopService>(1,std::vector<NativeIopModule>{});
+    constexpr unsigned buffer=0x180000,server=0x181000;
+    rt.native_iop->runtime.rpc_servers.emplace(0x90000200,IopRuntime::RpcServer{server,0x90000200,0,buffer,0,0});
+    R5900Context c;
+    auto word=[&](unsigned address,unsigned value){rt.write32(rt.memory().data(),address,value);};
+    auto prepare=[&](unsigned calls=37,unsigned id=250) {
+        rt.iop_epoch=1;rt.prior_iop_services_valid=false;rt.cri_rpc_binds=1;rt.cri_rpc_calls=calls;
+        rt.initial_sp=0x1FFF000;rt.main_priority_admissions=1;rt.current_thread_id=1;
+        rt.startup_scheduler_active=false;rt.main_thread_priority=1;rt.native_iop_error.clear();
+        rt.semaphores.resize(11);rt.semaphores[10].count=0;rt.semaphores[10].maximum=1;rt.semaphores[10].option=0x3838E8;
+        c={};c.pc=0x32F028;c.r[3].low=0x77;c.r[4].low=rt.initial_sp-656;
+        c.r[29].low=c.r[4].low;c.r[5].low=2;c.r[2].low=0xABCD;
+        const std::array<unsigned,8> descriptor={0x39DC80,buffer,16,0,0x203A97C0,0x1E640,64,0x44};
+        for(unsigned n=0;n<descriptor.size();++n)word(static_cast<unsigned>(c.r[4].low)+n*4,descriptor[n]);
+        const std::array<unsigned,14> packet={0x1040,buffer,0x8000000A,0,5,0x203A97C0,id,0x355C70,0x408,16,0x39DD80,4,1,server};
+        for(unsigned n=0;n<packet.size();++n)word(0x3A97C0+n*4,packet[n]);
+        word(0x355C70,0x203A97C0);word(0x355C74,id);word(0x355C78,10);
+        word(0x355C84,buffer);word(0x355C94,server);
+    };
+    auto rejectedWithoutMutation=[&](bool admitted=false) {
+        const auto ee=std::vector<std::uint8_t>(rt.memory().begin(),rt.memory().end());
+        const auto iop=rt.native_iop->runtime.ram;const auto context=c;
+        const auto calls=rt.cri_rpc_calls;const auto submissions=rt.sif_dma_submissions;
+        bool rejected=false;
+        try{rt.handleSyscall(rt.memory().data(),&c,0);}catch(const UnsupportedSyscall&){rejected=true;}
+        check(rejected && !std::memcmp(&c,&context,sizeof(c)) && rt.cri_rpc_calls==calls
+            && rt.sif_dma_submissions==submissions && !rt.semaphores[10].count
+            && !rt.native_iop->cri_control_calls && !rt.native_iop->cri_create_calls
+            && !rt.native_iop->runtime.steps && !rt.native_iop_steps && !rt.native_iop_targets
+            && rt.native_iop->runtime.ram==iop && std::equal(ee.begin(),ee.end(),rt.memory().begin()));
+        check(rt.native_iop_error==(admitted?"CRI control outside observed lifecycle":""));
+    };
+    const std::vector<std::function<void()>> invalid={
+        [&]{word(0x3A97D8,94);}, // Old consecutive-ID formula is stale after other clients run.
+        [&]{word(0x355C74,249);},
+        [&]{word(0x355C74,0);word(0x3A97D8,0);},
+        [&]{word(0x355C70,0);},
+        [&]{word(0x355C78,9);},
+        [&]{word(0x355C84,buffer+4);},
+        [&]{word(0x355C94,server+4);},
+        [&]{word(0x3A97DC,0x6351C0);}, // No SOUNDS lifecycle: public routing must fail closed.
+        [&]{word(0x3A97E0,0x40A);},
+        [&]{word(static_cast<unsigned>(c.r[4].low)+8,12);},
+        [&]{rt.current_thread_id=5;},
+        [&]{rt.startup_scheduler_active=true;},
+        [&]{rt.main_thread_priority=24;},
+        [&]{rt.main_priority_admissions=0;},
+        [&]{rt.cri_rpc_calls=35;}, // No fifth heap: neither create nor control is eligible.
+        [&]{rt.cri_rpc_calls=42;}, // Public dispatch excludes the completed five-pair phase.
+        [&]{rt.iop_epoch=2;},
+        [&]{rt.prior_iop_services_valid=true;},
+        [&]{rt.cri_rpc_binds=0;}
+    };
+    for(const auto& mutate:invalid){prepare();mutate();rejectedWithoutMutation();}
+    // Both ends of the admitted five-pair phase use the live ID. Only the service
+    // diagnostic changes; guest RAM, IOP RAM, pending completion and counts do not.
+    prepare(37,250);rejectedWithoutMutation(true);
+    prepare(41,900);rejectedWithoutMutation(true);
+}
 }
 int main() {
     try {
+        lateCriPacketAdmission();
         PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
         rt.prior_iop_services_valid=false;rt.initial_sp=0x1FFF000;rt.iop_epoch=1;rt.post_loadfile.supplied=true;rt.post_loadfile.binds=1;rt.post_loadfile.versions=1;
         rt.post_cd.modes=1;rt.post_sif.rpc_initialized=true;rt.semaphores.resize(8);rt.semaphores[7].maximum=1;rt.semaphores[7].option=0x3838E8;
