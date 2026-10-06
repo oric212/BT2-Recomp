@@ -36,6 +36,8 @@ Only verified evidence updates verified counters or checks a milestone. Include 
 Edit the block between `progress-summary` markers in `docs/PROG.md`, then run:
 
 ```powershell
+python tools/docs/render_status.py
+python tools/docs/render_status.py --check
 python tools/docs/sync_progress.py
 python tools/docs/sync_progress.py --check
 ```
@@ -45,16 +47,18 @@ The tool replaces only the marked README block. It refuses missing or duplicated
 
 Track useful subsystem outcomes as well as counts: map/generation scope, distinct EE coverage, EE call/return events, IOP instructions/entry targets, module loads, heaps/pools, RPC completion, disc read/lookup completion, card query scope, DMA consumption, GS submissions and actual presentation. Record audio, title/menu, input and battle outcomes when they become observable. Keep unknown values explicit; do not invent performance or completion estimates.
 
-The Mermaid diagram shows the broad startup path and status, not a percentage or a complete dependency graph. Green means the stated bounded scope is verified, amber means current unfinished work, and gray means an unverified future outcome. A subsystem can have verified initialization while its general implementation remains incomplete. Compare run deltas only when their scope and checkpoint are stated; do not compare isolated service tests with full startup counts.
+The component map groups Foundation, Runtime and Game scopes. Green marks the stated verified scope, amber marks partial or active work, and gray marks pending work. The map presents statuses without a completion percentage. A subsystem can have verified initialization while its general implementation remains incomplete. Compare run deltas only when their scope and checkpoint are stated; do not compare isolated service tests with full startup counts.
 ## Machine-readable measurements and visuals
 
-`progress/latest.json` is a sanitized numeric measurement snapshot, with date, scope, code verification state, boundary and SHA-256 of the private source report. `progress/dashboard.svg` is generated from that snapshot for PROG.md and README. Neither artifact contains RAM, function-address lists, asset data or raw report strings. Keep the full probe report ignored. The hash identifies the measured report; it does not mean the implementation is committed or fully verified.
+`progress/latest.json` is a sanitized numeric measurement snapshot, with date, scope, code verification state, boundary and SHA-256 of the private source report. `progress/dashboard.svg` is generated separately from authored `progress/components.json` scopes for PROG.md and README. Numeric activity does not automatically promote a component status. Neither artifact contains RAM, function-address lists, asset data or raw report strings. Keep the full probe report ignored. The hash identifies the measured report; it does not mean the implementation is committed or fully verified.
 
 After an actual startup measurement, publish only its allowlisted counters:
 
 ```powershell
 python tools/docs/export_startup_progress.py --report work/bt2-generation/entry-stop.json --measured-on YYYY-MM-DD
 python tools/docs/export_startup_progress.py --report work/bt2-generation/entry-stop.json --measured-on YYYY-MM-DD --check
+python tools/docs/render_status.py
+python tools/docs/render_status.py --check
 python tools/docs/sync_progress.py
 python tools/docs/sync_progress.py --check
 ```
@@ -62,3 +66,8 @@ python tools/docs/sync_progress.py --check
 Review the snapshot against PROG.md's tables and update the verification-state wording in the exporter when the active pass is actually verified. The exporter measures a startup checkpoint; the pending label is deliberately explicit for this unfinished pass. It does not certify build/tests, infer subsystem completion, or run the game. Capture/test gates remain in the active handoff. README synchronization adjusts only the dashboard's relative image path.
 
 Reference: [Chronicle's progress workflow](https://github.com/TheMoonPeople/Chronicle/blob/master/.github/workflows/progress.yml) publishes generated per-region objdiff reports with function and byte matching measures; its [report generator](https://github.com/TheMoonPeople/Chronicle/blob/master/scripts/build/progress_report.py) separates executable/overlay categories. We adapt the generated-report/category model to native execution and subsystem evidence. Their decompilation matching percentages do not measure BT2 runtime completeness. No reference implementation was copied, and no external reporting account or game-data CI upload was configured.
+## Compact component map and README layout
+
+Edit `progress/components.json` when scoped evidence changes, run `tools/docs/render_status.py`, then synchronize README. Keep labels short and state verified scope in each note. Keep detailed counters in PROG.md and the numeric snapshot; README displays the map, milestone table, current boundary and a few key measurements. There is no automatic inference that a whole SDK library or hardware subsystem works because some functions execute.
+
+The compact milestone table and grouped generated map adapt presentation ideas from [God of War Recomp's status breakdown](https://github.com/KIexster/god-of-war-recomp/blob/main/docs/estado/detalle.en.md). Our categories and evidence are BT2-specific; no generator implementation or weighted completion estimate was copied.

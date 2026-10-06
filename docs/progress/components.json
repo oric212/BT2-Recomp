@@ -1,0 +1,26 @@
+{
+  "updated": "2026-10-06",
+  "groups": [
+    {"name": "Foundation", "items": [
+      {"name": "Native Windows host", "status": "verified", "note": "CMake / MSVC executable builds"},
+      {"name": "Retail validation", "status": "verified", "note": "Disc and embedded ELF confirmed"},
+      {"name": "Map and generation", "status": "verified", "note": "Provisional map; pipeline works"},
+      {"name": "Generated startup", "status": "partial", "note": "Executes to a checked boundary"},
+      {"name": "Disc metadata", "status": "verified", "note": "Initial read and lookups complete"}
+    ]},
+    {"name": "Runtime", "items": [
+      {"name": "EE threads and scheduling", "status": "partial", "note": "New worker changes unverified"},
+      {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
+      {"name": "SIF / RPC / DMA", "status": "partial", "note": "Reverse RPC still incomplete"},
+      {"name": "CRI sound setup", "status": "partial", "note": "37 calls; AutoDMA half pending"},
+      {"name": "Memory cards", "status": "partial", "note": "Absent-card queries only"}
+    ]},
+    {"name": "Game", "items": [
+      {"name": "Archive payload loading", "status": "pending", "note": "No archive payload decoded"},
+      {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
+      {"name": "GS rendering", "status": "partial", "note": "Startup clears only"},
+      {"name": "Frame presentation", "status": "pending", "note": "No visible game frame"},
+      {"name": "Menu, battle and audio", "status": "pending", "note": "End-to-end behavior unverified"}
+    ]}
+  ]
+}

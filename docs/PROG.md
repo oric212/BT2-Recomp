@@ -5,56 +5,39 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 ## Verified checkpoint
 
 <!-- progress-summary:start -->
-**Verified checkpoint: native startup probe; complete startup remains unfinished.**
-Last measured: **2026-10-06**, using the local game ISO and prepared startup inputs.
+![BT2 component status map](progress/dashboard.svg)
 
-![Measured native startup dashboard](progress/dashboard.svg)
-
-| Area | Verified result |
+| Milestone | Status |
 | --- | --- |
-| EE execution | **291 distinct entries entered / 286 completed**; kernel **2 / 2** |
-| Runtime activity | **3,855 calls / 3,848 returns**; **61,612 IOP instructions** |
-| Sound setup | **37 CRI calls**, **six IOP heap allocations**; first AutoDMA half pending |
-| Disc access | Directory-sector read and initial metadata lookups work |
-| Graphics | Two startup clears consumed; **no presented game frame** |
-| Current blocker | Worker `ReferThreadStatus`: selector `0x30`, EE PC `0x32EB68` |
-| Active work | Worker status/start/priority changes **implemented locally, not yet verified** |
-| Next gate | Finish worker tests/build, rerun startup, compare captures and record the new boundary |
+| Native host, retail validation and recompilation pipeline | ✅ Verified |
+| Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
+| Initial disc read and metadata lookups | ✅ Verified |
+| Complete startup and thread scheduling | 🔧 In progress — latest worker changes unverified |
+| Game asset loading and first presented frame | ⏳ Pending |
+| Title screen, menu and playable versus battle | ⏳ Pending |
+| Native audio playback and full match | ⏳ Pending |
 
-Counts describe observed execution, not fully restored gameplay functions or a percentage of completion. Audio playback, complete startup and gameplay are not verified.
+**Current blocker:** worker `ReferThreadStatus` at EE PC `0x32EB68`.
 
-```mermaid
-flowchart LR
-    A["Local validation<br/>Verified"] --> B["Map and generation<br/>Working; provisional map"]
-    B --> C["Native startup execution<br/>Verified to checked boundary"]
-    C --> D["Worker scheduling<br/>Active; latest changes unverified"]
-    D --> E["Archive payload loading<br/>Not verified"]
-    E --> F["Game draw and presentation<br/>No presented frame"]
-    F --> G["Title/menu and battle<br/>Not reached"]
-    classDef verified fill:#173c2c,stroke:#4ade80,color:#fff
-    classDef active fill:#493b16,stroke:#fbbf24,color:#fff
-    classDef future fill:#242b36,stroke:#94a3b8,color:#fff
-    class A,B,C verified
-    class D active
-    class E,F,G future
-```
-
-This is the main startup path, not a strict dependency graph; audio and other runtime services develop alongside it.
-
-| Subsystem | Evidence / measurement | Status |
-| --- | --- | --- |
-| Mapping / generation | 8,584 provisional EE entries; 8,587 raw generated files; 221 extra entries selected | Tooling working; map remains provisional |
-| IOP execution | 213 physical entry targets; 14 module-load paths / 13 resident modules | Bounded execution verified |
-| EE memory / threads | Four startup pools; one child ready but unexecuted | Scheduling incomplete |
-| Disc loading | One two-sector read; original completion callback; six metadata lookups/transfers | Initial metadata verified; archive payload pending |
-| Memory cards | Six DMA pairs; five timed FIFO probes | Absent-card path verified; mounted filesystem pending |
-| Audio transport | First owned 2,048-byte AutoDMA half programmed | Consumption / IRQ / native playback unverified |
-| GS sink | Three packets; two startup draws; 573,440 sprite pixels | Startup clears verified; presentation absent |
-| End-to-end game | No title screen, input-driven battle or completed match | Not reached |
-
-**Change from the preceding measured checkpoint:** CRI calls **35 → 37**, heaps **4 → 6**, EE call events **3,415 → 3,855**, IOP instructions **61,054 → 61,612**. The older **111 / 107** distinct count is from an earlier checkpoint; it is not a same-pass delta.
+**Last measured, 2026-10-06:** **291 EE entries entered / 286 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
 <!-- progress-summary:end -->
 
+## Measured execution and subsystem evidence
+
+| Area | Last verified measurement / scope |
+| --- | --- |
+| EE | 291 distinct entered / 286 completed; kernel 2 / 2; 3,855 call events / 3,848 returns |
+| Mapping | 8,584 provisional EE entries; 8,587 raw generated files; 221 extra entries selected |
+| IOP | 61,612 instructions; 213 physical entry targets; 14 load paths / 13 resident modules |
+| Memory / threads | Six IOP heap allocations; four EE startup pools; one child ready but unexecuted |
+| Disc | One two-sector read; original completion callback; six metadata lookups/transfers; no archive payload decoded |
+| Sound | 37 CRI calls; first 2,048-byte AutoDMA half programmed; no consumption / completion IRQ / native playback verified |
+| Cards | Six DMA pairs / five timed FIFO probes; absent-card path only |
+| GS | Three packets / two startup draws / 573,440 sprite pixels; startup clears only; no presented frame or VU execution |
+
+Previous measured checkpoint → current: CRI calls **35 → 37**, heaps **4 → 6**, EE calls **3,415 → 3,855**, IOP instructions **61,054 → 61,612**. The older **111 / 107** distinct count is from an earlier checkpoint, not a same-pass delta. Counts measure observed execution, not restored gameplay functions or overall completion.
+
+The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
 The last completed pass passed MSVC builds and **16/16 CTests**. Current tooling checks passed **142 capture tests**, **52 recompilation tests** and **13 IOP tooling tests**. Later worker changes are still under verification; their final build/test result is pending. Proprietary inputs, captures and generated code remain ignored.
