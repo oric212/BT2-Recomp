@@ -447,7 +447,7 @@ def main():
     parser.add_argument('--capture-mc-sio2-flow',action='store_true',help='Capture absent-card control writes and secondary SIF descriptor.')
     parser.add_argument('--capture-mc-sio2-start',action='store_true',help='Capture actual first card send/receive DMA START readbacks.')
     parser.add_argument('--capture-mc-sio2-slice',action='store_true',help='Capture actual initial memory-card slice setup before DMA starts.')
-    parser.add_argument('--capture-disc-api',choices=['sc-media','sc-read2','sc-key','sc-dual','sc-lsn','sc-timeout','read','sync','error'],help='Observe a reached original CDVDFSV API return.')
+    parser.add_argument('--capture-disc-api',choices=['sc-media','sc-read2','sc-key','sc-dual','sc-lsn','sc-timeout','search-afs','search-afs2','search-op','search-ed','search-logo','read-final','read-completion','read-tail','read-disable','read-alarm-cancel','read-alarm','read-transfer-poll','read-transfer','read-callback-after','read-callback','read-rv','read','sync-after','sync','error'],help='Observe a reached original CDVDFSV API return.')
     parser.add_argument('--capture-disc-type',action='store_true',help='Observe first original CDVDFSV disc-type register read.')
     parser.add_argument('--capture-disc-dma',action='store_true',help='Capture actual first CDVDFSV metadata DMA/poll.')
     parser.add_argument('--capture-dbc-dma',action='store_true',help='Capture the first actual DBCMAN reverse DMA and its completion poll.')

@@ -498,8 +498,8 @@ int main(int argc, char** argv) {
                         && context.r[29].low == runtime.initial_sp - 304 && runtime.semaphore_deletions == 3,
                         "SCMD call-semaphore boundary differs");
             } else {
-                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls+runtime.ncmd_ready_calls
-                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers)), "SCMD media-mode cleanup differs");
+                require(runtime.semaphore_deletions == 4+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u) && runtime.semaphore_waits == 5+runtime.serviceOperations()-(runtime.mc_rpc_calls==2?1u:0u)+runtime.ee_heap_lock_waits+runtime.dbc_lock_waits+runtime.mc_lock_waits && runtime.semaphore_signals == 6+runtime.serviceOperations()+(runtime.post_cd.scmd_binds?1u:0u)+runtime.ee_heap_lock_signals+runtime.dbc_lock_signals+runtime.mc_lock_signals+runtime.disc_rpc_calls+runtime.ncmd_ready_calls+runtime.ncmd_read_calls
+                        && (runtime.sif_dma_submissions == 5 || (runtime.iop_reset_pending && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls)), "SCMD media-mode cleanup differs");
                 if (stop_target && !runtime.sif_stop_calls) {
                     const std::array<std::array<std::uint32_t,2>,9> reached{{
                         {0x338158,0x1003B8},{0x332188,0x3381D4},{0x331B08,0x332190},
@@ -550,7 +550,7 @@ int main(int argc, char** argv) {
                     require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
                             && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
                             && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers && runtime.reset_smflag_writes == 1
+                            && runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls && runtime.reset_smflag_writes == 1
                             && runtime.sif_reset_subaddr_reads == 1,
                             "Pending IOP reboot lifetime/register state differs");
                     if(runtime.reset_ready_checkpoint_reads) {
@@ -740,7 +740,10 @@ int main(int argc, char** argv) {
                 << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
                 << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
                 << ",\"console_messages\":" << runtime.ee_console_messages.size()
-                << ",\"console_first_message\":" << jsonString(runtime.ee_console_messages.empty()?std::string{}:runtime.ee_console_messages.front())
+                << ",\"console_first_message\":" << jsonString(runtime.ee_console_messages.empty()?std::string{}:runtime.ee_console_messages.front());
+            report << ",\"console_messages_text\":[";
+            for(unsigned n=0;n<runtime.ee_console_messages.size();++n){if(n)report<<",";report<<jsonString(runtime.ee_console_messages[n]);}
+            report << "]"
                 << ",\"ee_status\":" << context.cop0_status
                 << ",\"ee_thread_count\":" << runtime.threads.size()
                 << ",\"sound_thread_starts\":" << runtime.sound_thread_starts
@@ -753,8 +756,8 @@ int main(int argc, char** argv) {
 #ifdef BT2_NATIVE_IOP
                 << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
-                << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls
-                << ",\"ncmd_rpc_binds\":" << runtime.ncmd_rpc_binds << ",\"ncmd_bind_semaphores\":" << runtime.ncmd_bind_semaphores << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
+                << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls << ",\"ncmd_read_calls\":" << runtime.ncmd_read_calls << ",\"disc_read_calls\":" << (runtime.native_iop?runtime.native_iop->disc_read_calls:0) << ",\"disc_read_callbacks\":" << (runtime.native_iop?runtime.native_iop->disc_read_callbacks:0) << ",\"disc_read_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_read_dma_submissions:0)
+                << ",\"probe_initial_sp\":" << runtime.initial_sp << ",\"probe_semaphore_count\":" << runtime.semaphores.size() << ",\"ncmd_rpc_binds\":" << runtime.ncmd_rpc_binds << ",\"ncmd_bind_semaphores\":" << runtime.ncmd_bind_semaphores << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
                 << ",\"stop_ra\":" << GPR_U32(&context,31) << ",\"stop_s1\":" << GPR_U32(&context,17) << ",\"stop_s3\":" << GPR_U32(&context,19)
                 << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
                 << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)
@@ -916,6 +919,11 @@ int main(int argc, char** argv) {
             report << "]}\n";
 #ifdef BT2_NATIVE_IOP
             if(runtime.heap_calls && runtime.native_iop) {
+                if(runtime.native_iop->disc_read_calls) {
+                    std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
+                    ee_dump.write(reinterpret_cast<const char*>(runtime.memory().data()),runtime.memory().size());
+                    if(!ee_dump)throw std::runtime_error("EE evidence dump failed");
+                }
                 std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);
                 if(!dump.write(reinterpret_cast<const char*>(runtime.native_iop->runtime.ram.data()),runtime.native_iop->runtime.ram.size()))throw std::runtime_error("Native IOP checkpoint write failed");
             }

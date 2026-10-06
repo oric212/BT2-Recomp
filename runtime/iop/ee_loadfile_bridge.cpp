@@ -354,10 +354,10 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
 
 void PS2Runtime::receiveDiscSearch(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<unsigned>(context->r[4].low);
-    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-816 || context->r[5].low!=2
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(disc_rpc_calls?832:816) || context->r[5].low!=2
         || semaphores.size()!=11 || semaphores[10].count || semaphores[10].option!=0x3838E8)throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> descriptor={0x3A8600,0x441C8,300,0,0x203A97C0,0x1E640,64,0x44};
-    const std::array<unsigned,14> packet={0x12C40,0x441C8,0x8000000A,0,5,0x203A97C0,43,0x3A8780,0,300,0x3A8740,4,1,0x433D0};
+    const std::array<unsigned,14> packet={0x12C40,0x441C8,0x8000000A,0,5,0x203A97C0,disc_rpc_calls?46u+disc_rpc_calls:43u,0x3A8780,0,300,0x3A8740,4,1,0x433D0};
     for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     if(read32(rdram,0x3A8788)!=10 || read32(rdram,0x3A8794)!=0x441C8 || read32(rdram,0x3A87A4)!=0x433D0)throw UnsupportedSyscall(0x77,context->pc);
@@ -389,4 +389,31 @@ void PS2Runtime::receiveNcmdReady(std::uint8_t* rdram,R5900Context* context) {
     for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,0x369590,10,0x43418,0x43DB8);++ncmd_ready_calls;++sif_dma_submissions;context->r[2].low=0x760002;
     native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());
+}
+
+void PS2Runtime::receiveNcmdRead(std::uint8_t* rdram,R5900Context* context) {
+    const auto d=static_cast<unsigned>(context->r[4].low);
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d
+        || d!=initial_sp-720 || context->r[5].low!=2 || semaphores.size()!=10)throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<unsigned,8> desc={0x3684C0,0x43DB8,24,0,0x203A97C0,0x1E640,64,0x44};
+    const std::array<unsigned,14> packet={0x1840,0x43DB8,0x8000000A,0,5,0x203A97C0,46,0x369590,1,24,0,0,1,0x43418};
+    for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+    for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+    const std::array<unsigned,10> client={0x203A97C0,46,UINT32_MAX,0,0,0x43DB8,0x38BDF0,0x31ECF8,0x3694C0,0x43418};
+    for(unsigned n=0;n<10;++n)if(read32(rdram,0x369590+n*4)!=client[n])throw UnsupportedSyscall(0x77,context->pc);
+    auto& rt=native_iop->runtime;
+    try{native_iop->callDiscRead(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3684C0,24),memory_,local_disc_path);}
+    catch(const std::exception& e){native_iop_error=e.what();native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());throw UnsupportedSyscall(0x77,context->pc);}
+    const std::array<unsigned,16> reply={0,0,0x80000008,0,0,0,0,0x369590,0x8000000A,0,0,0,0,0,0,0};
+    for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+    native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());
+    // RPC_END owns 64 bytes; its reached completion helper additionally owns 32.
+    const auto extra_scratch=static_cast<unsigned>(context->r[29].low)-96;
+    checkMemory(rdram,extra_scratch,32);std::array<std::uint8_t,32> extra_frame;
+    std::copy_n(memory_.begin()+extra_scratch,32,extra_frame.begin());
+    try{deliverRpcEnd(rdram,context,0x369590,0,0x43418,0x43DB8);}
+    catch(...){std::copy(extra_frame.begin(),extra_frame.end(),memory_.begin()+extra_scratch);throw;}
+    std::copy(extra_frame.begin(),extra_frame.end(),memory_.begin()+extra_scratch);
+
+    ++ncmd_read_calls;++sif_dma_submissions;context->r[2].low=0x760003;
 }

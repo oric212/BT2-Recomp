@@ -3,6 +3,11 @@ import argparse,hashlib,json,struct,sys
 from pathlib import Path
 from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_stub
 
+def completed_directory_diagnostics(r):
+    names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
+    expected=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n']
+    return (r.get('console_messages')==6 and r.get('console_messages_text')==expected and r.get('disc_rpc_calls')==6 and r.get('disc_dma_submissions')==6 and r.get('ncmd_read_calls')==1 and r.get('disc_read_calls')==1 and r.get('native_iop_error')=='')
+
 def require(condition,message):
     if not condition:raise ValueError(message)
 def words(data,address,count):return struct.unpack_from('<'+str(count)+'I',data,address)
@@ -73,7 +78,7 @@ def verify(root,native=None):
     require(console[text:end].decode('ascii'),'Empty DECI2 diagnostic')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
-        require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and r['console_messages']==0,'Native checked EE thread-start state differs')
+        require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and (r['console_messages']==0 or completed_directory_diagnostics(r)),'Native checked EE thread-start state differs')
         require(r['sound_rpc_binds']==1 and r['sound_rpc_calls']==1 and (not r['native_iop_error'] or later_iop_boundary(r)),'Native sound lifecycle differs')
         require(r['sound_client_words'][5]==owned+0x1C30 and r['sound_client_words'][9]==owned+0x15E0,'Native sound server mapping differs')
         t=r['sound_thread_words'];require(len(t)==9 and (t[1]-owned,t[2]-owned,t[3],t[4],t[5])==expected and (t[7:]==[0,1] or (completed_card_query(r) and t[7:]==[1,0])),'Native sound-created started helper thread differs')

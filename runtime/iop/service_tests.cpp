@@ -1,9 +1,40 @@
 #include "module_service.h"
 #include "embedded_native.h"
 #include <iostream>
+#include <fstream>
 void check(bool value){if(!value)throw std::runtime_error("Native IOP service test differs");}
 template<class F> void rejected(F f){bool failed=false;try{f();}catch(const std::runtime_error&){failed=true;}check(failed);}
-int main() {
+int main(int argc,char** argv) {
+    if(argc==4 && std::string(argv[1])=="--disc-read") {
+        try {
+            NativeIopService service(1,bt2_compiled_iop_modules());std::vector<std::uint8_t> ee(32*1024*1024),request(300);
+            std::memcpy(request.data()+36,"\\DATA\\ZS2US.DIR;1",17);const unsigned dest=0x3A8600;std::memcpy(request.data()+292,&dest,4);
+            service.callDiscSearch(1,request,ee,argv[2]);service.callDiscReady(1);
+            const std::array<unsigned,6> read={0xE2A,2,0x39DE80,0x100,0x3694C0,0x369580};
+            auto input=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(read.data()),sizeof(read));
+            const auto prior=service.runtime.ram;const auto prior_steps=service.runtime.steps;
+            rejected([&]{service.callDiscRead(2,input,ee,argv[2]);});
+            rejected([&]{service.callDiscRead(1,input,ee,"missing-owned-disc-test.iso");});
+            check(service.runtime.ram==prior && service.runtime.steps==prior_steps && !service.disc_read_callbacks && !service.disc_read_alarm_sets);
+            const auto result=service.callDiscRead(1,input,ee,argv[2]);
+            check(result==4096 && service.disc_read_calls==1 && service.disc_read_callbacks==1 && service.disc_read_dma_submissions==4 && service.disc_read_dma_polls==3 && service.disc_read_alarm_sets==1 && service.disc_read_alarm_cancels==1 && !service.disc_read_alarm.deadline);
+            unsigned progress;std::memcpy(&progress,ee.data()+0x369580,4);check(progress==4096);
+            const auto complete=service.runtime.ram;const auto complete_steps=service.runtime.steps;
+            rejected([&]{service.callDiscRead(1,input,ee,argv[2]);});check(service.runtime.ram==complete && service.runtime.steps==complete_steps);
+
+            std::fill(request.begin(),request.end(),0);std::memcpy(request.data()+36,"\\DATA\\ZS2US_1.AFS;1",19);std::memcpy(request.data()+292,&dest,4);
+            check(service.callDiscSearch(1,request,ee,argv[2])==1 && service.disc_search_calls==2 && service.disc_dma_submissions==2);
+            check(service.runtime.read(0x1A6498,4)==0x1FC26 && service.runtime.read(0x1A649C,4)==0x419B9800);
+            const auto archive_state=service.runtime.ram;rejected([&]{service.callDiscSearch(1,request,ee,argv[2]);});check(service.runtime.ram==archive_state);
+            const std::array<std::string,4> rest={"\\DATA\\ZS2US_2.AFS;1","\\DATA\\ZS2USOP.SFD;1","\\DATA\\ZS2USED.SFD;1","\\DATA\\LOGO_O.SFD;1"};
+            for(const auto& name:rest){std::fill(request.begin(),request.end(),0);std::memcpy(request.data()+36,name.c_str(),name.size()+1);std::memcpy(request.data()+292,&dest,4);check(service.callDiscSearch(1,request,ee,argv[2])==1);}
+            check(service.disc_search_calls==6 && service.disc_dma_submissions==6);
+            const auto batch_state=service.runtime.ram;rejected([&]{service.callDiscSearch(1,request,ee,argv[2]);});check(service.runtime.ram==batch_state);
+            std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
+            std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;
+        }catch(const std::exception& e){std::cerr<<"Owned disc read stopped: "<<e.what()<<"\n";return 1;}
+    }
+    if(argc!=1)return 1;
     try {
         constexpr auto path="cdrom0:\\IRX\\SIO2MAN.IRX;1";
         NativeIopService service(1,bt2_compiled_iop_modules());

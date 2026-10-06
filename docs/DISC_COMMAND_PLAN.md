@@ -8,10 +8,14 @@
 
 An accepted asynchronous command is not proof of completed sectors. No boot-entry residency, general CDVD hardware, arbitrary timing or rendering is inferred.
 
-## Verified boundary (2026-10-06)
+## Owned first read (2026-10-06)
 
-Command-service bind and its semaphore/cleanup complete. The original command-14 readiness handler returns 2 after independently captured DVD type 0x14, status 0x4C, SC(-3) result 0 and SC(-12) result 1. Native primary reply and generated EE cleanup complete. No readiness result substitutes for sector completion.
+The bind/readiness path completes. The first asynchronous command-1 request is RPC 46, LBA 0xE2A / two sectors / destination 0x39DE80, packed mode 0x100, generated callback 0x31ECF8 with argument 0x3694C0.
 
-First sector request is asynchronous command 1 / RPC ID 46: LBA 0xE2A, count 2, 2048-byte sectors, destination 0x39DE80, packed mode 0x100, callback 0x31ECF8 with argument 0x3694C0. Independent retail after-capture contains exactly the 4096 ISO bytes and clears the busy flag. Native stops before accepting this request.
+Independent original-import captures establish sceCdRV ordinal 63, 2064-byte DVD records (12-byte header, 2048 ISO bytes, four trailing bytes), original IOP callback entry/return, Sync(32)/Sync(5), error query, timeout registration/cancellation, completed DMA3 state, sector descriptors, 144-byte completion buffer and initial/final progress submissions. The pinned public SDK supplies shared-state, FSV-buffer and synchronization contracts.
 
-The next major implementation is CDVDMAN shared read-state ownership and completion. Diagnostic original handler execution reaches a null workspace at +0xF4C; CDVDFSV initialization obtains the pointer at +0x2B4 through SC(-14). Captured retail workspace 0x3D380 contains external pointers and live driver state. Its fields, buffers, scheduling and completion transitions need a separate driver-state design; copying that snapshot or zero-filling it would not establish ownership. Existing reference patterns and the captured request remain inputs to that design.
+The bounded implementation owns an inactive workspace, 42128-byte FSV buffer, completion event, request state and timeout. It reads the requested local ISO range before acceptance. The original IOP callback runs only after successful backend read at the synchronization boundary and sets the owned event. Original translated CDVDFSV code submits two sector descriptors, progress 0, the callback buffer, then progress 4096. Logical transport completes these owned copies; physical PCSX2 polling counts/timing are not equated. The original generated EE callback and cleanup execute; no captured payload or callback effects are substituted.
+
+Generated directory parsing consumes the real index and tokenizes its line endings. The first archive metadata request is \DATA\ZS2US_1.AFS;1; an independent original search capture reports LBA 0x1FC26 / size 0x419B9800 / result 1. Independent original search captures also confirm ZS2US_2.AFS, ZS2USOP.SFD, ZS2USED.SFD and LOGO_O.SFD. The bounded metadata batch follows the five names actually parsed from the loaded index, with local ISO extent validation and original handler/transport. Follow the reached archive path until a genuinely new ownership boundary.
+
+Scope: one validated sector request and the index lookup and its five listed file lookups. This is auxiliary original-handler execution, not full CDVDFSV/CDVDMAN boot residency, generic asynchronous scheduling, error recovery, streaming, native audio or presentation. General archive loading needs separately observed request, buffer and completion ownership.

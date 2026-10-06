@@ -148,9 +148,10 @@ public:
             return;
         }
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && disc_rpc_binds==1 && !disc_rpc_calls && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
+        if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && ncmd_ready_calls==1 && !ncmd_read_calls && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
         if(code==0 && selector==0x77 && ncmd_rpc_binds==1 && !ncmd_ready_calls
             && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==14){receiveNcmdReady(rdram,context);return;}
 #endif
@@ -675,9 +676,9 @@ public:
                 && context->pc==0x32EC68 && context->r[31].low==0x332814
                 && context->r[17].low==0x3A8780 && static_cast<std::uint32_t>(context->r[19].low)==0x80000597
                 && read32(rdram,0x3A8780)==0x203A97C0 && read32(rdram,0x3A8784)==42;
-            const bool disc_call_sema=disc_rpc_binds==1 && !disc_rpc_calls && semaphores.size()==10 && address==initial_sp-672
+            const bool disc_call_sema=disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && semaphores.size()==10 && address==initial_sp-(disc_rpc_calls?688:672)
                 && maximum==1 && initial==0 && option==0x3838E8 && context->pc==0x32EC68 && context->r[31].low==0x332AD0
-                && context->r[17].low==0x3A8780 && context->r[19].low==1 && read32(rdram,0x3A8784)==43;
+                && context->r[17].low==0x3A8780 && context->r[19].low==1 && read32(rdram,0x3A8784)==(disc_rpc_calls?46u+disc_rpc_calls:43u);
             const bool ncmd_bind_sema=disc_rpc_calls==1 && !ncmd_bind_semaphores && semaphores.size()==10
                 && address==initial_sp-608 && maximum==1 && initial==0 && option==0x3838D8
                 && context->pc==0x32EC68 && context->r[31].low==0x332814 && context->r[17].low==0x369590
@@ -946,8 +947,8 @@ public:
         return memory_[address];
     }
     std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
-        // Generated first search copies the owned result through the uncached EE alias.
-        if(disc_rpc_calls==1 && address>=0x203A8600 && address<=0x203A8618 && !(address&7))address-=0x20000000;
+        // Generated bounded searches copy their owned results through the uncached EE alias.
+        if(disc_rpc_calls>=1 && disc_rpc_calls<=6 && address>=0x203A8600 && address<=0x203A8618 && !(address&7))address-=0x20000000;
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
         std::uint64_t value;
@@ -1462,7 +1463,8 @@ public:
     unsigned disc_bind_semaphores=0,disc_rpc_binds=0,disc_rpc_calls=0;
     std::string local_disc_path;
     void receiveDiscSearch(std::uint8_t*,R5900Context*);
-    unsigned ncmd_bind_semaphores=0,ncmd_rpc_binds=0,ncmd_ready_calls=0;
+    unsigned ncmd_bind_semaphores=0,ncmd_rpc_binds=0,ncmd_ready_calls=0,ncmd_read_calls=0;
+    void receiveNcmdRead(std::uint8_t*,R5900Context*);
     void receiveNcmdReady(std::uint8_t* rdram,R5900Context* context);
     bool ncmd_bind_supplied=false;
     void supplyNcmdBind(std::span<const std::uint8_t> b) {
@@ -1598,7 +1600,7 @@ private:
         rpc_end_callback_active_ = false;
         std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
         if (callback.r[29].low != context->r[29].low || (semaphore ? semaphores[semaphore].count != 1 :
-                    (client != 0x3A6F80 || read32(rdram,client+8) != UINT32_MAX))
+                    ((client != 0x3A6F80 && client != 0x369590) || read32(rdram,client+8) != UINT32_MAX))
                 || read32(rdram, client) != 0 || read32(rdram, client + 36) != server
                 || read32(rdram, client + 20) != buffer || read32(rdram, 0x3A97D0) != 4
                 || read32(rdram, 0x3A97D8) != 0)

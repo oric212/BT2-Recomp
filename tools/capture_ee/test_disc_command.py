@@ -33,3 +33,21 @@ class DiscCommandTests(unittest.TestCase):
         r=dict(disc_rpc_binds=1,disc_rpc_calls=1,disc_dma_submissions=1,disc_dma_polls=0,disc_result=1,native_iop_error='',ncmd_rpc_binds=1,ncmd_bind_semaphores=1,ncmd_ready_calls=1)
         self.assertTrue(ready_completed(r))
         for key,value in [('disc_result',0),('native_iop_error','failed'),('ncmd_rpc_binds',0),('ncmd_ready_calls',0),('ncmd_ready_calls',2),('ncmd_bind_semaphores',0)]:self.assertFalse(ready_completed(dict(r,**{key:value})))
+
+    def test_directory_diagnostics_reject_changed_files_count_and_hidden_failure(self):
+        from verify_sound_rpc import completed_directory_diagnostics
+        names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
+        r=dict(console_messages=6,console_messages_text=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n'],disc_rpc_calls=6,disc_dma_submissions=6,ncmd_read_calls=1,disc_read_calls=1,native_iop_error='')
+        self.assertTrue(completed_directory_diagnostics(r))
+        for key,value in [('console_messages',5),('console_messages_text',r['console_messages_text'][::-1]),('disc_rpc_calls',5),('ncmd_read_calls',0),('native_iop_error','failed')]:self.assertFalse(completed_directory_diagnostics(dict(r,**{key:value})))
+
+    def test_callback_entry_observer_never_calls_or_publishes_completion(self):
+        w=struct.unpack('<11I',hook(0x3E830,'read-callback'))
+        self.assertFalse(any(x>>26==3 for x in w));self.assertNotIn(0xAF020008,w)
+    def test_callback_return_observer_calls_trampoline_before_result(self):
+        from capture_disc_api import CODE
+        w=struct.unpack('<15I',hook(0x3E830,'read-callback-after'))
+        self.assertEqual(w[7],0x0C000000|((CODE+0x100)>>2));self.assertEqual(w[10],0xAF020008);self.assertEqual(w[12],0xAF190000)
+    def test_rv_observer_uses_distinct_reached_import(self):
+        from capture_disc_api import POINTS
+        self.assertEqual(POINTS['read-rv'],(0x4B80,63));self.assertNotEqual(POINTS['read-rv'],POINTS['read'])

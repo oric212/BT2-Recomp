@@ -76,5 +76,17 @@ class CandidateMapTests(unittest.TestCase):
         self.assertEqual(len(excluded), 2)
 
 
+class BoundedSwitchTests(unittest.TestCase):
+    def test_bounded_table_and_changed_bounds_targets_instructions(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x48,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        words=[0,0,0x2623FFE0,0x2C620002,0x10400009,0x00031080,0x3C030000,0x00621821,0x8C631040,0x00600008,0,0x10000003,0,0,0x03E00008,0,0x1000,0x1038]
+        candidate={'start':0x1000,'end_exclusive':0x1040,'body_size':60,'contiguous_aligned':False,'body_ranges':['1000-1033','1038-103f']}
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*words)))
+        for index,value in [(3,0x2C620000),(3,0x2C620003),(4,0x14400009),(5,0x000310C0),(8,0x8C631041),(16,0x1034),(16,0x1040),(17,0x1039),(10,0x24020001)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*changed)))
+        self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<17I',*words[:-1])))
+
+
 if __name__ == "__main__":
     unittest.main()

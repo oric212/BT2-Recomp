@@ -49,7 +49,7 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 
 ## Repository workflow
 
-Current next step: establish owned CDVDMAN shared read state and sector-completion behavior for the first asynchronous command-1 request. The original CDVDFSV metadata and command-14 readiness handlers now complete with generated EE cleanup. Independent evidence confirms the first two-sector request and retail readback. The native read remains unsupported; its workspace comes from SC(-14), requiring a separate driver-state ownership design rather than a copied retail snapshot. Follow DISC_COMMAND_PLAN.md and the current checkpoint in PROG.md. Pending sound reverse bind, later alarm delivery, general scheduling and presentation remain incomplete.
+Current next step: continue from the reached native boundary in PROG.md after the completed first sector read and directory metadata batch. Owned CDVDMAN read state, original IOP completion, logical SIF transport and generated EE callback now load the local directory index. Generated parsing and all five listed file lookups complete; the game returns to its main entry continuation. Follow DISC_COMMAND_PLAN.md and gather evidence for subsequent runtime or archive requests. Pending sound reverse bind, general scheduling, archive-content loading and presentation remain incomplete.
 
 Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE_ARCHITECTURE.md and consult the linked repositories first (BT3 primary, Chronicle where useful). Adapt proven tooling/runtime patterns to BT2 observations; never copy implementations 1:1, game-specific patches/symbols or unsupported success defaults. Keep BT2-specific behavior separate and evidence-based.
 

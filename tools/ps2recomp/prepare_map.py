@@ -63,6 +63,26 @@ def has_tail_nop_gap(candidate, metadata, data):
     return True
 
 
+def bounded_word_switch(address,start,end,spans,metadata,data,word):
+    """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom."""
+    if address-start<28 or address+8>end or word(address)!=0x00600008 or word(address+4)!=0:return False
+    ins=[word(address+n) for n in (-28,-24,-20,-16,-12,-8,-4)]
+    if (ins[0]&0xFC1F0000)!=0x24030000 or (ins[1]&0xFFFF0000)!=0x2C620000 or (ins[2]&0xFFFF0000)!=0x10400000 or ins[3]!=0x00031080 or (ins[4]&0xFFFF0000)!=0x3C030000 or ins[5]!=0x00621821 or (ins[6]&0xFFFF0000)!=0x8C630000:return False
+    count=ins[1]&65535
+    if not 1<=count<=256:return False
+    immediate=ins[2]&65535;immediate=immediate-65536 if immediate&32768 else immediate
+    default=address-16+immediate*4
+    if not any(a<=default<b for a,b in spans):return False
+    offset=ins[6]&65535;offset=offset-65536 if offset&32768 else offset
+    table=((ins[4]&65535)<<16)+offset
+    regions=[x for x in metadata['sections'] if x.get('occupies_file_bytes') and x['address']<=table and table+count*4<=x['address']+x['size']]
+    if len(regions)!=1 or table%4:return False
+    at=regions[0]['file_offset']+table-regions[0]['address']
+    if at<0 or at+count*4>len(data):return False
+    targets=struct.unpack_from('<'+str(count)+'I',data,at)
+    return all(t%4==0 and any(a<=t<b for a,b in spans) for t in targets)
+
+
 def has_branch_nop_gaps(candidate, metadata, data):
     """Accept isolated unreachable NOPs after an unconditional branch/jump and delay slot."""
     start,end=candidate['start'],candidate['end_exclusive']
@@ -98,7 +118,7 @@ def has_branch_nop_gaps(candidate, metadata, data):
         # Standard JALR ra,rs is a call with a local continuation. Unknown
         # tail jumps/link registers remain quarantined; runtime still checks targets.
         standard_call=op==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0
-        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call) or (op in (16,17,18) and (ins>>21)&31>=8):return False
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and not bounded_word_switch(address,start,end,spans,metadata,data,word)) or (op in (16,17,18) and (ins>>21)&31>=8):return False
         if op in (1,4,5,6,7,20,21,22,23):
             immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
             if address+4+immediate*4 in gaps:return False
