@@ -55,7 +55,7 @@ Before decisions about architecture or unfamiliar PS2 subsystems, read REFERENCE
 
 Use the scalable loop: provisional function discovery/map -> generation -> compile/link -> execution -> actual blocker -> runtime fix or checked patch -> repeat. Neutral naming and provenance remain required. Existing careful entry reviews validate tooling; do not require exhaustive manual review of every function before experimental local generation. See `REFERENCE_ARCHITECTURE.md` for the inspected BT3-Recomp and Chronicle references.
 
-Project root: `D:\Cs\Cpp\BT2-Recomp`. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.
+Use the root of your BT2-Recomp checkout for project files and commands. After each completed pass, verify the result, review the diff and staged files, commit, and push to GitHub. Keep README.md at the root.
 
 
 ### Current subsystem handoff

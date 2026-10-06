@@ -49,7 +49,7 @@ cmake --build build --config Debug
 .\build\Debug\bt2-port.exe
 ```
 
-The foundation host prints its startup message. Testing generated BT2 startup uses a separate probe with locally prepared inputs and your ISO. See [building and startup tests](docs/BUILDING.md) for setup and commands. The game is not yet playable.
+The foundation host prints its startup message. Before recompiling or testing BT2, prepare your own North American SLUS-21441 disc image, extract its original executable and boot configuration, and validate them using the [game-file preparation steps](docs/BUILDING.md#3-prepare-your-own-game-files-before-recompilation). Testing generated startup uses a separate developer probe with locally prepared inputs and your ISO. See [building and startup tests](docs/BUILDING.md) for setup and commands. The game is not yet playable.
 
 ## Repository layout
 

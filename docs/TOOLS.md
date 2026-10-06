@@ -1,4 +1,17 @@
-# Local executable tools
+# Developer tooling
+
+Start with [building and game-file preparation](BUILDING.md). This guide describes development tools and successive checkpoint evidence; it is not a player setup wizard. Older probe descriptions below document the bounded tests introduced at that stage. Use [PROG.md](PROG.md) for the current boundary.
+
+## Paths in examples
+
+Run commands from your own repository checkout. Paths such as `rom/SLUS_214.41` and `work/` are relative local input/output locations. They do not contain game data in a fresh clone. For PCSX2 examples, set the following PowerShell variables to your own installed executable and locally supplied BIOS; replace the placeholder strings before running:
+
+```powershell
+$Pcsx2Path = 'PATH_TO_PCSX2_EXE'
+$BiosPath = 'PATH_TO_YOUR_PS2_BIOS'
+```
+
+Disc-backed captures must also pass `--disc rom/BT2-USA.iso` (or your actual ISO path). Tool defaults may reflect a development environment; pass explicit paths when your setup differs.
 
 ## Preliminary validation
 
@@ -83,12 +96,12 @@ The entry probe poisons its observed uninitialized zero-store interval, executes
 
 ## Installed Ghidra analysis
 
-Project root: `D:\Cs\Cpp\BT2-Recomp`. Ghidra 12.1.4 is installed at `D:\Cs\Cpp\tools\ghidra_12.1.4_PUBLIC`; launch the GUI with `D:\Cs\Cpp\tools\run-ghidra.bat`. It uses the existing Adoptium JDK 25. Tool versions and archive hashes are recorded in `config/ghidra.lock.json`.
+Install Ghidra in a location you choose and launch it with its own launcher. The tested version is Ghidra 12.1.4 with a compatible JDK (the development setup used JDK 25). Versions and archive hashes are recorded in `config/ghidra.lock.json`. No Ghidra installation is included in this repository.
 
 The R5900 extension v2.1.37 was built from pinned source against this Ghidra version. Gradle 9.8.0 is installed beside Ghidra. These tools remain outside the repository.
 
 ```powershell
-python tools/ghidra/analyze_game.py
+python tools/ghidra/analyze_game.py --ghidra-home "PATH_TO_GHIDRA_DIRECTORY" --java-home "PATH_TO_JDK_DIRECTORY"
 ```
 
 The driver imports the recorded local candidate using `r5900:LE:32:default` and runs our authored exporter. Override installations with `--ghidra-home PATH --java-home PATH`. Projects, logs, JSON, instruction listings, and candidate CSV stay in ignored `work/ghidra/`. An existing project is reopened without repeating analysis. Remove or archive it explicitly when a fresh analysis is needed.
@@ -133,7 +146,7 @@ For the recorded executable hash, this independently checks three raw selector/s
 Capture with the installed PCSX2 and your own BIOS/game:
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin"
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath
 ```
 
 The tool copies PCSX2 and the selected BIOS into ignored `work/pcsx2-capture/`, with a separate settings profile. It instruments only a copy of the validated local ELF: 24 bytes at `0x00338388` write marker `0xB702` at `0x00387E80` and spin before the handler's first read. Read-only Windows process access captures 32 MiB of physical EE RAM from the exported `EEmem` pointer in the process it launched. It checks the marker, trap bytes, isolated data folder and stability of the kernel prefix across two reads, then terminates only that process. Hashes, instrumentation and timing are recorded in `capture.json`. Original game/BIOS files and the user's PCSX2 profile are preserved. This is an instrumented standalone ELF diagnostic; the IOP remains active during capture.
@@ -149,7 +162,7 @@ This extracts a read-only kernel window and invokes the generated scan handler i
 ### Retail disc revision confirmation
 
 ```powershell
-python tools/verify_game/verify_disc.py "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/verify_game/verify_disc.py rom/BT2-USA.iso
 ```
 
 This streams the local ISO against the official Redump size/MD5/SHA-1 recorded in `config/retail_revision.json`, reads bounded ISO9660 root records, and compares the embedded executable's size/SHA-256 with the local ELF. Reports stay under ignored `work/disc-validation/`. Only reference checksum metadata is stored in Git.
@@ -165,7 +178,7 @@ The snapshot requires its `.json` sidecar from `probe_kernel.py`; size, SHA-256 
 ### Local Timer 3 boundary capture and read replay
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer3-mode
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point timer3-mode
 python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json
 ```
 
@@ -192,7 +205,7 @@ The optional generated-probe build includes `generated-buffer-fill`, bringing th
 ### Timer 2 read capture and continuation
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer2-mode
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point timer2-mode
 python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json --timer2-capture work/pcsx2-capture/timer2-mode/capture.json
 ```
 
@@ -203,7 +216,7 @@ The Timer 2 continuation now accepts one observed `0x382` mode store to `0xB0001
 ### INTC mask checkpoint and EnableIntc continuation
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point intc-mask
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point intc-mask
 python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json --timer2-capture work/pcsx2-capture/timer2-mode/capture.json --intc-capture work/pcsx2-capture/intc-mask/capture.json
 ```
 
@@ -212,7 +225,7 @@ The isolated authored trap at `0x0032E9A4`, immediately before EnableIntc, reads
 ### Validated Timer 2 readback
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point timer2-readback
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point timer2-readback
 python tools/ps2recomp/run_pipeline.py --reuse-generated --kernel-snapshot work/bt2-generation/kernel-snapshot.bin --timer3-capture work/pcsx2-capture/timer3-mode/capture.json --timer2-capture work/pcsx2-capture/timer2-mode/capture.json --intc-capture work/pcsx2-capture/intc-mask/capture.json --timer2-readback-capture work/pcsx2-capture/timer2-readback/capture.json
 ```
 
@@ -227,7 +240,7 @@ The full checkpoint pipeline now passes the observed main ID 1 / priority 1 Chan
 ### First OSD configuration checkpoint
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point osd-config
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point osd-config
 ```
 
 Add `--osd-capture work/pcsx2-capture/osd-config/capture.json` to the full pipeline command above. It requires Timer 2 readback and all earlier explicit inputs. The trap reads the first returned OSD stack word at `0x003385F4`; output stays ignored. Verified provenance supplies one native read; startup then stops at SetOsdConfigParam (`0x4A`). Omitting it retains the earlier OSD read stop. No host preferences or broader BIOS OSD behavior are implemented.
@@ -236,7 +249,7 @@ Add `--osd-capture work/pcsx2-capture/osd-config/capture.json` to the full pipel
 ### OSD same-value setter/readback checkpoint
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point osd-readback
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point osd-readback
 ```
 
 Add `--osd-readback-capture work/pcsx2-capture/osd-readback/capture.json` alongside `--osd-capture` in the full pipeline. This trap at `0x00338620` publishes both original and returned configuration words. Validation requires their equality and the first setter expression to equal the original. The adapter accepts the first same-value setter, second getter and same-value restore, then reaches the next registered handler. Omitting this checkpoint retains the first setter stop. Configuration mutation remains unsupported.
@@ -261,8 +274,8 @@ The full OSD-readback pipeline now enables a second fixed expected-word overlay 
 Capture each point from an independent local ELF boot:
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point dma-status
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point dma5-control
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point dma-status
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point dma5-control
 ```
 
 Add `--dma-status-capture work/pcsx2-capture/dma-status/capture.json` and `--dma5-control-capture work/pcsx2-capture/dma5-control/capture.json` to the full pipeline with all earlier OSD-readback/checkpoint inputs. The first requires OSD readback; the second requires DMA status. Full 32-bit payload/provenance validation supplies only the observed one-time reads. The bounded adapter records channel 5 handler/enable requests; it has no DMA transfers or interrupt delivery. Without the optional SIF capture, continuation stops at SifGetReg selector 0x80000000. Omitting channel input stops at CHCR; omitting both stops at D_STAT. Detailed earlier results are historical; see [current status](PROG.md).
@@ -270,7 +283,7 @@ Add `--dma-status-capture work/pcsx2-capture/dma-status/capture.json` and `--dma
 ## First SIF query checkpoint
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-command
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point sif-command
 ```
 
 Add `--sif-command-capture work/pcsx2-capture/sif-command/capture.json` to the full pipeline with all earlier captures, including channel 5. The trap at `0x00331A34` publishes returned `v0` and selector `a0`; strict source/RAM hashes, trap, marker and selector validation precede replay. Observed selector `0x80000000` returns `0x00019600` once. Prepared `FUN_00331F38` replaces nine omitted CACHE 0x18 sites with aligned, RAM-bounded line checks; raw generated source remains unchanged. Coherent host RAM has no guest cache model. The executed path checks one line and reaches SifSetDma `0x77`; no DMA/IOP transfer is performed.
@@ -278,9 +291,9 @@ Add `--sif-command-capture work/pcsx2-capture/sif-command/capture.json` to the f
 ## First SIF command receive and RPC state checkpoints
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-dma-before
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-dma-after
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-rpc-state
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point sif-dma-before
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point sif-dma-after
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point sif-rpc-state
 ```
 
 Append `--sif-dma-before-capture work/pcsx2-capture/sif-dma-before/capture.json --sif-dma-after-capture work/pcsx2-capture/sif-dma-after/capture.json` to the full pipeline including `--sif-command-capture`. Both are required together. The tool also captures the first 2 MiB of IOP RAM through PCSX2's IOPmem export; source/RAM hashes, traps, descriptors, packets, table fields and observed receive effects/return are verified. Packet/table windows are checked twice; unrelated kernel and IOP memory continue running. The ignored `sif-dma.bin` bundle contains the before IOP state and observed return, enabling only a synchronous logical CHANGE_SADDR receive model.
@@ -292,7 +305,7 @@ Checked coherent main-RAM byte/word aliases `[0x20000000,0x22000000)` support th
 ## First RPC bind response and isolated callback
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point sif-bind-after
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point sif-bind-after
 cmake --build build/probe --config Debug --target bt2-rpc-bind-probe
 python tools/capture_ee/verify_rpc_bind.py work/pcsx2-capture/sif-bind-after/capture.json --run-probe
 ```
@@ -304,7 +317,7 @@ Use the existing generated-probe CMake configuration. The verifier checks the fi
 Capture the call semaphore boundary independently, after the first bind returns:
 
 ```powershell
-python tools/capture_ee/capture_ee.py --pcsx2 "D:\Emulation\PCXS2\pcsx2-qt.exe" --bios "D:\Emulation\PCXS2\bios\scph39001.bin" --capture-point rpc-call-sema
+python tools/capture_ee/capture_ee.py --pcsx2 $Pcsx2Path --bios $BiosPath --capture-point rpc-call-sema
 ```
 
 Append `--sif-bind-capture work/pcsx2-capture/sif-bind-after/capture.json --rpc-call-sema-capture work/pcsx2-capture/rpc-call-sema/capture.json` to the full pipeline including all earlier RPC-state and paired DMA inputs. Hash/trap/publication, descriptor and reference-environment validation precede preparation of the ignored bind bundle. The bounded model accepts only the first captured bind, delivers the checked reply through the generated handler on a copied CPU context, restores its 64-byte scratch window, then lets generated code wait/delete its temporary semaphore and construct the first CD initialization call. Hardware DMA/interrupt timing and service execution are not implemented.
@@ -326,12 +339,12 @@ Reset preparation adds `--sif-stop-capture`, then `--sif-reset-subaddr-capture`,
 ## Disc-backed reboot submission and local IOP inventory
 
 ```powershell
-python tools/iop/inspect_image.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/iop/inspect_image.py --disc rom/BT2-USA.iso
 ```
 
 The tool compares the existing local `rom/IRX/IOPRP300.IMG` with its exact ISO9660 path and writes bounded ROMDIR/ELF-header inventory to ignored `work/iop/image.json`. It does not extract, load or execute modules.
 
-Use `capture_ee.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"` with existing PCSX2/BIOS arguments for each capture point: `reset-submit-after`, `reset-cmd-clear`, `reset-flags-after`, `reset-rpc-clear`, `reset-subaddr-clear`. Each launches an independently instrumented local ELF with that local disc mounted. Publications record the submission return and subsequent register clears; they are EE evidence, not post-reset IOP snapshots.
+Use `capture_ee.py --disc rom/BT2-USA.iso` with existing PCSX2/BIOS arguments for each capture point: `reset-submit-after`, `reset-cmd-clear`, `reset-flags-after`, `reset-rpc-clear`, `reset-subaddr-clear`. Each launches an independently instrumented local ELF with that local disc mounted. Publications record the submission return and subsequent register clears; they are EE evidence, not post-reset IOP snapshots.
 
 Append `--reset-submission-captures work/pcsx2-capture` to the full pipeline after all reset-preparation inputs. It verifies image identity, capture hashes/traps/publications, packet/path, matching disc/PCSX2/BIOS and retains provenance in the ignored pipeline receipt. Omitting this new input preserves the pre-submission boundary. Earlier standalone checkpoints and these disc-backed observations remain separate experiments. The bounded runtime acknowledges the exact request, invalidates old service state and stops at the first boot-readiness poll; it does not execute IOP code or fabricate readiness.
 
@@ -390,7 +403,7 @@ Append `--post-cd-captures work/pcsx2-capture` after `--post-sif-captures` and i
 Inspect a provided module without executing it:
 
 ```powershell
-python tools/iop/inspect_irx.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/iop/sio2man.json
+python tools/iop/inspect_irx.py rom/IRX/SIO2MAN.IRX --disc rom/BT2-USA.iso --output work/iop/sio2man.json
 ```
 
 Optional `--base 0x4BF30 --iop-capture work/pcsx2-capture/loadfile-module-after/capture.json` prepares a private relocated image and compares module ownership, relocation words and code ranges against that recorded scenario. The explicit base is reference evidence for this capture, not a native allocator address. Output/maps/images must stay in ignored `work/` or `game_data/`. No imports or module entries are executed.
@@ -400,11 +413,11 @@ Optional `--base 0x4BF30 --iop-capture work/pcsx2-capture/loadfile-module-after/
 With your local disc/module already provided:
 
 ```powershell
-python tools/iop/generate_native.py rom/IRX/SIO2MAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/iop/sio2man_native.cpp
-python tools/iop/generate_native.py rom/IRX/MCMAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x20000 --symbol bt2_iop_mcman --prefix iop_mcman --output work/iop/mcman_native.cpp
-python tools/iop/generate_native.py rom/IRX/MCSERV.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x50000 --symbol bt2_iop_mcserv --prefix iop_mcserv --output work/iop/mcserv_native.cpp
-python tools/iop/generate_native.py rom/IRX/DBCMAN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x60000 --symbol bt2_iop_dbcman --prefix iop_dbcman --output work/iop/dbcman_native.cpp
-python tools/iop/generate_native.py rom/IRX/SIO2D.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x70000 --symbol bt2_iop_sio2d --prefix iop_sio2d --output work/iop/sio2d_native.cpp
+python tools/iop/generate_native.py rom/IRX/SIO2MAN.IRX --disc rom/BT2-USA.iso --output work/iop/sio2man_native.cpp
+python tools/iop/generate_native.py rom/IRX/MCMAN.IRX --disc rom/BT2-USA.iso --base 0x20000 --symbol bt2_iop_mcman --prefix iop_mcman --output work/iop/mcman_native.cpp
+python tools/iop/generate_native.py rom/IRX/MCSERV.IRX --disc rom/BT2-USA.iso --base 0x50000 --symbol bt2_iop_mcserv --prefix iop_mcserv --output work/iop/mcserv_native.cpp
+python tools/iop/generate_native.py rom/IRX/DBCMAN.IRX --disc rom/BT2-USA.iso --base 0x60000 --symbol bt2_iop_dbcman --prefix iop_dbcman --output work/iop/dbcman_native.cpp
+python tools/iop/generate_native.py rom/IRX/SIO2D.IRX --disc rom/BT2-USA.iso --base 0x70000 --symbol bt2_iop_sio2d --prefix iop_sio2d --output work/iop/sio2d_native.cpp
 cmake -S . -B build/probe -DBT2_BUILD_IOP_PROBE=ON
 cmake --build build/probe --config Debug --target bt2-iop-tests bt2-iop-probe
 build/probe/Debug/bt2-iop-tests.exe
@@ -456,7 +469,7 @@ Capture `sio2d-module-after` with the explicit local PCSX2/BIOS/disc arguments. 
 ```powershell
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/sio2d-stop.json --sio2d
 python tools/iop/verify_rpc_startup.py --profile sio2d --native work/iop/sio2d-stop.json --reference work/pcsx2-capture/sio2d-module-after/capture.json --module rom/IRX/SIO2D.IRX --output work/iop/sio2d-validation.json
-python tools/iop/generate_native.py rom/IRX/DS2U_D.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x80000 --symbol bt2_iop_ds2ud --prefix iop_ds2ud --output work/iop/ds2ud_native.cpp
+python tools/iop/generate_native.py rom/IRX/DS2U_D.IRX --disc rom/BT2-USA.iso --base 0x80000 --symbol bt2_iop_ds2ud --prefix iop_ds2ud --output work/iop/ds2ud_native.cpp
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/ds2ud-stop.json --ds2ud
 ```
 
@@ -478,10 +491,10 @@ The verifier compares the resident return, relocated code, worker ownership/para
 The optional native targets now require these additional locally generated sources before configuration/build:
 
 ```powershell
-python tools/iop/generate_native.py rom/IRX/LIBSD.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x90000 --symbol bt2_iop_libsd --prefix iop_libsd --output work/iop/libsd_native.cpp
-python tools/iop/generate_native.py rom/IRX/SDRDRV.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xA0000 --symbol bt2_iop_sdrdrv --prefix iop_sdrdrv --output work/iop/sdrdrv_native.cpp
-python tools/iop/generate_native.py rom/IRX/MODHSYN.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0xB0000 --symbol bt2_iop_modhsyn --prefix iop_modhsyn --output work/iop/modhsyn_native.cpp
-python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x180000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
+python tools/iop/generate_native.py rom/IRX/LIBSD.IRX --disc rom/BT2-USA.iso --base 0x90000 --symbol bt2_iop_libsd --prefix iop_libsd --output work/iop/libsd_native.cpp
+python tools/iop/generate_native.py rom/IRX/SDRDRV.IRX --disc rom/BT2-USA.iso --base 0xA0000 --symbol bt2_iop_sdrdrv --prefix iop_sdrdrv --output work/iop/sdrdrv_native.cpp
+python tools/iop/generate_native.py rom/IRX/MODHSYN.IRX --disc rom/BT2-USA.iso --base 0xB0000 --symbol bt2_iop_modhsyn --prefix iop_modhsyn --output work/iop/modhsyn_native.cpp
+python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc rom/BT2-USA.iso --base 0x180000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/modsesq2-stop.json --modsesq2
 ```
 
@@ -495,9 +508,9 @@ The direct initial poll publication now includes DPCR1/2, using BF80 for their p
 Generate these supplied local sources before building the optional native targets:
 
 ```powershell
-python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x188000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
-python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x150000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
-python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x168000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
+python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc rom/BT2-USA.iso --base 0x188000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
+python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc rom/BT2-USA.iso --base 0x150000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
+python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc rom/BT2-USA.iso --base 0x168000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
 build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/cri-adxi-stop.json --cri-adxi
 ```
 
@@ -511,7 +524,7 @@ Use the explicit local PCSX2/BIOS/disc capture arguments with `--capture-point s
 Capture `cri-adxi-module-after` separately for the resident return, then run:
 
 ```powershell
-python tools/capture_ee/verify_spu2_transfer.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/capture_ee/verify_spu2_transfer.py --disc rom/BT2-USA.iso
 python tools/iop/verify_rpc_startup.py --profile cri-adxi --native work/iop/cri-adxi-stop.json --reference work/pcsx2-capture/cri-adxi-module-after/capture.json --module rom/IRX/CRI_ADXI.IRX --output work/iop/cri-adxi-validation.json
 ```
 
@@ -525,7 +538,7 @@ After `expand_startup.py` selects a newly reached EE entry, run `python tools/ps
 Generate FILEIO from the supplied, disc-matched IOPRP image before configuring optional native targets:
 
 ```powershell
-python tools/iop/generate_boot_heap.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/iop/generate_boot_heap.py --disc rom/BT2-USA.iso
 ```
 
 The boot heap handler is translated at 0x140000 and invoked only for the checked first allocation. Its boot entry/worker is not executed or counted as resident. Generated files and receipts stay under ignored work/iop/.
@@ -533,8 +546,8 @@ The boot heap handler is translated at 0x140000 and invoked only for the checked
 Use the existing explicit local PCSX2/BIOS/disc command with capture points `fileio-bind-after` (heap service despite its historical name), `heap-alloc-after`, and `heap-copy-after`. Each traps its unique caller after completion. Heap client/service buffer stability uses the correct client 0x3AC840 rather than LOADFILE's client. Validate and prepare the private checkpoint bundles:
 
 ```powershell
-python tools/capture_ee/verify_heap_bind.py --capture work/pcsx2-capture/fileio-bind-after --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/bt2-generation/heap-bind.bin
-python tools/capture_ee/verify_heap_copy.py --capture work/pcsx2-capture/heap-copy-after --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --output work/bt2-generation/heap-allocation.bin
+python tools/capture_ee/verify_heap_bind.py --capture work/pcsx2-capture/fileio-bind-after --disc rom/BT2-USA.iso --output work/bt2-generation/heap-bind.bin
+python tools/capture_ee/verify_heap_copy.py --capture work/pcsx2-capture/heap-copy-after --disc rom/BT2-USA.iso --output work/bt2-generation/heap-allocation.bin
 ```
 
 The copy verifier also verifies the allocation and bind, producing an 88-byte allocation/copy bundle. Allocation alone uses `verify_heap_allocation.py --capture work/pcsx2-capture/heap-alloc-after` and the same disc/output arguments, producing 68 bytes. Append heap-bind.bin and heap-allocation.bin after the existing SCMD bundle in the optional entry-probe invocation. With heap execution, the probe writes an ignored IOP RAM sidecar at `<STOP_REPORT>.iop.bin`; use `--native work/bt2-generation/entry-stop.json` on the copy verifier to compare native phases/client/destination.
@@ -546,7 +559,7 @@ The pipeline now accepts `--heap-bind-capture`, `--heap-allocation-capture`, `--
 Use the existing capture command with `--capture-point module-buffer-after`, `heap-free-after` and `dmac-startup-after`. These unique return checkpoints require the user's explicit local disc and produce ignored capture directories. Then run:
 
 ```powershell
-python tools/iop/generate_embedded.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
+python tools/iop/generate_embedded.py --disc rom/BT2-USA.iso
 python tools/capture_ee/verify_module_buffer.py
 ```
 
@@ -628,11 +641,11 @@ Use `capture_ee.py --capture-point rpc-disc-init-after`, `rpc-disc-bind-sema`, o
 
 Capture `rpc-disc-command-before` and `rpc-disc-command-after` with the existing local PCSX2/BIOS/disc arguments and `--absent-cards`. `--capture-point rpc-disc-command-before --capture-disc-dma --absent-cards` stops immediately after the original first metadata submission, without redirecting its source; it does not observe a completion poll or handler return. The separate after-return capture provides that result evidence.
 
-Run `python tools/capture_ee/verify_disc_startup.py` to check identity/profile, hooks, bind, first request/result and submission bytes and produce ignored `work/bt2-generation/disc-bind.bin`. Run `python tools/iop/generate_disc_service.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"` before rebuilding optional IOP targets. This generates only ignored translated CDVDFSV files after checking local-disc and retail code/GP ownership. Append `disc-bind.bin` and the explicit local ISO path after `ee-thread-start.bin` in the full entry-probe arguments. Run the full checkpoint again after CTest and then the verifier. No proprietary payload is committed; the ordinary host still requires no game data.
+Run `python tools/capture_ee/verify_disc_startup.py` to check identity/profile, hooks, bind, first request/result and submission bytes and produce ignored `work/bt2-generation/disc-bind.bin`. Run `python tools/iop/generate_disc_service.py --disc rom/BT2-USA.iso` before rebuilding optional IOP targets. This generates only ignored translated CDVDFSV files after checking local-disc and retail code/GP ownership. Append `disc-bind.bin` and the explicit local ISO path after `ee-thread-start.bin` in the full entry-probe arguments. Run the full checkpoint again after CTest and then the verifier. No proprietary payload is committed; the ordinary host still requires no game data.
 
 ## First disc command evidence
 
-`python tools/capture_ee/verify_disc_command.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"` checks isolated NCMD bind/semaphore/ready/request/readback captures, environment identities, observer words and RAM hashes. It creates ignored `work/bt2-generation/ncmd-bind.bin` and checks native readiness when present. This does not certify native sector completion.
+`python tools/capture_ee/verify_disc_command.py --disc rom/BT2-USA.iso` checks isolated NCMD bind/semaphore/ready/request/readback captures, environment identities, observer words and RAM hashes. It creates ignored `work/bt2-generation/ncmd-bind.bin` and checks native readiness when present. This does not certify native sector completion.
 
 New checkpoints: `rpc-ncmd-bind-sema`, `rpc-ncmd-bind-after`, `rpc-ncmd-call-sema`, `rpc-ncmd-before`, `rpc-ncmd-after`. Use `--absent-cards` with the existing local PCSX2/BIOS/disc arguments. `--capture-disc-type` observes original register reads; `--capture-disc-api` observes a selected original API return in an isolated interpreter profile. Modes cannot be combined. Readiness API observers `sc-read2` / `sc-media` use `rpc-ncmd-call-sema`; read-setup observers `sc-key`, `sc-dual`, `sc-lsn`, `sc-timeout` use `rpc-ncmd-before`. A capture timeout is not completion evidence.
 
@@ -641,7 +654,7 @@ New checkpoints: `rpc-ncmd-bind-sema`, `rpc-ncmd-bind-after`, `rpc-ncmd-call-sem
 
 `capture_ee.py --capture-point rpc-ncmd-before --capture-disc-api KIND --absent-cards` supports original read/import observers: `read-rv`, `read-callback`, `read-callback-after`, `sync`, `sync-after`, `error`, `read-alarm`, `read-alarm-cancel`, `read-disable`, `read-transfer`, `read-transfer-poll`, `read-tail`, `read-completion`, `read-final`, `search-afs`, `search-afs2`, `search-op`, `search-ed`, and `search-logo`. Supply the existing explicit local PCSX2/BIOS/disc paths. Observers invoke original imports; callback-after executes displaced original words through a checked trampoline. Callback-entry observation publishes no completion result. Captures and their hashes remain ignored.
 
-Run `python tools/capture_ee/verify_disc_read.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --native work/bt2-generation/entry-stop.json` after the full entry run. It checks independent read framing, callback, timeout/sync/transport observations, directory tokenization, all five file lookups, owned source bytes, progress and generated EE cleanup. The full probe writes ignored `.ee.bin` and `.iop.bin` evidence sidecars after native sector execution. Pass `--sector-bytes work/iop/native-disc-sectors.bin` to also check the isolated native read output.
+Run `python tools/capture_ee/verify_disc_read.py --disc rom/BT2-USA.iso --native work/bt2-generation/entry-stop.json` after the full entry run. It checks independent read framing, callback, timeout/sync/transport observations, directory tokenization, all five file lookups, owned source bytes, progress and generated EE cleanup. The full probe writes ignored `.ee.bin` and `.iop.bin` evidence sidecars after native sector execution. Pass `--sector-bytes work/iop/native-disc-sectors.bin` to also check the isolated native read output.
 
 `bt2-iop-service-tests --disc-read ISO OUTPUT` validates the bounded original IOP search/read/readiness path and the five-file metadata batch using the explicitly supplied local ISO. Missing backend data, wrong epoch and repeated completion are rejected without new callback effects. `disc-sector-bounds` uses authored synthetic bytes and requires no game files. Native logical DMA timing is not equated with physical PCSX2 poll counts; full driver residency and arbitrary streaming remain unsupported.
 

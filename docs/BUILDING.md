@@ -1,36 +1,30 @@
-# Building on Windows
+# Building and testing on Windows
 
-## Requirements
+This project is in early development. The normal host executable builds without game data and prints a startup message. The separate developer probe executes recompiled BT2 startup code using your game files and locally prepared analysis/capture inputs. A playable game build is not available yet.
 
-- Windows 10 or 11 x64.
-- Visual Studio 2022 with Desktop development with C++, MSVC, and a Windows SDK.
-- CMake 3.20 or newer, available in the terminal.
+## 1. Install the build tools
 
-## Build and run
+- Windows 10 or 11, x64.
+- Visual Studio 2022 with **Desktop development with C++**, MSVC and a Windows SDK.
+- CMake 3.21 or newer, Git and Python 3.10 or newer, available in your terminal.
 
-From PowerShell:
-
-```powershell
-cd 'D:\Cs\Cpp\BT2-Recomp'
-cmake -S . -B build
-cmake --build build --config Debug
-.\build\Debug\bt2-port.exe
-```
-
-## Optional local generated-code probe
-
-After building pinned PS2Recomp tools and exporting the local executable with Ghidra (see `TOOLS.md`):
+Open a Developer PowerShell for Visual Studio 2022. Clone the repository into a location you choose:
 
 ```powershell
-python tools/ps2recomp/run_pipeline.py
+git clone https://github.com/oric212/BT2-Recomp.git
+cd BT2-Recomp
 ```
 
-The pipeline uses `build/probe/`, executes a generated BT2 routine and the generated entry up to its first unsupported syscall, and records the actual execution blocker. No game content is required for the normal host target. All generated sources, guest images and probe binaries stay ignored.
+If you already cloned it, open a terminal in that checkout. All relative paths below start at the repository root; none refer to the maintainer's computer.
 
-For an explicit Visual Studio 2022 x64 selection in a fresh build directory, configure with:
+## 2. Build the foundation host
+
+No game files, BIOS, Ghidra or PS2Recomp installation are needed for this step.
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Debug
+.\build\Debug\bt2-port.exe
 ```
 
 Expected output:
@@ -40,4 +34,62 @@ BT2 Native Recompilation Project
 No game data loaded.
 ```
 
-No game files or external dependencies are required for this foundation. Build output stays under ignored `build/`.
+This confirms the Windows build works. It does not load or boot BT2. Build output is stored in the ignored `build/` directory.
+
+## 3. Prepare your own game files before recompilation
+
+The supported initial target is **Dragon Ball Z: Budokai Tenkaichi 2, North American PS2 release, SLUS-21441**. Other regions or modified executables are not validated targets.
+
+1. Create a disc image from your own legally obtained copy. The project does not supply or download game files.
+2. Open that image with an ISO-capable archive tool and extract the original **`SLUS_214.41`** executable and **`SYSTEM.CNF`** from the disc root. Preserve their contents and names. The executable is a separate file; do not pass the whole ISO to the ELF tools.
+3. For the examples below, create a `rom` directory inside your checkout and place those two files there. Keep your ISO there too, named `BT2-USA.iso` for these examples. These are local, Git-ignored input locations, not folders supplied by GitHub. If you use another ISO name/location, pass its actual path to commands.
+4. Preserve the original disc's `IRX` directory and assets for later developer work. The advanced IOP tools need original modules extracted from this same disc; this first validation step does not require unpacking every asset.
+
+Example local layout after you supply the files:
+
+```text
+BT2-Recomp/
+  rom/                 # created locally; ignored by Git
+    BT2-USA.iso        # your disc image
+    SLUS_214.41        # extracted original executable
+    SYSTEM.CNF         # extracted boot configuration
+```
+
+Validate the files before analysis or generation:
+
+```powershell
+python tools/verify_game/verify_game.py rom/SLUS_214.41 --system-cnf rom/SYSTEM.CNF
+python tools/verify_game/verify_disc.py rom/BT2-USA.iso --executable rom/SLUS_214.41
+python tools/inspect_elf/inspect_elf.py rom/SLUS_214.41
+```
+
+The first command checks the executable header and boot reference. The second checks the disc against the recorded trusted revision and verifies that your extracted executable matches the one in that image; hashing the full disc can take time. The third reports ELF metadata. These commands validate/read existing files; they do not extract the image, modify the game, recompile it or boot it. If validation fails, resolve the mismatch before proceeding.
+
+Never commit your ISO, executable, BIOS, extracted assets, captures or proprietary-derived generated code. See [content and license rules](LEGAL.md).
+
+## 4. Prepare the developer toolchain
+
+This is a development workflow, not a player installation wizard. See [the tooling guide](TOOLS.md) for the complete commands and limitations.
+
+- Build the pinned PS2Recomp tools with `python tools/ps2recomp/build_tools.py`.
+- Install the Ghidra version recorded in `config/ghidra.lock.json`, its matching R5900 extension and a compatible JDK. Pass your own installation locations to `tools/ghidra/analyze_game.py` using `--ghidra-home` and `--java-home`.
+- Analyze your extracted executable, export provisional candidates and prepare the function map. Generated code and analysis output remain local and ignored.
+- Run `python tools/ps2recomp/run_pipeline.py` for the baseline generation/build/probe workflow. `--reuse-generated` reuses output only after provenance checks.
+- Advanced startup probes also require original IOP modules and validated local capture bundles. Preparing these uses your own PCSX2 installation, locally supplied BIOS and game image. Follow the capture/checkpoint sections in the tooling guide.
+
+The current deeper startup checkpoint is not reproducible from a fresh clone with one ISO command. Its complete input chain must be prepared locally. Missing inputs must be resolved; capture bundles are not downloaded or fabricated.
+
+## 5. Run the prepared startup checkpoint
+
+Once your generated build and required capture bundles exist, and your checkout includes the startup runner:
+
+```powershell
+cmake --build build/probe --config Debug --target bt2-entry-probe
+python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso
+```
+
+The probe executes generated EE and translated IOP code, performs reads against your ISO and reports the execution boundary, distinct entries, call/return events and sound/heap counters. It stops at an unsupported or checked runtime boundary; reaching that boundary is not a full game boot.
+
+If `run_startup_probe.py` is absent from your checkout, that helper belongs to the currently unfinished developer pass and is not yet published in your revision; see the active-pass handoff below. The measured local checkpoint is ahead of the last fully committed implementation.
+
+The private report is written to `work/bt2-generation/entry-stop.json`. RAM sidecars and generated outputs also stay ignored. A completed entry means at least one invocation returned normally; it does not establish full function correctness or gameplay. See [current progress](PROG.md) and [the active-pass handoff](progress/ACTIVE_PASS.md) for the last verified checkpoint and pending work.
