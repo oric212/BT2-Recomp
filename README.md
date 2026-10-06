@@ -27,14 +27,14 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Native host, retail validation and recompilation pipeline | ✅ Verified |
 | Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
 | Initial disc read and metadata lookups | ✅ Verified |
-| Complete startup and thread scheduling | 🔧 In progress — latest worker changes unverified |
+| Complete startup and thread scheduling | 🔧 In progress — four helper lifecycles verified; dispatch pending |
 | Game asset loading and first presented frame | ⏳ Pending |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** worker `ReferThreadStatus` at EE PC `0x32EB68`.
+**Current blocker:** main `ChangeThreadPriority(1, 24)` at EE PC `0x32EAF8`.
 
-**Last measured, 2026-10-06:** **291 EE entries entered / 286 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
+**Last measured, 2026-10-06:** **296 EE entries entered / 292 completed**, **37 CRI calls**, **six IOP heap allocations**. Complete startup is not yet verified.
 <!-- progress-summary:end -->
 
 [Detailed measurements](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)

@@ -9,7 +9,7 @@
       {"name": "Disc metadata", "status": "verified", "note": "Initial read and lookups complete"}
     ]},
     {"name": "Runtime", "items": [
-      {"name": "EE threads and scheduling", "status": "partial", "note": "New worker changes unverified"},
+      {"name": "EE threads and scheduling", "status": "partial", "note": "4 helpers verified; dispatch pending"},
       {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
       {"name": "SIF / RPC / DMA", "status": "partial", "note": "Reverse RPC still incomplete"},
       {"name": "CRI sound setup", "status": "partial", "note": "37 calls; AutoDMA half pending"},

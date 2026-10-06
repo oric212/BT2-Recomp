@@ -2,9 +2,16 @@
 
 ## Confirmed next scheduling scope
 
-The immediate native frontier is the StartThread helper's ReferThreadStatus for newly created native ID 4, EE PC 0x32EB68. Its neutral entry is 0x2EE050, stack 0x34E490 / size 0x1000, GP 0x38BDF0 and initial priority 2. The original matching worker has ID **6**, not 4; captures at 0x2EE70C / 0x2EE720 return 6. Its saved GP/SP/FP/RA are [0x38BDF0, 0x34F470, 0x34F470, 0x100250]. Native ID allocation is not assumed equal to retail. Original captures also establish the following worker entry 0x2EE140, stack 0x34F490 / size 0x2000, priority 2, original ID 7 and RA 0x100250. Tool labels worker4/worker5 denote the next native sequence, not observed retail IDs.
+Independent original creation/start captures now establish all four helpers between main status and the final priority request. The previously proposed native IDs 4/5 for the last two workers were wrong: two earlier helper lifecycles had not been traced. Neutral entries remain unnamed.
 
-The existing generic creation contract constructs the first owned dormant record; its captured SetupThread exit is retained. Ready transitions and execution for these new workers are not implemented. Trace why original earlier thread allocation reached IDs 4/5 while the native sequence has not, and establish semantic identity before extending ID-dependent behavior.
+| ID | Entry | Stack / size | Create return | Priority return / requested priority |
+| --- | --- | --- | --- | --- |
+| 4 | 0x2EDE58 | 0x34BC90 / 0x800 | 0x2EE51C | 0x2EE564 / 8 |
+| 5 | 0x2EDF48 | 0x34D490 / 0x1000 | 0x2EE684 | 0x2EE6A8 / 16 |
+| 6 | 0x2EE050 | 0x34E490 / 0x1000 | 0x2EE70C | 0x2EE730 / 18 |
+| 7 | 0x2EE140 | 0x34F490 / 0x2000 | 0x2EE794 | 0x2EE7B8 / 25 |
+
+All four captured initial priorities are 2, GP is 0x38BDF0 and reset RA is the owned SetupThread exit 0x100250. Capture labels worker4/worker5 are retained for the last two historical observer points; they refer to original IDs 6/7. Do not infer identity from labels alone. The first helper additionally queries ready status 2 at 0x2EE494, then **SuspendThread selector 0x37** returns ID 4 at 0x2EE4B4. This is suspension, not a wakeup; its priority changes while it is suspended. The last helper (ID 7) also queries ready status 2 after priority 25 is assigned, then selector 0x37 returns 7. Selective observers preserve the earlier shared helper call and publish the final helper only.
 
 After second CRI setup and generated main-thread initialization, the main thread queries its status and requests ChangeThreadPriority(1, 24) from 0x2EEA2C. Independent original before/after captures show configuration priority 0x18 and return 2 (previous priority). The native main priority is 2; ready EE thread 3 has priority 5, entry 0x315380, GP 0x38BDF0, SP 0x3A6CA0 and owned exit 0x100250. Acknowledging the priority change without dispatching that higher-priority ready child would omit required scheduling.
 
@@ -13,9 +20,14 @@ Original captures already contain queue 0x3A6D00, thread owner 3, server descrip
 ## Bounded implementation required
 
 1. Consult REFERENCE_ARCHITECTURE.md, EE_THREAD_START_PLAN.md and SDRDRV_RPC_PLAN.md. Keep original game entries and reference scheduler patterns separate.
-2. Capture the original child registration and first actual sleep/wait boundary, including GP/SP/return context, queue state and reverse-bind delivery. Determine whether the helper needs an EE callback before the child can park. Existing live RAM proves registration fields, not a complete child scheduling/callback lifecycle.
+2. Original child registration at 0x3153DC and its first SleepThread call at 0x333090 are now captured. At the wait, SP is 0x3A6C80, GP 0x38BDF0, s0/queue 0x3A6D00, saved exit 0x100250 and original pre-observer Status 0x70030C11. The observer publishes registers before terminal DI/SYNC to prevent preemption; it never resumes the game. Queue owner 3 and service descriptor 0x3A6D18 / 0x80000704 / 0x3153F0 / 0x3A6CC0 agree. These snapshots do not establish actual IOP-to-EE bind delivery or a full callback lifecycle; capture those before admitting them.
 3. Define a retained main invocation and a separate owned child CPU. Preserve main registers, stack, call-return validation and requested priority until the child reaches its evidenced wait. Do not replay the child's entry on later resumes or replace blocking code with a successful return.
 4. Execute the original generated queue/server/loop path, keep waiting-thread ownership and establish the pending IOP-to-EE bind response using registered EE state. Trace subsequent actual callbacks before admitting them. Capture and compare context preservation and return to the main continuation.
 5. Follow the newly reached related blockers through the bounded subsystem, then test, update progress, commit and push. Archive payload loading, presentation and audio consumption remain separate claims.
 
-The current pass completes the consumed main status fields and reaches the new worker query before the later priority-change request. Implementing the handoff without first-wait and cross-CPU ownership evidence would be speculative. The earlier thread-start plan establishes ready state; this scope adds actual worker execution and reverse RPC service lifetime.
+The bounded worker group passes native execution, ownership tests and capture comparison. The main-priority handoff is now the actual reached boundary. Implementing the handoff without first-wait and cross-CPU ownership evidence would be speculative. The earlier thread-start plan establishes ready state; this scope adds actual worker execution and reverse RPC service lifetime.
+
+
+## Required scheduler design gate
+
+The current EE dispatcher uses synchronous C++ invocations and shared return validation. Starting a different CPU at the priority syscall must not erase or replay the active main invocation, lose its guest continuation or treat a child SleepThread as a successful function return. Define explicit per-thread execution/continuation ownership, suspended versus ready versus waiting states and the pending reverse-bind completion transition. First-wait RAM alone cannot substitute for owned queue registration, wait delivery or preserved parent context. The current header's four-worker group provides bounded ready/suspended records, not this scheduler.

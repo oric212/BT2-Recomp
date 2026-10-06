@@ -12,11 +12,12 @@ FIELDS = (
     "native_module_loads", "ee_thread_count", "cri_rpc_calls", "heap_calls",
     "disc_read_calls", "disc_read_callbacks", "disc_rpc_calls",
     "disc_dma_submissions", "disc_read_dma_submissions", "gs_packets",
-    "gs_sprites", "gs_pixels",
+    "gs_sprites", "gs_pixels", "startup_worker_queries", "startup_worker_starts",
+    "startup_worker_priority_changes", "startup_ready_queries", "startup_worker_suspends",
 )
 
 
-def snapshot(raw, measured_on):
+def snapshot(raw, measured_on, verification="unverified"):
     date.fromisoformat(measured_on)
     report = json.loads(raw)
     metrics = {}
@@ -33,7 +34,7 @@ def snapshot(raw, measured_on):
         "schema_version": 1,
         "measured_on": measured_on,
         "scope": "bounded native startup probe with local ISO and prepared inputs",
-        "code_state": "local implementation; final pass verification incomplete",
+        "code_state": "bounded startup verified by build/tests and capture comparison" if verification=="verified" else "local implementation; final pass verification incomplete",
         "source_report_sha256": hashlib.sha256(raw).hexdigest(),
         "metrics": {key: metrics[key] for key in FIELDS},
         "boundary": {key: f"0x{metrics[key]:X}" for key in ("selector", "pc", "target")},
@@ -44,9 +45,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--report", type=Path, required=True)
     p.add_argument("--measured-on", required=True, help="YYYY-MM-DD: actual measurement date")
+    p.add_argument("--verification", choices=("unverified", "verified"), default="unverified", help="Use verified only after required build/tests and comparisons pass")
     p.add_argument("--check", action="store_true")
     args = p.parse_args()
-    data = snapshot(args.report.read_bytes(), args.measured_on)
+    data = snapshot(args.report.read_bytes(), args.measured_on, args.verification)
     outputs = {
         ROOT / "docs/progress/latest.json": json.dumps(data, indent=2) + "\n",
     }

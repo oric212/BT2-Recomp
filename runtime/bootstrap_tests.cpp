@@ -389,6 +389,7 @@ int main() {
         runtime.registerFunction(0x300, return_leaf);
         runtime.registerFunction(0x400, bad_return);
         runtime.registerFunction(0x500, tail_call);
+        runtime.registerFunction(0x600, return_leaf);
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x200, 0x100, 0x104,
                 PS2Runtime::GuestBranchKind::DirectCall, "synthetic call") && context.pc == 0x104);
@@ -398,6 +399,13 @@ int main() {
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x500, 0x100, 0x104,
                 PS2Runtime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
+        require(runtime.entered_functions==std::set<std::uint32_t>{0x200,0x300,0x400,0x500});
+        require(runtime.completed_functions==std::set<std::uint32_t>{0x200,0x300,0x500});
+        SET_GPR_U32(&context,31,0x104);
+        require(runtime.dispatchGuestBranch(memory,&context,0x300,0x100,0x104,PS2Runtime::GuestBranchKind::DirectCall,"repeated entry"));
+        require(runtime.entered_functions.size()==4 && runtime.completed_functions.size()==3);
+        reject([&]{runtime.dispatchGuestBranch(memory,&context,0x600,0x100,0,PS2Runtime::GuestBranchKind::DirectCall,"invalid resume");});
+        require(runtime.entered_functions.size()==4 && runtime.completed_functions.size()==3);
         runtime.Store32(memory, &context, 0x500, 0x12345678);
         require(runtime.read32(memory, 0x500) == 0x12345678);
         reject([&] { runtime.Store32(memory, &context, 0x1000E010, 1); });
@@ -1162,6 +1170,66 @@ int main() {
             cpu.pc=0x32EA88;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0;
             rt.handleSyscall(ram,&cpu,0);require(t.ready && t.context.pc==0x315380 && t.context.r[31].low==0x100250 && cpu.r[2].low==3 && rt.current_thread_id==1);
             reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.sound_thread_starts==1);
+        }
+        {
+            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=rt.memory().data();
+            rt.cri_rpc_calls=37;rt.heap_calls=6;rt.thread_initialized=true;rt.current_thread_id=1;rt.main_thread_priority=2;
+            rt.initial_sp=0x1FFED60;rt.stack_base=0x1EFF000;rt.thread_arguments={0x38BDF0,UINT32_MAX,0x100000,0,0x100250};
+            rt.threads.push_back({2,0,0,0,0,0,0,0,0});rt.threads.push_back({3,0,0,0,0,0,0,0,0});rt.threads[1].ready=true;rt.semaphores.resize(10);
+            R5900Context cpu{};cpu.pc=0x32EB68;cpu.cop0_status=0x10001;cpu.r[3].low=0x30;cpu.r[4].low=1;cpu.r[5].low=cpu.r[29].low=rt.initial_sp-144;cpu.r[31].low=0x2EE9FC;
+            std::fill_n(ram+rt.initial_sp-144,48,0xA5);
+            const auto prior=rt.memory()[rt.initial_sp-144];cpu.r[5].low+=4;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.memory()[rt.initial_sp-144]==prior && !rt.main_thread_queries);
+            cpu.r[5].low-=4;rt.handleSyscall(ram,&cpu,0);
+            require(cpu.r[2].low==1 && rt.main_thread_queries==1 && rt.read32(ram,rt.initial_sp-144+24)==2);
+            require(rt.read32(ram,rt.initial_sp-144+4)==0xA5A5A5A5 && rt.read32(ram,rt.initial_sp-144+40)==0xA5A5A5A5);
+            reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.main_thread_queries==1);
+        }
+        {
+            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=rt.memory().data();
+            rt.cri_rpc_calls=37;rt.heap_calls=6;rt.thread_initialized=rt.heap_initialized=true;rt.main_thread_queries=1;
+            rt.current_thread_id=1;rt.main_thread_priority=2;rt.initial_sp=0x1FFED60;rt.thread_arguments[4]=0x100250;
+            rt.threads.resize(2);rt.threads[1].id=3;rt.threads[1].ready=true;
+            // Independently captured descriptors and helper returns, including the previously omitted IDs 4/5.
+            const std::array<std::array<std::uint32_t,6>,4> captured={{{0x2EDE58,0x34BC90,0x800,0x2EE51C,0x2EE564,8},
+                {0x2EDF48,0x34D490,0x1000,0x2EE684,0x2EE6A8,16},{0x2EE050,0x34E490,0x1000,0x2EE70C,0x2EE730,18},
+                {0x2EE140,0x34F490,0x2000,0x2EE794,0x2EE7B8,25}}};
+            try { for(unsigned n=0;n<4;++n) {
+                const auto& c=captured[n];const auto id=n+4;
+                const std::array<std::uint32_t,9> descriptor={0,c[0],c[1],c[2],0x38BDF0,2,0,0,0};
+                std::memcpy(ram+0x2000,descriptor.data(),sizeof(descriptor));R5900Context cpu{};
+                cpu.pc=0x32EA68;cpu.r[31].low=c[3];cpu.r[3].low=0x20;cpu.r[4].low=0x2000;
+                rt.handleSyscall(ram,&cpu,0);auto& t=rt.threads.back();require(t.id==id && !t.ready);
+                require(rt.read32(ram,t.context_address+31*16)==0x100250);
+                cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=id;cpu.r[5].low=rt.initial_sp-316;
+                const auto before=rt.read32(ram,rt.initial_sp-320);reject([&]{rt.handleSyscall(ram,&cpu,0);});
+                require(rt.startup_worker_queries==n && rt.read32(ram,rt.initial_sp-320)==before);
+                cpu.r[5].low=rt.initial_sp-320;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10);
+                cpu.pc=0x32EA88;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0;
+                const auto saved_ra=rt.read32(ram,t.context_address+31*16);rt.write32(ram,t.context_address+31*16,0);
+                reject([&]{rt.handleSyscall(ram,&cpu,0);});require(!t.ready && rt.startup_worker_starts==n);
+                rt.write32(ram,t.context_address+31*16,saved_ra);rt.handleSyscall(ram,&cpu,0);
+                require(t.ready && t.context.pc==c[0] && t.context.r[29].low==c[1]+c[2]-32 && rt.current_thread_id==1);
+                reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.startup_worker_starts==n+1);
+                if(n==0) {
+                    cpu.pc=0x32EB68;cpu.r[31].low=0x2EE494;cpu.r[3].low=0x30;cpu.r[5].low=rt.initial_sp-288;
+                    rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && rt.startup_ready_queries==1);
+                    cpu.pc=0x32EBD8;cpu.r[31].low=0x2EE4B4;cpu.r[3].low=0x37;
+                    rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==4 && rt.startup_worker_suspends==1);
+                    reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.startup_worker_suspends==1 && !t.ready && t.suspended);
+                }
+                cpu.pc=0x32EAF8;cpu.r[31].low=c[4];cpu.r[3].low=0x29;cpu.r[5].low=c[5]+1;
+                reject([&]{rt.handleSyscall(ram,&cpu,0);});require(t.current_priority==2 && rt.startup_worker_priority_changes==n);
+                cpu.r[5].low=c[5];rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && t.current_priority==c[5]);
+                if(n==3) {
+                    cpu.pc=0x32EB68;cpu.r[31].low=0x2EE494;cpu.r[3].low=0x30;cpu.r[5].low=rt.initial_sp-288;
+                    rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && rt.read32(ram,rt.initial_sp-288+24)==25);
+                    cpu.pc=0x32EBD8;cpu.r[31].low=0x2EE4B4;cpu.r[3].low=0x37;
+                    rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==7 && t.suspended && !t.ready);
+                    reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.startup_worker_suspends==2);
+                }
+            }
+            } catch(const std::exception&) { std::cerr<<"Worker lifecycle counters: "<<rt.startup_worker_queries<<"/"<<rt.startup_worker_starts<<"/"<<rt.startup_worker_priority_changes<<"\n";throw; }
+            require(rt.startup_worker_queries==4 && rt.startup_worker_starts==4 && rt.startup_worker_priority_changes==4);
         }
         PS2Runtime heap_evidence_runtime;
         const std::array<std::uint32_t,16> heap_reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};

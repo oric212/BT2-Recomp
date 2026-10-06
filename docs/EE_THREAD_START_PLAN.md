@@ -32,3 +32,8 @@ Generated StartThread now executes its real helper, queries owned state, clears 
 The SOUNDS bind now returns owned native addresses. Command **0x10**, RPC ID 30, input **256 bytes**, response **64 bytes**, executes its actual handler for **54 native IOP instructions** and returns sixty-four zero bytes. Independent capture validates completed client, response, input buffer and selected request metadata. Generated EE RPC_END/wait/cleanup complete. This does not establish playback, asset loading or callback timing.
 
 The actual next blocker is the separate [DBCMAN request scope](DBCMAN_RPC_PLAN.md). The ready EE thread and ready SDRDRV helper remain pending until a modeled wait/dispatch event requires their execution. The authoritative checkpoint is 1,077 EE calls / 1,071 returns and 31,126 IOP instructions / 131 physical targets.
+
+
+## Main status and next worker lifecycle (2026-10-06)
+
+The reached main query now supplies the two evidenced fields consumed by its exact caller: running status 1 and current priority 2 at descriptor offset 0x18. Other live descriptor bytes are preserved and unmodeled; the reference's function/wait fields are not treated as a general owned main-thread structure. Original follow-up captures establish helper IDs 4/5 at entries 0x2EDE58 / 0x2EDF48 before the later workers 6/7 at 0x2EE050 / 0x2EE140. The first helper's extra ready query returns status 2 and selector 0x37 suspends it; it is not a wakeup. See EE_SOUND_SCHEDULING_PLAN.md for the exact four-worker signatures, suspension and subsequent scheduling scope. The resumed full run, lifecycle tests and original capture comparisons now verify these bounded transitions.

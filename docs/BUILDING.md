@@ -90,6 +90,4 @@ python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso
 
 The probe executes generated EE and translated IOP code, performs reads against your ISO and reports the execution boundary, distinct entries, call/return events and sound/heap counters. It stops at an unsupported or checked runtime boundary; reaching that boundary is not a full game boot.
 
-If `run_startup_probe.py` is absent from your checkout, that helper belongs to the currently unfinished developer pass and is not yet published in your revision; see the active-pass handoff below. The measured local checkpoint is ahead of the last fully committed implementation.
-
 The private report is written to `work/bt2-generation/entry-stop.json`. RAM sidecars and generated outputs also stay ignored. A completed entry means at least one invocation returned normally; it does not establish full function correctness or gameplay. See [current progress](PROG.md) and [the active-pass handoff](progress/ACTIVE_PASS.md) for the last verified checkpoint and pending work.

@@ -63,7 +63,7 @@ python tools/docs/sync_progress.py
 python tools/docs/sync_progress.py --check
 ```
 
-Review the snapshot against PROG.md's tables and update the verification-state wording in the exporter when the active pass is actually verified. The exporter measures a startup checkpoint; the pending label is deliberately explicit for this unfinished pass. It does not certify build/tests, infer subsystem completion, or run the game. Capture/test gates remain in the active handoff. README synchronization adjusts only the dashboard's relative image path.
+Review the snapshot against PROG.md's tables and pass `--verification verified` only when the active pass has passed its required gates. The exporter measures a startup checkpoint; its default unverified label remains until required gates pass. It does not certify build/tests, infer subsystem completion, or run the game. Capture/test gates remain in the active handoff. README synchronization adjusts only the dashboard's relative image path.
 
 Reference: [Chronicle's progress workflow](https://github.com/TheMoonPeople/Chronicle/blob/master/.github/workflows/progress.yml) publishes generated per-region objdiff reports with function and byte matching measures; its [report generator](https://github.com/TheMoonPeople/Chronicle/blob/master/scripts/build/progress_report.py) separates executable/overlay categories. We adapt the generated-report/category model to native execution and subsystem evidence. Their decompilation matching percentages do not measure BT2 runtime completeness. No reference implementation was copied, and no external reporting account or game-data CI upload was configured.
 ## Compact component map and README layout

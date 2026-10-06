@@ -66,16 +66,18 @@ void PS2Runtime::receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context
     const bool second=heap_calls==1 && heap_frees==1 && texture_gif.phase==8;
     const bool third=heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1;
     const bool fourth=heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1;
-    const auto semaphore=third || fourth?10u:7u;
-    if(!heap_allocation_supplied || (!second && !third && !fourth && heap_calls) || heap_binds!=1 || native_module_loads!=(second || third || fourth?14u:13u) || !native_iop || iop_epoch!=1
-        || prior_iop_services_valid || context->r[29].low!=d || d!=initial_sp-(fourth?640:third?624:second?432:528) || context->r[5].low!=2
+    const bool fifth=heap_calls==4 && cri_rpc_calls==35 && disc_rpc_calls==6 && ncmd_read_calls==1;
+    const bool sixth=heap_calls==5 && cri_rpc_calls==36 && disc_rpc_calls==6 && ncmd_read_calls==1;
+    const auto semaphore=third || fourth || fifth || sixth?10u:7u;
+    if(!heap_allocation_supplied || (!second && !third && !fourth && !fifth && !sixth && heap_calls) || heap_binds!=1 || native_module_loads!=(second || third || fourth || fifth || sixth?14u:13u) || !native_iop || iop_epoch!=1
+        || prior_iop_services_valid || context->r[29].low!=d || d!=initial_sp-(sixth?560:fifth?560:fourth?640:third?624:second?432:528) || context->r[5].low!=2
         || semaphores.size()!=semaphore+1 || semaphores[semaphore].count || semaphores[semaphore].maximum!=1 || semaphores[semaphore].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
     const std::array<std::uint32_t,8> desc={0x3AC8C0,0x48480,4,0,0x203A97C0,0x1E640,64,0x44};
-    const std::array<std::uint32_t,14> packet={0x440,0x48480,0x8000000A,0,5,0x203A97C0,fourth?57u:third?53u:second?26u:23u,0x3AC840,1,4,0x3AC880,4,1,0x48438};
+    const std::array<std::uint32_t,14> packet={0x440,0x48480,0x8000000A,0,5,0x203A97C0,sixth?92u:fifth?90u:fourth?57u:third?53u:second?26u:23u,0x3AC840,1,4,0x3AC880,4,1,0x48438};
     for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
-    if(read32(rdram,0x3AC8C0)!=(fourth?0x41040u:third?0x8D0u:second?0x81800u:0x360u) || read32(rdram,0x3AC840)!=0x203A97C0 || read32(rdram,0x3AC844)!=(fourth?57u:third?53u:second?26u:23u)
+    if(read32(rdram,0x3AC8C0)!=(sixth?0x4040u:fifth?0x8D0u:fourth?0x41040u:third?0x8D0u:second?0x81800u:0x360u) || read32(rdram,0x3AC840)!=0x203A97C0 || read32(rdram,0x3AC844)!=(sixth?92u:fifth?90u:fourth?57u:third?53u:second?26u:23u)
         || read32(rdram,0x3AC848)!=semaphore || read32(rdram,0x3AC854)!=0x48480 || read32(rdram,0x3AC864)!=0x48438)
         throw UnsupportedSyscall(0x77,context->pc);
     const auto allocated=native_iop->allocateBootHeap(iop_epoch,read32(rdram,0x3AC8C0));
@@ -448,14 +450,15 @@ void PS2Runtime::receiveCriBind(std::uint8_t* rdram,R5900Context* context) {
 }
 
 void PS2Runtime::receiveCriCreate(std::uint8_t* rdram,R5900Context* context) {
+    const bool second=cri_rpc_calls==35 && heap_calls==5;
     const auto d=static_cast<unsigned>(context->r[4].low);
     auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x90000200);
-    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || cri_rpc_calls
-        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-656 || context->r[5].low!=2
+    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (cri_rpc_calls && !second)
+        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(second?592u:656u) || context->r[5].low!=2
         || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> desc={0x39DC80,server.buffer,16,0,0x203A97C0,0x1E640,64,0x44};
-    const std::array<unsigned,14> packet={0x1040,server.buffer,0x8000000A,0,5,0x203A97C0,54,0x355C70,2,16,0x39DD80,4,1,server.descriptor};
+    const std::array<unsigned,14> packet={0x1040,server.buffer,0x8000000A,0,5,0x203A97C0,second?91u:54u,0x355C70,2,16,0x39DD80,4,1,server.descriptor};
     for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;
@@ -472,26 +475,29 @@ void PS2Runtime::receiveCriCreate(std::uint8_t* rdram,R5900Context* context) {
 void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<unsigned>(context->r[4].low);
     auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x90000200);
-    const bool batch=cri_rpc_calls>=3;
+    const bool channel=cri_rpc_calls>=36;
+    const bool channel_setup=cri_rpc_calls==36;
+    const bool batch=cri_rpc_calls>=3 && !channel;
     const bool start=batch && !(cri_rpc_calls&1);
     const bool stream=batch && !start;
-    const auto input_size=start?16u:12u;
+    const auto input_size=channel && !channel_setup?16u:start?16u:12u;
+    const auto output_size=channel_setup?0u:channel || batch?4u:cri_rpc_calls==2?12u:0u;
     const bool payload=cri_rpc_calls>=2;
-    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (cri_rpc_calls<1 || cri_rpc_calls>34)
-        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(start?736u:stream?688u:656u) || context->r[5].low!=(payload?2u:1u)
+    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (cri_rpc_calls<1 || cri_rpc_calls>41 || cri_rpc_calls==35)
+        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(channel_setup?592u:start?736u:stream?688u:656u) || context->r[5].low!=(payload?2u:1u)
         || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> desc={0x39DC80,server.buffer,input_size,0,0x203A97C0,0x1E640,64,0x44};
     const auto descriptor_start=payload?0u:4u;
     for(unsigned n=descriptor_start;n<8;++n)if(read32(rdram,d+(n-descriptor_start)*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
-    const auto command=start?0x400u:stream?0x422u:payload?0x40Cu:0x403u;
-    const std::array<unsigned,14> packet={start?0x1040u:payload?0xC40u:64u,payload?server.buffer:0u,0x8000000A,0,5,0x203A97C0,batch?cri_rpc_calls+55u:payload?56u:55u,0x355C70,command,payload?input_size:0u,0x39DD80,start || stream?4u:payload?12u:0u,1,server.descriptor};
+    const auto command=channel?(channel_setup?0x40Au:0x408u):start?0x400u:stream?0x422u:payload?0x40Cu:0x403u;
+    const std::array<unsigned,14> packet={input_size==16?0x1040u:payload?0xC40u:64u,payload?server.buffer:0u,0x8000000A,0,5,0x203A97C0,channel?cri_rpc_calls+57u:batch?cri_rpc_calls+55u:payload?56u:55u,0x355C70,command,payload?input_size:0u,0x39DD80,output_size,1,server.descriptor};
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;
     try {response=native_iop->callCriControl(iop_epoch,command,payload?std::span<const std::uint8_t>(memory_.data()+0x39DC80,input_size):std::span<const std::uint8_t>{});}
     catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
     std::copy(response.begin(),response.end(),memory_.begin()+0x39DD80);
-    const std::array<unsigned,16> reply={start || stream?0x400u:payload?0xC00u:0u,payload?0x39DD80u:0u,0x80000008,0,0,0,0,0x355C70,0x8000000A,0,0,0,0,0,0,0};
+    const std::array<unsigned,16> reply={output_size<<8,output_size?0x39DD80u:0u,0x80000008,0,0,0,0,0x355C70,0x8000000A,0,0,0,0,0,0,0};
     for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,0x355C70,10,server.descriptor,server.buffer);
     ++cri_rpc_calls;++sif_dma_submissions;context->r[2].low=0x780002+cri_rpc_calls-1;

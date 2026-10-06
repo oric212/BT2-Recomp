@@ -66,7 +66,7 @@ def verify(root,native):
         'Original sixteen-pair batch/next channel handoff differs')
     require(words(b,0x3AC8C0,1)==(0x8D0,) and words(b,0x3AC880,1)==(0x191700,),'Next retail heap differs')
     r=json.loads(native.read_text(encoding='utf-8'));ni=Path(str(native)+'.iop.bin').read_bytes();ne=Path(str(native)+'.ee.bin').read_bytes()
-    require(r['cri_rpc_calls']>=3 and r['indexed_cache_operations']==r['indexed_cache_tag_reads']==256,'Native prior commands incomplete')
+    require(r['cri_rpc_calls']>=3 and r['indexed_cache_operations']==r['indexed_cache_tag_reads']==(512 if r['cri_rpc_calls']>=36 else 256),'Native prior commands incomplete')
     d=r['spu2_auto_dma_words'];base=d[5]-0xEFC0
     require(base in (0x168000,0x1A7000) and d[:2]==[1,1] and d[3:]==[4,1,base+0xEFC0,base+0xEFC0,0x200010,0x1000201,2048],'Native pending transfer differs')
     require(words(ne,0x355C84,1)==(base+0xE7C0,) and words(ne,0x355C94,1)==(base+0xED30,),'Native CRI client ownership differs')
@@ -76,7 +76,8 @@ def verify(root,native):
     if r['cri_rpc_calls']==3:require(words(ne,0x39DD80,3)==(0,1,0) and words(ne,0x355C70,1)==(0,),'Native original 0x40C result/cleanup differs')
     if r['cri_rpc_calls']==4:require(r['heap_calls']==4 and words(ne,0x3AC880,1)==(0x150600,) and words(ne,0x39DD80,1)==(base+0x14A40,),'Native fourth heap/0x422 result differs')
     if r['cri_rpc_calls']>=35:
-        require(r['heap_calls']==4 and words(ne,0x3AC880,1)==(0x150600,) and words(ne,0x39DD80,1)==(base+0x15580+15*0x14,), 'Native full batch/last return differs')
+        require(r['heap_calls']>=4, 'Native first-channel heap incomplete')
+        if r['cri_rpc_calls']==35:require(words(ne,0x3AC880,1)==(0x150600,) and words(ne,0x39DD80,1)==(base+0x15580+15*0x14,), 'Native first-channel last return differs')
         for index in range(16):
             for address,count in [(0xCC970+index*0x30,12),(0xCD4B0+index*0x14,5)]:
                 expected=[x+base-BASE if BASE<=x<BASE+0x16500 else x for x in words(retail_batch,address,count)]

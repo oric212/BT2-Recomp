@@ -1,10 +1,10 @@
 {
-  "description": "Authored native placements, not retail addresses. Reserve captured heaps CE500..191700, disc workspace 1D4B00..1DFF90 and workers from 1E0000.",
+  "description": "Authored placements in owned gaps; captured heaps CE500..196100, disc workspace 1D4B00..1DFF90, workers from 1E0000. Logical SIF snapshot is separate from translated IOP RAM.",
   "modules": {
-    "MODSESQ2.IRX": "0x196000",
-    "CDVDSTM.IRX": "0x19A000",
+    "MODSESQ2.IRX": "0x54000",
+    "CDVDSTM.IRX": "0x66000",
     "SOUNDS.IRX": "0x1C0000",
     "CRI_ADXI.IRX": "0x1A7000",
-    "FILEIO": "0x191700"
+    "FILEIO": "0x11000"
   }
 }

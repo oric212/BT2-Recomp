@@ -2,18 +2,18 @@
   "schema_version": 1,
   "measured_on": "2026-10-06",
   "scope": "bounded native startup probe with local ISO and prepared inputs",
-  "code_state": "local implementation; final pass verification incomplete",
-  "source_report_sha256": "521322a0892e83699e2a9c16c67c47db2e5c99302bc4a28f33fd925af996415e",
+  "code_state": "bounded startup verified by build/tests and capture comparison",
+  "source_report_sha256": "6ff8886acb499efe074c570df0591cc2b71d2e7a2673c4590ba7613b91674b03",
   "metrics": {
-    "distinct_ee_entered": 291,
-    "distinct_ee_completed": 286,
+    "distinct_ee_entered": 296,
+    "distinct_ee_completed": 292,
     "distinct_kernel_entered": 2,
     "distinct_kernel_completed": 2,
-    "calls": 3855,
-    "returns": 3848,
+    "calls": 3892,
+    "returns": 3887,
     "native_iop_steps": 61612,
     "native_module_loads": 14,
-    "ee_thread_count": 3,
+    "ee_thread_count": 6,
     "cri_rpc_calls": 37,
     "heap_calls": 6,
     "disc_read_calls": 1,
@@ -23,11 +23,16 @@
     "disc_read_dma_submissions": 4,
     "gs_packets": 3,
     "gs_sprites": 2,
-    "gs_pixels": 573440
+    "gs_pixels": 573440,
+    "startup_worker_queries": 4,
+    "startup_worker_starts": 4,
+    "startup_worker_priority_changes": 4,
+    "startup_ready_queries": 2,
+    "startup_worker_suspends": 2
   },
   "boundary": {
-    "selector": "0x30",
-    "pc": "0x32EB68",
+    "selector": "0x29",
+    "pc": "0x32EAF8",
     "target": "0x0"
   }
 }

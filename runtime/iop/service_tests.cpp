@@ -100,8 +100,39 @@ int main(int argc,char** argv) {
                     && child.waiting && !child.ready && service.cri_control_calls==34);
                 const auto batch_done=service.runtime.ram;rejected([&]{service.callCriControl(1,0x422,configuration_bytes);});
                 check(service.runtime.ram==batch_done);
+                const auto before_fifth=service.runtime.ram;const auto fifth_steps=service.runtime.steps;
+                rejected([&]{service.allocateBootHeap(2,0x8D0);});rejected([&]{service.allocateBootHeap(1,0x8D4);});
+                check(service.runtime.ram==before_fifth && service.runtime.steps==fifth_steps);
+                service.runtime.map(0x191700,std::vector<std::uint8_t>(4));const auto collision=service.runtime.ram;
+                rejected([&]{service.allocateBootHeap(1,0x8D0);});check(service.runtime.ram==collision && service.runtime.steps==fifth_steps);
+                std::erase(service.runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{0x191700,0x191704});
+                check(service.allocateBootHeap(1,0x8D0)==0x191700);
+                const std::array<unsigned,4> second_args={1,0x35FD00,0x191740,0x880};
+                const auto second_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(second_args.data()),16);
+                const auto second_slot=service.callCriCreate(1,second_bytes);unsigned second_pointer=0;std::memcpy(&second_pointer,second_slot.data(),4);
+                check(second_pointer==0x1B5904 && service.cri_create_calls==2);
+                const auto before_sixth=service.runtime.ram;const auto sixth_steps=service.runtime.steps;
+                rejected([&]{service.allocateBootHeap(2,0x4040);});rejected([&]{service.allocateBootHeap(1,0x4000);});
+                check(service.runtime.ram==before_sixth && service.runtime.steps==sixth_steps);
+                service.runtime.map(0x192000,std::vector<std::uint8_t>(4));const auto sixth_collision=service.runtime.ram;
+                rejected([&]{service.allocateBootHeap(1,0x4040);});check(service.runtime.ram==sixth_collision && service.runtime.steps==sixth_steps);
+                std::erase(service.runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{0x192000,0x192004});
+                check(service.allocateBootHeap(1,0x4040)==0x192000 && service.boot_heap_allocations==6);
+                const std::array<unsigned,3> setup={0x10,0x192000,0x4040};
+                check(service.callCriControl(1,0x40A,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(setup.data()),12)).empty());
+                for(unsigned index=0;index<5;++index) {
+                    const std::array<unsigned,4> pair={2,0,0x1BBA40+index*0x60,0x1BBA70+index*0x60};
+                    const auto bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(pair.data()),16);
+                    const auto prior=service.runtime.ram;const auto steps=service.runtime.steps;
+                    rejected([&]{service.callCriControl(2,0x408,bytes);});
+                    auto wrong=pair;wrong[2]+=4;rejected([&]{service.callCriControl(1,0x408,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(wrong.data()),16));});
+                    check(service.runtime.ram==prior && service.runtime.steps==steps);
+                    const auto result=service.callCriControl(1,0x408,bytes);unsigned pointer=0;std::memcpy(&pointer,result.data(),4);
+                    check(pointer==0x1B5DA0+index*0x1C);
+                }
+                check(service.cri_control_calls==40 && service.runtime.spu2_auto_dma.pending && child.waiting && !child.ready);
                 std::ofstream out(argv[3],std::ios::binary);out.write(reinterpret_cast<const char*>(service.runtime.ram.data()),service.runtime.ram.size());check(bool(out));
-                std::cout<<"Original CRI 0x40C and all sixteen 0x422/0x400 pairs complete; initial AutoDMA half remains pending.\n";return 0;
+                std::cout<<"Both CRI channel constructors, sixteen first-channel pairs and five second-channel pairs complete; initial AutoDMA half remains pending.\n";return 0;
             }
             std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
             std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;

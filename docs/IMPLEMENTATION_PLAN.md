@@ -77,3 +77,13 @@ The bounded CRI higher-priority child start/first wait is now validated. Current
 ## First-channel completion and capacity handoff (2026-10-06)
 
 Original 0x40C and all sixteen 0x422/0x400 pairs now complete with an owned pending initial AutoDMA half. Follow [CRI_SECOND_CHANNEL_PLAN.md](CRI_SECOND_CHANNEL_PLAN.md): establish later allocation evidence and a consistent IOP ownership layout before admitting the fifth heap request. Its captured pointer overlaps translated FILEIO. Audio consumption/completion remains a separate unimplemented scope.
+
+
+## Second-channel setup and EE scheduling handoff (2026-10-06)
+
+Both further captured heap allocations and second command-2 / 0x40A setup now complete through the full EE path. Five subsequent 0x408 handlers are independently validated in the original native IOP service test; the full EE checkpoint remains at 37 CRI calls. Follow EE_SOUND_SCHEDULING_PLAN.md for the newly reached worker lifecycle, earlier missing thread identity evidence and retained main/child reverse-RPC ownership. Do not equate isolated service results with full EE execution. Distinct EE/kernel entry counts are now measured automatically; BUILDING.md documents the repeatable startup probe command.
+
+
+## Four-helper completion and scheduler design gate (2026-10-06)
+
+The capacity/worker pass is verified. Both later heaps, second stream setup, four StartThread/priority transitions and the first/last helper suspensions complete. Full EE startup stops at the main priority request 2 → 24 with 296 / 292 distinct coverage. Follow EE_SOUND_SCHEDULING_PLAN.md to define retained per-thread continuation ownership and reverse-RPC delivery before dispatching the ready child. Original registration/first-wait snapshots exist; live callback timing and bind ownership still need modeling and evidence. The five second-channel pairs remain isolated service proof, not full EE coverage.

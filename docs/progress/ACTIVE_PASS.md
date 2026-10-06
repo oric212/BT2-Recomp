@@ -1,44 +1,37 @@
-# Active pass: CRI second-channel setup and startup workers
+# Resume handoff: retained EE scheduling and reverse RPC
 
-Updated: 2026-10-06. **Status: implemented locally, final verification incomplete.**
-This is an unfinished implementation pass, not a completed pass. A later documentation-only commit does not verify its code.
+Updated: 2026-10-06. **Previous capacity/worker pass verified; next major subsystem requires continuation/delivery design.**
 
-## Last measured checkpoint
+## Verified starting checkpoint
 
-User-confirmed startup run: **291 EE entries entered / 286 completed**, kernel **2 / 2**, 3,855 calls / 3,848 returns, 61,612 IOP instructions, 37 CRI calls, six heap allocations. Boundary: worker ReferThreadStatus, selector `0x30`, PC `0x32EB68`. Report: ignored `work/bt2-generation/entry-stop.json`; this path is overwritten by later runs. The code baseline before the unfinished pass is `2eb87cb`; `ab4baa4` records the measured progress only. The measured binary includes local changes, so neither commit alone reproduces that checkpoint.
+Full native startup: **296 EE entries entered / 292 completed**, kernel **2 / 2**, **3,892 calls / 3,887 returns**, **61,612 IOP instructions**, **37 CRI calls**, six heap allocations. Stops at **ChangeThreadPriority(1, 24)**, selector `0x29`, PC `0x32EAF8`. Main remains priority 2; the requested transition has not been accepted.
 
-## Local implementation and scope
+Four helpers have completed owned dormant queries, ready transitions and priority changes. Helpers 4/7 are suspended at priorities 8/25; helpers 5/6 are ready at priorities 16/18. The sound child 3 is ready at priority 5. No child EE instructions have executed. All reset exits are owned SetupThread exit `0x100250` under checked signatures.
 
-| Work | Files / evidence | State |
-| --- | --- | --- |
-| Second-channel heap capacity and owned module placements | `config/iop_layout.json`, `runtime/iop/compiled_modules.cpp`, `runtime/iop/ee_loadfile_bridge.cpp`, layout tools | Verified at the measured 37-call startup checkpoint; pass uncommitted |
-| Five later second-channel constructor requests | `runtime/iop/service_tests.cpp`, `tools/capture_ee/verify_cri_second_channel.py` | Verified in isolated service testing; full EE path has not executed them |
-| Distinct entry/return counting and repeatable startup CLI | `runtime/probe_abi/ps2_runtime.h`, `runtime/entry_probe.cpp`, `runtime/bootstrap_tests.cpp`, `tools/ps2recomp/run_startup_probe.py` | Counts observed in startup; latest header edits still require rerun |
-| Main status query | Same runtime header; `tools/capture_ee/verify_ee_main_status.py` | Only caller-consumed status/priority fields verified |
-| New worker status, ready transitions and priorities | Same runtime header and probe reports | Implemented locally, **unverified**; worker execution/scheduling is not implemented |
-| Original worker/main evidence | `tools/capture_ee/capture_ee.py`, capture tests, ignored `work/pcsx2-capture/` | Original matching workers use IDs 6/7; owned native sequence is 4/5 |
+Previous unfinished changes are included in the verified implementation pass; there is no remaining unverified worker-status/start/priority patch to resume. Full EE coverage remains 37 CRI calls; five later constructor pairs are verified only in the isolated native service test.
 
-Worker neutral entries are `0x2EE050` and `0x2EE140`. The implementation intends to query/start them and change their priorities to 18/25 while main priority remains 2. It does not execute their bodies. Original SetupThread exit `0x100250` is used only under checked ownership. Do not assume retail/native thread IDs match.
+## Evidence and completed checks
 
-## Remaining verification / resume order
+- MSVC entry and ALL builds; bootstrap ownership/rejection tests; **16/16 CTests**.
+- **145 capture tests**, **52 recompilation tests**, **13 IOP tooling tests**.
+- **16 original/native startup comparisons**, including four-worker state/reset contexts, both ready queries/suspensions, first AutoDMA setup and second-channel service-only objects.
+- **22 ownership rows** checked; relocated MODSESQ2/CDVDSTM startup comparisons passed during the capacity portion.
+- Private reports: `work/bt2-generation/entry-stop.json` and RAM sidecars. Logs: `work/iop/resumed-final-startup.log`, `resumed-final-all-build.log`, `resumed-final-ctest.log`, `final-comparisons.json`, `resumed-final-service.log`. Public counters: `latest.json`.
+- Original first RPC child wait captured at `0x333090`: SP `0x3A6C80`, GP `0x38BDF0`, queue `0x3A6D00`, original pre-observer Status `0x70030C11`, saved exit `0x100250`. Queue owner 3; server `0x3A6D18`, service `0x80000704`, handler `0x3153F0`, buffer `0x3A6CC0`.
 
-- Check whether the entry build finished: ignored `work/iop/startup-workers-entry-build.log`. Rebuild if uncertain:
-  ```powershell
-  cmake --build build/probe --config Debug --target bt2-entry-probe --parallel 4 -- /nodeReuse:false
-  ```
-- Add meaningful tests for worker query/start/priority ordering, context ownership and rejection without mutation. Existing new tests cover distinct accounting and the main query, not this latest worker group.
-- Run the authored startup probe against the local ISO; preserve the resulting report before another test overwrites it:
-  ```powershell
-  python tools/ps2recomp/run_startup_probe.py --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso"
-  ```
-- Continue through actual mapping/link/runtime blockers using the documented recomp-first workflow. Do not count intended worker transitions until observed.
-- Update `tools/capture_ee/verify_ee_main_status.py`: it currently expects the previous worker-query boundary. Compare the actually reached state against original worker contexts; do not loosen unrelated assertions.
-- Rebuild the current ALL targets and run the CTest suite using the build instructions. Rerun isolated CRI service validation, layout checks and applicable startup comparison tools. Last completed pass had 16/16 CTests; that result does not certify latest worker edits.
-- Tooling checks already passed during this unfinished pass: 142 capture tests, 52 recompilation tests and 13 IOP tooling tests. Rerun affected checks after edits.
-- Rerun the full startup probe last because CTests can overwrite its report. Record final distinct counts and boundary in `PROG.md`, synchronize README, append the detailed monthly outcome, review all staged files, commit and push the verified implementation.
+## Next pass
 
-## Next design/evidence boundary
+1. Read `../PROG.md`, `../EE_SOUND_SCHEDULING_PLAN.md`, `../REFERENCE_ARCHITECTURE.md` and `../SDRDRV_RPC_PLAN.md`. Follow the permanent subsystem-scale rule.
+2. Define per-thread retained invocation/return validation and continuation ownership before accepting the main priority transition. The current synchronous dispatcher cannot safely substitute a new CPU or unwind a sleeping child as a successful return.
+3. Establish actual reverse-bind delivery and callback lifetime from local original captures/tooling. Registration/first-wait RAM proves these fields, not the complete cross-CPU transaction.
+4. Execute the generated child registration/loop path on its owned context, preserve the main continuation, park the child at the evidenced wait and complete the pending reverse bind using owned registered state. Do not replay entry code on resume or fabricate completed RPCs.
+5. Follow related execution blockers, test each meaningful change, then run full build/tests and capture comparisons. Run the full startup probe last because CTests overwrite its report. Refresh PROG/README/component scopes and snapshot, append monthly evidence, review, commit and push.
 
-The expected later main priority change from 2 to 24 would make the ready priority-5 EE child eligible. Actual retained EE thread execution and reverse RPC service `0x80000704` need context ownership and first sleep/wait evidence. Consult `EE_SOUND_SCHEDULING_PLAN.md`, `EE_THREAD_START_PLAN.md` and `REFERENCE_ARCHITECTURE.md`. Do not acknowledge a scheduling transition by returning success without implementing its effects. This expected boundary has not been established by the latest unverified run.
+To rerun the prepared local checkpoint from your checkout:
 
-No complete startup, native audio, presented frame or gameplay claim is made. Keep proprietary inputs, generated translations and capture reports ignored.
+```powershell
+cmake --build build/probe --config Debug --target bt2-entry-probe
+python tools/ps2recomp/run_startup_probe.py --disc "PATH_TO_YOUR_BT2_USA_ISO"
+```
+
+The original first-wait snapshots are available. The unresolved scope is a new scheduler/continuation and reverse-RPC delivery implementation, not another worker descriptor stub. Archive payload loading, DMA consumption/IRQ, native audio and frame presentation remain unverified.

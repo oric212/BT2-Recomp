@@ -667,3 +667,22 @@ Provisional map preparation now recognizes one bounded word-table switch idiom: 
 `capture_cri_thread.py` supports original `program`, `transfer`, `irq` and `volume` observers in addition to earlier start/wait boundaries. `capture_ee.py --capture-point rpc-cri-nth-before --cri-call-index N --absent-cards` observes a selected original CRI request (1..64); supply existing explicit local PCSX2/BIOS/disc arguments. Observers publish original behavior; they do not inject successful replies.
 
 `python tools/capture_ee/verify_cri_autodma.py --native work/bt2-generation/entry-stop.json` checks original capture provenance, transfer programming, pending owned DMA and the sixteen constructor pairs. For current relocated disc workspace, add `--workspace 0x1D4B00` to `verify_disc_read.py`. Private inputs, capture RAM and generated translations stay ignored.
+
+
+## Second-channel captures and repeatable startup measurement
+
+Use `capture_ee.py --capture-point rpc-cri-nth-before --cri-call-index N --absent-cards` for original requests 36..42. `--capture-point rpc-cri-nth-control-after --cri-call-index 40` publishes the final original control-wrapper return after its fifth 0x408 request; its counter counts control-wrapper returns, excluding the two command-2 calls. Earlier returns execute the original displaced branch/delay slot. Supply the existing explicit local PCSX2/BIOS/disc paths.
+
+`python tools/capture_ee/verify_cri_second_channel.py --native work/bt2-generation/entry-stop.json` verifies the bounded group, captured allocations, exact requests/results, normalized constructor objects and EE cleanup. It excludes identified live worker state; it does not certify playback.
+
+`python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso` replaces the need for an ignored helper script to run the current startup checkpoint. Rebuild bt2-entry-probe first after source changes. Existing local bundles and generated files are required; it prints automatically measured distinct EE/kernel entry counts separately from invocation events. See BUILDING.md for the reproducible command and limitations.
+
+
+Main-thread evidence checkpoints: `rpc-main-status-after`, `rpc-main-priority-before`, `rpc-main-priority-after`, `rpc-worker4-created/started` and `rpc-worker5-created/started`. The latter tool labels denote the next native sequence; original observed IDs are 6/7. `verify_ee_main_status.py --native work/bt2-generation/entry-stop.json` checks original provenance, consumed native status fields, original worker contexts and the retained next-worker boundary. All four scoped worker lifecycles now validate; actual child instruction execution is unimplemented. Add `--service-ram work/iop/second-channel-native.bin` to the second-channel validator when checking its five isolated pair objects against a full EE checkpoint with 37 CRI calls.
+
+
+## Four-helper lifecycle and first RPC wait
+
+`rpc-helper-created/started` and `rpc-helper2-created/started` observe original IDs 4/5. Historical `rpc-worker4-created/started` and `rpc-worker5-created/started` observe IDs 6/7. `rpc-helper-ready-status` / `rpc-helper-suspend-after` observe the first helper's ready query and SuspendThread return; `rpc-helper7-ready-status` / `rpc-helper7-suspend-after` select the last helper and preserve the earlier shared-function invocation. Selector 0x37 is SuspendThread, not WakeupThread.
+
+`rpc-ee-server-registered` / `rpc-ee-server-wait` publish the original service registration / first SleepThread call. They save original Status, s0 and GP before terminal DI/SYNC to prevent preemption during readout. The observer terminates at the capture and does not deliver any bind or callback. `verify_ee_main_status.py` compares all original provenance, helper descriptors/reset contexts, both ready-query/suspend results, native owned thread states and the retained main-priority boundary. It does not certify a runnable EE scheduler.

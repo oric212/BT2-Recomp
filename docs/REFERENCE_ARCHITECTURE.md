@@ -253,3 +253,8 @@ Consulted the pinned BT3 cooperative IOP notes, public PS2SDK StartThread/WaitSe
 ## First CRI AutoDMA transaction and constructor batch (2026-10-06)
 
 Applied the previously inspected pinned PCSX2 DMA/ReadInput and PS2SDK block-transfer ownership patterns to independent BT2 register/API observations. Implemented only accepted initial-half programming and immutable pending ownership; no reference code copied or completion inferred. Original CRI constructs sixteen object pairs. The fifth heap request now exposes broader address-space capacity work; see CRI_SECOND_CHANNEL_PLAN.md before relocating further images.
+
+
+## Second CRI channel ownership layout (2026-10-06)
+
+Reconsulted the retained pinned BT3 native IOP notes (per-image placements, translated imports and owned RPC delivery) and pinned PS2SDK sysmem.c (256-byte rounding). Adapted placement into disjoint authored gaps, preserving captured BT2 heap results and 2 MiB bounds. The native diagnostic kernel uses host providers; it does not load the retail low-memory kernel into those gaps. Both relocated resident images pass normalized original startup comparisons. No reference implementation copied. Second-channel inputs/results come from independent local BT2 captures, not BT3.

@@ -7,6 +7,38 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_last_helper_observer_preserves_earlier_shared_invocation(self):
+        for point,pair in [('rpc-helper7-ready-status',(0x8FA30000,0x24020008)),('rpc-helper7-suspend-after',(0x0040882D,0x0220102D))]:
+            w=struct.unpack('<'+str(len(texture_stub(point))//4)+'I',texture_stub(point))
+            self.assertEqual(w[0],0x24180007)
+            early=2+(w[1]&0xFFFF)
+            self.assertEqual(w[early:early+2],pair)
+            self.assertEqual(w[-2],0x08000000|((TEXTURE_POINTS[point][0]+8)>>2))
+
+    def test_rpc_child_terminal_capture_freezes_after_register_publication(self):
+        for point in ('rpc-ee-server-registered','rpc-ee-server-wait'):
+            blob=texture_stub(point);w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+            expected=(0x40196000,0xAF190028,0xAF10002C,0xAF1C0030,0x42000039,0x0000000F)
+            self.assertEqual(w[8:14],expected)
+            self.assertEqual(w[-2],0x08000000|((FRESH_BIND_STUB+(len(w)-2)*4)>>2))
+
+    def test_earlier_helper_lifecycle_capture_points(self):
+        for point,address,marker in [('rpc-helper-created',0x2EE51C,0xB796),('rpc-helper-started',0x2EE538,0xB797),
+                                    ('rpc-helper2-created',0x2EE684,0xB798),('rpc-helper2-started',0x2EE698,0xB799)]:
+            observed,trap,value=capture_trap(point)
+            self.assertEqual((observed,value),(address,marker))
+            self.assertEqual(len(trap),8)
+            self.assertGreater(len(texture_stub(point)),8)
+
+    def test_control_return_observer_preserves_both_branch_paths(self):
+        with patch('capture_ee.CRI_CALL_INDEX',40):
+            w=struct.unpack('<22I',texture_stub('rpc-cri-nth-control-after'))
+        self.assertEqual(w[5],0x24180028)
+        self.assertEqual(7+(w[6]&0xFFFF),16)
+        self.assertEqual(w[16:18],(0x1A200003,0x0000302D))
+        self.assertEqual(w[18],0x08000000|(0x2FD200>>2))
+        self.assertEqual(w[20],0x08000000|(0x2FD228>>2))
+
     def test_indexed_cri_capture_counts_only_target_client(self):
         for index in (1,10,36,64):
             with patch('capture_ee.CRI_CALL_INDEX',index):

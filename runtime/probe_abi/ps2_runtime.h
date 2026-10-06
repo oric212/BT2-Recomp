@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <span>
+#include <set>
 #include <unordered_map>
 #include <vector>
 #include <immintrin.h>
@@ -105,7 +106,9 @@ public:
         verifyKernelBinding(address);
         context.pc = address;
         checkpoints_ = 0;
+        entered_functions.insert(address);
         found->second(memory_.empty() ? nullptr : memory_.data(), &context, this);
+        completed_functions.insert(address);
     }
 
     // Isolated logical RPC_END callback validation. The caller supplies checked
@@ -151,8 +154,8 @@ public:
         if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls>=1 && cri_rpc_calls<=34) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
-        if(code==0 && selector==0x77 && cri_rpc_binds==1 && !cri_rpc_calls && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
+        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls>=1 && cri_rpc_calls<=41 && cri_rpc_calls!=35) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
+        if(code==0 && selector==0x77 && cri_rpc_binds==1 && (!cri_rpc_calls || (cri_rpc_calls==35 && heap_calls==5)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
         if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
         if(code==0 && selector==0x77 && ncmd_ready_calls==1 && !ncmd_read_calls && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
         if(code==0 && selector==0x77 && ncmd_rpc_binds==1 && !ncmd_ready_calls
@@ -179,7 +182,7 @@ public:
                 throw UnsupportedSyscall(selector,context->pc);
             ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
         }
-        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1))
+        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36))
             && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
             && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
@@ -377,7 +380,7 @@ public:
             ++osd_config_reads;
             return; // SDK declares void; preserve the result register.
         }
-        if (code == 0 && selector == 0x29) {
+        if (code == 0 && selector == 0x29 && context->r[4].low==1) {
             // Only the main thread is runnable; created threads remain dormant.
             const bool startup_priority_two=texture_gif.phase==8 && timer1_setup_writes==1 && context->pc==0x32EAF8
                 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005EC && context->r[5].low==2;
@@ -416,13 +419,88 @@ public:
             if (threads.size() == 254) { context->r[2].low = UINT64_MAX; return; }
             const auto id = static_cast<std::uint32_t>(threads.size()) + 2;
             threads.push_back({id, entry, stack, size, gp, priority, heap_start, saved_context, top - 0x20});
+            threads.back().current_priority=priority;
             // Pinned ThreadReset writes only these low words, preserving other context bytes.
             write32(rdram, saved_context + 28 * 16, gp);
             write32(rdram, saved_context + 29 * 16, top - 0x20);
             write32(rdram, saved_context + 30 * 16, top - 0x20);
-            write32(rdram, saved_context + 31 * 16, sound_thread_start_supplied && id==3 && entry==0x315380 ? thread_arguments[4] : 0x1FC03000);
+            const auto* spec=id>=4 && id<=7 ? &startup_worker_specs[id-4] : nullptr;
+            const bool startup_worker=spec && entry==spec->entry && stack==spec->stack && size==spec->size
+                && context->r[31].low==spec->create_return && gp==0x38BDF0 && priority==2
+                && cri_rpc_calls==37 && heap_calls==6 && main_thread_queries==1 && context->pc==0x32EA68
+                && current_thread_id==1 && main_thread_priority==2;
+            write32(rdram, saved_context + 31 * 16, (sound_thread_start_supplied && id==3 && entry==0x315380) || startup_worker ? thread_arguments[4] : 0x1FC03000);
             context->r[2].low = id;
             return;
+        }
+        if(code==0 && selector==0x30 && cri_rpc_calls==37 && main_thread_queries==1
+            && (context->r[4].low==4 || context->r[4].low==7) && !threads.empty() && threads.back().ready) {
+            const auto id=static_cast<unsigned>(context->r[4].low);const unsigned phase=id==4?0:1;
+            const auto out=static_cast<unsigned>(context->r[5].low);
+            if(startup_ready_queries!=phase || startup_worker_starts!=(id==4?1u:4u) || startup_worker_priority_changes!=(id==4?0u:4u)
+                || threads.size()!=id-1 || threads.back().id!=id || current_thread_id!=1 || main_thread_priority!=2 || context->pc!=0x32EB68
+                || context->r[31].low!=0x2EE494 || context->cop0_status!=0x10001 || out!=initial_sp-288)
+                throw UnsupportedSyscall(selector,context->pc);
+            const auto& t=threads.back();checkMemory(rdram,out,48);
+            const std::array<std::uint32_t,12> info={2,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.current_priority,0,0,0,0,0};
+            for(unsigned n=0;n<12;++n)write32(rdram,out+n*4,info[n]);
+            context->r[2].low=2;++startup_ready_queries;return;
+        }
+        if(code==0 && selector==0x37 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low==4 || context->r[4].low==7)) {
+            const auto id=static_cast<unsigned>(context->r[4].low);const unsigned phase=id==4?0:1;
+            if(startup_ready_queries!=phase+1 || startup_worker_suspends!=phase || startup_worker_starts!=(id==4?1u:4u)
+                || threads.size()!=id-1 || threads.back().id!=id || !threads.back().ready || threads.back().suspended
+                || current_thread_id!=1 || main_thread_priority!=2 || context->pc!=0x32EBD8
+                || context->r[31].low!=0x2EE4B4 || context->cop0_status!=0x10001)
+                throw UnsupportedSyscall(selector,context->pc);
+            threads.back().ready=false;threads.back().suspended=true;
+            ++startup_worker_suspends;context->r[2].low=id;return; // Captured SuspendThread; the child has not executed.
+        }
+        if(code==0 && selector==0x30 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
+            const auto id=static_cast<unsigned>(context->r[4].low);const auto out=static_cast<unsigned>(context->r[5].low);
+            if(heap_calls!=6 || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=id-1 || startup_worker_queries!=id-4
+                || context->pc!=0x32EB68 || context->cop0_status!=1 || out!=initial_sp-320 || threads.back().ready
+                || threads.back().id!=id || threads.back().entry!=startup_worker_specs[id-4].entry || threads.back().current_priority!=2)
+                throw UnsupportedSyscall(selector,context->pc);
+            const auto& t=threads.back();checkMemory(rdram,out,48);
+            const std::array<std::uint32_t,12> info={0x10,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.current_priority,0,0,0,0,0};
+            for(unsigned n=0;n<12;++n)write32(rdram,out+n*4,info[n]);
+            context->r[2].low=0x10;++startup_worker_queries;return;
+        }
+        if(code==0 && selector==0x22 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
+            const auto id=static_cast<unsigned>(context->r[4].low);
+            if(heap_calls!=6 || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=id-1 || startup_worker_queries!=id-3
+                || startup_worker_starts!=id-4 || context->pc!=0x32EA88 || context->cop0_status!=0x10001 || context->r[5].low || threads.back().ready)
+                throw UnsupportedSyscall(selector,context->pc);
+            auto& t=threads.back();checkMemory(rdram,t.context_address,512);R5900Context child{};
+            for(unsigned n=0;n<32;++n)std::memcpy(&child.r[n],memory_.data()+t.context_address+n*16,16);
+            if(child.r[28].low!=0x38BDF0 || child.r[29].low!=t.initial_sp || child.r[31].low!=0x100250)
+                throw UnsupportedSyscall(selector,context->pc);
+            child.r[0]={0,0};child.r[4].low=0;child.pc=t.entry;child.cop0_status=context->cop0_status;
+            t.context=child;t.ready=true;++startup_worker_starts;context->r[2].low=id;return;
+        }
+        if(code==0 && selector==0x29 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
+            const auto id=static_cast<unsigned>(context->r[4].low);const auto priority=startup_worker_specs[id-4].priority;
+            if(current_thread_id!=1 || main_thread_priority!=2 || startup_worker_starts!=id-3 || startup_worker_priority_changes!=id-4
+                || threads.size()!=id-1 || (id==4 ? (threads.back().ready || !threads.back().suspended) : (!threads.back().ready || threads.back().suspended))
+                || threads.back().current_priority!=2 || context->r[5].low!=priority
+                || context->pc!=0x32EAF8 || context->r[31].low!=startup_worker_specs[id-4].priority_return)
+                throw UnsupportedSyscall(selector,context->pc);
+            threads.back().current_priority=priority;++startup_worker_priority_changes;context->r[2].low=2;return;
+        }
+        if(code==0 && selector==0x30 && cri_rpc_calls==37 && context->r[4].low==1) {
+            const auto out=static_cast<std::uint32_t>(context->r[5].low);
+            if(main_thread_queries || heap_calls!=6 || !thread_initialized || current_thread_id!=1 || main_thread_priority!=2
+                || threads.size()!=2 || !threads[1].ready || threads[1].id!=3 || semaphores.size()!=10
+                || context->pc!=0x32EB68 || context->r[31].low!=0x2EE9FC || context->r[29].low!=out || out!=initial_sp-144
+                || context->cop0_status!=0x10001 || thread_arguments[0]!=0x38BDF0
+                || stack_base+thread_arguments[2]!=ram_size-4096)
+                throw UnsupportedSyscall(selector,context->pc);
+            checkMemory(rdram,out,48);
+            // This exact caller consumes status return and current_priority only.
+            // Preserve other descriptor bytes; their BIOS live-state meaning is unmodeled.
+            write32(rdram,out,1);write32(rdram,out+24,main_thread_priority);
+            context->r[2].low=1;++main_thread_queries;return;
         }
         if(code==0 && selector==0x30 && sound_thread_checkpoint) {
             const auto out=static_cast<std::uint32_t>(context->r[5].low);
@@ -667,12 +745,12 @@ public:
                 && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
             const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
                 && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
-            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=34 && heap_calls==(cri_rpc_calls>=3?4u:3u)
-                && semaphores.size()==10 && address==initial_sp-(cri_rpc_calls>=3?(cri_rpc_calls&1?544u:592u):512u) && maximum==1 && initial==0
+            const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=41 && heap_calls==(cri_rpc_calls>=36?6u:cri_rpc_calls==35?5u:cri_rpc_calls>=3?4u:3u)
+                && semaphores.size()==10 && address==initial_sp-(cri_rpc_calls>=36?(cri_rpc_calls==36?448u:512u):cri_rpc_calls==35?448u:cri_rpc_calls>=3?(cri_rpc_calls&1?544u:592u):512u) && maximum==1 && initial==0
                 && option==0x3838E8 && context->r[17].low==0x355C70
-                && read32(rdram,0x3A97E0)==(cri_rpc_calls>=3?(cri_rpc_calls&1?0x422u:0x400u):cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
-            const bool fourth_heap_sema=heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1
-                && semaphores.size()==10 && address==initial_sp-496 && maximum==1 && initial==0 && option==0x3838E8
+                && read32(rdram,0x3A97E0)==(cri_rpc_calls>=36?(cri_rpc_calls==36?0x40Au:0x408u):cri_rpc_calls==35?2u:cri_rpc_calls>=3?(cri_rpc_calls&1?0x422u:0x400u):cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
+            const bool fourth_heap_sema=((heap_calls==3 && cri_rpc_calls==3) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36)) && disc_rpc_calls==6 && ncmd_read_calls==1
+                && semaphores.size()==10 && address==initial_sp-(heap_calls>=4?416u:496u) && maximum==1 && initial==0 && option==0x3838E8
                 && context->pc==0x32EC68 && context->r[31].low==0x332AD0 && context->r[17].low==0x3AC840;
             const bool third_heap_sema=heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1 && semaphores.size()==10 && address==initial_sp-480 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x3AC840;
             const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
@@ -825,11 +903,14 @@ public:
             ~DepthGuard() { --depth; }
         } depth_guard(dispatch_depth_);
         if (kind == GuestBranchKind::TailJump) {
+            entered_functions.insert(target);
             context->pc = target;
             found->second(rdram, context, this);
+            completed_functions.insert(target);
             return true;
         }
         if (!resume || (resume & 3)) throw std::runtime_error("Invalid guest return address");
+        entered_functions.insert(target);
         call_returns_.push_back(resume);
         ++guest_calls;
         context->pc = target;
@@ -838,6 +919,7 @@ public:
             if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller");
         } catch (...) { call_returns_.pop_back(); throw; }
         call_returns_.pop_back();
+        completed_functions.insert(target);
         return true;
     }
 
@@ -1500,11 +1582,21 @@ public:
     std::array<std::uint32_t, 5> thread_arguments{};
     struct DormantThread {
         std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
-        bool ready=false;R5900Context context{};
+        bool ready=false;R5900Context context{};std::uint32_t current_priority=0;bool suspended=false;
     };
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
-    unsigned priority_changes = 0;
+    unsigned priority_changes = 0,main_thread_queries=0;
+    struct StartupWorkerSpec { std::uint32_t entry,stack,size,create_return,priority_return,priority; };
+    // Original independent creation/start captures establish all four identities.
+    inline static constexpr std::array<StartupWorkerSpec,4> startup_worker_specs={{
+        {0x2EDE58,0x34BC90,0x800,0x2EE51C,0x2EE564,8},
+        {0x2EDF48,0x34D490,0x1000,0x2EE684,0x2EE6A8,16},
+        {0x2EE050,0x34E490,0x1000,0x2EE70C,0x2EE730,18},
+        {0x2EE140,0x34F490,0x2000,0x2EE794,0x2EE7B8,25}
+    }};
+    unsigned startup_worker_queries=0,startup_worker_starts=0,startup_worker_priority_changes=0;
+    unsigned startup_ready_queries=0,startup_worker_suspends=0;
     unsigned disc_bind_semaphores=0,disc_rpc_binds=0,disc_rpc_calls=0;
     std::string local_disc_path;
     void receiveDiscSearch(std::uint8_t*,R5900Context*);
@@ -1579,6 +1671,8 @@ public:
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;
+    // Distinct registered entry addresses; completion means a normal invocation return.
+    std::set<std::uint32_t> entered_functions,completed_functions;
     std::uint64_t halfword_writes=0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;

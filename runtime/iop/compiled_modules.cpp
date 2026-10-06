@@ -215,20 +215,22 @@ std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
     const bool second=boot_heap_allocations==1 && boot_heap_frees==1 && buffer_loads==1 && size==0x81800;
     const bool third=boot_heap_allocations==2 && boot_heap_frees==1 && size==0x8D0 && disc_search_calls==6 && disc_read_calls==1;
     const bool fourth=boot_heap_allocations==3 && boot_heap_frees==1 && size==0x41040 && cri_control_calls==2;
-    const unsigned pointer=fourth?0x150600u:third?0x14FD00u:0xCE500u;
-    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
+    const bool fifth=boot_heap_allocations==4 && boot_heap_frees==1 && size==0x8D0 && cri_control_calls==34;
+    const bool sixth=boot_heap_allocations==5 && boot_heap_frees==1 && size==0x4040 && cri_create_calls==2;
+    const unsigned pointer=sixth?0x192000u:fifth?0x191700u:fourth?0x150600u:third?0x14FD00u:0xCE500u;
+    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && !fifth && !sixth && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
         throw std::runtime_error("Unsupported boot IOP heap allocation");
     // Reject conflicting ownership before touching service input or executing code.
     for(auto [lo,hi]:runtime.ranges)if(lo<pointer+((size+255)&~255u) && pointer<hi)
         throw std::runtime_error("Captured IOP heap overlaps native ownership");
     try {
         // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
-        if(!second && !third && !fourth) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        if(!second && !third && !fourth && !fifth && !sixth) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
         definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
             iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}}); }
         runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
-        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,pointer](IopRuntime& rt,IopContext& c) {
-            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(fourth?3u:third?2u:second?1u:0u))
+        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,fifth,sixth,pointer](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(sixth?5u:fifth?4u:fourth?3u:third?2u:second?1u:0u))
                 throw std::runtime_error("Unsupported native AllocSysMemory request");
             // Captured allocations reuse the released block or append the CRI block; 256-byte rounding.
             rt.map(pointer,std::vector<std::uint8_t>((size+255)&~255u));
@@ -619,45 +621,50 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
 }
 
 std::vector<std::uint8_t> NativeIopService::callCriCreate(unsigned epoch,std::span<const std::uint8_t> input) {
-    if(epoch!=epoch_ || failed_ || cri_create_calls || input.size()!=16 || disc_search_calls!=6 || disc_read_calls!=1)
+    const bool second=cri_create_calls==1 && cri_control_calls==34 && boot_heap_allocations==5;
+    if(epoch!=epoch_ || failed_ || (cri_create_calls && !second) || input.size()!=16 || disc_search_calls!=6 || disc_read_calls!=1)
         throw std::runtime_error("CRI create outside observed lifecycle");
-    const std::array<unsigned,4> expected={0,0x365BC0,0x14FD40,0x880};
+    const std::array<unsigned,4> expected=second?std::array<unsigned,4>{1,0x35FD00,0x191740,0x880}:std::array<unsigned,4>{0,0x365BC0,0x14FD40,0x880};
     for(unsigned n=0;n<4;++n){unsigned word;std::memcpy(&word,input.data()+n*4,4);if(word!=expected[n])throw std::runtime_error("CRI create input differs");}
     std::vector<std::uint8_t> response;
     try {response=executeRegisteredRpc(0x90000200,2,input,4,0x355C70,0x39DD80);}
     catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc));}
     unsigned slot;std::memcpy(&slot,response.data(),4);
-    if(slot!=0x1B58C0)throw std::runtime_error("CRI create did not return its owned slot");
+    if(slot!=(second?0x1B5904u:0x1B58C0u))throw std::runtime_error("CRI create did not return its owned slot");
     ++cri_create_calls;return response;
 }
 
 std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
-    const bool batch=cri_control_calls>=2;
+    const bool channel=cri_control_calls>=34;
+    const bool channel_setup=cri_control_calls==34;
+    const bool batch=cri_control_calls>=2 && !channel;
     const bool stream=batch && !(cri_control_calls&1);
-    const auto index=batch?(cri_control_calls-2)/2:0u;
-    const auto expected_command=batch?(stream?0x422u:0x400u):cri_control_calls?0x40Cu:0x403u;
-    const auto size=batch?(stream?12u:16u):cri_control_calls?12u:0u;
-    if(epoch!=epoch_ || failed_ || cri_create_calls!=1 || cri_control_calls>33 || command!=expected_command || input.size()!=size)
+    const auto index=channel?(channel_setup?0u:cri_control_calls-35):batch?(cri_control_calls-2)/2:0u;
+    const auto expected_command=channel?(channel_setup?0x40Au:0x408u):batch?(stream?0x422u:0x400u):cri_control_calls?0x40Cu:0x403u;
+    const auto size=channel?(channel_setup?12u:16u):batch?(stream?12u:16u):cri_control_calls?12u:0u;
+    if(epoch!=epoch_ || failed_ || cri_create_calls!=(channel?2u:1u) || cri_control_calls>39 || command!=expected_command || input.size()!=size)
         throw std::runtime_error("CRI control outside observed lifecycle");
     if(command==0x40C) {
         const std::array<unsigned,3> expected={0xBB80,0xFFFF,0xFFFF};
         for(unsigned n=0;n<3;++n) {unsigned word;std::memcpy(&word,input.data()+n*4,4);
             if(word!=expected[n])throw std::runtime_error("CRI 0x40C input differs");}
     }
-    if(batch) {
-        if(boot_heap_allocations!=4 || !runtime.spu2_auto_dma.pending)throw std::runtime_error("CRI batch lacks owned fourth buffer");
-        const std::array<unsigned,4> expected=stream?std::array<unsigned,4>{1,0x150640+index*0x4100,0x100,0}
+    if(batch || channel) {
+        if(boot_heap_allocations!=(channel?6u:4u) || !runtime.spu2_auto_dma.pending)throw std::runtime_error("CRI group lacks owned buffer");
+        const std::array<unsigned,4> expected=channel?(channel_setup?std::array<unsigned,4>{0x10,0x192000,0x4040,0}
+            :std::array<unsigned,4>{2,0,iop_cri_adxi_base+0x14A40+index*0x60,iop_cri_adxi_base+0x14A70+index*0x60})
+            :stream?std::array<unsigned,4>{1,0x150640+index*0x4100,0x100,0}
             :std::array<unsigned,4>{0x364B08+index*0x30,iop_cri_adxi_base+0x14A40+index*0x30,1,0x365900+index*0x14};
         for(unsigned n=0;n<size/4;++n) {unsigned word;std::memcpy(&word,input.data()+n*4,4);
-            if(word!=expected[n])throw std::runtime_error("CRI batch input differs");}
-        runtime.check(0x150640+index*0x4100,0x4100);
+            if(word!=expected[n])throw std::runtime_error("CRI group input differs");}
+        if(channel)runtime.check(0x192000,0x4040);else runtime.check(0x150640+index*0x4100,0x4100);
     }
     try {
-        auto response=executeRegisteredRpc(0x90000200,command,input,batch?4u:command==0x40C?12u:0u,0x355C70,0x39DD80);
-        if(batch) {
+        auto response=executeRegisteredRpc(0x90000200,command,input,channel_setup?0u:batch || channel?4u:command==0x40C?12u:0u,0x355C70,0x39DD80);
+        if(batch || (channel && !channel_setup)) {
             unsigned result=0;std::memcpy(&result,response.data(),4);
-            if(result!=iop_cri_adxi_base+(stream?0x14A40+index*0x30:0x15580+index*0x14))
-                throw std::runtime_error("CRI batch did not return owned original object");
+            const auto expected=iop_cri_adxi_base+(channel?0xEDA0+index*0x1C:stream?0x14A40+index*0x30:0x15580+index*0x14);
+            if(result!=expected)throw std::runtime_error("CRI group did not return owned original object");
         }
         ++cri_control_calls;return response;
     }catch(...){failed_=true;throw;}

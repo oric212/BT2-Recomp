@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 
 namespace {
 std::string jsonString(std::string_view value) {
@@ -28,9 +29,24 @@ std::string jsonString(std::string_view value) {
     }
     return result+'"';
 }
+std::string jsonEEAddresses(const std::set<std::uint32_t>& addresses) {
+    std::string out="[";bool first=true;
+    for(auto address:addresses)if(address<0x80000000) {if(!first)out+=",";out+=std::to_string(address);first=false;}
+    return out+"]";
+}
 void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
+}
+
+std::string jsonStartupThreads(const PS2Runtime& runtime) {
+    std::ostringstream out;out<<"[";bool first=true;
+    for(const auto& t:runtime.threads)if(t.id>=4 && t.id<=7) {
+        if(!first)out<<",";first=false;
+        out<<"["<<t.id<<","<<t.entry<<","<<t.ready<<","<<t.suspended<<","<<t.current_priority
+           <<","<<t.context.r[28].low<<","<<t.context.r[29].low<<","<<t.context.r[31].low<<"]";
+    }
+    out<<"]";return out.str();
 }
 
 int main(int argc, char** argv) {
@@ -459,6 +475,12 @@ int main(int argc, char** argv) {
             report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc << ",\"selector\":" << stop_selector
                 << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
                 << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls
+                << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"ee_entered_addresses\":" << jsonEEAddresses(runtime.entered_functions)
+                << ",\"ee_completed_addresses\":" << jsonEEAddresses(runtime.completed_functions)
+                << ",\"distinct_kernel_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"distinct_kernel_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a>=0x80000000;})
                 << ",\"returns\":" << runtime.returns << ",\"words\":" << runtime.word_writes
                 << ",\"doublewords\":" << runtime.doubleword_writes << ",\"bytes\":" << runtime.byte_writes
                 << ",\"quads\":" << runtime.quadword_writes << ",\"cache_lines\":" << runtime.data_cache_lines
@@ -722,7 +744,13 @@ int main(int argc, char** argv) {
             if (!report) throw std::runtime_error("Could not write SCMD report");
             report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
                 << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
-                << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls << ",\"returns\":" << runtime.returns
+                << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"ee_entered_addresses\":" << jsonEEAddresses(runtime.entered_functions)
+                << ",\"ee_completed_addresses\":" << jsonEEAddresses(runtime.completed_functions)
+                << ",\"distinct_kernel_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"distinct_kernel_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"returns\":" << runtime.returns
                 << ",\"words\":" << runtime.word_writes << ",\"doublewords\":" << runtime.doubleword_writes
                 << ",\"bytes\":" << runtime.byte_writes << ",\"quads\":" << runtime.quadword_writes
                 << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
@@ -889,7 +917,10 @@ int main(int argc, char** argv) {
                 << ",\"dmac_startup_writes\":" << runtime.dmac_startup_writes
                 << ",\"dmac_control\":" << runtime.dmac_control << ",\"dmac_priority\":" << runtime.dmac_priority
                 << ",\"ee_pool_pointers\":[" << runtime.read32(runtime.memory().data(),0x38A628) << "," << runtime.read32(runtime.memory().data(),0x38A62C) << "," << runtime.read32(runtime.memory().data(),0x38A630) << "," << runtime.read32(runtime.memory().data(),0x38A634) << "]"
-                << ",\"main_thread_priority\":" << runtime.main_thread_priority
+                << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"main_thread_queries\":" << runtime.main_thread_queries << ",\"startup_worker_state\":" << jsonStartupThreads(runtime)
+                << ",\"startup_worker_queries\":" << runtime.startup_worker_queries << ",\"startup_worker_starts\":" << runtime.startup_worker_starts
+                << ",\"startup_ready_queries\":" << runtime.startup_ready_queries
+                << ",\"startup_worker_suspends\":" << runtime.startup_worker_suspends << ",\"startup_worker_priority_changes\":" << runtime.startup_worker_priority_changes
                 << ",\"heap_end_queries\":" << runtime.heap_end_queries
                 << ",\"ee_heap_lock_waits\":" << runtime.ee_heap_lock_waits
                 << ",\"ee_heap_lock_signals\":" << runtime.ee_heap_lock_signals
@@ -1011,6 +1042,12 @@ int main(int argc, char** argv) {
             if (!report) throw std::runtime_error("Could not write bind continuation report");
             report << "{\"status\":\"blocked at unsupported syscall\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc << ",\"selector\":" << stop_selector
                 << ",\"target\":" << stop_address << ",\"calls\":" << runtime.guest_calls
+                << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"ee_entered_addresses\":" << jsonEEAddresses(runtime.entered_functions)
+                << ",\"ee_completed_addresses\":" << jsonEEAddresses(runtime.completed_functions)
+                << ",\"distinct_kernel_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"distinct_kernel_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a>=0x80000000;})
                 << ",\"returns\":" << runtime.returns << ",\"words\":" << runtime.word_writes
                 << ",\"doublewords\":" << runtime.doubleword_writes << ",\"bytes\":" << runtime.byte_writes
                 << ",\"quads\":" << runtime.quadword_writes << ",\"cache_lines\":" << runtime.data_cache_lines
@@ -1277,7 +1314,10 @@ int main(int argc, char** argv) {
                << ",\"cache_requests\":" << runtime.cache_requests << ",\"instruction_cache_invalidations\":" << runtime.instruction_cache_invalidations << ",\"syscall_selector\":" << (osd_readback_mode ? stop_selector : GPR_U32(&context, 3))
                << ",\"write_value\":" << (osd_readback_mode ? 0 : runtime.timer2_mode_writes ? 0x382 : 0)
                << ",\"osd_config_reads\":" << runtime.osd_config_reads << ",\"osd_config_sets\":" << runtime.osd_config_sets
-               << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"priority_changes\":" << runtime.priority_changes
+               << ",\"main_thread_priority\":" << runtime.main_thread_priority << ",\"main_thread_queries\":" << runtime.main_thread_queries << ",\"startup_worker_state\":" << jsonStartupThreads(runtime)
+                << ",\"startup_worker_queries\":" << runtime.startup_worker_queries << ",\"startup_worker_starts\":" << runtime.startup_worker_starts
+                << ",\"startup_ready_queries\":" << runtime.startup_ready_queries
+                << ",\"startup_worker_suspends\":" << runtime.startup_worker_suspends << ",\"startup_worker_priority_changes\":" << runtime.startup_worker_priority_changes << ",\"priority_changes\":" << runtime.priority_changes
                << ",\"intc_mask\":" << runtime.intc_mask << ",\"intc_enable_calls\":" << runtime.intc_enable_calls
                << ",\"timer2_mode_writes\":" << runtime.timer2_mode_writes
                << ",\"timer2_mode_after_write\":" << runtime.timer2_mode_after_write
@@ -1287,7 +1327,13 @@ int main(int argc, char** argv) {
         report << "],\"quadword_writes\":" << runtime.quadword_writes
                << ",\"guest_calls\":" << runtime.guest_calls << ",\"doubleword_writes\":" << runtime.doubleword_writes
                << ",\"semaphore_waits\":" << runtime.semaphore_waits << ",\"semaphore_signals\":" << runtime.semaphore_signals
-               << ",\"semaphores_created\":" << runtime.semaphores.size() << ",\"returns\":" << runtime.returns
+               << ",\"semaphores_created\":" << runtime.semaphores.size() << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"ee_entered_addresses\":" << jsonEEAddresses(runtime.entered_functions)
+                << ",\"ee_completed_addresses\":" << jsonEEAddresses(runtime.completed_functions)
+                << ",\"distinct_kernel_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"distinct_kernel_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a>=0x80000000;})
+                << ",\"returns\":" << runtime.returns
                << ",\"syscall_registrations\":" << runtime.syscall_registrations
                << ",\"word_writes\":" << runtime.word_writes
                << ",\"byte_writes\":" << runtime.byte_writes << ",\"game_booted\":false}\n";
