@@ -16,7 +16,7 @@
 
 BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 using PS2Recomp and a custom compatibility runtime. The initial target is the North American release, **SLUS-21441**; the first major gameplay goal is a **playable versus battle**.
 
-> **Game files are not included.** Supply your own local copy under ignored `rom/` or `game_data/`. Proprietary assets, captures and generated game code stay outside Git.
+> **Game files are not included.** You must provide the game files from your own legally obtained copy to build and test the project. This repository contains only project code, tools and documentation; it does not distribute game disc images, executables, assets or generated game code.
 
 ## Progress
 <!-- progress-summary:start -->
