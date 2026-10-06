@@ -5,9 +5,15 @@
 void check(bool value){if(!value)throw std::runtime_error("Native IOP service test differs");}
 template<class F> void rejected(F f){bool failed=false;try{f();}catch(const std::runtime_error&){failed=true;}check(failed);}
 int main(int argc,char** argv) {
-    if(argc==4 && std::string(argv[1])=="--disc-read") {
+    if(argc==4 && (std::string(argv[1])=="--disc-read" || std::string(argv[1])=="--cri-create")) {
         try {
             NativeIopService service(1,bt2_compiled_iop_modules());std::vector<std::uint8_t> ee(32*1024*1024),request(300);
+            if(std::string(argv[1])=="--cri-create") {
+                for(const auto* name:{"SIO2MAN","MCMAN","MCSERV","DBCMAN","SIO2D","DS2U_D","LIBSD","SDRDRV","MODHSYN","MODSESQ2","CDVDSTM","SOUNDS","CRI_ADXI"})
+                    {service.load(1,std::string("cdrom0:\\IRX\\")+name+".IRX;1");if(std::string(name)=="MCMAN")service.attachEeTransport(1);}
+                service.allocateBootHeap(1,0x360);std::copy(iop_embedded_file.begin(),iop_embedded_file.end(),service.runtime.ram.begin()+0xCE500);
+                service.loadBootBuffer(1,0xCE500);service.freeBootHeap(1,0xCE500);service.allocateBootHeap(1,0x81800);
+            }
             std::memcpy(request.data()+36,"\\DATA\\ZS2US.DIR;1",17);const unsigned dest=0x3A8600;std::memcpy(request.data()+292,&dest,4);
             service.callDiscSearch(1,request,ee,argv[2]);service.callDiscReady(1);
             const std::array<unsigned,6> read={0xE2A,2,0x39DE80,0x100,0x3694C0,0x369580};
@@ -30,6 +36,20 @@ int main(int argc,char** argv) {
             for(const auto& name:rest){std::fill(request.begin(),request.end(),0);std::memcpy(request.data()+36,name.c_str(),name.size()+1);std::memcpy(request.data()+292,&dest,4);check(service.callDiscSearch(1,request,ee,argv[2])==1);}
             check(service.disc_search_calls==6 && service.disc_dma_submissions==6);
             const auto batch_state=service.runtime.ram;rejected([&]{service.callDiscSearch(1,request,ee,argv[2]);});check(service.runtime.ram==batch_state);
+            if(std::string(argv[1])=="--cri-create") {
+                check(service.allocateBootHeap(1,0x8D0)==0x14FD00);
+                const std::array<unsigned,4> args={0,0x365BC0,0x14FD40,0x880};
+                auto input=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(args.data()),sizeof(args));
+                const auto prior=service.runtime.ram;const auto steps=service.runtime.steps;
+                rejected([&]{service.callCriCreate(2,input);});rejected([&]{service.callCriCreate(1,input.first(12));});
+                check(service.runtime.ram==prior && service.runtime.steps==steps);
+                const auto response=service.callCriCreate(1,input);unsigned slot;std::memcpy(&slot,response.data(),4);check(slot==0x1768C0 && service.cri_create_calls==1);
+                const auto completed=service.runtime.ram;rejected([&]{service.callCriCreate(1,input);});check(service.runtime.ram==completed);
+                check(service.callCriControl(1).empty() && service.cri_control_calls==1);
+                const auto controlled=service.runtime.ram;rejected([&]{service.callCriControl(1);});check(service.runtime.ram==controlled);
+                std::ofstream out(argv[3],std::ios::binary);out.write(reinterpret_cast<const char*>(service.runtime.ram.data()),service.runtime.ram.size());check(bool(out));
+                std::cout<<"Original CRI create returned owned slot; epoch, size and duplicate rejection preserve RAM.\n";return 0;
+            }
             std::ofstream output(argv[3],std::ios::binary);output.write(reinterpret_cast<const char*>(ee.data()+0x39DE80),4096);if(!output)throw std::runtime_error("Read validation write failed");
             std::cout<<"Original IOP sector result "<<result<<" callbacks "<<service.disc_read_callbacks<<" DMA "<<service.disc_read_dma_submissions<<" polls "<<service.disc_read_dma_polls<<"\n";return 0;
         }catch(const std::exception& e){std::cerr<<"Owned disc read stopped: "<<e.what()<<"\n";return 1;}

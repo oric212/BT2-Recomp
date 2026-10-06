@@ -4,24 +4,24 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-06
 
 ## Current status
 
-The optional native EE probe completes bounded platform/module startup, initial sound/DBCMAN exchanges, the absent-card query, disc bind/readiness and **the first real sector read**. Original translated IOP code transfers 4096 local ISO bytes and runs its owned completion callback; generated EE callback/cleanup clears the busy flag. Original game code parses the 64-byte directory index, completes all five listed file metadata lookups and returns to the main entry continuation. **No archive contents decoded, presented game frame or native audio playback.**
+The optional native EE probe completes bounded platform/module startup, initial sound/DBCMAN exchanges, the absent-card query, disc bind/readiness and **the first real sector read**. Original translated IOP code transfers 4096 local ISO bytes and runs its owned completion callback; generated EE callback/cleanup clears the busy flag. Original game code parses the 64-byte directory index, completes all five listed file metadata lookups and returns to the main entry continuation. CRI bind and original command-2 stream-slot allocation also complete, with a third owned IOP heap block. **No archive contents decoded, presented game frame or native audio playback.**
 
-Verified: MSVC builds, **16/16 CTests**, **126/126 capture tests**, **47/47 recompilation tests**, **13/13 IOP tooling tests**, and twelve independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
+Verified: MSVC builds, **16/16 CTests**, **130/130 capture tests**, **47/47 recompilation tests**, **13/13 IOP tooling tests**, and thirteen independent evidence validators. Proprietary inputs, captures and generated code remain ignored.
 
 ## Current blocker and next step
 
-The new subsystem boundary is a **CRI_ADXI RPC bind**, service **0x90000200**, client **0x355C70**, RPC ID **52**, at **selector 0x77 / PC 0x32F028**. The resident module owns a validated server/worker, but its command lifecycle is unsupported. No bind response or command success is substituted.
+The new subsystem boundary is **EE cache maintenance**, target **0x32F558**, caller **0x2FCD84**, resume **0x2FCD8C**, with range arguments **0x365BC0 / 0x36643F**. Linking its helper exposes CACHE 0x10/0x14 and COP0 TagLo operations missing from the probe ABI. Unsupported cache routines remain unlinked; no successful cache effects are substituted.
 
-Next: capture the original bind and first command, then define request/buffer/completion ownership for the retained worker. See [CRI RPC scope](CRI_RPC_PLAN.md). The [disc scope](DISC_COMMAND_PLAN.md) now completes the directory sector read and all five file lookups; generic multi-request reads, streaming and full disc-driver residency remain incomplete.
+Next: establish the reached cache/transfer contract and validate the original tag reads before enabling these routines. See [cache scope](EE_CACHE_TRANSFER_PLAN.md). [CRI RPC scope](CRI_RPC_PLAN.md) now completes bind, heap allocation and command 2 through generated EE cleanup; command 0x403 works in the isolated original-handler test, but full EE delivery remains behind the cache boundary. The next captured command is 0x40C; its effects remain unknown.
 
 Remaining ownership: the SDRDRV helper is parked on a reverse EE bind to **0x80000704**. Logical IOP time is **1900 us**; the fifth card alarm remains armed at **2000 us**. General cross-CPU scheduling, later timer delivery, mounted cards and sound playback remain incomplete. An EE child is ready but has not executed.
 
 ## Key counts
 
-- **8,584** provisional EE map entries / **8,587** raw generated C++/header files; boundaries remain provisional. **43 additional reached EE entries linked this pass**; several initialization frames remain pending. This is not a count of fully restored gameplay functions.
-- Latest full checkpoint: **2,337 EE calls / 2,326 returns**, **43,298 native IOP instructions / 170 physical entry targets / twelve ordinary waiting workers plus the parked reverse-bind helper**.
+- **8,584** provisional EE map entries / **8,587** raw generated C++/header files; boundaries remain provisional. **3 additional reached EE entries linked this pass**; several initialization frames remain pending. This is not a count of fully restored gameplay functions.
+- Latest full checkpoint: **2,381 EE calls / 2,374 returns**, **43,416 native IOP instructions / 172 physical entry targets / twelve ordinary waiting workers plus the parked reverse-bind helper**.
 - Earlier distinct-function checkpoint: **111 entered / 107 completed**; current distinct totals have not been remeasured. Calls/returns are execution events.
-- **Fourteen module-load paths / thirteen resident modules**, two owned IOP allocations, four EE startup pools and completed initial sound/MCSERV exchanges.
+- **Fourteen module-load paths / thirteen resident modules**, three owned IOP allocations, four EE startup pools and completed initial sound/MCSERV exchanges.
 - Disc: **one two-sector read / one original IOP callback / four logical read DMA jobs**, plus **six metadata lookups/transfers** (index and five listed files). Captured physical polling counts/timing are not equated with native logical transport.
 - Card: **six DMA pairs / five timed FIFO probes**; no mounted-card filesystem support.
 - **Three GS packets / two startup draws / 573,440 sprite pixels**; no presented game frame or VU microprogram execution.

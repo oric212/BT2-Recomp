@@ -213,29 +213,31 @@ std::vector<NativeIopModule> bt2_compiled_iop_modules() {
 
 std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
     const bool second=boot_heap_allocations==1 && boot_heap_frees==1 && buffer_loads==1 && size==0x81800;
-    if(epoch!=epoch_ || failed_ || (!second && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
+    const bool third=boot_heap_allocations==2 && boot_heap_frees==1 && size==0x8D0 && disc_search_calls==6 && disc_read_calls==1;
+    const unsigned pointer=third?0x14FD00u:0xCE500u;
+    if(epoch!=epoch_ || failed_ || (!second && !third && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
         throw std::runtime_error("Unsupported boot IOP heap allocation");
     // Reject conflicting ownership before touching service input or executing code.
-    for(auto [lo,hi]:runtime.ranges)if(lo<0xCE500+((size+255)&~255u) && 0xCE500<hi)
+    for(auto [lo,hi]:runtime.ranges)if(lo<pointer+((size+255)&~255u) && pointer<hi)
         throw std::runtime_error("Captured IOP heap overlaps native ownership");
     try {
         // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
-        if(!second) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        if(!second && !third) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
         definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
             iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}}); }
         runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
-        runtime.providers[{"sysmem",4}]=[this,size,second](IopRuntime& rt,IopContext& c) {
-            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(second?1u:0u))
+        runtime.providers[{"sysmem",4}]=[this,size,second,third,pointer](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(third?2u:second?1u:0u))
                 throw std::runtime_error("Unsupported native AllocSysMemory request");
-            // Two independently captured allocations reuse the released address; 256-byte rounding.
-            rt.map(0xCE500,std::vector<std::uint8_t>((size+255)&~255u));
-            ++boot_heap_allocations;return 0xCE500u;
+            // Captured allocations reuse the released block or append the CRI block; 256-byte rounding.
+            rt.map(pointer,std::vector<std::uint8_t>((size+255)&~255u));
+            ++boot_heap_allocations;return pointer;
         };
         IopContext c;c.pc=iop_fileio_boot_base+0x27D4;c.set(4,1);c.set(5,iop_fileio_boot_base+0x4050);c.set(6,4);
         c.set(28,iop_fileio_boot_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);
         runtime.execute(runtime,c);runtime.providers.erase({"sysmem",4});
         if(c.pc!=IopRuntime::sentinel || c.get(2)!=iop_fileio_boot_base+0x3FE0 || !boot_heap_allocations
-            || runtime.read(c.get(2),4)!=0xCE500)throw std::runtime_error("Native FILEIO heap handler effects differ");
+            || runtime.read(c.get(2),4)!=pointer)throw std::runtime_error("Native FILEIO heap handler effects differ");
         return runtime.read(c.get(2),4);
     } catch(...) {runtime.providers.erase({"sysmem",4});failed_=true;throw;}
 }
@@ -613,4 +615,23 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
         if(runtime.read(iop_disc_base+0x5818,4)!=4096)throw std::runtime_error("Final owned progress differs");
         runtime.providers=saved;runtime.disc_type_known=false;++disc_read_calls;return runtime.read(c.get(2),4);
     }catch(const std::exception& e){const auto detail=std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc)+" / a0="+std::to_string(runtime.last_import_arguments[0])+" / a1="+std::to_string(runtime.last_import_arguments[1]);runtime.providers=saved;runtime.disc_type_known=false;failed_=true;throw std::runtime_error(detail);}
+}
+
+std::vector<std::uint8_t> NativeIopService::callCriCreate(unsigned epoch,std::span<const std::uint8_t> input) {
+    if(epoch!=epoch_ || failed_ || cri_create_calls || input.size()!=16 || disc_search_calls!=6 || disc_read_calls!=1)
+        throw std::runtime_error("CRI create outside observed lifecycle");
+    const std::array<unsigned,4> expected={0,0x365BC0,0x14FD40,0x880};
+    for(unsigned n=0;n<4;++n){unsigned word;std::memcpy(&word,input.data()+n*4,4);if(word!=expected[n])throw std::runtime_error("CRI create input differs");}
+    std::vector<std::uint8_t> response;
+    try {response=executeRegisteredRpc(0x90000200,2,input,4,0x355C70,0x39DD80);}
+    catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / pc="+std::to_string(runtime.executing_pc));}
+    unsigned slot;std::memcpy(&slot,response.data(),4);
+    if(slot!=0x1768C0)throw std::runtime_error("CRI create did not return its owned slot");
+    ++cri_create_calls;return response;
+}
+
+std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch) {
+    if(epoch!=epoch_ || failed_ || cri_create_calls!=1 || cri_control_calls)throw std::runtime_error("CRI control outside observed lifecycle");
+    try {auto response=executeRegisteredRpc(0x90000200,0x403,{},0,0x355C70,0x39DD80);++cri_control_calls;return response;}
+    catch(...){failed_=true;throw;}
 }

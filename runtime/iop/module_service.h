@@ -62,6 +62,9 @@ public:
         if(epoch!=epoch_ || failed_ || runtime.sif_transport_attached)throw std::runtime_error("Invalid native SIF transport attachment");
         runtime.sif_transport_attached=true;
     }
+    std::vector<std::uint8_t> callCriCreate(unsigned epoch,std::span<const std::uint8_t> input);
+    std::vector<std::uint8_t> callCriControl(unsigned epoch);
+    unsigned cri_create_calls=0,cri_control_calls=0;
     std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcQuery(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcRpc(unsigned epoch,std::span<const std::uint8_t> input);

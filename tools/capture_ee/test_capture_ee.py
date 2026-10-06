@@ -351,3 +351,30 @@ class DmacStartupCaptureTests(unittest.TestCase):
         self.assertEqual((address,marker),(0x1005B4,0xB74C))
         self.assertEqual(words[2:4],(0xFF020008,0xAF1D0010))
         self.assertEqual((words[6]&0x3FFFFFF)<<2,address+24)
+
+
+class CriRpcCaptureTests(unittest.TestCase):
+    def test_other_clients_keep_original_call_prologue(self):
+        words=struct.unpack('<'+str(len(texture_stub('rpc-cri-command-before'))//4)+'I',texture_stub('rpc-cri-command-before'))
+        self.assertEqual(words[-4:],(0x27BDFF40,0xFFB10030,0x08000000|(0x332978>>2),0))
+        target=3+(words[2]&0xFFFF)
+        self.assertEqual(target,len(words)-4)
+        self.assertIn(0xAF1F0038,words)
+        self.assertIn(0xAF080028,words)
+    def test_only_cri_client_halts_semaphore_observer(self):
+        words=struct.unpack('<'+str(len(texture_stub('rpc-cri-bind-sema'))//4)+'I',texture_stub('rpc-cri-bind-sema'))
+        self.assertEqual(words[:2],(0x3C180035,0x37185C70))
+        self.assertEqual(words[-6:-4],(0x04410003,0xAE220008))
+    def test_unique_before_and_after_sites(self):
+        self.assertEqual(capture_trap('rpc-cri-bind-before')[0],0x2FD02C)
+        self.assertEqual(capture_trap('rpc-cri-bind-after')[0],0x2FD034)
+        self.assertEqual(capture_trap('rpc-cri-command-after')[0],0x2FCB20)
+
+
+class CriSecondObserverTests(unittest.TestCase):
+    def test_counts_only_matching_client_and_resumes_first(self):
+        w=struct.unpack('<'+str(len(texture_stub('rpc-cri-second-before'))//4)+'I',texture_stub('rpc-cri-second-before'))
+        self.assertEqual(w[8],0xAF19003C)
+        self.assertEqual(3+(w[2]&65535),len(w)-4)
+        self.assertEqual(11+(w[10]&65535),len(w)-4)
+        self.assertEqual(w[-6],0x08000000|((FRESH_BIND_STUB+(len(w)-6)*4)>>2))

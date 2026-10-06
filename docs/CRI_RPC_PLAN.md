@@ -15,3 +15,21 @@ The resident CRI_ADXI module already owns that server. Existing validation check
 - Follow subsequent blockers within the bounded subsystem. Keep stream contents, captures and generated code ignored. Test, update PROG.md/history, commit and push at the end of the pass.
 
 The command protocol and required streaming/scheduling scope remain unknown. Do not return successful initialization merely because a server was registered. The completed disc scope is documented in DISC_COMMAND_PLAN.md.
+
+
+## Verified bind/allocation pass (2026-10-06)
+
+Independent absent-card captures establish semaphore 10, bind return 0, registered retail server/worker, command 2 inputs `[0, 0x365BC0, 0x14FD40, 0x880]`, 16 input bytes and four output bytes. Native bind returns actual owned registration addresses, runs original generated RPC_END, and preserves interrupted CPU/stack state.
+
+The preceding third heap request is operation 1 on the existing FILEIO heap service, size 0x8D0, result 0x14FD00, rounded extent ending at 0x150600. The authored SOUNDS placement at 0x150000 conflicted. Regenerated SOUNDS at 0x1C0000 and expanded the layout inventory to include auxiliary CDVDFSV, the third heap and disc workspace/buffer. Retail heap addresses are retained. Reproduction:
+
+```powershell
+python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc "rom/Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso" --base 0x1C0000 --output work/iop/sounds_native.cpp --symbol bt2_iop_sounds --prefix iop_sounds
+python tools/iop/verify_layout.py
+```
+
+The real translated CRI handler executes on its retained worker GP/stack and returns slot 0x1768C0 (retail 0xC67F0). Stable slot fields and relocated internal pointers match independent evidence; generated EE request and cleanup complete. Unknown fields are not assigned semantic names.
+
+The next command 0x403 has zero input/result bytes and returns normally in retail and the isolated native original-handler test. Its full EE path is not yet validated: generated cache maintenance intervenes before submission. The authored adapter remains strictly gated and its full transport awaits that cache contract. A third retail capture reaches command 0x40C with twelve input/output bytes and inputs `[0xBB80, 0xFFFF, 0xFFFF]`; no meaning or native completion is inferred.
+
+Full checkpoint: 2381 calls / 2374 returns, 43416 IOP instructions / 172 targets. See [EE cache scope](EE_CACHE_TRANSFER_PLAN.md) for the new major subsystem boundary. No stream payload or native audio playback is claimed.
