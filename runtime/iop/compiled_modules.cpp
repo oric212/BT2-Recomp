@@ -19,6 +19,7 @@ void bt2_iop_disc(IopRuntime&,IopContext&);
 #include "fileio_boot_native.h"
 #include "embedded_native.h"
 void bt2_iop_embedded(IopRuntime&,IopContext&);
+void bt2_iop_embedded_second(IopRuntime&,IopContext&);
 void bt2_iop_fileio_boot(IopRuntime&,IopContext&);
 void bt2_iop_cri_adxi(IopRuntime&,IopContext&);
 void bt2_iop_sounds(IopRuntime&,IopContext&);
@@ -217,20 +218,22 @@ std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
     const bool fourth=boot_heap_allocations==3 && boot_heap_frees==1 && size==0x41040 && cri_control_calls==2;
     const bool fifth=boot_heap_allocations==4 && boot_heap_frees==1 && size==0x8D0 && cri_control_calls==34;
     const bool sixth=boot_heap_allocations==5 && boot_heap_frees==1 && size==0x4040 && cri_create_calls==2;
-    const unsigned pointer=sixth?0x192000u:fifth?0x191700u:fourth?0x150600u:third?0x14FD00u:0xCE500u;
-    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && !fifth && !sixth && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
+    // Main reloads the embedded buffer after the first archive load; captured placement 0x196100.
+    const bool seventh=boot_heap_allocations==6 && boot_heap_frees==1 && buffer_loads==1 && size==0x360 && cri_control_calls>=38;
+    const unsigned pointer=seventh?0x196100u:sixth?0x192000u:fifth?0x191700u:fourth?0x150600u:third?0x14FD00u:0xCE500u;
+    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && !fifth && !sixth && !seventh && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
         throw std::runtime_error("Unsupported boot IOP heap allocation");
     // Reject conflicting ownership before touching service input or executing code.
     for(auto [lo,hi]:runtime.ranges)if(lo<pointer+((size+255)&~255u) && pointer<hi)
         throw std::runtime_error("Captured IOP heap overlaps native ownership");
     try {
         // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
-        if(!second && !third && !fourth && !fifth && !sixth) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        if(!second && !third && !fourth && !fifth && !sixth && !seventh) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
         definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
             iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}}); }
         runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
-        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,fifth,sixth,pointer](IopRuntime& rt,IopContext& c) {
-            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(sixth?5u:fifth?4u:fourth?3u:third?2u:second?1u:0u))
+        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,fifth,sixth,seventh,pointer](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(seventh?6u:sixth?5u:fifth?4u:fourth?3u:third?2u:second?1u:0u))
                 throw std::runtime_error("Unsupported native AllocSysMemory request");
             // Captured allocations reuse the released block or append the CRI block; 256-byte rounding.
             rt.map(pointer,std::vector<std::uint8_t>((size+255)&~255u));
@@ -246,8 +249,11 @@ std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
 }
 
 NativeIopService::Resident NativeIopService::loadBootBuffer(unsigned epoch,unsigned pointer) {
-    if(epoch!=epoch_ || failed_ || pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads || residents.size()!=13)
+    // Second load: main's reload at the captured 0x196100 buffer, image at 0x196530 (same +0x430 layout).
+    const bool reload=buffer_loads==1 && boot_heap_frees==1 && boot_heap_allocations==7 && pointer==0x196100;
+    if(epoch!=epoch_ || failed_ || (!reload && (pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads)) || residents.size()!=13)
         throw std::runtime_error("Unsupported native memory module load");
+    const std::uint32_t image=reload?0x196530u:0xCE930u;
     runtime.check(pointer,864);
     if(!std::equal(iop_embedded_file.begin(),iop_embedded_file.end(),runtime.ram.begin()+pointer))
         throw std::runtime_error("Owned embedded IRX bytes differ");
@@ -257,26 +263,27 @@ NativeIopService::Resident NativeIopService::loadBootBuffer(unsigned epoch,unsig
     const auto previous=runtime.providers.at({"cdvdman",50});
     unsigned queries=0;
     try {
-        runtime.map(0xCE930,iop_embedded_image);
+        runtime.map(image,reload?iop_embedded_second_image:iop_embedded_image);
         runtime.providers[{"cdvdman",50}]=[&](IopRuntime& rt,IopContext& c) {
             if(c.get(4)!=0xFFFFFFF7)return previous(rt,c);
-            if(c.pc!=0xCE984 || c.get(5)!=0x1FFEF0 || queries++)throw std::runtime_error("Embedded CDVD version query differs");
+            if(c.pc!=image+0x54 || c.get(5)!=0x1FFEF0 || queries++)throw std::runtime_error("Embedded CDVD version query differs");
             return 0x225u;
         };
-        entry={};entry.pc=0xCE930;entry.set(28,0xD69B0);entry.set(29,0x1FFF00);entry.set(31,IopRuntime::sentinel);
-        bt2_iop_embedded(runtime,entry);
+        entry={};entry.pc=image;entry.set(28,image+0x8080);entry.set(29,0x1FFF00);entry.set(31,IopRuntime::sentinel);
+        if(reload)bt2_iop_embedded_second(runtime,entry);else bt2_iop_embedded(runtime,entry);
         runtime.providers[{"cdvdman",50}]=previous;
         if(entry.pc!=IopRuntime::sentinel || entry.get(2)!=1 || queries!=1)
             throw std::runtime_error("Embedded nonresident completion differs");
         // modload result & 3 == 1 releases the loaded image. Keep the source heap
         // separately owned; freed code bytes are diagnostic residue only.
-        std::erase(runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{0xCE930,0xCE9C0});
+        std::erase(runtime.ranges,std::pair<std::uint32_t,std::uint32_t>{image,image+0x90});
         ++buffer_loads;return {next_id_++,entry.get(2)};
     }catch(...) {runtime.providers[{"cdvdman",50}]=previous;failed_=true;throw;}
 }
 
 std::uint32_t NativeIopService::freeBootHeap(unsigned epoch,unsigned pointer) {
-    if(epoch!=epoch_ || failed_ || pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads!=1 || boot_heap_frees)
+    const bool reload=pointer==0x196100 && boot_heap_allocations==7 && buffer_loads==2 && boot_heap_frees==1;
+    if(epoch!=epoch_ || failed_ || (!reload && (pointer!=0xCE500 || boot_heap_allocations!=1 || buffer_loads!=1 || boot_heap_frees)))
         throw std::runtime_error("Unsupported native boot heap free");
     runtime.check(pointer,0x400);
     unsigned frees=0;

@@ -186,15 +186,17 @@ bool PS2Runtime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t 
 }
 
 bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
-    // VBLANK_START (cause 2) registration after main's admitted priority. Registration and
-    // mask state only: no interrupt is raised or delivered, and removal is not yet reached.
-    if(selector!=0x10 && selector!=0x14 && selector!=0x15)return false;
+    // VBLANK_START (cause 2) registration after main's admitted priority, and its replacement
+    // during main's display re-initialization (GS reset removes it; the VSync setter re-adds it).
+    if(selector!=0x10 && selector!=0x11 && selector!=0x14 && selector!=0x15)return false;
     constexpr std::uint32_t cause=2,bit=1u<<cause;
     if(static_cast<std::uint32_t>(context->r[4].low)!=cause || !intc_mask_supplied_)throw UnsupportedSyscall(selector,context->pc);
     if(selector==0x10) {
         const auto address=static_cast<std::uint32_t>(context->r[5].low);
         const auto next=static_cast<std::int32_t>(context->r[6].low);
-        if(!address || address%4 || next!=-1 || vblank_handler_registrations
+        const bool replacement=display_reset_phase==12 && vblank_handler_registrations==1 && address==0x1006D8
+            && context->pc==0x32E948 && context->r[31].low==0x311410 && context->r[29].low==initial_sp-96;
+        if(!address || address%4 || next!=-1 || (vblank_handler_registrations && !replacement)
             || std::any_of(intc_handlers.begin(),intc_handlers.end(),[](const IntcHandler& h){return h.cause==cause;}))
             throw UnsupportedSyscall(selector,context->pc);
         checkMemory(rdram,address,4);
@@ -202,7 +204,16 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
         // The kernel records the caller GP and argument register; next=-1 appends to the chain tail.
         intc_handlers.push_back({cause,address,static_cast<std::uint32_t>(context->r[7].low),static_cast<std::uint32_t>(context->r[28].low)});
         const auto id=static_cast<std::uint32_t>(intc_handlers.size());intc_handler_order.push_back(id);
-        ++vblank_handler_registrations;context->r[2].low=id;return true;
+        // A removed slot is not reused: the original kernel also returned a fresh ID (4 -> 5).
+        ++vblank_handler_registrations;if(replacement)display_reset_phase=13;context->r[2].low=id;return true;
+    }
+    if(selector==0x11) {
+        const auto id=static_cast<std::uint32_t>(context->r[5].low);
+        const auto order=std::find(intc_handler_order.begin(),intc_handler_order.end(),id);
+        if(!displayResetStep(context,3,0x32E968,688) || (intc_mask&bit) || order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause
+            || intc_handlers.at(id-1).address!=0x1006D8 || context->r[31].low!=0x30FE90)throw UnsupportedSyscall(selector,context->pc);
+        // Unlinked while cause 2 is disabled; both reached callers ignore the result.
+        intc_handler_order.erase(order);intc_handlers.at(id-1).cause=~0u;display_reset_phase=4;context->r[2].low=0;return true;
     }
     if(selector==0x14) {
         const bool newly=!(intc_mask&bit);

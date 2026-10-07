@@ -12,6 +12,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include <optional>
 #include <immintrin.h>
 #include "intc_checkpoint.h"
 #include "retained_ee_stack.h"
@@ -76,6 +77,7 @@ struct UnsupportedVuStatus : std::runtime_error {
 class PS2Runtime {
 public:
     std::uint32_t readVuStatus(R5900Context* context) {
+        if(clear_repeat_gif && displayResetStep(context,6,0x31062C,624))return clear_repeat_gif->readVuIdle();
         if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
             return gif_dma.readVuIdle();
         throw UnsupportedVuStatus();
@@ -224,16 +226,18 @@ public:
         if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
-        if(code==0 && selector==0x77 && heap_copy_supplied && heap_calls==1 && !heap_transfers
-            && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) {receiveHeapCopy(rdram,context);return;}
-        if(code==0 && selector==0x77 && native_module_loads==14 && heap_calls==1 && !heap_frees
+        if(code==0 && selector==0x77 && heap_copy_supplied && ((heap_calls==1 && !heap_transfers
+            && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) || (embeddedReload() && heap_calls==7 && heap_transfers==1
+            && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0x196100))) {receiveHeapCopy(rdram,context);return;}
+        if(code==0 && selector==0x77 && ((native_module_loads==14 && heap_calls==1 && !heap_frees)
+                || (embeddedReload() && native_module_loads==15 && heap_calls==7 && heap_frees==1))
             && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97E0)==2) {receiveHeapFree(rdram,context);return;}
-        if(code==0 && selector==0x76 && heap_copy_supplied && heap_transfers==1 && !heap_dma_polls) {
-            if(iop_epoch!=1 || context->pc!=0x32F008 || context->r[4].low!=0x50001 || context->r[29].low!=initial_sp-144)
+        if(code==0 && selector==0x76 && heap_copy_supplied && heap_transfers==heap_dma_polls+1 && (!heap_dma_polls || (embeddedReload() && heap_dma_polls==1))) {
+            if(iop_epoch!=1 || context->pc!=0x32F008 || context->r[4].low!=0x50001+heap_dma_polls || context->r[29].low!=initial_sp-144)
                 throw UnsupportedSyscall(selector,context->pc);
             ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
         }
-        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36))
+        if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36) || (heap_calls==6 && embeddedReload()))
             && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
             && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
@@ -360,6 +364,10 @@ public:
             return;
         }
         if(code==0 && selector==0x71 && gs_imr_supplied_) {
+            if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C
+                && (displayResetStep(context,2,0x32EFA8,688) || displayResetStep(context,10,0x32EFA8,128))) {
+                gs_imr=0xFF00;++display_reset_phase;context->r[2].low=0xFF00;return;
+            }
             if(graph_startup_phase==2 && context->pc==0x32EFA8 && context->r[4].low==0xFF00
                 && context->r[29].low==initial_sp-112 && context->r[31].low==0x30FE6C) {
                 gs_imr=0xFF00;graph_startup_phase=3;context->r[2].low=0xFF00;return;
@@ -370,6 +378,11 @@ public:
             gs_imr=0xFF00;++gs_imr_writes;context->r[2].low=0xFF00;return;
         }
         if(code==0 && selector==2 && gs_crt_supplied_) {
+            if(context->r[4].low==1 && context->r[5].low==2 && ((context->r[6].low==1 && context->r[31].low==0x100274
+                    && displayResetStep(context,4,0x32E868,608)) || (!context->r[6].low && context->r[31].low==0x2710A0
+                    && displayResetStep(context,11,0x32E868,48)))) {
+                gs_crt_request={1,2,static_cast<std::uint32_t>(context->r[6].low)};++display_reset_phase;context->r[2].low=0;return;
+            }
             if(graph_startup_phase==3 && context->pc==0x32E868 && context->r[4].low==1 && context->r[5].low==2
                 && context->r[6].low==1 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005D0) {
                 graph_startup_phase=4;graph_halfword_checkpoint=halfword_writes;context->r[2].low=0;return;
@@ -1414,6 +1427,28 @@ public:
     unsigned timer1_setup_writes=0;
     std::uint32_t timer1_mode=0;
     unsigned graph_startup_phase=0;
+    // Main's display re-initialization after the first archive load. The startup clear routine
+    // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
+    // 4 CRT(1,2,1), 5 VSync wait, 6 two GIF requests. 7 field sample (0x271178). Display setup
+    // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
+    unsigned display_reset_phase=0,polled_vblanks=0;
+    std::uint32_t display_intc_stat=0;
+    bool display_field=true; // Toggles per polled VBlank; anchored to the original 0x271178 sample (field 1).
+    std::optional<GifDmaStaging> clear_repeat_gif;
+    bool displayResetStep(const R5900Context* context,unsigned phase,std::uint32_t pc,std::uint32_t frame) const {
+        return display_reset_phase==phase && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active
+            && !in_interrupt_ && graph_startup_phase==4 && gs_csr_reset_writes==1 && cri_rpc_calls==42
+            && context->pc==pc && context->r[29].low==initial_sp-frame;
+    }
+    // Main's second embedded-buffer load (0x100634 -> 0x320580), between the field sample and display setup.
+    bool embeddedReload() const {
+        return display_reset_phase==8 && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active
+            && !in_interrupt_ && cri_rpc_calls==42 && iop_epoch==1;
+    }
+    bool displayVsyncWait(const R5900Context* context,std::uint32_t pc,std::uint32_t offset) const {
+        // SyncV without a callback polls INTC_STAT directly while cause 2 is disabled.
+        return !(intc_mask&4) && (displayResetStep(context,5,pc,656-offset) || displayResetStep(context,7,pc,96-offset));
+    }
     std::uint64_t graph_halfword_checkpoint=0;
     bool heap_allocation_supplied=false,heap_copy_supplied=false;
     unsigned heap_transfers=0,heap_dma_polls=0;
@@ -1508,6 +1543,9 @@ public:
             && context->pc==0x30FE44 && context->r[29].low==initial_sp-112 && gs_csr_reset_writes==1) {
             gif_dma.gs.resetDrawingState();graph_startup_phase=1;return;
         }
+        if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
+            gif_dma.gs.resetDrawingState();++display_reset_phase;return;
+        }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
                 || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
             throw UnsupportedGuestMemory(address,8);
@@ -1520,6 +1558,16 @@ public:
         checkMemory(rdram,0,0);
         if(address==0x12001000 && graph_startup_phase==1 && context->pc==0x30FE50 && context->r[29].low==initial_sp-112) {
             graph_startup_phase=2;return 0x551B4000; // Independently captured second original CSR load; no native video clock.
+        }
+        if(address==0x12001000 && (displayResetStep(context,1,0x30FE50,688) || displayResetStep(context,9,0x30FE50,128))) {
+            // Only the GS revision byte (bits 16..23) is consumed; the original keeps 0x1B.
+            ++display_reset_phase;return 0x551B4000;
+        }
+        if(address==0x12001000 && (displayResetStep(context,5,0x3104F4,640) || displayResetStep(context,7,0x3104F4,80))) {
+            // Only FIELD (bit 13) is consumed, after this wait's polled VBlank.
+            if(polled_vblanks!=(display_reset_phase==5?1u:2u) || (display_intc_stat&4))throw UnsupportedGuestMemory(address,8); // One acknowledged VBlank per wait.
+            ++display_reset_phase;if(display_reset_phase==6)clear_repeat_gif=gif_dma.repeat();
+            return 0x551B4004|(display_field?0x2000u:0u);
         }
         if(address==0x12001000 && gs_field_supplied_ && gs_interrupt.acknowledgements==2 && !gs_field_reads
             && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
@@ -1556,6 +1604,16 @@ public:
                 checkMemory(rdram,0,0);dmac_priority=value;++dmac_startup_writes;return;
             }
         }
+        if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
+            checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
+        }
+        if(clear_repeat_gif && display_reset_phase==6 && context->r[29].low==initial_sp-624 && displayResetStep(context,6,context->pc,624)) {
+            if(address==0x1000A000 && context->pc==0x3101A8) {checkMemory(rdram,0,0);clear_repeat_gif->start(value,memory(),gif_dma.gs);return;}
+            if(address==0x1000A020 && context->pc==0x310148) {checkMemory(rdram,0,0);clear_repeat_gif->setCount(value);return;}
+            if(address==0x1000A010 && context->pc==0x310194) {
+                checkMemory(rdram,0,0);clear_repeat_gif->setAddress(value,initial_sp-(clear_repeat_gif->starts?288u:528u),memory());return;
+            }
+        }
         if(address==0x1000F000 && gs_interrupt_supplied_ && gs_crt_calls==1
             && context->r[29].low==initial_sp-656 && value==4
             && ((context->pc==0x32F10C && !gs_interrupt.acknowledgements)
@@ -1582,6 +1640,25 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
+            checkMemory(rdram,0,0);
+            // Logical time: a poll that finds VBLANK_START clear advances one VBlank (START and END latch).
+            // Cause 2 is disabled here, so no handler runs; FIELD toggles in interlaced mode.
+            if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;++polled_vblanks;}
+            return display_intc_stat;
+        }
+        if(clear_repeat_gif && displayResetStep(context,6,context->pc,624)) {
+            auto& g=*clear_repeat_gif;
+            if(address==0x1000A000 && context->pc==0x3100E4) {checkMemory(rdram,0,0);return g.readIdle();}
+            if(address==0x10009000 && context->pc==0x310560) {checkMemory(rdram,0,0);return g.readVifIdle();}
+            if(address==0x1000A000 && (context->pc==0x3105A4 || context->pc==0x3105CC)) {checkMemory(rdram,0,0);return g.readStarted(context->pc==0x3105CC);}
+            if(address==0x10003C00 && context->pc==0x3105EC) {checkMemory(rdram,0,0);return g.readVifStatus();}
+            if(address==0x10003020 && context->pc==0x310664) {
+                checkMemory(rdram,0,0);const auto status=g.readGifStatus();
+                if(g.starts==2)display_reset_phase=7; // Both clear requests completed.
+                return status;
+            }
+        }
         if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
             if(address==0x1000A000 && context->pc==0x28B928) {checkMemory(rdram,0,0);return texture_gif.idle();}
             if(address==0x10003020 && context->pc==0x28B944) {checkMemory(rdram,0,0);return texture_gif.pathIdle();}

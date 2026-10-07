@@ -69,15 +69,25 @@ int main() {
     check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
     check(dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0 && dma.completions==2);
     rejected=false;try{dma.readIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+    // A later identical request pair replays both packets from fresh state into a shared sink.
+    auto repeat=dma.repeat();check(repeat.starts==0 && repeat.readIdle()==0);repeat.setCount(15);
+    repeat.setAddress(256,256,ram);repeat.start(0x101,ram,dma.gs);
+    check(repeat.readVifIdle()==0 && repeat.readStarted(false)==0x101 && repeat.readStarted(true)==1);
+    check(repeat.readVifStatus()==0x40 && repeat.readVuIdle()==0 && repeat.readGifStatus()==0 && repeat.readIdle()==1);
+    repeat.setCount(15);repeat.setAddress(512,512,ram);ram[512+16]^=1;rejected=false;
+    try{repeat.start(0x101,ram,dma.gs);}catch(const GifPacketMismatch&){rejected=true;}
+    check(rejected && repeat.starts==1 && dma.gs.packets==3);ram[512+16]^=1;
+    repeat.start(0x101,ram,dma.gs);check(repeat.starts==2 && dma.gs.packets==4 && dma.starts==2 && repeat.gs.packets==0);
+    rejected=false;try{(void)repeat.repeat();}catch(const std::runtime_error&){rejected=true;}check(rejected); // Pair not yet completed.
     const auto preserved=dma.gs.word(GsCommandSink::address(0,1,7,7,false));
     dma.gs.resetDrawingState();dma.gs.resetDrawingState();
-    check(dma.gs.word(GsCommandSink::address(0,1,7,7,false)).value==preserved.value && dma.gs.packets==2 && dma.gs.pixels==128);
+    check(dma.gs.word(GsCommandSink::address(0,1,7,7,false)).value==preserved.value && dma.gs.packets==4 && dma.gs.pixels==256);
     std::vector<std::uint8_t> config(64);
     auto configPut=[&](unsigned offset,std::uint64_t value){std::memcpy(config.data()+offset,&value,8);};
     configPut(0,0x1000000000008003ULL);configPut(8,14);
     configPut(16,3);configPut(24,0x49);configPut(32,0x1234);configPut(40,8);configPut(48,0x5678);configPut(56,9);
     dma.gs.consumeConfiguration(config);
-    check(dma.gs.pabe==1 && dma.gs.tex0[0]==0x1234 && dma.gs.tex0[1]==0x5678 && dma.gs.pixels==128);
+    check(dma.gs.pabe==1 && dma.gs.tex0[0]==0x1234 && dma.gs.tex0[1]==0x5678 && dma.gs.pixels==256);
     configPut(16,0);configPut(56,0x7F);rejected=false;
     try{dma.gs.consumeConfiguration(config);}catch(const std::runtime_error&){rejected=true;}
     check(rejected && dma.gs.pabe==1 && dma.gs.configuration_packets==1);
@@ -95,7 +105,7 @@ int main() {
     config_ram[32]^=1;rejected=false;try{transfer.start(0x101,config_ram,dma.gs);}catch(const std::runtime_error&){rejected=true;}
     check(rejected && transfer.starts==0 && transfer.phase==4);config_ram[32]^=1;
     transfer.start(0x101,config_ram,dma.gs);check(transfer.madr==80 && transfer.qwc==0 && transfer.poll()==0x101 && transfer.poll()==1 && transfer.pathComplete()==0);
-    check(transfer.completions==1 && transfer.phase==8 && dma.gs.pixels==128);
+    check(transfer.completions==1 && transfer.phase==8 && dma.gs.pixels==256);
     rejected=false;try{transfer.poll();}catch(const std::runtime_error&){rejected=true;}check(rejected);
     std::cout<<"GS scoped command tests passed\n";
 }

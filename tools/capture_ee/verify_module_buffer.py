@@ -20,7 +20,7 @@ def verify(root,native=None):
     if struct.unpack_from('<I',fe,0x3AC8C0)[0]!=0xCE500 or struct.unpack_from('<I',fe,0x3AC880)[0]:raise ValueError('Heap-free input/result differs')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
-        if r['native_module_loads']<14 or r['heap_frees']!=1 or (r['native_iop_error'] and not later_iop_boundary(r)) or r['native_iop_steps']<30902 or (r['heap_calls']==1 and ram[0xCE930:0xCE970]!=iop[0xCE930:0xCE970]):raise ValueError('Native buffer completion/free differs')
+        if r['native_module_loads']<14 or r['heap_frees']!=(2 if r.get('display_reset_phase',0)>=8 else 1) or (r['native_iop_error'] and not later_iop_boundary(r)) or r['native_iop_steps']<30902 or (r['heap_calls']==1 and ram[0xCE930:0xCE970]!=iop[0xCE930:0xCE970]):raise ValueError('Native buffer completion/free differs')
         if r.get('dmac_startup_writes')==3:
             dm=folder.parent/'dmac-startup-after';de=(dm/'ee-ram.bin').read_bytes();meta=json.loads((dm/'capture.json').read_text(encoding='utf-8'))
             address,trap,marker=capture_trap('dmac-startup-after')

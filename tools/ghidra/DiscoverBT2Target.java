@@ -12,7 +12,9 @@ import java.util.List;
 public class DiscoverBT2Target extends GhidraScript {
     // Direct J (not JAL) from the observed body to another address that is a JAL target or
     // opens its own stack frame (ADDIU sp,sp,-N within its first two instructions): a tail call
-    // that Ghidra otherwise absorbs as intra-function flow. Other targets stay as discovered.
+    // that Ghidra otherwise absorbs as intra-function flow. A target directly after a completed
+    // JR RA/delay-slot pair has no fall-through entry and is also separated (leaf tail calls).
+    // Other targets stay as discovered.
     private List<Address> tailCallTargets(Function function, Address entry) throws Exception {
         List<Address> targets = new ArrayList<>();
         for (Instruction ins : currentProgram.getListing().getInstructions(function.getBody(), true)) {
@@ -26,6 +28,7 @@ public class DiscoverBT2Target extends GhidraScript {
                 int ins2 = currentProgram.getMemory().getInt(address.add(4L * n));
                 frame |= (ins2 & 0xFFFF0000) == 0x27BD0000 && (short) ins2 < 0;
             }
+            frame |= currentProgram.getMemory().getInt(address.subtract(8)) == 0x03E00008;
             boolean called = false;
             for (Reference ref : getReferencesTo(address)) called |= ref.getReferenceType().isCall();
             if ((frame || called) && !targets.contains(address)) targets.add(address);

@@ -20,7 +20,13 @@ class GifDmaStaging {
 public:
     void supply(std::span<const std::uint8_t> expected_packet) {
         if(supplied_ || expected_packet.size()!=240)throw std::runtime_error("Invalid/repeated GIF packet evidence");
-        expected_.assign(expected_packet.begin(),expected_packet.end());supplied_=true;
+        expected_.assign(expected_packet.begin(),expected_packet.end());first_=expected_;supplied_=true;
+    }
+    // A later identical request pair (same routine, frame and packets) replays the same evidence
+    // from a fresh state. Only a completed original pair can be repeated.
+    GifDmaStaging repeat() const {
+        if(!supplied_ || !sync_ || phase_!=6 || starts!=2 || completions!=2)throw std::runtime_error("GIF request pair not complete");
+        GifDmaStaging next;next.expected_=first_;next.first_=first_;next.second_=second_;next.supplied_=true;next.sync_=true;return next;
     }
     std::uint32_t readIdle() {
         if(!supplied_ || (phase_!=0 && !(phase_==6 && starts==1 && !second_.empty())))throw std::runtime_error("Unsupported/repeated GIF idle read");
@@ -55,13 +61,14 @@ public:
         reserved_difference_words=padding_differences;
         madr=value;phase_=3;++staging_writes;packet_verified=true;
     }
-    void start(std::uint32_t value,std::span<const std::uint8_t> ram) {
+    void start(std::uint32_t value,std::span<const std::uint8_t> ram) {start(value,ram,gs);}
+    void start(std::uint32_t value,std::span<const std::uint8_t> ram,GsCommandSink& sink) {
         if(!ready() || value!=0x101)throw std::runtime_error("Unsupported GIF start/order");
         // Revalidate the staged bytes immediately before command consumption.
         if(madr>ram.size() || std::size_t(qwc)*16>ram.size()-madr)throw std::runtime_error("GIF start source bounds changed");
         auto packet=ram.subspan(madr,qwc*16);
         if(!std::equal(staged_.begin(),staged_.end(),packet.begin()))throw GifPacketMismatch(staged_,packet);
-        gs.consume(packet);chcr=value;phase_=4;++starts;
+        sink.consume(packet);chcr=value;phase_=4;++starts;
         madr+=qwc*16;qwc=0;
         // Packet consumption advances MADR/QWC; STR remains set until checked completion.
     }
@@ -109,5 +116,5 @@ public:
 private:
     bool supplied_=false,sync_=false;
     unsigned phase_=0;
-    std::vector<std::uint8_t> expected_,staged_,second_;
+    std::vector<std::uint8_t> expected_,staged_,second_,first_;
 };

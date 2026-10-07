@@ -27,7 +27,9 @@ def original(root,point,fields):
 
 def native_scope(r):
     v=r['vblank_deliveries']
-    require(r['vblank_handler_registrations']==1 and r['vblank_enable_calls']==1 and 2<=v<=1001 and r['load_poll_idles']==v-1,
+    # Main's display setup removes and re-adds the same handler (phase 13); no delivery happens there.
+    registrations=2 if r.get('display_reset_phase',0)>=13 else 1
+    require(r['vblank_handler_registrations']==registrations and r['vblank_enable_calls']==registrations and 2<=v<=1001 and r['load_poll_idles']==v-1,
         'VBlank delivery/idle accounting differs')
     # Each delivery wakes sleeping helpers 5 and 6; each wake is resumed once and re-parks.
     require(r['worker_wakes']==2*v and r['worker_resumes']==r['worker_wakes']==r['worker_sleep_returns'],'Helper wake ownership differs')

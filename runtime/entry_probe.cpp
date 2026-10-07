@@ -372,14 +372,18 @@ int main(int argc, char** argv) {
         catch (const UnsupportedGuestMemory& stop) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
+            std::cerr << "Memory sp-offset/ra/main/cri/graph/display: " << std::hex << (runtime.initial_sp-context.r[29].low) << "/" << context.r[31].low << "/" << runtime.main_priority_admissions << "/" << std::dec << runtime.cri_rpc_calls << "/" << runtime.graph_startup_phase << "/" << runtime.display_reset_phase << " stat/polled/mask " << std::hex << runtime.display_intc_stat << "/" << runtime.polled_vblanks << "/" << runtime.intc_mask << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
             const bool vif_handoff=runtime.native_module_loads==14 && runtime.heap_frees==1 && runtime.dmac_startup_writes==3
                 && stop.address==0x10003C10 && stop.size==4 && context.pc==0x30FF70 && context.r[29].low==runtime.initial_sp-32;
             const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
                 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            // Main's system-time read after display setup: Timer 2 COUNT is not modelled yet.
+            const bool timer2_clock=runtime.display_reset_phase==13 && stop.address==0x10001000 && stop.size==4
+                && context.pc==0x339430 && context.r[29].low==runtime.initial_sp-64;
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !timer2_clock) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff || timer2_clock) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -620,8 +624,11 @@ int main(int argc, char** argv) {
                             const bool loader_progress=runtime.post_loadfile.supplied && runtime.post_loadfile.binds==1 && runtime.post_cd.modes==1
                                 && (native_loader_progress || loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
                             require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
+                            // Main's repeated startup clear adds identical full-frame sprites to the same GS state.
+                            const unsigned repeat_clears=runtime.clear_repeat_gif?runtime.clear_repeat_gif->starts:0u;
                             require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
-                                && runtime.gif_dma.gs.packets==(runtime.texture_gif.starts?3u:2u) && runtime.gif_dma.gs.sprites==2 && runtime.gif_dma.gs.pixels==573440
+                                && runtime.gif_dma.gs.packets==(runtime.texture_gif.starts?3u:2u)+repeat_clears && runtime.gif_dma.gs.sprites==2+repeat_clears
+                                && runtime.gif_dma.gs.pixels==573440+std::uint64_t(repeat_clears)*640*448
                                 && runtime.gif_dma.qwc==0 && runtime.gif_dma.madr==runtime.initial_sp-48
                                 && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2 && runtime.gif_dma.packet_verified,
                                 "Fresh SIF prior GS effects differ");
@@ -939,7 +946,7 @@ int main(int argc, char** argv) {
                 << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
                 << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
                 << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
-                << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
+                << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
                 << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
                 << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns
