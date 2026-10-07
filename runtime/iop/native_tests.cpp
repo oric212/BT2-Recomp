@@ -11,6 +11,28 @@ void check(bool v,const std::source_location where=std::source_location::current
 int main() {
     try {
         {
+            // IOP hardware timer in logical time: 615,014.4 clocks per field; a 153,612-clock period
+            // ticks 4 times in the first field. Each tick runs the handler, then the woken worker.
+            IopRuntime t;unsigned handled=0,worked=0;
+            t.threads.emplace(7,IopRuntime::Thread{});auto& worker=t.threads.at(7);worker.priority=20;worker.waiting=true;worker.wait_sleep=true;
+            worker.context.pc=0x1C2348;t.cpu_interrupts_enabled=true;
+            t.sound_timer.allocated=t.sound_timer.started=true;t.sound_timer.compare=153612;t.sound_timer.handler=0x1C0400;t.sound_timer.common=0xB7B10;t.sound_timer.gp=0x1234;
+            t.execute=[&](IopRuntime& rt,IopContext& c){
+                if(c.pc==0x1C0400) {
+                    check(rt.in_interrupt && !rt.cpu_interrupts_enabled && c.get(4)==0xB7B10 && c.get(28)==0x1234 && c.get(29)==0x1FFE00 && !rt.current_thread);
+                    auto& w=rt.threads.at(7);w.waiting=false;w.ready=true;w.wait_satisfied=true; // iWakeupThread
+                    c.set(2,handled==5?0:153612);++handled;c.pc=IopRuntime::sentinel;return;
+                }
+                check(c.pc==0x1C2348 && rt.current_thread==7 && !rt.in_interrupt);
+                auto& w=rt.threads.at(7);w.wait_satisfied=false;w.waiting=true;w.ready=false;++worked;throw IopYield{}; // Sleeps again.
+            };
+            t.advanceSoundTimerField();check(handled==4 && worked==4 && t.sound_timer.ticks==4 && !t.current_thread);
+            t.advanceSoundTimerField();check(handled==6 && t.sound_timer.compare==0 && worked==6); // Handler returned 0: stopped.
+            t.advanceSoundTimerField();check(handled==6);
+            t.sound_timer.compare=153612;t.in_interrupt=true;bool rejected=false;
+            try{t.advanceSoundTimerField();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+        }
+        {
             // Owned SPU2 voice transfer: IOP RAM -> sound RAM through DMA7 (core 1), then LIBSD's IRQ 40.
             auto rejects=[](auto action){bool rejected=false;try{action();}catch(const std::runtime_error&){rejected=true;}check(rejected);};
             IopRuntime s;std::vector<std::uint8_t> block(0x100);for(unsigned n=0;n<block.size();++n)block[n]=static_cast<std::uint8_t>(n);

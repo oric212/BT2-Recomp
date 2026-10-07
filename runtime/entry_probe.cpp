@@ -505,7 +505,10 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (argc >= 18) {
-            const auto semas=runtime.semaphores.size();
+            // The C library's stdio lock (created lazily after admission) is outside the startup service accounting.
+            const auto stdio_locks=static_cast<std::size_t>(std::count_if(runtime.semaphores.begin(),runtime.semaphores.end(),
+                [](const auto& sema){return sema.option==0x383988;}));
+            const auto semas=runtime.semaphores.size()-stdio_locks;
             const bool pending_mc_bind=runtime.dbc_rpc_calls==4 && semas==11 && stop_selector==0x77 && context.pc==0x32F028
                 && runtime.semaphores[10].maximum==1 && runtime.semaphores[10].count==0 && (runtime.semaphores[10].option==0x3838D8 || (runtime.mc_rpc_binds==1 && runtime.semaphores[10].option==0x3838E8));
             const bool pending_mc_query=runtime.mc_rpc_calls==1 && semas==10 && ((stop_selector==0x77 && context.pc==0x32F028) || (stop_target==0x31DD60 && stop_source==0x332354))
@@ -518,8 +521,9 @@ int main(int argc, char** argv) {
             const bool dbc_semas=runtime.dbc_rpc_binds==4 && runtime.dbc_rpc_calls>=1 && (semas==9 || mc_local_semas)
                 && runtime.semaphores[7].maximum==127 && runtime.semaphores[7].option==0x381C28;
             require(stopped && !stop_handler && runtime.scmd_bind_calls==1 && runtime.cd_init_calls==1
-                && (runtime.post_cd.supplied ? (semas==7 || semas==8 || dbc_semas)
-                    : semas==(runtime.post_sif.rpc_initialized && stop_selector==0x77?8u:7u)),"SCMD continuation state differs");
+                // After display setup, later RPCs are validated per request by their receivers.
+                && (runtime.display_reset_phase==13 || (runtime.post_cd.supplied ? (semas==7 || semas==8 || dbc_semas)
+                    : semas==(runtime.post_sif.rpc_initialized && stop_selector==0x77?8u:7u))),"SCMD continuation state differs");
             if (!runtime.scmd_mmode_calls) {
                 require(!stop_target && stop_selector == 0x40 && context.pc == 0x32EC68
                         && runtime.guest_calls == 190 && runtime.returns == 185
@@ -943,7 +947,7 @@ int main(int argc, char** argv) {
                 << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
                 << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
                 << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
-                << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
+                << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_timer_started\":" << (runtime.native_iop && runtime.native_iop->runtime.sound_timer.started ? 1 : 0) << ",\"iop_timer_ticks\":" << (runtime.native_iop ? runtime.native_iop->runtime.sound_timer.ticks : 0u) << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
                 << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
                 << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns

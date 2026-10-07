@@ -14,3 +14,7 @@ Main's first sound-bank load (`0x297A60`) ends with SOUNDS command `0x20` (256-b
 ## Limits and stop conditions
 
 No audio output, voice playback or sequencer timing is claimed. Stop if a tick requires a suspended RPC frame or hardware outside the owned SPU2/timer model.
+
+## Outcome (2026-10-07)
+
+Steps 1–3 are implemented. The SOUNDS worker's setup (`0x1C0460`) converts a 4,167 µs period, allocates a SYSCLK hardware timer, registers handler `0x1C0400` (iWakeupThread of the worker; returns the next interval) and starts it. TIMRMAN providers, scoped to later sound commands, record this with the captured placement (root counter 5, id `0x5BF80149`). At each EE logical VBlank the timer advances one NTSC field (615,014.4 clocks) and delivers each elapsed interval to the handler in interrupt context, then runs woken workers until they park. SOUNDS command `0x20` completes; its reply matches the original apart from a model-local thread ID and the relocated module address. A unit test covers tick counts, handler context, worker resumption and stop. No tick has run in normal startup yet: main reaches its EE file I/O ([plan](EE_FILEIO_PLAN.md)) before the next logical VBlank.

@@ -881,9 +881,12 @@ public:
             // bind (RA 0x332814) semaphore; attr is uninitialized stack residue in that library.
             const bool admitted_rpc_sema=main_priority_admissions && context->pc==0x32EC68 && maximum==1 && initial==0
                 && ((context->r[31].low==0x332AD0 && option==0x3838E8) || (context->r[31].low==0x332814 && option==0x3838D8));
+            // The C library's lazily created stdio lock ("SceStdioFioSema", count 1) after admission.
+            const bool stdio_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333770
+                && maximum==1 && initial==1 && option==0x383988 && read32(rdram,0x36AB24)==0xFFFFFFFF;
             if(ncmd_bind_sema)++ncmd_bind_semaphores;
             if (disc_bind_sema) ++disc_bind_semaphores;
-            if (attributes != 0 && !admitted_rpc_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !admitted_rpc_sema && !stdio_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -1452,7 +1455,7 @@ public:
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
     // 4 CRT(1,2,1), 5 VSync wait, 6 two GIF requests. 7 field sample (0x271178). Display setup
     // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
-    bool sounds_hardware_timers_supported=false;
+    bool sounds_hardware_timers_supported=true; // IOP_HARDWARE_TIMER_PLAN.md
     bool sound_voice_transfers_supported=true; // Owned SPU2 voice transfers (IOP_SPU2_TRANSFER_PLAN.md).
     unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;

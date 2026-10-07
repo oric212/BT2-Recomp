@@ -469,5 +469,27 @@ inline void install_iop_sound_scope_sleep(IopRuntime& rt) {
         catch(...) {memory.current_thread=parent;throw;}
     };
     rt.providers[{"thbase",25}]=[wake](IopRuntime& memory,IopContext& c) {return wake(memory,c,false);};
+    // TIMRMAN for the SOUNDS worker's periodic tick: AllocHardTimer(SYSCLK, 32-bit, prescale 1),
+    // SetTimerHandler, SetupHardTimer, StartHardTimer. Captured placement: counter 5, id 0x5BF80149.
+    rt.providers[{"timrman",4}]=[](IopRuntime& memory,IopContext& c) {
+        if(memory.sound_timer.allocated || c.get(4)!=1 || c.get(5)!=32 || c.get(6)!=1 || memory.in_interrupt)
+            throw std::runtime_error("Unsupported IOP hardware timer allocation");
+        memory.sound_timer={};memory.sound_timer.allocated=true;memory.sound_timer.id=0x5BF80149;return memory.sound_timer.id;
+    };
+    rt.providers[{"timrman",20}]=[](IopRuntime& memory,IopContext& c) {
+        auto& t=memory.sound_timer;
+        if(!t.allocated || t.started || c.get(4)!=t.id || !c.get(5) || c.get(6)%4)throw std::runtime_error("Unsupported IOP timer handler");
+        memory.check(IopRuntime::physical(c.get(6)),4);t.compare=c.get(5);t.handler=c.get(6);t.common=c.get(7);t.gp=c.get(28);return 0u;
+    };
+    rt.providers[{"timrman",22}]=[](IopRuntime& memory,IopContext& c) {
+        const auto& t=memory.sound_timer;
+        if(!t.allocated || t.started || c.get(4)!=t.id || c.get(5)!=1 || c.get(6)!=0 || c.get(7)!=1)throw std::runtime_error("Unsupported IOP timer setup");
+        return 0u;
+    };
+    rt.providers[{"timrman",23}]=[](IopRuntime& memory,IopContext& c) {
+        auto& t=memory.sound_timer;
+        if(!t.allocated || t.started || c.get(4)!=t.id || !t.handler)throw std::runtime_error("Unsupported IOP timer start");
+        t.started=true;t.tenths=0;return 0u;
+    };
     rt.providers[{"thbase",26}]=[wake](IopRuntime& memory,IopContext& c) {return wake(memory,c,true);};
 }

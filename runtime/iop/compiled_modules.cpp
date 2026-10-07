@@ -321,13 +321,15 @@ namespace {
 // Later sound commands: owned SPU2 voice transfers and scoped sleep/wakeup providers, restored after.
 struct SoundScope {
     IopRuntime& rt;std::map<std::pair<std::string,unsigned>,IopRuntime::Provider> saved;
+    static constexpr std::array<std::pair<const char*,unsigned>,7> keys{{{"thbase",24},{"thbase",25},{"thbase",26},
+        {"timrman",4},{"timrman",20},{"timrman",22},{"timrman",23}}};
     explicit SoundScope(IopRuntime& runtime):rt(runtime) {
-        for(unsigned ordinal:{24u,25u,26u}) {const auto found=rt.providers.find({"thbase",ordinal});if(found!=rt.providers.end())saved.insert(*found);}
+        for(const auto& [library,ordinal]:keys) {const auto found=rt.providers.find({library,ordinal});if(found!=rt.providers.end())saved.insert(*found);}
         install_iop_sound_scope_sleep(rt);rt.spu2_voice.enabled=true;
     }
     ~SoundScope() {
         rt.spu2_voice.enabled=false;
-        for(unsigned ordinal:{24u,25u,26u})rt.providers.erase({"thbase",ordinal});
+        for(const auto& [library,ordinal]:keys)rt.providers.erase({library,ordinal});
         for(const auto& [key,provider]:saved)rt.providers[key]=provider;
     }
 };
@@ -339,6 +341,14 @@ std::vector<std::uint8_t> NativeIopService::callSoundCommand(unsigned epoch,std:
     SoundScope scope(runtime);
     try {auto response=executeRegisteredRpc(0x80000701,command,input,16,0x3A5C80,0x3A5C40);++sound_command_requests;return response;}
     catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc)+" / address="+std::to_string(runtime.blocked_address));}
+}
+
+void NativeIopService::advanceSoundTimer(unsigned epoch) {
+    // One NTSC field of IOP system clock (36.864 MHz x 1001/60 ms = 615,014.4 clocks, kept in tenths).
+    auto& t=runtime.sound_timer;
+    if(epoch!=epoch_ || failed_ || !t.started)return;
+    SoundScope scope(runtime);
+    try {runtime.advanceSoundTimerField();} catch(...) {failed_=true;throw;}
 }
 
 std::vector<std::uint8_t> NativeIopService::callSoundsCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {

@@ -64,6 +64,9 @@ public:
     // sound-driver command runs. Transfers complete in logical time; LIBSD's IRQ 36/40 handler runs
     // at once when CPU interrupts are enabled. No playback, read-back transfers or timing.
     unsigned sound_worker_starts=0;
+    // One IOP hardware timer allocated by the SOUNDS worker (captured: root counter 5, id 0x5BF80149).
+    // Logical time: it advances one NTSC field per EE logical VBlank at the 36.864 MHz system clock.
+    struct HardTimer {bool allocated=false,started=false;std::uint32_t id=0,compare=0,handler=0,common=0,gp=0;std::uint64_t tenths=0;unsigned ticks=0;} sound_timer;
     struct Spu2VoiceDma {bool enabled=false;std::array<std::uint32_t,2> madr{},bcr{},chcr{};unsigned transfers=0,irqs=0;std::uint64_t bytes=0;} spu2_voice;
     static int spu2DmaCore(std::uint32_t p,std::uint32_t offset) {return p==0x1F8010C0+offset?0:p==0x1F801500+offset?1:-1;} // DMA4 (core 0), DMA7 (core 1).
     struct Spu2Readback {std::uint16_t value;std::uint64_t instruction;};
@@ -473,6 +476,36 @@ public:
     }
     // Lifetime runaway guard; repeated owned disc requests legitimately accumulate steps.
     IopContext* live_context=nullptr; // The context currently executing instructions.
+    // One NTSC field of IOP system clock (36.864 MHz x 1001/60 ms = 615,014.4 clocks, in tenths).
+    // Each elapsed compare interval runs the registered handler in interrupt context on an owned
+    // stack (it returns the next interval; 0 stops), then woken workers run until they park.
+    void advanceSoundTimerField() {
+        auto& t=sound_timer;
+        if(!t.started)return;
+        t.tenths+=6150144;
+        while(t.compare && t.tenths>=std::uint64_t(t.compare)*10) {
+            t.tenths-=std::uint64_t(t.compare)*10;
+            if(in_interrupt || !execute)throw std::runtime_error("IOP timer tick outside an idle point");
+            IopContext handler;handler.pc=t.handler;handler.set(4,t.common);handler.set(28,t.gp);handler.set(29,0x1FFE00);handler.set(31,sentinel);
+            const auto previous=current_thread;current_thread=0;
+            in_interrupt=true;cpu_interrupts_enabled=false;
+            try {execute(*this,handler);in_interrupt=false;cpu_interrupts_enabled=true;}
+            catch(...) {in_interrupt=false;cpu_interrupts_enabled=true;current_thread=previous;throw;}
+            if(handler.pc!=sentinel)throw std::runtime_error("IOP timer handler did not return");
+            t.compare=handler.get(2);++t.ticks;
+            for(;;) {
+                auto next=threads.end();
+                for(auto c=threads.begin();c!=threads.end();++c)
+                    if(c->second.ready && !c->second.waiting && c->second.wait_satisfied && (next==threads.end() || c->second.priority<next->second.priority))next=c;
+                if(next==threads.end())break;
+                current_thread=next->first;
+                try {execute(*this,next->second.context);next->second.ready=false;}
+                catch(const IopYield&) {if(!next->second.waiting){current_thread=previous;throw std::runtime_error("IOP worker yielded without an owned wait");}}
+                catch(...) {current_thread=previous;throw;}
+            }
+            current_thread=previous;
+        }
+    }
     void tick(IopContext& c) {live_context=&c;executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {
         const auto key=std::make_pair(std::string(library),ordinal);

@@ -6,7 +6,7 @@ completed are compared: the uploaded IOP sound block, both bank blocks at their 
 placements, the SOUNDS request record and the loader's slot table. SPU2 sound RAM is not part of
 the captures and is not compared.
 """
-import argparse,json
+import argparse,json,struct
 from pathlib import Path
 from verify_vblank_wake import original
 from verify_sound_rpc import require
@@ -27,6 +27,12 @@ def verify(root,native):
     for name,(address,size) in (('sound block',BLOCK),('first bank block',FIRST),('second bank block',SECOND)):
         require(ni[address:address+size]==iop[address:address+size],f'IOP {name} differs')
     a,n=REQUEST;require(ne[a:a+n]==ee[a:a+n],'SOUNDS request record differs')
+    if r['sounds_rpc_calls']>=2:
+        # SOUNDS command 0x20 reply: word 8 is a model-local thread ID; word 13 is a SOUNDS address
+        # (native module base 0x1C0000, retail 0xA3430).
+        o=list(struct.unpack_from('<16I',ee,0x635180));n=list(r['sounds_result_words'])
+        require(len(n)==16 and all(o[k]==n[k] for k in range(16) if k not in (8,13)) and n[8] and n[13]-0x1C0000==o[13]-0xA3430,
+            'SOUNDS command reply differs')
     require(ne[TABLE:TABLE+4]==ee[TABLE:TABLE+4] and ne[TABLE+32:TABLE+36]==ee[TABLE+32:TABLE+36]
         and ne[TABLE+64:TABLE+68]==ee[TABLE+64:TABLE+68],'Loader slot table differs')
     print('Verified the IOP sound block, both bank blocks at their captured placements, the SOUNDS request record'

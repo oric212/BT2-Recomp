@@ -291,6 +291,13 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
         if(timer2.interruptPending())throw UnsupportedSyscall(0x14,interrupted->pc); // Handler must acknowledge.
     }
     ++vblank_deliveries;
+#ifdef BT2_NATIVE_IOP
+    // The IOP's own timer ticks for this field run before EE handlers observe the VBlank.
+    if(native_iop) {
+        try {native_iop->advanceSoundTimer(iop_epoch);}
+        catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;throw UnsupportedSyscall(0x14,interrupted->pc);}
+    }
+#endif
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");
     runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
 }
