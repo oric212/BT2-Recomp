@@ -29,3 +29,13 @@ Every GIF transfer so far was a startup request checked against captured packets
 - No presentation or window output is claimed until a flip presents real VRAM contents.
 - Unknown GIF modes, primitive types or register numbers stop as checked boundaries.
 - Packets and captures stay local and ignored.
+
+## Progress (2026-10-07)
+
+Steps 1–3 are implemented for the reached shapes:
+- channel-2 normal mode;
+- the PACKED/REGLIST parser, with IMAGE refused;
+- the general register file;
+- flat untextured sprite drawing with dry-run validation.
+
+The first frame's draw-environment send clears 512×448. The path sync and the game's VIF1 render kick are modeled for idle paths. The VIF1 interpreter accepts NOP only; the first frame's chain is empty. Real geometry (VIF1 UNPACK/MSCAL, VU1 microprograms, XGKICK) has not been reached yet. When it is, it needs its own plan.

@@ -17,8 +17,10 @@ BLOCK=(0x3B0850,0x250)
 OVERLAY=(0x3B3100,0x7D48F)
 
 def native_scope(r):
-    require(r['gs_display_flips']==1 and r['gs_display_writes']==5 and r['overlay_dispatch_validations']>=2
-        and r['timer1_starts']==1 and r['fileio_calls']>=6 and not r['native_iop_error'],'Native overlay frame scope differs')
+    # Later checkpoints continue past the flip (the game's own display writes follow); the memory
+    # compared below is unchanged by them.
+    require(r['gs_display_flips']>=1 and r['gs_display_writes']>=5 and r['overlay_dispatch_validations']>=2
+        and r['timer1_starts']==1 and r['fileio_calls']>=6,'Native overlay frame scope differs') # The IOP may stop later in the frame.
 
 def verify(root,native):
     ee=original(root,'rpc-overlay-dispenv',MARKER)
@@ -32,8 +34,9 @@ def verify(root,native):
     source=struct.unpack_from('<I',ee,0x387E80+24)[0]
     require(BLOCK[0]<=source<=BLOCK[0]+BLOCK[1]-40,'Original flip source outside the display block')
     env=struct.unpack_from('<5Q',ee,source)
-    require((r['gs_pmode'],r['gs_dispfb2'],r['gs_display2'])==(env[0],env[2],env[3]),'Recorded GS display registers differ from the original environment')
-    print(f'Verified the display block, the overlay range and the first flip (environment {hex(source)}).')
+    if r['gs_display_writes']==5:
+        require((r['gs_pmode'],r['gs_dispfb2'],r['gs_display2'])==(env[0],env[2],env[3]),'Recorded GS display registers differ from the original environment')
+    print(f'Verified the display block, the overlay range'+(' and the first flip' if r['gs_display_writes']==5 else ' (flip registers since rewritten)')+f' (environment {hex(source)}).')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',type=Path,required=True);a=p.parse_args()

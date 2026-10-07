@@ -198,7 +198,7 @@ public:
         }
         if(size==2 && spu2_command_readbacks.contains(p)) {
             const auto record=spu2_command_readbacks.at(p);
-            if(steps>record.instruction+1)throw std::runtime_error("Late SPU2 dynamic register readback unsupported");
+            if(steps>record.instruction+1) {blocked_address=p;throw std::runtime_error("Late SPU2 dynamic register readback unsupported");}
             spu2_command_readbacks.erase(p);return record.value; // One observed immediate readback; no clocked voice-state read.
         }
         if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_configuration.contains(p)) {

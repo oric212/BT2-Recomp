@@ -108,8 +108,8 @@ inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = v
 #define WRITE128(address, value) runtime->write128(rdram, (address), (value))
 #define READ32(address) runtime->Load32(rdram, ctx, (address))
 
-#define WRITE64(address, value) runtime->write64(rdram, (address), (value))
-#define READ64(address) runtime->read64(rdram, (address))
+#define WRITE64(address, value) runtime->guestWrite64(rdram, ctx, (address), (value))
+#define READ64(address) runtime->guestRead64(rdram, ctx, (address))
 #define FAST_READ64(address) runtime->read64(rdram, (address))
 
 #define WRITE32(address, value) runtime->Store32(rdram, ctx, (address), (value))

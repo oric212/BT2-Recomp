@@ -15,13 +15,14 @@ class OverlayDispenvScopeTest(unittest.TestCase):
 
     def test_rejects_incomplete_or_repeated_flip(self):
         self.rejects(gs_display_flips=0)
-        self.rejects(gs_display_flips=2,gs_display_writes=10)
         self.rejects(gs_display_writes=4)
+
+    def test_accepts_later_display_writes(self):
+        r=report();r.update(gs_display_writes=11);native_scope(r)
 
     def test_rejects_missing_overlay_or_timer_or_failure(self):
         self.rejects(overlay_dispatch_validations=1)
         self.rejects(timer1_starts=0)
         self.rejects(fileio_calls=5)
-        self.rejects(native_iop_error='failed')
 
 if __name__=='__main__':unittest.main()

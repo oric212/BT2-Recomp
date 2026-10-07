@@ -78,8 +78,14 @@ struct UnsupportedVuStatus : std::runtime_error {
 
 class PS2Runtime {
 public:
+    // BC2T/BC2F condition (VU activity). In the frame model no VU microprogram is ever started.
+    bool cop2Condition(R5900Context*) {
+        if(frameGifContext())return false;
+        throw UnsupportedVuStatus();
+    }
     std::uint32_t readVuStatus(R5900Context* context) {
         if(clear_repeat_gif && displayResetStep(context,6,0x31062C,624))return clear_repeat_gif->readVuIdle();
+        if(frameGifContext() && (context->pc==0x31062C || context->pc==0x31064C))return 0; // VU1 never started in the frame model.
         if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
             return gif_dma.readVuIdle();
         throw UnsupportedVuStatus();
@@ -1178,6 +1184,15 @@ public:
         ++word_writes;
     }
 
+    // Generated doubleword accesses: addresses in the EE register window take the same checked
+    // MMIO path as constant-address accesses; everything else is main RAM.
+    static bool mmioWindow(std::uint32_t address) {return address>=0x10000000 && address<0x14000000;}
+    void guestWrite64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
+        if(mmioWindow(address))Store64(rdram,context,address,value);else write64(rdram,address,value);
+    }
+    std::uint64_t guestRead64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        return mmioWindow(address)?Load64(rdram,context,address):read64(rdram,address);
+    }
     void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword store");
@@ -1474,7 +1489,40 @@ public:
     std::uint32_t timer1_mode=0;
     // GS privileged display registers (0x12000000 + 16*n) as last written; PMODE n=0 .. BGCOLOR n=14.
     std::array<std::uint64_t,15> gs_privileged{};unsigned gs_display_writes=0,gs_display_flips=0;
-    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0;
+    // Frame-phase GIF DMA (channel 2), normal mode from main RAM; transfers complete synchronously
+    // into the general GS path (FRAME_GIF_PLAN.md).
+    struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0;unsigned starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0;
+    // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
+    // and their VIF codes interpreted. Only the reached codes are supported (FRAME_GIF_PLAN.md).
+    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0;} frame_vif1;
+    void frameVif1Code(std::uint32_t code) {
+        if(code)throw std::runtime_error("Unsupported VIF1 code "+std::to_string(code>>24&0x7F)); // NOP only so far.
+        ++frame_vif1.codes;
+    }
+    void frameVif1Start(std::uint32_t value) {
+        auto& v=frame_vif1;
+        if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
+        std::uint32_t tag=v.tadr;
+        for(unsigned n=0;;++n) {
+            if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
+            std::uint64_t lo,hi;std::memcpy(&lo,memory_.data()+tag,8);std::memcpy(&hi,memory_.data()+tag+8,8);
+            const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
+            if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
+            frameVif1Code(std::uint32_t(hi));frameVif1Code(std::uint32_t(hi>>32));++v.tags;
+            const bool inline_data=id==1 || id==2 || id==7;
+            if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
+            if(qwc) {
+                const auto data=inline_data?tag+16:addr;
+                if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
+                for(std::uint32_t k=0;k<qwc*4;++k) {std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);frameVif1Code(w);}
+            }
+            if(id==0 || id==7) {v.tadr=id==7?tag+16+qwc*16:tag+16;break;}
+            tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
+        }
+        v.chcr=value&~0x100u;v.cis=true;++v.starts;
+    }
+    bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
+    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0,sound_tick_boundaries=0;
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
@@ -1484,6 +1532,9 @@ public:
     bool sound_voice_transfers_supported=true; // Owned SPU2 voice transfers (IOP_SPU2_TRANSFER_PLAN.md).
     unsigned fileio_binds=0,fileio_calls=0,fileio_completions=0;
     bool fileio_workers_supported=true;
+    // The SOUNDS hardware timer's worker reads SPU2 voice state (ENDX) on its ticks; until that is
+    // modelled (SPU2_VOICE_PLAN.md), a VBlank that would deliver timer ticks is a checked boundary.
+    bool sounds_timer_ticks_supported=false;
     unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;
     LogicalTimer2 timer2;
@@ -1606,17 +1657,18 @@ public:
         if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
             gif_dma.gs.resetDrawingState();++display_reset_phase;return;
         }
-        // The GS library's display-environment flip (0x311860, second branch): PMODE, SMODE2, DISPFB2,
-        // DISPLAY2 and BGCOLOR are recorded as privileged display state. No presentation is claimed.
-        if(current_thread_id==1 && !in_interrupt_ && display_reset_phase==13) {
-            static constexpr std::array<std::pair<std::uint32_t,std::uint32_t>,5> flip={{
-                {0x3118D0,0x12000000},{0x3118EC,0x12000020},{0x3118F8,0x12000090},{0x311900,0x120000A0},{0x311908,0x120000E0}}};
-            for(unsigned n=0;n<flip.size();++n)if(context->pc==flip[n].first && address==flip[n].second) {
-                if(gs_display_writes%flip.size()!=n)throw UnsupportedGuestMemory(address,8); // Whole flips, in order.
-                gs_privileged[(address-0x12000000)/16]=value;
-                if(++gs_display_writes%flip.size()==0)++gs_display_flips;
-                return;
-            }
+        // Privileged GS display registers after display setup (main's thread): PMODE, SMODE2, DISPFB1/2,
+        // DISPLAY1/2, EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
+        // CRT timing registers stay with SetGsCrt. The library flip (0x311860) is counted at its last
+        // store. No presentation is claimed.
+        if(current_thread_id==1 && !in_interrupt_ && display_reset_phase==13 && address>=0x12000000 && address<=0x120000E0 && !(address&15)) {
+            const auto n=(address-0x12000000)/16;
+            if(n!=0 && n!=2 && n!=7 && n!=8 && n!=9 && n!=10 && n!=13 && n!=14)throw UnsupportedGuestMemory(address,8);
+            if(n==13 && value)throw UnsupportedGuestMemory(address,8); // EXTWRITE: write-back circuit stays off.
+            if(!gs_display_flips && context->pc!=0x3118D0 && !gs_display_writes)throw UnsupportedGuestMemory(address,8); // First write is the library flip.
+            gs_privileged[n]=value;++gs_display_writes;
+            if(context->pc==0x311908 && n==14)++gs_display_flips;
+            return;
         }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
                 || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
@@ -1654,6 +1706,23 @@ public:
         if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
             && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
             checkMemory(rdram,0,0);timer1_mode=value;timer1.configure(value);++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
+        }
+        if(frameGifContext() && (address==0x10009000 || address==0x10009020 || address==0x10009030 || (address==0x1000E010 && value==2))) {
+            checkMemory(rdram,0,0);auto& v=frame_vif1;
+            if(address==0x1000E010) {v.cis=false;return;} // W1C of CIS1 only.
+            if(v.chcr&0x100)throw UnsupportedGuestMemory(address,4);
+            if(address==0x10009020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);v.qwc=value;return;}
+            if(address==0x10009030) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);v.tadr=value&0x0FFFFFFF;return;}
+            frameVif1Start(value);return;
+        }
+        if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020)) {
+            checkMemory(rdram,0,0);auto& g=frame_gif;
+            if(g.chcr&0x100)throw UnsupportedGuestMemory(address,4); // Writes while a transfer runs.
+            if(address==0x1000A020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);g.qwc=value;return;}
+            if(address==0x1000A010) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);g.madr=value&0x0FFFFFFF;return;}
+            if(value!=0x101 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
+            gif_dma.gs.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
+            g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&~0x100u;++g.starts;return;
         }
         // Main's H-BLANK delay helpers (0x28C778 start, 0x28C790 wait >= 400 and stop): logical Timer 1.
         if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
@@ -1721,6 +1790,20 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020)) {
+            checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;
+            return address==0x1000A000?frame_gif.chcr:address==0x1000A010?frame_gif.madr:frame_gif.qwc;
+        }
+        // Frame phase: GIF and VIF1 transfers complete synchronously and no VU1 work is started, so
+        // channel and path status reads see idle (VIF1_STAT 0x40 and GIF_STAT 0 as captured at the
+        // startup path sync).
+        if(frameGifContext() && !(frame_gif.chcr&0x100) && !(frame_vif1.chcr&0x100)) {
+            if(address==0x10009000 || address==0x10009020 || address==0x10009030) {
+                checkMemory(rdram,0,0);return address==0x10009000?frame_vif1.chcr:address==0x10009020?frame_vif1.qwc:frame_vif1.tadr;
+            }
+            if(address==0x10003C00) {checkMemory(rdram,0,0);return 0x40;}
+            if(address==0x10003020) {checkMemory(rdram,0,0);return 0;}
+        }
         if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
             if(address==0x10000810 && (context->pc==0x28C780 || context->pc==0x28C7C0)) {checkMemory(rdram,0,0);return timer1.mode();}
             if(address==0x10000800 && context->pc==0x28C798 && timer1.counting()) {

@@ -64,6 +64,19 @@ def has_tail_nop_gap(candidate, metadata, data):
     return True
 
 
+def cop_branch(ins):
+    """BC0/BC1/BC2 condition branches: an immediate target like other conditional branches."""
+    return ins>>26 in (16,17,18) and (ins>>21)&31==8
+
+
+def cop_control(ins):
+    """Coprocessor instructions that change control flow or are not proven safe to bridge over:
+    condition branches, and COP0 CO-group operations (ERET and friends). COP1/COP2 arithmetic
+    (rs >= 16) is ordinary data flow."""
+    op,rs=ins>>26,(ins>>21)&31
+    return cop_branch(ins) or (op==16 and rs>=16) or (op in (16,17,18) and 8<rs<16)
+
+
 def bounded_word_switch(address,start,end,spans,metadata,data,word):
     """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom.
 
@@ -72,7 +85,7 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
     def control(ins):
         op=ins>>26
-        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or (op in (16,17,18) and (ins>>21)&31>=8)
+        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
     sign=lambda v:v-65536 if v&32768 else v
     if address-start<28 or address+8>end or word(address+4)!=0:return False
     if word(address)==0x00600008:
@@ -127,7 +140,7 @@ def has_branch_nop_gaps(candidate, metadata, data):
     def word(address):return struct.unpack_from('<I',data,offset+address-start)[0]
     def control(ins):
         op=ins>>26
-        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9)) or (op in (16,17,18) and (ins>>21)&31>=8)
+        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9)) or cop_control(ins)
     for gap in gaps:
         if gap-start<8 or word(gap)!=0 or control(word(gap-4)):return False
         transfer=word(gap-8)
@@ -149,8 +162,8 @@ def has_branch_nop_gaps(candidate, metadata, data):
         # Standard JALR ra,rs is a call with a local continuation. Unknown
         # tail jumps/link registers remain quarantined; runtime still checks targets.
         standard_call=op==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0
-        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and not bounded_word_switch(address,start,end,spans,metadata,data,word)) or (op in (16,17,18) and (ins>>21)&31>=8):return False
-        if op in (1,4,5,6,7,20,21,22,23):
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and not bounded_word_switch(address,start,end,spans,metadata,data,word)) or (cop_control(ins) and not cop_branch(ins)):return False
+        if op in (1,4,5,6,7,20,21,22,23) or cop_branch(ins):
             immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
             if address+4+immediate*4 in gaps:return False
         elif op in (2,3) and (((address+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)) in gaps:return False

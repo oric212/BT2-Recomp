@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the overlay's first frame sends its draw environment through GIF DMA channel 2 (`0x3100D0`); per-frame GIF DMA and GS register state are not modelled yet ([frame GIF plan](FRAME_GIF_PLAN.md)).
+**Current blocker:** the first SOUNDS timer tick (inside the frame's Timer 1 wait) is held as a checked boundary: its worker reads SPU2 ENDX, which needs a voice playback model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)).
 
-**Last measured, 2026-10-07:** **608 EE entries entered / 597 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **620 EE entries entered / 609 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

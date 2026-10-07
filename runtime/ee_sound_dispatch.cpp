@@ -283,6 +283,11 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     constexpr std::uint32_t cause=2;
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);
+#ifdef BT2_NATIVE_IOP
+    if(native_iop && native_iop->runtime.sound_timer.started && !sounds_timer_ticks_supported) {
+        ++sound_tick_boundaries;throw UnsupportedSyscall(0x14,interrupted->pc); // Before any field or IOP effect.
+    }
+#endif
     advanceLogicalField();
     // A Timer 2 event inside the elapsed field precedes this VBLANK_START. The library handler
     // only services its alarm list (empty here; callbacks are not modelled) and overflow count.

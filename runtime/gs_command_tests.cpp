@@ -4,6 +4,34 @@
 #include <set>
 void check(bool value) {if(!value)throw std::runtime_error("GS assertion failed");}
 int main() {
+    {
+        // General GIF transfer: PACKED A+D environment, PACKED RGBAQ/XYZ2 sprite kick (synthetic values).
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        q(0x1000000000000007ULL,0xE); // NLOOP 7, A+D, one register (EOP in the second tag).
+        q(0x0000000000010000ULL,0x4C);   // FRAME_1: FBP 0, FBW 1 (64 pixels), PSMCT32, no mask.
+        q(0x0000000101000020ULL,0x4E);   // ZBUF_1: ZBP 32, Z24, ZMSK.
+        q(0x0000000000000000ULL,0x18);   // XYOFFSET_1 0.
+        q(0x0007000000070000ULL,0x40);   // SCISSOR_1 0..7.
+        q(1,0x1A);q(0x30000,0x47);        // PRMODECONT AC=1; TEST ZTE ALWAYS.
+        q(6,0x00);                        // PRIM sprite.
+        q(0x3000000000008002ULL|(1ULL<<46)|(6ULL<<47),0x551); // NLOOP 2, EOP, PRE sprite; PACKED RGBAQ/XYZ2/XYZ2 (NREG 3).
+        q(0x0000000200000001ULL,0x0000000400000003ULL); // RGBAQ R1 G2 B3 A4.
+        q(0x0000001000000010ULL,0);       // XYZ2 (1,1).
+        q(0x0000004000000040ULL,0);       // XYZ2 (4,4): kick covers pixels 1..3.
+        q(0,0);q(0,0);q(0,0);             // Second loop: RGBAQ 0, two vertices at (0,0): empty sprite.
+        GsCommandSink gs;gs.transfer(t);
+        check(gs.transfers==1 && gs.frame_sprites==2 && gs.frame_pixels==9 && gs.state.regs[0x4C]==0x10000);
+        const auto inside=GsCommandSink::address(0,1,2,2,false),outside=GsCommandSink::address(0,1,4,4,false);
+        check(gs.word(inside).value==0x04030201 && gs.word(inside).known==UINT32_MAX && gs.word(outside).known==0);
+        // A later unsupported kick rejects the whole transfer: no register or VRAM effect.
+        auto bad=t;const std::uint64_t tri=0x3000000000008002ULL|(1ULL<<46)|(3ULL<<47);std::memcpy(bad.data()+8*16,&tri,8); // PRE triangle.
+        const auto regs=gs.state.regs;gs.seedForTest(inside,0xDEADBEEF);
+        bool rejected=false;try{gs.transfer(bad);}catch(const std::runtime_error&){rejected=true;}
+        check(rejected && gs.transfers==1 && gs.state.regs==regs && gs.word(inside).value==0xDEADBEEF);
+        bool odd=false;try{gs.transfer(std::span<const std::uint8_t>(t.data(),8));}catch(const std::runtime_error&){odd=true;}
+        check(odd);
+    }
     std::vector<std::uint8_t> p(240);
     auto put=[&](unsigned offset,std::uint64_t value){std::memcpy(p.data()+offset,&value,8);};
     put(0,0x100000000000800EULL);put(8,14);

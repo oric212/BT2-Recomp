@@ -113,6 +113,20 @@ class BoundedSwitchTests(unittest.TestCase):
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
+    def test_coprocessor_arithmetic_and_condition_branches(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x40,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # BEQ to the tail path / slot 2 varies / JR RA + delay / NOP gap / tail J + delay.
+        words=[0x10000005,0,0x24020001,0x03E00008,0,0,0x08000400,0]
+        candidate={'start':0x1000,'end_exclusive':0x1020,'body_size':28,'contiguous_aligned':False,'body_ranges':['1000-1013','1018-101f']}
+        pack=lambda w:struct.pack('<8I',*w)
+        for value,accepted in [(0x46000836,True),   # COP1 compare (rs 16): data flow.
+                               (0x4A000001,True),   # COP2 macro operation (rs 16).
+                               (0x45000003,True),   # BC1F to the tail path.
+                               (0x45000002,False),  # BC1F into the padding.
+                               (0x42000018,False)]: # ERET.
+            changed=words.copy();changed[2]=value
+            self.assertEqual(has_branch_nop_gaps(candidate,metadata,pack(changed)),accepted,hex(value))
+
     def test_padding_after_return_before_tail_path(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x40,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
         # BEQ to the tail path / return path ending JR RA + delay / NOP gap / tail J + delay.

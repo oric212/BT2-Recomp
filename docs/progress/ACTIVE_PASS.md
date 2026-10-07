@@ -1,34 +1,31 @@
-# Resume handoff: frame GIF DMA
+# Resume handoff: SPU2 voice state
 
 Updated: 2026-10-07. **Pass verified and committed; next subsystem planned, not started.**
 
-Normal checkpoint: **608 entered / 597 completed** (two overlay entries), kernel 2/2, 92,401 calls / 92,339 returns, 203,146 IOP instructions / 284 targets.
-- The overlay frame path ran its first display flip: PMODE `0x66`, DISPFB2 `0x1000`, DISPLAY2 for 512×448.
-- Timer 1 is started; its H-BLANK wait has not been reached yet.
-- Boundary: the GIF channel-2 idle read at `0x3100E4` in the draw-environment send (`0x3100D0`), a checked memory stop.
+Normal checkpoint: **620 entered / 609 completed** (two overlay entries), kernel 2/2, 92,419 calls / 92,358 returns.
+
+What the first frame has done:
+- **Draw environment:** one frame GIF transfer (240 bytes, 14 register writes) cleared 512×448 in the owned VRAM model.
+- **Path sync:** the GS library's path sync ran twice.
+- **Render kick:** one empty VIF1 chain (1 tag, 2 NOP codes).
+- **Display:** 11 display register writes (the library flip plus the game's own setup of both read circuits).
+- **Timer 1:** the wait has polled 263 lines.
+
+**Boundary.** The first field boundary inside that wait would deliver the first SOUNDS timer tick. Diagnostically, that tick's worker reads SPU2 ENDX (`0x1F900340`, IOP PC `0x937A4`). Until voice state exists, `sounds_timer_ticks_supported` holds that VBlank as a checked EE boundary (selector `0x14`), before any field or IOP effect.
 
 ## Next implementation
 
-Follow [FRAME_GIF_PLAN.md](../FRAME_GIF_PLAN.md):
-1. general channel-2 normal-mode transfers in main's thread;
-2. a GIF PACKED/REGLIST/IMAGE parser;
-3. a GS register file with recorded primitive kicks;
-4. verify each packet against an original capture at the send.
+Follow [SPU2_VOICE_PLAN.md](../SPU2_VOICE_PLAN.md):
+1. per-voice playback positions from pitch, SSA and ADPCM block flags in the owned sound RAM, advanced in logical IOP time;
+2. ENDX reads from that model;
+3. KON/KOFF transitions.
 
-## Overlay pipeline
-
-Overlay map gaps go through these steps:
-1. `analyze_game.py --discover-blocker`, which follows the blocker's `program`;
-2. `prepare_map.py --program dbzp`;
-3. `generate_game.py --program dbzp --candidate-map work/bt2-generation/dbzp/candidates.csv`;
-4. the usual `expand_startup.py` and `prepare_runtime.py`.
-
-Extract the overlay once with `overlay_programs.py --extract <ISO>`.
+After that, the Timer 1 wait continues through the rest of the frame.
 
 ## Verification and evidence
 
 Reports are the ignored `work/bt2-generation/entry-stop.json` and `sound-worker-stop.json`. Run the normal probe after CTest.
 
-- New comparison: `verify_overlay_dispenv.py`.
+- `verify_overlay_dispenv.py` now also holds at later checkpoints (memory only; flip registers are compared at the flip).
 - Earlier-phase-only verifiers: `verify_disc_read.py`, `verify_spu2_initialization.py`, `verify_cri_rpc.py`, `verify_cri_preemption.py`, `verify_second_heap.py`.
-- Still open: the SOUNDS hardware timer has not ticked in normal startup, and the IOP stream consumer acknowledgement is unmodelled.
+- Still open: the IOP stream consumer acknowledgement is unmodelled.

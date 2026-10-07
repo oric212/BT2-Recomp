@@ -715,3 +715,5 @@ Runtime-loaded overlays (`tools/ps2recomp/overlay_programs.py`).
 - `inspect_blocker.py` and `expand_startup.py` route targets inside the overlay range to the overlay map and receipt (`work/bt2-generation/overlays.json`, `overlays.cmake`, `bt2_overlays.h`).
 
 New capture point: `rpc-overlay-dispenv` (`0x311860`, the overlay frame's first display-environment flip). `verify_overlay_dispenv.py` compares the display block, the overlay range and the recorded GS display registers.
+
+`prepare_map.py` treats coprocessor arithmetic (COP1/COP2 with rs ≥ 16) as data flow in padding proofs. BC0/BC1/BC2 condition branches are checked against padding like other conditional branches; COP0 CO-group operations stay refused. `prepare_runtime.py` routes the generated BC2T/BC2F condition to `PS2Runtime::cop2Condition`.

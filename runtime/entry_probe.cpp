@@ -387,8 +387,10 @@ int main(int argc, char** argv) {
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
             // Overlay frame path: after a complete display flip, the GS library's draw-environment
             // send polls GIF DMA (frame GIF DMA is the next subsystem; EE_OVERLAY_PLAN.md).
-            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.gs_display_writes%5==0
-                && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4 && runtime.current_thread_id==1;
+            // Frame path handoffs: the draw-environment send polling GIF DMA, then the game's own
+            // render kick polling VIF1 before its chain DMA (VIF1/VU1 is the next subsystem).
+            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && stop.size==4
+                && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350));
             if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff) throw; // Explicit subsystem boundaries only.
             if(vif_handoff || texture_handoff || frame_gif_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
@@ -771,9 +773,13 @@ int main(int argc, char** argv) {
             report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
                 << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
                 << ",\"resume_pc\":" << stop_resume << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
-                << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"timer1_polls\":" << runtime.timer1_polls
+                << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"timer1_polls\":" << runtime.timer1_polls
+                << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
+                << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes
+                << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
+                << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
-                << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10]
+                << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10] << ",\"gs_dispfb1\":" << runtime.gs_privileged[7] << ",\"gs_display1\":" << runtime.gs_privileged[8]
                 << ",\"timer1_stops\":" << runtime.timer1_stops << ",\"timer1_count\":" << runtime.timer1.count()
                 << ",\"calls\":" << runtime.guest_calls << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
                 << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
