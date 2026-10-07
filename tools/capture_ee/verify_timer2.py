@@ -29,7 +29,8 @@ def verify(root,native):
     require(n[0]==r['timer2_deliveries'],'Native overflow count differs from delivered overflows')
     reent=words(ne,REENT_POINTER,1)[0];require(reent==words(ee,REENT_POINTER,1)[0],'C library state pointer differs')
     seed=struct.unpack_from('<Q',ne,reent+SEED_OFFSET)[0]
-    require(seed%256==0 and seed>>24<=n[0] and seed>>24>=n[0]-1,'Native seed is not a Timer 2 system time')
+    # The seed was sampled earlier; later wraps only raise the current overflow count.
+    require(seed!=1 and seed%256==0 and seed>>24<=n[0],'Native seed is not a Timer 2 system time')
     print(f'Verified timer library state, empty alarm list and acknowledged overflows ({n[0]} native, {o[0]} original);'
         f' native seed {seed:#x}, original {original_seed:#x}. Time is logical; values are not equated.')
 

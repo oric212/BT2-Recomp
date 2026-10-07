@@ -228,7 +228,17 @@ public:
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && mc_rpc_calls<=1 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
+        if(code==0 && selector==0x77 && display_reset_phase==13 && sound_rpc_calls>=1 && read32(rdram,0x3A97DC)==0x3A5C80
+            && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {receiveSoundRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
+#ifdef BT2_NATIVE_IOP
+        if(code==0 && selector==0x77 && display_reset_phase==13 && current_thread_id==1 && main_priority_admissions
+            && !startup_scheduler_active && !in_interrupt_ && context->r[31].low==0x28BA48) {receiveIopUpload(rdram,context);return;}
+        if(code==0 && selector==0x76 && iop_uploads && context->r[4].low==0x5A0000+iop_uploads && context->pc==0x32F008
+            && context->r[31].low==0x28BA58 && current_thread_id==1 && !startup_scheduler_active) {
+            ++iop_upload_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no DMA timing.
+        }
+#endif
         if(code==0 && selector==0x77 && heap_copy_supplied && ((heap_calls==1 && !heap_transfers
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) || (embeddedReload() && heap_calls==7 && heap_transfers==1
             && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0x196100))) {receiveHeapCopy(rdram,context);return;}
@@ -1440,7 +1450,8 @@ public:
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
     // 4 CRT(1,2,1), 5 VSync wait, 6 two GIF requests. 7 field sample (0x271178). Display setup
     // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
-    unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0;
+    bool sound_voice_transfers_supported=false;
+    unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;
     LogicalTimer2 timer2;
     bool timer2Context(const R5900Context* context) const {
@@ -1978,6 +1989,7 @@ private:
     void receiveHeapBind(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapCopy(std::uint8_t* rdram,R5900Context* context);
+    void receiveIopUpload(std::uint8_t* rdram,R5900Context* context);
     void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
         const bool bind=!post_cd.scmd_binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
         if(context->r[29].low!=d || d!=initial_sp-(bind?432:448) || context->r[5].low!=(bind?1u:2u)

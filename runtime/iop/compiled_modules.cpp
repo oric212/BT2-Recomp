@@ -312,6 +312,13 @@ std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uin
     auto response=executeRegisteredRpc(service,command,input,result_size,client,result);++requests;return response;
 }
 
+std::vector<std::uint8_t> NativeIopService::callSoundCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
+    if(epoch!=epoch_ || failed_ || sound_rpc_requests!=1 || input.size()!=64 || residents.size()!=13)
+        throw std::runtime_error("Unsupported later sound command");
+    try {auto response=executeRegisteredRpc(0x80000701,command,input,16,0x3A5C80,0x3A5C40);++sound_command_requests;return response;}
+    catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc));}
+}
+
 std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory) {
     if(epoch!=epoch_ || failed_ || dbc_rpc_requests>=4 || command!=(dbc_rpc_requests>=2?0x80001301u:dbc_rpc_requests?0x80001304u:0x80001363u) || input.size()!=144 || result_size!=144
         || sounds_rpc_requests!=1 || residents.size()!=13 || boot_heap_allocations!=2)throw std::runtime_error("Unsupported DBCMAN native request");

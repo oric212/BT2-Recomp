@@ -109,6 +109,21 @@ void PS2Runtime::receiveHeapCopy(std::uint8_t* rdram,R5900Context* context) {
     ++heap_transfers;++sif_dma_submissions;context->r[2].low=0x50000+heap_transfers; // Owned logical transfer token.
 }
 
+void PS2Runtime::receiveIopUpload(std::uint8_t* rdram,R5900Context* context) {
+    // Main's EE->IOP data upload (0x28BA18: one descriptor, then a status poll) into memory the
+    // native IOP already owns, e.g. the sound buffer from the second heap allocation.
+    const auto d=static_cast<std::uint32_t>(context->r[4].low);
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[5].low!=1
+        || d%4 || d!=static_cast<std::uint32_t>(context->r[29].low))throw UnsupportedSyscall(0x77,context->pc);
+    checkMemory(rdram,d,16);
+    const auto src=read32(rdram,d),dst=read32(rdram,d+4),size=read32(rdram,d+8),attr=read32(rdram,d+12);
+    if(attr || !size || size%16 || src%16 || dst%16 || src>=0x2000000 || dst>=0x200000)throw UnsupportedSyscall(0x77,context->pc);
+    checkMemory(rdram,src,size);
+    try{native_iop->runtime.check(dst,size);}catch(const std::exception&){throw UnsupportedSyscall(0x77,context->pc);}
+    std::copy_n(memory_.data()+src,size,native_iop->runtime.ram.data()+dst);
+    ++iop_uploads;++sif_dma_submissions;context->r[2].low=0x5A0000+iop_uploads; // Owned logical transfer token.
+}
+
 void PS2Runtime::receiveHeapFree(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
     const bool reload=embeddedReload() && native_module_loads==15 && heap_calls==7 && heap_frees==1;
@@ -136,6 +151,36 @@ void PS2Runtime::receiveHeapFree(std::uint8_t* rdram,R5900Context* context) {
 
 void PS2Runtime::receiveSoundRpc(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
+    if(display_reset_phase==13 && sound_rpc_calls>=1 && native_iop && read32(rdram,0x3A97DC)==0x3A5C80) {
+        // Main's later sound commands: 64-byte request, 16-byte reply, live client RPC ID.
+        auto& rt=native_iop->runtime;const auto found=rt.rpc_servers.find(0x80000701);
+        if(found==rt.rpc_servers.end())throw UnsupportedSyscall(0x77,context->pc);
+        const auto server=found->second;const auto rid=read32(rdram,0x3A5C84),sema=read32(rdram,0x3A5C88),command=read32(rdram,0x3A97E0);
+        if(iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d || context->r[5].low!=2
+            || current_thread_id!=1 || startup_scheduler_active || !rid || sema>=semaphores.size() || semaphores[sema].count
+            || semaphores[sema].maximum!=1 || semaphores[sema].option!=0x3838E8)throw UnsupportedSyscall(0x77,context->pc);
+        const std::array<std::uint32_t,8> desc={0x3A5C40,server.buffer,64,0,0x203A97C0,0x1E640,64,0x44};
+        const std::array<std::uint32_t,14> packet={0x4040,server.buffer,0x8000000A,0,5,0x203A97C0,rid,0x3A5C80,command,64,0x3A5C40,16,1,server.descriptor};
+        for(unsigned n=0;n<desc.size();++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned n=0;n<packet.size();++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
+        if(read32(rdram,0x3A5C80)!=0x203A97C0 || read32(rdram,0x3A5CA4)!=server.descriptor || read32(rdram,0x3A5C94)!=server.buffer
+            || read32(rdram,0x3A5CA0)!=0x3A5C40)throw UnsupportedSyscall(0x77,context->pc);
+        // The first later command (0x80D0) starts a LIBSD voice transfer (SPU2 DMA4 + IRQ 36), which
+        // the owned SPU2 device does not model yet: stop before the IOP is entered (EE request validated).
+        if(!sound_voice_transfers_supported)throw UnsupportedSyscall(0x77,context->pc);
+        std::vector<std::uint8_t> response;
+        try {response=native_iop->callSoundCommand(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+0x3A5C40,64));}
+        catch(const std::exception& e) {
+            native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
+            throw UnsupportedSyscall(0x77,context->pc);
+        }
+        std::copy(response.begin(),response.end(),memory_.begin()+0x3A5C40);
+        const std::array<std::uint32_t,16> reply={0x1000,0x3A5C40,0x80000008,0,0,0,0,0x3A5C80,0x8000000A,0,0,0,0,0,0,0};
+        for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+        deliverRpcEnd(rdram,context,0x3A5C80,sema,server.descriptor,server.buffer);
+        ++sound_rpc_calls;++sif_dma_submissions;context->r[2].low=0x60002+sound_rpc_calls;
+        native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;return;
+    }
     if(sounds_rpc_binds==1 && !sounds_rpc_calls && native_iop && read32(rdram,0x3A97DC)==0x6351C0) {
         auto& rt=native_iop->runtime;const auto found=rt.rpc_servers.find(0x02000004);
         if(found==rt.rpc_servers.end())throw UnsupportedSyscall(0x77,context->pc);

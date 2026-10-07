@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** mapped generated entry `0x2A2358` (main's post-load setup, not yet selected).
+**Current blocker:** main's first later sound-driver command (`0x80D0`), which starts an SPU2 voice transfer (LIBSD DMA4 + IRQ 36) the owned SPU2 device does not model.
 
-**Last measured, 2026-10-07:** **565 EE entries entered / 557 completed**, **42 CRI calls**, **55 original IOP disc reads**, **111 logical VBlanks**, **16 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **584 EE entries entered / 576 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

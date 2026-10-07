@@ -72,6 +72,9 @@ public:
     std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcQuery(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcRpc(unsigned epoch,std::span<const std::uint8_t> input);
+    // Later sound-service commands from main (after display setup): original registered handler.
+    std::vector<std::uint8_t> callSoundCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input);
+    unsigned sound_command_requests=0;
     std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service=0x80000701);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);
