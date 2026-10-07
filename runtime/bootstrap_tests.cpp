@@ -1444,6 +1444,22 @@ int main() {
             reject([&]{bad.deliverVblank(bad.memory().data(),&main);});
             require(!bad.in_interrupt_ && bad.vblank_deliveries==1);
         }
+        {
+            // Synthetic one-shot VSync registration: preserve the void ABI, reject aliasing/replacement,
+            // publish checked RAM once, and retain the previous publication on later fields.
+            PS2Runtime vs;vs.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=vs.memory().data();
+            vs.current_thread_id=1;vs.main_thread_priority=24;vs.gs_display_flips=1;vs.timer1_stops=1;vs.intc_mask=4;
+            R5900Context c{};c.pc=0x32EFD8;c.r[3].low=0x73;c.r[2].low=0x12345678;
+            c.r[29].low=c.r[4].low=0x1000;c.r[5].low=0x1004;
+            reject([&]{vs.handleSyscall(ram,&c,0);});require(!vs.vsync_flag);
+            c.r[5].low=0x1008;vs.handleSyscall(ram,&c,0);
+            require(c.r[2].low==0x12345678 && vs.vsync_flag==0x1000 && vs.vsync_csr==0x1008);
+            reject([&]{vs.handleSyscall(ram,&c,0);});
+            vs.deliverVblank(ram,&c);
+            require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B400C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
+            vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);
+            require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
+        }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

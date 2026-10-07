@@ -29,3 +29,7 @@ So far SPU2 registers have been answered only as retained parameters, or as one 
 
 - No audio output, envelope (ENVX) values or mixing are claimed.
 - Stop if the driver needs envelope levels, or sample-accurate timing that can't be derived from logical time and pitch.
+
+## Implemented scope for the current pass
+
+The authored position model admits the reached muted startup voices. Their pitch/SSA are captured at KON; active pitch changes and manual loop-address writes remain unsupported by the MMIO adapter. The clock begins at the admitted SOUNDS timer intervals. Initialization-to-timer playback phase, decoder lookahead and exact ENDX sample timing are not compared. Logical sample-clock residue is carried between intervals and fields; each timer handler sees advancement to its own compare boundary. KOFF records release and keeps positions advancing because no ADSR release duration is owned.

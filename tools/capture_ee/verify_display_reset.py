@@ -20,15 +20,16 @@ def native_scope(r):
         and r['native_module_loads']==15 and r['cri_rpc_calls']==42 and not r['native_iop_error'],'Native display setup scope differs')
 
 def verify(root,native):
-    ee=original(root,'rpc-display-init-after',DISPLAY)
-    iop=(root/'work/pcsx2-capture/rpc-display-init-after-absent-cards/iop-ram.bin').read_bytes()
     r=json.loads(native.read_text(encoding='utf-8'));native_scope(r)
+    later=r.get('frame_vsync_deliveries',0)>0
+    ee=original(root,'rpc-frame-end',{16:0x1FFECF0,48:0x38BDF0}) if later else original(root,'rpc-display-init-after',DISPLAY)
+    iop=(root/'work/pcsx2-capture/rpc-display-init-after-absent-cards/iop-ram.bin').read_bytes()
     ne=Path(str(native)+'.ee.bin').read_bytes();ni=Path(str(native)+'.iop.bin').read_bytes()
     require(ne[DBUFF:DBUFF+DBUFF_SIZE]==ee[DBUFF:DBUFF+DBUFF_SIZE],'Double-buffer environment differs')
     o=words(ee,GS_STATE,8);n=words(ne,GS_STATE,8)
     # Kernel handler IDs are model-local: native IDs run one below the original (4 -> 5 there, 3 -> 4 here).
     require(o[:3]==n[:3] and o[4:]==n[4:] and n[3]+1==o[3],'GS library state differs')
-    require(words(ne,FIELD_FLAG,1)==words(ee,FIELD_FLAG,1)==(0,),'Field sample differs')
+    require(words(ne,FIELD_FLAG,1)==words(ee,FIELD_FLAG,1)==((1,) if later else (0,)),'Field sample differs')
     # The sound-bank blocks later reuse this placement (verify_sound_bank.py compares them).
     require(r['heap_calls']>7 or (ni[0x196100:0x196460]==iop[0x196100:0x196460] and ni[0x196530:0x196570]==iop[0x196530:0x196570]),'Embedded reload placement differs')
     # Later heap calls reuse the client words; the reload's free result is compared while it is the last call.

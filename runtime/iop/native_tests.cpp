@@ -4,12 +4,14 @@
 #include "ioman_provider.h"
 #include "vblank_provider.h"
 #include "cdvd_provider.h"
+#include "spu2_playback_tests.h"
 #include <iostream>
 #include <source_location>
 void bt2_iop_synthetic(IopRuntime&,IopContext&);
 void check(bool v,const std::source_location where=std::source_location::current()) {if(!v)throw std::runtime_error("IOP synthetic result differs at line "+std::to_string(where.line()));}
 int main() {
     try {
+        testSpu2Playback();
         {
             // IOP hardware timer in logical time: 615,014.4 clocks per field; a 153,612-clock period
             // ticks 4 times in the first field. Each tick runs the handler, then the woken worker.

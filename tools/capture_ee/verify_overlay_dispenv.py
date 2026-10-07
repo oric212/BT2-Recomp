@@ -23,15 +23,17 @@ def native_scope(r):
         and r['timer1_starts']==1 and r['fileio_calls']>=6,'Native overlay frame scope differs') # The IOP may stop later in the frame.
 
 def verify(root,native):
-    ee=original(root,'rpc-overlay-dispenv',MARKER)
     r=json.loads(native.read_text(encoding='utf-8'));native_scope(r)
+    later=r.get('frame_vsync_deliveries',0)>0
+    flip=original(root,'rpc-overlay-dispenv',MARKER)
+    ee=original(root,'rpc-frame-end',{16:0x1FFECF0,48:0x38BDF0}) if later else flip
     ne=Path(str(native)+'.ee.bin').read_bytes()
     a,n=BLOCK;require(ne[a:a+n]==ee[a:a+n],'Display/double-buffer block differs')
     a,n=OVERLAY;diff=[a+k for k in range(n) if ne[a+k]!=ee[a+k]]
     require(not diff,f'Overlay range differs at {len(diff)} bytes (first {hex(diff[0]) if diff else 0})')
     # The flip's source: a0 of 0x311860 is one of two 40-byte environments in the block (PMODE,
     # SMODE2, DISPFB, DISPLAY, BGCOLOR as doublewords); the recorded registers must equal it.
-    source=struct.unpack_from('<I',ee,0x387E80+24)[0]
+    source=struct.unpack_from('<I',flip,0x387E80+24)[0]
     require(BLOCK[0]<=source<=BLOCK[0]+BLOCK[1]-40,'Original flip source outside the display block')
     env=struct.unpack_from('<5Q',ee,source)
     if r['gs_display_writes']==5:

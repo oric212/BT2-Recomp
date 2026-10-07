@@ -353,7 +353,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("Invalid SCMD bind bundle size");
             runtime.supplyScmdBind(bundle);
         }
-        bool stopped = false;
+        bool stopped = false,execution_budget_exhausted=false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
         std::uint32_t stop_selector = 0, stop_handler = 0;
@@ -464,6 +464,10 @@ int main(int argc, char** argv) {
             stop_selector = stop.selector;
             stop_handler = stop.handler;
             stopped = true;
+        }
+        catch (const std::runtime_error& error) {
+            if(!bind_mode || !std::string_view(error.what()).starts_with("Bootstrap execution budget exceeded;"))throw;
+            std::cerr << error.what() << "\n";execution_budget_exhausted=true;stopped=true;
         }
         if (cd_mode && argc < 18) {
             require(stopped && !stop_handler && (stop_target || (stop_selector == 0x40 && context.pc == 0x32EC68)),
@@ -780,6 +784,8 @@ int main(int argc, char** argv) {
                 << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
                 << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10] << ",\"gs_dispfb1\":" << runtime.gs_privileged[7] << ",\"gs_display1\":" << runtime.gs_privileged[8]
+                << ",\"execution_budget_exhausted\":" << (execution_budget_exhausted?1:0)
+                << ",\"frame_vsync_deliveries\":" << runtime.frame_vsync_deliveries
                 << ",\"timer1_stops\":" << runtime.timer1_stops << ",\"timer1_count\":" << runtime.timer1.count()
                 << ",\"calls\":" << runtime.guest_calls << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
                 << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
@@ -968,6 +974,9 @@ int main(int argc, char** argv) {
                 << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
                 << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
                 << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
+                << ",\"spu2_playback_samples\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.samples:0)
+                << ",\"spu2_playback_blocks\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.blocks:0)
+                << ",\"spu2_endx\":[" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[0]:0) << "," << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[1]:0) << "]"
                 << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_timer_started\":" << (runtime.native_iop && runtime.native_iop->runtime.sound_timer.started ? 1 : 0) << ",\"fileio_binds\":" << runtime.fileio_binds << ",\"fileio_calls\":" << runtime.fileio_calls << ",\"fileio_completions\":" << runtime.fileio_completions << ",\"iop_timer_ticks\":" << (runtime.native_iop ? runtime.native_iop->runtime.sound_timer.ticks : 0u) << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
                 << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes

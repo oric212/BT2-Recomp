@@ -208,6 +208,12 @@ public:
             context->pc = resume;
             return;
         }
+        if(code==0 && selector==0x73 && frameGifContext() && timer1_stops && context->pc==0x32EFD8) {
+            const auto flag=static_cast<std::uint32_t>(context->r[4].low),csr=static_cast<std::uint32_t>(context->r[5].low);
+            if(vsync_flag || flag!=context->r[29].low || csr!=flag+8 || (flag&15))throw UnsupportedSyscall(selector,context->pc);
+            checkMemory(rdram,flag,4);checkMemory(rdram,csr,8);
+            vsync_flag=flag;vsync_csr=csr;return; // Void BIOS API preserves V0 in the original capture.
+        }
         if(code==0 && in_interrupt_) {
             if(handleInterruptSyscall(rdram,selector,context))return;
             throw UnsupportedSyscall(selector,context->pc); // Interrupt context fails closed.
@@ -1543,6 +1549,7 @@ public:
         return timer2.started() && ((in_interrupt_ && delivering_cause_==11)
             || (!in_interrupt_ && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active)) && context;
     }
+    std::uint32_t vsync_flag=0,vsync_csr=0;unsigned frame_vsync_deliveries=0;
     std::uint32_t display_intc_stat=0;
     bool display_field=true; // Toggles per polled VBlank; anchored to the original 0x271178 sample (field 1).
     std::optional<GifDmaStaging> clear_repeat_gif;
@@ -1754,7 +1761,7 @@ public:
         if((address==0xB0001010 || address==0xB0001020) && context->pc==0x338B30 && timer2Context(context)) {
             checkMemory(rdram,0,0);if(address==0xB0001010)timer2.writeMode(value);else timer2.writeComp(value);return;
         }
-        if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
+        if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0) || (frameGifContext() && timer1_stops && (context->pc==0x32F1AC || context->pc==0x32F1FC)))) {
             checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
         }
         if(clear_repeat_gif && display_reset_phase==6 && context->r[29].low==initial_sp-624 && displayResetStep(context,6,context->pc,624)) {
@@ -1818,6 +1825,9 @@ public:
         }
         if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
             checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
+        }
+        if(address==0x1000F000 && frameGifContext() && timer1_stops && context->pc==0x32F1D0 && vsync_flag) {
+            checkMemory(rdram,0,0);deliverVblank(rdram,context);return display_intc_stat;
         }
         if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
             checkMemory(rdram,0,0);

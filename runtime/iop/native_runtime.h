@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "spu2_playback.h"
 
 struct IopYield : std::exception {const char* what() const noexcept override {return "IOP thread waiting";}};
 
@@ -61,9 +62,10 @@ public:
     std::array<std::uint32_t,2> spu2_pending_key_off{},spu2_pending_key_on{};
     unsigned spu2_reset_status_reads=0,spu2_fifo_halfwords=0,spu2_io_status_reads=0;
     std::map<std::uint32_t,std::uint16_t> spu2_sound_ram;
+    Spu2Playback spu2_playback;
     // Owned SPU2 voice transfers (IOP -> sound RAM through DMA4/DMA7), enabled only while a later
     // sound-driver command runs. Transfers complete in logical time; LIBSD's IRQ 36/40 handler runs
-    // at once when CPU interrupts are enabled. No playback, read-back transfers or timing.
+    // at once when CPU interrupts are enabled. No audio output, read-back transfers or physical DMA timing.
     unsigned sound_worker_starts=0;
     // Message boxes (thmsgbx) used by FILEIO's per-file workers: queued message pointers.
     std::map<unsigned,std::deque<std::uint32_t>> mailboxes;unsigned next_mailbox=1;
@@ -196,6 +198,8 @@ public:
             if(spu2_configuration!=reset || spu2_reset_status_reads>=2 || p!=(spu2_reset_status_reads?0x1F900744u:0x1F900344u))throw std::runtime_error("SPU2 reset status prerequisites differ");
             ++spu2_reset_status_reads;return 0; // Direct local first-status checkpoint under this exact reset configuration.
         }
+        if(size==2 && spu2_playback.enabled && (p==0x1F900340 || p==0x1F900342 || p==0x1F900740 || p==0x1F900742))
+            return (spu2_playback.endx[p>=0x1F900400]>>((p&2)?16:0))&0xFFFF;
         if(size==2 && spu2_command_readbacks.contains(p)) {
             const auto record=spu2_command_readbacks.at(p);
             if(steps>record.instruction+1) {blocked_address=p;throw std::runtime_error("Late SPU2 dynamic register readback unsupported");}
@@ -231,6 +235,13 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(size==2 && spu2_playback.enabled && spu2_io_transfer_completed) {
+            const auto offset=(p-0x1F900000)&0x3FF;
+            if(p>=0x1F900000 && p<0x1F900800 && (offset==0x340 || offset==0x342)) {
+                const unsigned core=p>=0x1F900400,mask=(offset&2)?0xFF0000:0xFFFF;
+                spu2_playback.endx[core]&=~mask;spu2_configuration[p]=0;spu2_command_readbacks.erase(p);return;
+            }
+        }
         if(spu2_voice.enabled && writeSpu2Voice(p,value,size))return;
         if(size==2 && p==0x1F9001B0 && value==1 && executing_pc==0x92DB8) {
             if(!ownedCriStartup() || !spu2_io_transfer_completed || spu2_dma_idle_reads!=1 || spu2_auto_dma.configured
@@ -283,11 +294,12 @@ public:
             }
             if(offset==0x1A0 || offset==0x1A2) {
                 const unsigned core=p>=0x1F900400,shift=(offset&2)?16:0;
-                // Retain a command only for the initialized zero-volume voices. No samples/ADSR advancement.
+                // Admit key-on only for initialized zero-volume voices. Position/ENDX advance; no samples or ADSR.
                 for(unsigned voice=0;voice<24;++voice)for(unsigned side=0;side<2;++side)
                     if(!spu2_configuration.contains(0x1F900000+core*0x400+voice*16+side*2)
                         || spu2_configuration.at(0x1F900000+core*0x400+voice*16+side*2)!=0)
                         throw std::runtime_error("SPU2 voice activation without muted initialization unsupported");
+                if(spu2_playback.enabled)spu2_playback.keyOn(core,(value<<shift)&0xFFFFFF,spu2_configuration);
                 spu2_pending_key_on[core]|=(value<<shift)&0xFFFFFF;spu2_command_readbacks[p]={static_cast<std::uint16_t>(value),steps};return;
             }
         }
@@ -310,6 +322,7 @@ public:
         }
         if(size==2 && (p==0x1F9001A4 || p==0x1F9001A6 || p==0x1F9005A4 || p==0x1F9005A6) && spu2_reset_status_reads>=2) {
             const unsigned core=p>=0x1F900400,shift=(p&2)?16:0;
+            if(spu2_playback.enabled)spu2_playback.keyOff(core,(value<<shift)&0xFFFFFF);
             spu2_pending_key_off[core]|=(value<<shift)&0xFFFFFF;
             if(spu2_io_transfer_completed) {spu2_pending_key_on[core]&=~((value<<shift)&0xFFFFFF);spu2_command_readbacks[p]={static_cast<std::uint16_t>(value),steps};}
             return; // Retain release command; no samples or completed envelopes claimed.
@@ -485,10 +498,15 @@ public:
     void advanceSoundTimerField() {
         auto& t=sound_timer;
         if(!t.started)return;
-        t.tenths+=6150144;
-        while(t.compare && t.tenths>=std::uint64_t(t.compare)*10) {
-            t.tenths-=std::uint64_t(t.compare)*10;
+        std::uint64_t elapsed=6150144;
+        while(t.compare && elapsed) {
+            const auto period=std::uint64_t(t.compare)*10;
+            if(t.tenths>=period)throw std::runtime_error("IOP timer elapsed state invalid");
+            const auto until_tick=period-t.tenths;
+            if(elapsed<until_tick)break;
             if(in_interrupt || !execute)throw std::runtime_error("IOP timer tick outside an idle point");
+            spu2_playback.advanceTenths(until_tick,spu2_sound_ram);
+            elapsed-=until_tick;t.tenths=0;
             IopContext handler;handler.pc=t.handler;handler.set(4,t.common);handler.set(28,t.gp);handler.set(29,0x1FFE00);handler.set(31,sentinel);
             const auto previous=current_thread;current_thread=0;
             in_interrupt=true;cpu_interrupts_enabled=false;
@@ -508,6 +526,8 @@ public:
             }
             current_thread=previous;
         }
+        spu2_playback.advanceTenths(elapsed,spu2_sound_ram);
+        t.tenths+=elapsed;
     }
     void tick(IopContext& c) {live_context=&c;executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {

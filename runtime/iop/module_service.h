@@ -21,6 +21,7 @@ public:
     struct Resident {unsigned id;std::uint32_t result;};
     explicit NativeIopService(unsigned epoch,std::vector<NativeIopModule> definitions):epoch_(epoch),definitions_(std::move(definitions)) {
         if(!epoch_)throw std::runtime_error("Native IOP needs a fresh epoch");
+        runtime.spu2_playback.enabled=true;
         runtime.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
         runtime.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
         install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);

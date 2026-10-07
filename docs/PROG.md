@@ -23,6 +23,8 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-07
 **Last measured, 2026-10-07:** **620 EE entries entered / 609 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
+Implementation checkpoint: SPU2 position/ENDX and first-frame VSync changes are committed **unverified**, with testing pending and an indexed-asset poll still stalled. The verified measurements above are unchanged; see [ACTIVE_PASS.md](progress/ACTIVE_PASS.md).
+
 <!-- progress-summary:end -->
 
 ## Measured execution and subsystem evidence

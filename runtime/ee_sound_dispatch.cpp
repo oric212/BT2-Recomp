@@ -284,7 +284,7 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);
 #ifdef BT2_NATIVE_IOP
-    if(native_iop && native_iop->runtime.sound_timer.started && !sounds_timer_ticks_supported) {
+    if(native_iop && native_iop->runtime.sound_timer.started && !sounds_timer_ticks_supported && !native_iop->runtime.spu2_playback.enabled) {
         ++sound_tick_boundaries;throw UnsupportedSyscall(0x14,interrupted->pc); // Before any field or IOP effect.
     }
 #endif
@@ -296,12 +296,19 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
         runIntcHandlers(rdram,interrupted,11,"Timer 2 handler");++timer2_deliveries;
         if(timer2.interruptPending())throw UnsupportedSyscall(0x14,interrupted->pc); // Handler must acknowledge.
     }
+    if(vsync_flag) {
+        display_intc_stat|=0xC;display_field=!display_field;
+        write32(rdram,vsync_flag,1);write32(rdram,vsync_csr,0x551B400Cu|(display_field?0x2000u:0u));write32(rdram,vsync_csr+4,0);
+        vsync_flag=vsync_csr=0;++frame_vsync_deliveries;
+    }
     ++vblank_deliveries;
 #ifdef BT2_NATIVE_IOP
     // The IOP's own timer ticks for this field run before EE handlers observe the VBlank.
     if(native_iop) {
         try {native_iop->advanceSoundTimer(iop_epoch);}
-        catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;throw UnsupportedSyscall(0x14,interrupted->pc);}
+        catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;
+            native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());throw UnsupportedSyscall(0x14,interrupted->pc);}
+        native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_pc=native_iop->runtime.executing_pc;
     }
 #endif
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");

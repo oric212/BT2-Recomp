@@ -268,3 +268,9 @@ BT2 captures establish actual registration, blocking reverse-bind return/client 
 ## Queued sound ownership checkpoint
 
 The adapted runtime now retains a generated EE sound invocation across its real SleepThread and completes the queued original RPC at the earlier main bind wait. This is a bounded verified ownership path, not a general scheduler. Reference patterns guide the architecture; BT2 registrations, request identity and captured waits define admission. Helper priority transitions still require implementation. Distinguish EE RAM flag 0x34BC84 from GS BGCOLOR 0x120000E0; no CSR read was observed on that helper path.
+
+## SPU2 position and VSync flag evidence (2026-10-07)
+
+Consulted pinned PCSX2 [Mixer.cpp](https://github.com/PCSX2/pcsx2/blob/81526d4dc7cc70e4ae75abb35a789417456c6d43/pcsx2/SPU2/Mixer.cpp) alongside the existing register/KON references: eight halfwords per ADPCM block, 28 source samples, 4.12 pitch and end/repeat/loop-start flags. The authored model advances positions and ENDX on logical IOP timer intervals; it does not decode audio or emulate ADSR. Missing sound RAM or parameters stay checked. The consulted Mixer source SHA-256 is `94a43b48c65cd724661ffa29668428d00041bc7e55fd81934315a9dd82220791`.
+
+The pinned Play! [`SetVSyncFlag` / `CheckVBlankFlag` implementation](https://github.com/jpd002/Play-/blob/83700b2c31e593bc94e845b4b31b797be84dda59/Source/ee/PS2OS.cpp) and PS2SDK declaration establish one-shot flag/CSR pointer registration. Three local original captures around the first frame's wait confirm preserved V0 on registration and the subsequent stack publication. Native delivery shares the existing logical VBlank handler/worker path; physical timing and FIELD phase are excluded from comparison.

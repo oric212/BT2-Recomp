@@ -7,6 +7,12 @@ from unittest.mock import patch
 
 
 class CaptureTests(unittest.TestCase):
+    def test_frame_vsync_observer_preserves_other_callers(self):
+        blob=texture_stub('rpc-vsync-flags-after');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        self.assertEqual(w[:3],(0x8FB80010,0x3C190031,0x37390518))
+        early=4+(w[3]&0xFFFF)
+        self.assertEqual(w[early:],(0x3C1F0032,0x37FFF1A0,0x08000000|(0x338268>>2),0))
+
     def test_reverse_bind_observer_runs_original_api_and_can_resume(self):
         from capture_ee_reverse_bind import hook
         for terminal in (True,False):
