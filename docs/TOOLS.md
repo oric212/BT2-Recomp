@@ -704,3 +704,7 @@ New capture points: `rpc-display-init-after` (main returns from display setup at
 New capture point: `rpc-sound-bank-after` (main returns from its first sound-bank load at its loop head `0x100680`, first entry). `python tools/capture_ee/verify_sound_bank.py --native work/bt2-generation/entry-stop.json` compares the IOP sound block, both bank blocks at their captured heap placements, the SOUNDS request record and the loader slot table.
 
 New capture point: `rpc-dbzp-loaded` (main's first frame step after closing its first loaded file, `0x10036C`): `DBZP.BIN` in EE RAM and FILEIO read-buffer residue in IOP RAM.
+
+`python tools/capture_ee/verify_dbzp_load.py --native work/bt2-generation/entry-stop.json` checks the native FILEIO lifecycle (bind, six calls, five worker completions). It then compares the loaded `DBZP.BIN` (0x7D48F bytes at `0x3B3100`) with `rpc-dbzp-loaded`.
+
+`prepare_map.py`'s bounded switch proof accepts a second compiler layout: SLTIU bound / BEQ / LUI in the delay slot / SLL / ADDIU / ADDU / LW / JR through any register. Its registers are decoded and checked, and the LW displacement is part of the table address.

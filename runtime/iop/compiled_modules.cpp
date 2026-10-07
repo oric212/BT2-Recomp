@@ -359,6 +359,17 @@ std::vector<std::uint8_t> NativeIopService::callFileio(unsigned epoch,std::uint3
     const auto buffer=iop_fileio_boot_base+0x33A0;
     const auto saved=runtime.providers;
     try {
+        if(!fileio_requests) {
+            // FILEIO's module entry is not executed natively. Its kernel objects are created as the entry
+            // does (base+0x23C0..0x240C): the SIF-command lock semaphore (attr 1, count 1, max 1) at
+            // base+0x3300 and an event flag (attr 2, bit 1 set) at base+0x3304; both IDs are present at
+            // the same offsets in captured IOP RAM (rpc-sound-bank-after: retail 0x47730/0x47734).
+            if(command!=0xFF || runtime.read(iop_fileio_boot_base+0x3300,4) || runtime.read(iop_fileio_boot_base+0x3304,4))
+                throw std::runtime_error("FILEIO module objects outside initialization");
+            const auto sema=runtime.next_semaphore++;runtime.semaphores.emplace(sema,IopRuntime::Semaphore{1,0,1,1});
+            const auto event=runtime.next_event++;runtime.events.emplace(event,IopRuntime::Event{2,0,1});
+            runtime.write(iop_fileio_boot_base+0x3300,sema,4);runtime.write(iop_fileio_boot_base+0x3304,event,4);
+        }
         runtime.check(buffer,static_cast<unsigned>(input.size()));
         std::copy(input.begin(),input.end(),runtime.ram.begin()+buffer);
         // IOP -> EE transfers of results/data: copied at once into checked EE memory.
@@ -403,7 +414,7 @@ std::vector<std::uint8_t> NativeIopService::callFileio(unsigned epoch,std::uint3
                 if(parent && t.priority>=rt.threads.at(parent).priority)return 0u; // Runs when the sender blocks.
                 rt.current_thread=id;
                 try {rt.execute(rt,t.context);rt.current_thread=parent;t.ready=false;}
-                catch(const IopYield&) {rt.current_thread=parent;if(!t.waiting)throw std::runtime_error("IOP mailbox worker yielded without a wait");}
+                catch(const IopYield&) {rt.current_thread=parent;if(!t.waiting && !t.exited)throw std::runtime_error("IOP mailbox worker yielded without a wait");}
                 catch(...) {rt.current_thread=parent;throw;}
                 return 0u;
             }
@@ -412,12 +423,20 @@ std::vector<std::uint8_t> NativeIopService::callFileio(unsigned epoch,std::uint3
         runtime.providers[{"thmsgbx",8}]=[](IopRuntime& rt,IopContext& c) {
             const auto owner=rt.threads.find(rt.current_thread);
             if(owner==rt.threads.end() || rt.in_interrupt)throw std::runtime_error("IOP mailbox receive outside a thread");
-            auto& t=owner->second;const auto box=rt.mailboxes.find(c.get(4));
+            // ReceiveMbx(void** message, int mbx).
+            auto& t=owner->second;const auto out=c.get(4),id=c.get(5);const auto box=rt.mailboxes.find(id);
             if(box==rt.mailboxes.end())throw std::runtime_error("Unknown IOP mailbox");
-            rt.check(IopRuntime::physical(c.get(5)),4);
-            if(t.wait_satisfied && t.wait_mbx==c.get(4)) {t.wait_satisfied=false;t.wait_mbx=0;rt.write(c.get(5),t.mbx_message,4);return 0u;}
-            if(!box->second.empty()) {rt.write(c.get(5),box->second.front(),4);box->second.pop_front();return 0u;}
-            t.waiting=true;t.ready=false;t.wait_mbx=c.get(4);t.wait_order=++rt.next_wait_order;throw IopYield{};
+            rt.check(IopRuntime::physical(out),4);
+            if(t.wait_satisfied && t.wait_mbx==id) {t.wait_satisfied=false;t.wait_mbx=0;rt.write(out,t.mbx_message,4);return 0u;}
+            if(!box->second.empty()) {rt.write(out,box->second.front(),4);box->second.pop_front();return 0u;}
+            t.waiting=true;t.ready=false;t.wait_mbx=id;t.wait_order=++rt.next_wait_order;throw IopYield{};
+        };
+        // ExitThread from a FILEIO worker (after its close): the thread becomes dormant and its
+        // borrowed host frame unwinds to the sender that ran it.
+        runtime.providers[{"thbase",8}]=[](IopRuntime& rt,IopContext&) -> std::uint32_t {
+            const auto owner=rt.threads.find(rt.current_thread);
+            if(owner==rt.threads.end() || rt.in_interrupt || owner->second.waiting)throw std::runtime_error("IOP ExitThread outside a FILEIO worker");
+            owner->second.ready=false;owner->second.exited=true;throw IopYield{};
         };
         // FILEIO's internal allocations in an owned area (0x197000..0x19F000), never seen by the EE.
         runtime.providers[{"sysmem",4}]=[this](IopRuntime& rt,IopContext& c) {

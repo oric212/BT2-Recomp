@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the FILEIO open of `cdrom0:\BIN\DBZP.BIN` in main's first frame step: FILEIO file operations complete asynchronously through IOP worker threads and IOP→EE SIF commands (not modelled).
+**Current blocker:** main calls into the loaded `DBZP.BIN` overlay (`0x3B7FA8`); overlay code is not analysed or generated yet ([EE overlay plan](EE_OVERLAY_PLAN.md)).
 
-**Last measured, 2026-10-07:** **595 EE entries entered / 587 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **601 EE entries entered / 595 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

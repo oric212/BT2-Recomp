@@ -16,7 +16,7 @@
       {"name": "Memory cards", "status": "partial", "note": "Absent-card queries only"}
     ]},
     {"name": "Game", "items": [
-      {"name": "Archive payload loading", "status": "partial", "note": "First AFS table loaded"},
+      {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN via FILEIO"},
       {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
       {"name": "GS rendering", "status": "partial", "note": "Clears; display setup verified"},
       {"name": "Frame presentation", "status": "pending", "note": "No visible game frame"},

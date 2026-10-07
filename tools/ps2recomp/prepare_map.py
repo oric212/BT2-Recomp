@@ -69,24 +69,38 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     Safety rests on the SLTIU v0,v1,N bound and its guard branch; the instruction producing v1
     only has to be non-control. With BEQ, SLL is its delay slot. With BEQL, the delay slot runs
     only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
-    if address-start<28 or address+8>end or word(address)!=0x00600008 or word(address+4)!=0:return False
-    tail=[word(address+n) for n in (-16,-12,-8,-4)]
-    if tail[0]!=0x00031080 or (tail[1]&0xFFFF0000)!=0x3C030000 or tail[2]!=0x00621821 or (tail[3]&0xFFFF0000)!=0x8C630000:return False
     def control(ins):
         op=ins>>26
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or (op in (16,17,18) and (ins>>21)&31>=8)
-    if (word(address-20)&0xFFFF0000)==0x10400000:branch=address-20
-    elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x50400000 and not control(word(address-20)):branch=address-24
-    else:return False
-    index,bound=word(branch-8),word(branch-4)
-    if control(index) or (bound&0xFFFF0000)!=0x2C620000:return False
+    sign=lambda v:v-65536 if v&32768 else v
+    if address-start<28 or address+8>end or word(address+4)!=0:return False
+    if word(address)==0x00600008:
+        tail=[word(address+n) for n in (-16,-12,-8,-4)]
+        if tail[0]!=0x00031080 or (tail[1]&0xFFFF0000)!=0x3C030000 or tail[2]!=0x00621821 or (tail[3]&0xFFFF0000)!=0x8C630000:return False
+        if (word(address-20)&0xFFFF0000)==0x10400000:branch=address-20
+        elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x50400000 and not control(word(address-20)):branch=address-24
+        else:return False
+        index,bound=word(branch-8),word(branch-4)
+        if control(index) or (bound&0xFFFF0000)!=0x2C620000:return False
+        hi,disp=tail[1]&65535,sign(tail[3]&65535)
+    else:
+        # Second layout: SLTIU c,i,N / BEQ c,zero / LUI b (delay) / SLL s,i,2 / ADDIU b,b,lo /
+        # ADDU a,s,b / LW j,0(a) / JR j. Registers are decoded and must keep the index intact.
+        jr=word(address)
+        if address-start<32 or jr&0xFC1FFFFF!=8:return False
+        j=(jr>>21)&31;branch=address-24
+        bound,beq,lui,sll,addiu,addu,load=(word(address+n) for n in (-28,-24,-20,-16,-12,-8,-4))
+        c,i=(bound>>16)&31,(bound>>21)&31;b=(lui>>16)&31;sreg=(sll>>11)&31;a=(addu>>11)&31
+        if bound>>26!=11 or beq&0xFFFF0000!=0x10000000|(c<<21) or lui&0xFFE00000!=0x3C000000 or sll&0xFFE0003F!=0 or (sll>>16)&31!=i or (sll>>6)&31!=2:return False
+        if addiu>>26!=9 or (addiu>>21)&31!=b or (addiu>>16)&31!=b or addu&0xFC0007FF!=0x21 or {(addu>>21)&31,(addu>>16)&31}!={sreg,b}:return False
+        if load&0xFFFF0000!=0x8C000000|(a<<21)|(j<<16) or 0 in (c,i,b,sreg,a,j) or b in (i,sreg) or c==i:return False
+        hi,disp=lui&65535,sign(addiu&65535)+sign(load&65535) # LW displacement is part of the table address.
     count=bound&65535
     if not 1<=count<=256:return False
     immediate=word(branch)&65535;immediate=immediate-65536 if immediate&32768 else immediate
     default=branch+4+immediate*4
     if not any(a<=default<b for a,b in spans):return False
-    offset=tail[3]&65535;offset=offset-65536 if offset&32768 else offset
-    table=((tail[1]&65535)<<16)+offset
+    table=(hi<<16)+disp
     regions=[x for x in metadata['sections'] if x.get('occupies_file_bytes') and x['address']<=table and table+count*4<=x['address']+x['size']]
     if len(regions)!=1 or table%4:return False
     at=regions[0]['file_offset']+table-regions[0]['address']

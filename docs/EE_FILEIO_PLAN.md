@@ -36,3 +36,11 @@ No host file-system shortcut: reads come from the local ISO through the original
 ## Progress (2026-10-07, later)
 
 Prepared behind `fileio_workers_supported` (off; normal startup still stops at the open): FILEIO-scoped providers for IOP message boxes (CreateMbx/DeleteMbx/SendMbx/ReceiveMbx, with direct hand-over to a waiting worker), SIF commands to the EE (extra data copied, header queued and delivered after the RPC to handler `0x333378` with argument `0x3AC780` via `deliverEeCommand`), the IOMAN `cdrom0:` device (open/lseek/read/close from the local ISO) and model-local FILEIO allocations in an owned IOP area (`0x197000`–`0x19F000`; these addresses never reach the EE). Enabled, the open runs the dispatcher, allocates the request record, creates and starts the worker, and stops at the worker's first IOP semaphore wait (`thsemap`), which is the next step.
+
+## Completed (2026-10-07)
+
+Workers are enabled (`fileio_workers_supported`).
+- **Module-init objects.** FILEIO's SIF-command lock semaphore and event flag are created as its module entry does (base+`0x3300`/`0x3304`; both IDs are present in captured IOP RAM).
+- **Worker lifecycle.** The open runs the worker, which serves IOMAN `cdrom0:` from the ISO and sends its result through `0x80000011`. Seeks, the read (SIF DMA plus unaligned head and tail bytes carried in the command) and the close reach the worker through its message box, and it exits after the close.
+- **EE side.** Every completion is delivered to the C library's handler; the C library's per-call semaphores are admitted.
+- **Result.** `DBZP.BIN` loads byte-identically to `rpc-dbzp-loaded` (`verify_dbzp_load.py`). Execution continues in the [EE overlay plan](EE_OVERLAY_PLAN.md).

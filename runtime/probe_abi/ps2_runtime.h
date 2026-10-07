@@ -889,9 +889,10 @@ public:
             // The C library's lazily created stdio lock ("SceStdioFioSema", count 1) after admission.
             const bool stdio_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333770
                 && maximum==1 && initial==1 && option==0x383988 && read32(rdram,0x36AB24)==0xFFFFFFFF;
-            // Its per-open file semaphore ("SceStdioOpenSema", count 0) for each opened stream.
-            const bool stdio_open_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333F28
-                && maximum==1 && initial==0 && option==0x3839A0;
+            // Its per-call file semaphores (count 0), named by option: "SceStdioOpenSema" 0x3839A0,
+            // "...CloseSema" 0x3839B8, "...LseekSema" 0x3839D0, "...ReadSema" 0x3839E8.
+            const bool stdio_open_sema=main_priority_admissions && context->pc==0x32EC68 && stdioCallSema(option)
+                && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && maximum==1 && initial==0;
             if(ncmd_bind_sema)++ncmd_bind_semaphores;
             if (disc_bind_sema) ++disc_bind_semaphores;
             if (attributes != 0 && !admitted_rpc_sema && !stdio_sema && !stdio_open_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
@@ -950,8 +951,11 @@ public:
             const bool admitted_rpc_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
                 && (semaphores[id].option==0x3838E8 || semaphores[id].option==0x3838D8)
                 && (context->r[31].low==0x332B3C || context->r[31].low==0x33287C);
+            // The C library's completed open/close/lseek/read deletes its per-call semaphore (newest).
+            const bool stdio_open_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
+                && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && stdioCallSema(semaphores[id].option);
             if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                    || (!admitted_rpc_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
+                    || (!admitted_rpc_cleanup && !stdio_open_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
                 throw UnsupportedSyscall(selector, context->pc);
             semaphores.pop_back();
             ++semaphore_deletions;
@@ -1466,7 +1470,7 @@ public:
     bool sounds_hardware_timers_supported=true; // IOP_HARDWARE_TIMER_PLAN.md
     bool sound_voice_transfers_supported=true; // Owned SPU2 voice transfers (IOP_SPU2_TRANSFER_PLAN.md).
     unsigned fileio_binds=0,fileio_calls=0,fileio_completions=0;
-    bool fileio_workers_supported=false;
+    bool fileio_workers_supported=true;
     unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;
     LogicalTimer2 timer2;
@@ -1897,6 +1901,10 @@ public:
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
 
+    // The C library per-call stdio semaphore names (options) reached by main.
+    static bool stdioCallSema(std::uint32_t option) {
+        return option==0x3839A0 || option==0x3839B8 || option==0x3839D0 || option==0x3839E8;
+    }
 private:
     void receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
         if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2

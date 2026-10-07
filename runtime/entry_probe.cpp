@@ -507,7 +507,7 @@ int main(int argc, char** argv) {
         if (argc >= 18) {
             // The C library's stdio lock (created lazily after admission) is outside the startup service accounting.
             const auto stdio_locks=static_cast<std::size_t>(std::count_if(runtime.semaphores.begin(),runtime.semaphores.end(),
-                [](const auto& sema){return sema.option==0x383988 || sema.option==0x3839A0;}));
+                [](const auto& sema){return sema.option==0x383988 || PS2Runtime::stdioCallSema(sema.option);}));
             const auto semas=runtime.semaphores.size()-stdio_locks;
             const bool pending_mc_bind=runtime.dbc_rpc_calls==4 && semas==11 && stop_selector==0x77 && context.pc==0x32F028
                 && runtime.semaphores[10].maximum==1 && runtime.semaphores[10].count==0 && (runtime.semaphores[10].option==0x3838D8 || (runtime.mc_rpc_binds==1 && runtime.semaphores[10].option==0x3838E8));

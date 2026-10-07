@@ -99,6 +99,20 @@ class BoundedSwitchTests(unittest.TestCase):
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
+    def test_delay_slot_lui_switch_through_other_register(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # ADDIU a0 / SLTIU v1,a0,2 / BEQ v1 / LUI v0 (delay) / SLL v1,a0,2 / ADDIU v0 / ADDU / LW a0 / JR a0 / delay;
+        # unconditional BEQ + delay / NOP gap / two case paths; table after the body.
+        words=[0x2444FFFE,0x2C830002,0x10600007,0x3C020000,0x00041880,0x24421040,0x00621821,0x8C640000,0x00800008,0,
+               0x10000003,0,0,0x03E00008,0,0,0x1034,0x1038]
+        candidate={'start':0x1000,'end_exclusive':0x1040,'body_size':60,'contiguous_aligned':False,'body_ranges':['1000-102f','1034-103f']}
+        pack=lambda w:struct.pack('<18I',*w)
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(words)))
+        for index,value in [(1,0x2C830000),(1,0x2C830003),(2,0x14600007),(3,0x3C040000),(4,0x000418C0),(4,0x00051880),(5,0x24431040),
+                            (7,0x8C640004),(7,0x8C650000),(16,0x1030),(17,0x1040)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
+
     def test_padding_after_return_before_tail_path(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x40,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
         # BEQ to the tail path / return path ending JR RA + delay / NOP gap / tail J + delay.

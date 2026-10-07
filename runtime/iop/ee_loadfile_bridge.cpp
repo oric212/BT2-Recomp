@@ -163,9 +163,8 @@ void PS2Runtime::receiveFileioCall(std::uint8_t* rdram,R5900Context* context) {
     if(read32(rdram,0x3AC740)!=0x203A97C0 || read32(rdram,0x3AC754)!=0x477D0 || read32(rdram,0x3AC764)!=0x47788)throw UnsupportedSyscall(0x77,context->pc);
     if(send_size)checkMemory(rdram,source,send_size);
     if(receive_size)checkMemory(rdram,receive,receive_size);
-    // File operations (open/read/...) run on FILEIO worker threads that report through IOP->EE SIF
-    // commands. The worker path is modelled up to its first IOP semaphore wait, which is not yet
-    // owned (EE_FILEIO_PLAN.md): only the synchronous initialization request (0xFF) enters the IOP.
+    // File operations (open/read/...) run on FILEIO's per-file worker thread, which reports through
+    // IOP->EE SIF commands delivered below (EE_FILEIO_PLAN.md).
     if(command!=0xFF && !fileio_workers_supported)throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;auto& rt=native_iop->runtime;
     try {response=native_iop->callFileio(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+source,send_size),receive_size,memory_,local_disc_path);}
