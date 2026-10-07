@@ -11,6 +11,33 @@ void check(bool v,const std::source_location where=std::source_location::current
 int main() {
     try {
         {
+            // Owned SPU2 voice transfer: IOP RAM -> sound RAM through DMA7 (core 1), then LIBSD's IRQ 40.
+            auto rejects=[](auto action){bool rejected=false;try{action();}catch(const std::runtime_error&){rejected=true;}check(rejected);};
+            IopRuntime s;std::vector<std::uint8_t> block(0x100);for(unsigned n=0;n<block.size();++n)block[n]=static_cast<std::uint8_t>(n);
+            s.map(0x10000,block);s.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
+            s.sound_bus[0x1F801414]=0x200B31E1;s.spu2_configuration[0x1F90059A]=0xC000;
+            s.threads.emplace(5,IopRuntime::Thread{});s.current_thread=5;s.cpu_interrupts_enabled=true;
+            s.interrupts[40]={0,0x927E8,0x95328,true,0x1234};s.enabled_interrupts.insert(40);
+            unsigned handled=0;
+            s.execute=[&](IopRuntime& rt,IopContext& c){
+                check(rt.in_interrupt && c.pc==0x927E8 && c.get(4)==0x95328 && c.get(28)==0x1234 && c.get(29)==0x1FFE00);
+                rt.write(0xBF90059A,rt.spu2_configuration.at(0x1F90059A)&~0x30u,2);++handled;c.pc=IopRuntime::sentinel;};
+            IopContext live;live.set(29,0x1FFF08);s.live_context=&live;
+            rejects([&]{s.write(0xBF90059A,0xC020,2);}); // Outside the voice scope.
+            s.spu2_voice.enabled=true;
+            rejects([&]{s.write(0xBF801414,0x200B31E2,4);}); // Only the DMA timing nibble may change.
+            s.write(0xBF801414,0x210B31E1,4);rejects([&]{s.write(0xBF90059A,0xC010,2);});
+            s.write(0xBF9005A8,0,2);s.write(0xBF9005AA,0x5000,2);s.write(0xBF90059A,0xC020,2);
+            s.write(0xBF801500,0x10000,4);s.write(0xBF801504,16,2);s.write(0xBF801506,4,2);
+            check(s.read(0xBF801508,4)==0 && s.read(0xBF9005A8,2)==0 && s.read(0xBF900744,2)==0x80);
+            rejects([&]{s.write(0xBF801508,0x01000200,4);}); // SPU2 -> IOP reads are unsupported.
+            s.write(0xBF801508,0x01000201,4);
+            check(handled==1 && s.spu2_voice.transfers==1 && s.spu2_voice.irqs==1 && s.spu2_voice.bytes==0x100 && s.read(0xBF801508,4)==0x201);
+            check(s.spu2_sound_ram.size()==0x80 && s.spu2_sound_ram.at(0x5000)==0x0100 && s.spu2_sound_ram.at(0x507F)==0xFFFE);
+            check((s.spu2_configuration.at(0x1F90059A)&0x30)==0);
+            s.write(0xBF801506,0x100,2);rejects([&]{s.write(0xBF90059A,0xC020,2);s.write(0xBF801508,0x01000201,4);}); // Source outside owned IOP RAM.
+        }
+        {
             auto rejects=[](auto action){bool rejected=false;try{action();}catch(const std::runtime_error&){rejected=true;}check(rejected);};
             IopRuntime d;d.executing_pc=0x1A3B1C;
             rejects([&]{d.read(0xBF40200F,1);});

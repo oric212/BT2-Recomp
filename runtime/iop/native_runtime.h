@@ -60,6 +60,12 @@ public:
     std::array<std::uint32_t,2> spu2_pending_key_off{},spu2_pending_key_on{};
     unsigned spu2_reset_status_reads=0,spu2_fifo_halfwords=0,spu2_io_status_reads=0;
     std::map<std::uint32_t,std::uint16_t> spu2_sound_ram;
+    // Owned SPU2 voice transfers (IOP -> sound RAM through DMA4/DMA7), enabled only while a later
+    // sound-driver command runs. Transfers complete in logical time; LIBSD's IRQ 36/40 handler runs
+    // at once when CPU interrupts are enabled. No playback, read-back transfers or timing.
+    unsigned sound_worker_starts=0;
+    struct Spu2VoiceDma {bool enabled=false;std::array<std::uint32_t,2> madr{},bcr{},chcr{};unsigned transfers=0,irqs=0;std::uint64_t bytes=0;} spu2_voice;
+    static int spu2DmaCore(std::uint32_t p,std::uint32_t offset) {return p==0x1F8010C0+offset?0:p==0x1F801500+offset?1:-1;} // DMA4 (core 0), DMA7 (core 1).
     struct Spu2Readback {std::uint16_t value;std::uint64_t instruction;};
     std::map<std::uint32_t,Spu2Readback> spu2_command_readbacks;
     bool spu2_io_transfer_completed=false;
@@ -82,7 +88,7 @@ public:
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;std::uint32_t gp=0;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;unsigned wait_semaphore=0;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;unsigned wait_semaphore=0;bool wait_sleep=false;unsigned wakeups=0;};
     std::map<unsigned,Thread> threads;
     std::uint64_t next_wait_order=0;
     std::uint64_t logical_time_us=0,timed_deadline_us=0;
@@ -163,6 +169,14 @@ public:
                 throw std::runtime_error("SPU DMA idle query outside observed CRI startup");
             ++spu2_dma_idle_reads;return 0; // Captured initial CHCR; no DMA has been accepted by this owned device.
         }
+        if(spu2_voice.enabled) {
+            if(size==4 && spu2DmaCore(p,8)>=0)return spu2_voice.chcr[spu2DmaCore(p,8)];
+            if(size==4 && spu2DmaCore(p,0)>=0)return spu2_voice.madr[spu2DmaCore(p,0)];
+            if(size==2 && (p==0x1F900344 || p==0x1F900744))return 0x80; // No transfer in flight: data ready.
+            if(size==2 && (p==0x1F9001A8 || p==0x1F9001AA || p==0x1F9005A8 || p==0x1F9005AA) && spu2_configuration.contains(p))
+                return spu2_configuration.at(p); // Transfer start address readback.
+            if(size==4 && (p==0x1F801014 || p==0x1F801414) && sound_bus.contains(p))return sound_bus.at(p);
+        }
         if(size==1 && p==0x1F402005 && disc_type_known && executing_pc==0x1A3A38 && disc_type_reads==2 && !disc_ready_status_reads){++disc_ready_status_reads;return 0x4C;}
         if(size==1 && p==0x1F40200F && disc_type_known && ((executing_pc==0x1A3B1C && disc_type_reads==0) || (executing_pc==0x1A3A34 && disc_type_reads==1))){++disc_type_reads;return 0x14;}
         if(size==4 && abi_read_only_words.contains(p))return abi_read_only_words.at(p);
@@ -211,6 +225,7 @@ public:
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
         const auto p=physical(address);
+        if(spu2_voice.enabled && writeSpu2Voice(p,value,size))return;
         if(size==2 && p==0x1F9001B0 && value==1 && executing_pc==0x92DB8) {
             if(!ownedCriStartup() || !spu2_io_transfer_completed || spu2_dma_idle_reads!=1 || spu2_auto_dma.configured
                 || cpu_interrupts_enabled || in_interrupt || spu2_configuration.at(p)!=0
@@ -368,6 +383,48 @@ public:
         if((size==2 && p%2) || (size==4 && p%4))throw std::runtime_error("Unaligned IOP store");
         std::memcpy(ram.data()+p,&value,size);
     }
+    bool writeSpu2Voice(std::uint32_t p,std::uint32_t value,unsigned size) {
+        if(size==4 && (p==0x1F801014 || p==0x1F801414)) {
+            // DMA timing nibble only (bits 24..27); the rest of the SSBUS configuration is retained.
+            if(!sound_bus.contains(p) || (value&~0x0F000000u)!=(sound_bus.at(p)&~0x0F000000u))throw std::runtime_error("SPU2 bus configuration change unsupported");
+            sound_bus[p]=value;return true;
+        }
+        if(size==2 && (p==0x1F90019A || p==0x1F90059A)) {
+            if(!spu2_configuration.contains(p) || (value&~0x30u)!=(spu2_configuration.at(p)&~0x30u) || (value&0x30)==0x10)
+                throw std::runtime_error("SPU2 attribute change outside transfer mode unsupported");
+            spu2_configuration[p]=value;return true;
+        }
+        if(size==4 && spu2DmaCore(p,0)>=0) {spu2_voice.madr[spu2DmaCore(p,0)]=value;return true;}
+        if(size==2 && spu2DmaCore(p,4)>=0) {auto& b=spu2_voice.bcr[spu2DmaCore(p,4)];b=(b&0xFFFF0000u)|value;return true;}
+        if(size==2 && spu2DmaCore(p,6)>=0) {auto& b=spu2_voice.bcr[spu2DmaCore(p,6)];b=(b&0xFFFFu)|(value<<16);return true;}
+        if(size==4 && spu2DmaCore(p,8)>=0) {
+            const unsigned core=spu2DmaCore(p,8);const auto attr_address=0x1F90019Au+core*0x400;
+            const auto words=spu2_voice.bcr[core]&0xFFFF,blocks=spu2_voice.bcr[core]>>16,madr=spu2_voice.madr[core]&0xFFFFFF;
+            if(value!=0x01000201 || words!=16 || !blocks || (spu2_voice.chcr[core]&0x01000000)
+                || !spu2_configuration.contains(attr_address) || (spu2_configuration.at(attr_address)&0x30)!=0x20)
+                throw std::runtime_error("Unsupported SPU2 DMA transfer (only IOP to SPU2 writes)");
+            const auto bytes=blocks*words*4;check(madr,bytes);
+            const auto high=spu2_configuration.find(0x1F9001A8u+core*0x400),low=spu2_configuration.find(0x1F9001AAu+core*0x400);
+            if(high==spu2_configuration.end() || low==spu2_configuration.end())throw std::runtime_error("SPU2 transfer address unset");
+            const auto tsa=((high->second<<16)|low->second)&0xFFFFF;
+            for(unsigned n=0;n<bytes/2;++n) {std::uint16_t half;std::memcpy(&half,ram.data()+madr+n*2,2);spu2_sound_ram[(tsa+n)&0xFFFFF]=half;}
+            spu2_voice.chcr[core]=value&~0x01000000u;++spu2_voice.transfers;spu2_voice.bytes+=bytes;
+            // Completion: run LIBSD's registered DMA interrupt handler now (logical time, no DMA duration).
+            const auto irq=interrupts.find(core?40:36);
+            if(irq==interrupts.end() || !irq->second.enabled || !enabled_interrupts.contains(core?40:36) || in_interrupt
+                || !cpu_interrupts_enabled || !current_thread || !execute || !live_context)throw std::runtime_error("SPU2 DMA completion without an eligible interrupt");
+            // The handler runs below the live stack pointer; the issuing code's frames stay intact.
+            IopContext callback=*live_context;callback.pc=irq->second.handler;callback.set(29,(live_context->get(29)-256)&~15u);
+            callback.branch_pending=false;callback.delay_instruction=false;callback.load_register=0;
+            callback.set(4,irq->second.argument);callback.set(28,irq->second.gp);callback.set(31,sentinel);
+            in_interrupt=true;cpu_interrupts_enabled=false;
+            try {execute(*this,callback);in_interrupt=false;cpu_interrupts_enabled=true;}
+            catch(...) {in_interrupt=false;cpu_interrupts_enabled=true;throw;}
+            if(callback.pc!=sentinel || (spu2_configuration.at(attr_address)&0x30))throw std::runtime_error("SPU2 DMA interrupt did not complete the transfer");
+            ++spu2_voice.irqs;return true;
+        }
+        return false;
+    }
     void waitCardAlarm(IopContext& c,unsigned semaphore) {
         if(!card_alarm.callback || card_alarm.deadline<=logical_time_us || !cpu_interrupts_enabled || in_interrupt
             || !execute || !current_thread || !semaphores.contains(semaphore) || semaphores.at(semaphore).count)
@@ -415,7 +472,8 @@ public:
         } catch(...) {current_thread=owner;throw;} // Keep the pending snapshot/deadline for diagnosis.
     }
     // Lifetime runaway guard; repeated owned disc requests legitimately accumulate steps.
-    void tick(IopContext& c) {executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
+    IopContext* live_context=nullptr; // The context currently executing instructions.
+    void tick(IopContext& c) {live_context=&c;executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {
         const auto key=std::make_pair(std::string(library),ordinal);
         imports.push_back(key.first+":"+std::to_string(ordinal));

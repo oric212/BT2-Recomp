@@ -21,7 +21,10 @@ def verify(root,output=None,native=None):
     if native:
         r=json.loads(native.read_text(encoding='utf-8'))
         require(r['sound_thread_starts']==1 and ((r['ee_sound_context']==[3,1,0x315380,0x38BDF0,0x3A6CA0,0x100250,0,0x10001] and not r.get('queued_sound_submissions',0)) or queued_sound_bind_completed(r)),'Native ready/owned parked EE context differs')
-        require(r['sounds_rpc_binds']==1 and r['sounds_client_words'][:5]==[0,30,7,0,0] and r['sounds_client_words'][5] and r['sounds_client_words'][9],'Native SOUNDS owned bind differs')
+        # After main's sound-bank load the SOUNDS client carries later calls (live ID, call semaphore).
+        later=r.get('display_reset_phase',0)==13 and r.get('sound_rpc_calls',1)>1
+        require(r['sounds_rpc_binds']==1 and (r['sounds_client_words'][:5]==[0,30,7,0,0] or (later and r['sounds_client_words'][1]>30))
+            and r['sounds_client_words'][5] and r['sounds_client_words'][9],'Native SOUNDS owned bind differs')
     completed,retail_iop=capture(root,'sound-service-call-after',baseline)
     require(words(completed,MARKER+8,4)==(0,0,0x1FFED10,0),'SOUNDS first caller return differs')
     require(words(completed,0x635180,16)==(0,)*16 and words(completed,0x3A97E0,4)==(16,256,0x635180,64),'SOUNDS first command/result differs')

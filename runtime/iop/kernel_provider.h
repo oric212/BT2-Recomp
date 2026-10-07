@@ -61,6 +61,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         if(c.get(4))memory.write(c.get(4),previous,4);
         memory.cpu_interrupts_enabled=false;return previous?0u:static_cast<std::uint32_t>(-102);
     };
+    rt.providers[{"intrman",23}]=[](IopRuntime& memory,IopContext&) {return memory.in_interrupt?1u:0u;}; // QueryIntrContext
     rt.providers[{"intrman",18}]=[](IopRuntime& memory,IopContext& c) {
         if(c.get(4)>1)throw std::runtime_error("Unsupported IOP interrupt state");
         memory.cpu_interrupts_enabled=c.get(4)!=0;return 0u;
@@ -289,6 +290,11 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         ++memory.card_alarm_sets;return 0u;
     };
     rt.providers[{"thbase",39}]=[](IopRuntime& memory,IopContext& c) {
+        if(memory.spu2_voice.enabled && !memory.in_interrupt) {
+            // USec2SysClock in a later sound command: 36.864 MHz IOP clock (100 us -> 3686, as captured).
+            const auto usec=static_cast<std::uint64_t>(c.get(4)),clock=usec*36864/1000;memory.check(IopRuntime::physical(c.get(5)),8);
+            memory.write(c.get(5),static_cast<std::uint32_t>(clock),4);memory.write(c.get(5)+4,static_cast<std::uint32_t>(clock>>32),4);return c.get(2);
+        }
         if(c.pc!=0x31B50 || c.get(4)!=100 || c.get(5)!=0x33F18 || memory.timed_wakes<1 || memory.timed_wakes>5 || memory.sio2_card_fifo_packets!=memory.timed_wakes)
             throw std::runtime_error("IOP clock conversion outside card timeout setup");
         memory.check(0x33F18,8);memory.write(0x33F18,3686,4);memory.write(0x33F1C,0,4);
@@ -320,7 +326,10 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             throw std::runtime_error("Unsupported IOP thread start");
         const auto parent=memory.current_thread;
         const bool preempt=parent && found->second.priority<memory.threads.at(parent).priority;
-        if(preempt) {
+        // Later sound commands (owned SPU2 voice scope) may start a higher-priority worker: it runs at
+        // once until it parks on a real wait or returns, then the issuing handler continues.
+        const bool sound_scope=preempt && memory.spu2_voice.enabled && memory.cpu_interrupts_enabled && !memory.in_interrupt;
+        if(preempt && !sound_scope) {
             const auto server=memory.rpc_servers.find(0x90000200);
             if(server==memory.rpc_servers.end() || !memory.rpc_queues.contains(server->second.queue)
                 || memory.rpc_queues.at(server->second.queue).thread!=parent || memory.threads.at(parent).priority!=48
@@ -331,6 +340,16 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         }
         auto& t=found->second;t.context={};t.ready=true;t.context.pc=t.entry;t.context.set(4,c.get(5));
         t.context.set(28,t.gp);t.context.set(29,t.stack+t.stacksize-0x20);t.context.set(30,t.context.get(29));t.context.set(31,IopRuntime::sentinel);
+        if(sound_scope) {
+            memory.current_thread=found->first;++memory.sound_worker_starts;
+            try {memory.execute(memory,t.context);memory.current_thread=parent;t.ready=false;return 0u;} // Worker returned (exited).
+            catch(const IopYield&) {
+                memory.current_thread=parent;
+                if(!t.waiting || t.ready)throw std::runtime_error("Sound worker yielded without an owned wait");
+                return 0u;
+            }
+            catch(...) {memory.current_thread=parent;throw;}
+        }
         if(preempt) {
             memory.current_thread=found->first;
             try {memory.execute(memory,t.context);memory.current_thread=parent;throw std::runtime_error("Unexpected CRI child completion");}
@@ -414,4 +433,41 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         return 0u;
     };
 
+}
+
+// SleepThread / WakeupThread / iWakeupThread, installed only while a later sound command runs
+// (other owned scopes install their own scoped sleep provider). A wake of a higher-priority
+// sleeper runs it at once until it parks again.
+inline void install_iop_sound_scope_sleep(IopRuntime& rt) {
+    rt.providers[{"thbase",24}]=[](IopRuntime& memory,IopContext&) {
+        const auto owner=memory.threads.find(memory.current_thread);
+        if(owner==memory.threads.end() || memory.in_interrupt)throw std::runtime_error("IOP sleep outside an owned thread");
+        auto& t=owner->second;
+        if(t.wait_satisfied && t.wait_sleep) {t.wait_satisfied=false;t.wait_sleep=false;return 0u;}
+        if(t.wakeups) {--t.wakeups;return 0u;}
+        t.waiting=true;t.ready=false;t.wait_sleep=true;t.wait_order=++memory.next_wait_order;
+        throw IopYield{};
+    };
+    auto wake=[](IopRuntime& memory,IopContext& c,bool interrupt) {
+        const auto found=memory.threads.find(c.get(4));
+        if(found==memory.threads.end() || c.get(4)==memory.current_thread || interrupt!=memory.in_interrupt)
+            throw std::runtime_error("Unsupported IOP thread wakeup");
+        auto& t=found->second;
+        if(!(t.waiting && t.wait_sleep)) {++t.wakeups;return 0u;}
+        t.waiting=false;t.ready=true;t.wait_satisfied=true;
+        const auto parent=memory.current_thread;
+        if(interrupt || !parent || t.priority>=memory.threads.at(parent).priority)return 0u; // Runs when the caller blocks.
+        if(!memory.spu2_voice.enabled || !memory.cpu_interrupts_enabled || !memory.execute)
+            throw std::runtime_error("Higher-priority IOP wakeup outside sound scope");
+        memory.current_thread=found->first;
+        try {memory.execute(memory,t.context);memory.current_thread=parent;t.ready=false;return 0u;}
+        catch(const IopYield&) {
+            memory.current_thread=parent;
+            if(!t.waiting || t.ready)throw std::runtime_error("Woken IOP worker yielded without an owned wait");
+            return 0u;
+        }
+        catch(...) {memory.current_thread=parent;throw;}
+    };
+    rt.providers[{"thbase",25}]=[wake](IopRuntime& memory,IopContext& c) {return wake(memory,c,false);};
+    rt.providers[{"thbase",26}]=[wake](IopRuntime& memory,IopContext& c) {return wake(memory,c,true);};
 }

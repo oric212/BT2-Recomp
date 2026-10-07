@@ -220,20 +220,25 @@ std::uint32_t NativeIopService::allocateBootHeap(unsigned epoch,unsigned size) {
     const bool sixth=boot_heap_allocations==5 && boot_heap_frees==1 && size==0x4040 && cri_create_calls==2;
     // Main reloads the embedded buffer after the first archive load; captured placement 0x196100.
     const bool seventh=boot_heap_allocations==6 && boot_heap_frees==1 && buffer_loads==1 && size==0x360 && cri_control_calls>=38;
-    const unsigned pointer=seventh?0x196100u:sixth?0x192000u:fifth?0x191700u:fourth?0x150600u:third?0x14FD00u:0xCE500u;
-    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && !fifth && !sixth && !seventh && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
+    // Main's first sound-bank load: two blocks, first-fit into the freed reload block (captured
+    // rpc-sound-bank-after: 0x196100 and 0x196400).
+    const bool bank_first=boot_heap_allocations==7 && boot_heap_frees==2 && buffer_loads==2 && size==0x2C0;
+    const bool bank_second=boot_heap_allocations==8 && boot_heap_frees==2 && buffer_loads==2 && size==0x180;
+    const bool later=seventh || bank_first || bank_second;
+    const unsigned pointer=bank_second?0x196400u:bank_first?0x196100u:seventh?0x196100u:sixth?0x192000u:fifth?0x191700u:fourth?0x150600u:third?0x14FD00u:0xCE500u;
+    if(epoch!=epoch_ || failed_ || (!second && !third && !fourth && !fifth && !sixth && !later && (boot_heap_allocations || size!=0x360)) || residents.size()!=13)
         throw std::runtime_error("Unsupported boot IOP heap allocation");
     // Reject conflicting ownership before touching service input or executing code.
     for(auto [lo,hi]:runtime.ranges)if(lo<pointer+((size+255)&~255u) && pointer<hi)
         throw std::runtime_error("Captured IOP heap overlaps native ownership");
     try {
         // Only the verified allocation handler is entered; FILEIO boot entry/workers are not replayed.
-        if(!second && !third && !fourth && !fifth && !sixth && !seventh) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
+        if(!second && !third && !fourth && !fifth && !sixth && !later) {runtime.map(iop_fileio_boot_base,iop_fileio_boot_image);iop_fileio_boot_export_bounds(runtime);
         definitions_.push_back({"boot:FILEIO.heap",iop_fileio_boot_base,iop_fileio_boot_base+0x27D4,iop_fileio_boot_gp,
             iop_fileio_boot_image,iop_fileio_boot_export_bounds,bt2_iop_fileio_boot,[](const IopRuntime&){throw std::runtime_error("Boot FILEIO residency not implemented");}}); }
         runtime.write(iop_fileio_boot_base+0x4050,size,4); // Owned translated heap service input buffer.
-        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,fifth,sixth,seventh,pointer](IopRuntime& rt,IopContext& c) {
-            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(seventh?6u:sixth?5u:fifth?4u:fourth?3u:third?2u:second?1u:0u))
+        runtime.providers[{"sysmem",4}]=[this,size,second,third,fourth,fifth,sixth,seventh,bank_first,bank_second,pointer](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=0 || c.get(5)!=size || c.get(6)!=0 || boot_heap_allocations!=(bank_second?8u:bank_first?7u:seventh?6u:sixth?5u:fifth?4u:fourth?3u:third?2u:second?1u:0u))
                 throw std::runtime_error("Unsupported native AllocSysMemory request");
             // Captured allocations reuse the released block or append the CRI block; 256-byte rounding.
             rt.map(pointer,std::vector<std::uint8_t>((size+255)&~255u));
@@ -312,11 +317,37 @@ std::vector<std::uint8_t> NativeIopService::callSoundRpc(unsigned epoch,std::uin
     auto response=executeRegisteredRpc(service,command,input,result_size,client,result);++requests;return response;
 }
 
+namespace {
+// Later sound commands: owned SPU2 voice transfers and scoped sleep/wakeup providers, restored after.
+struct SoundScope {
+    IopRuntime& rt;std::map<std::pair<std::string,unsigned>,IopRuntime::Provider> saved;
+    explicit SoundScope(IopRuntime& runtime):rt(runtime) {
+        for(unsigned ordinal:{24u,25u,26u}) {const auto found=rt.providers.find({"thbase",ordinal});if(found!=rt.providers.end())saved.insert(*found);}
+        install_iop_sound_scope_sleep(rt);rt.spu2_voice.enabled=true;
+    }
+    ~SoundScope() {
+        rt.spu2_voice.enabled=false;
+        for(unsigned ordinal:{24u,25u,26u})rt.providers.erase({"thbase",ordinal});
+        for(const auto& [key,provider]:saved)rt.providers[key]=provider;
+    }
+};
+}
+
 std::vector<std::uint8_t> NativeIopService::callSoundCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
     if(epoch!=epoch_ || failed_ || sound_rpc_requests!=1 || input.size()!=64 || residents.size()!=13)
         throw std::runtime_error("Unsupported later sound command");
+    SoundScope scope(runtime);
     try {auto response=executeRegisteredRpc(0x80000701,command,input,16,0x3A5C80,0x3A5C40);++sound_command_requests;return response;}
-    catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc));}
+    catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc)+" / address="+std::to_string(runtime.blocked_address));}
+}
+
+std::vector<std::uint8_t> NativeIopService::callSoundsCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
+    // Later SOUNDS service commands from main (256-byte request, 64-byte reply): original handler.
+    if(epoch!=epoch_ || failed_ || sounds_rpc_requests!=1 || input.size()!=256 || residents.size()!=13)
+        throw std::runtime_error("Unsupported later SOUNDS command");
+    SoundScope scope(runtime);
+    try {auto response=executeRegisteredRpc(0x02000004,command,input,64,0x6351C0,0x635180);++sound_command_requests;return response;}
+    catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc)+" / address="+std::to_string(runtime.blocked_address));}
 }
 
 std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory) {

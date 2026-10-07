@@ -95,13 +95,16 @@ def verify(root,native=None):
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
         require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and (r['console_messages']==0 or completed_directory_diagnostics(r)),'Native checked EE thread-start state differs')
-        require(r['sound_rpc_binds']==1 and r['sound_rpc_calls']==1 and (not r['native_iop_error'] or later_iop_boundary(r)),'Native sound lifecycle differs')
+        later=r.get('display_reset_phase',0)==13 # Main's later sound-driver commands follow the first call.
+        require(r['sound_rpc_binds']==1 and (r['sound_rpc_calls']==1 or (later and r['sound_rpc_calls']>1)) and (not r['native_iop_error'] or later_iop_boundary(r)),'Native sound lifecycle differs')
         require(r['sound_client_words'][5]==owned+0x1C30 and r['sound_client_words'][9]==owned+0x15E0,'Native sound server mapping differs')
         t=r['sound_thread_words'];require(len(t)==9 and (t[1]-owned,t[2]-owned,t[3],t[4],t[5])==expected and (t[7:]==[0,1] or (completed_card_query(r) and t[7:]==[1,0])),'Native sound-created started helper thread differs')
-        require(words(ram,owned+0x14CC,1)==(t[0],) and words(ram,owned+0x14E0,4)==words(after,0x3A5C40,4),'Native handler thread/result differs')
+        # Later sound-driver commands overwrite the shared reply buffer; the first result is compared while it is the last call.
+        require(words(ram,owned+0x14CC,1)==(t[0],) and (r['sound_rpc_calls']>1 or words(ram,owned+0x14E0,4)==words(after,0x3A5C40,4)),'Native handler thread/result differs')
         image=relocate(module,report,owned)
         require(all(ram[owned+a:owned+b]==image[a:b] for a,b in report['code_ranges']),'Native SDRDRV code differs')
-        for offset in (12,28,32,36,40,44,48,52):require(words(ram,owned+0x15E0+offset,1)==words(iop,refbase+0x15E0+offset,1),'Native request metadata differs')
+        if r['sound_rpc_calls']==1: # Later commands rewrite the server's request record.
+            for offset in (12,28,32,36,40,44,48,52):require(words(ram,owned+0x15E0+offset,1)==words(iop,refbase+0x15E0+offset,1),'Native request metadata differs')
         require(words(ram,owned+0x15D0,1)==(owned+0x15E0,) and words(ram,owned+0x15C4,1)==(0,) and words(ram,owned+0x15CC,1)==(0,),'Native queue completion differs')
     print('SDRDRV bind, first command/result and started helper thread verified'+(' against native execution.' if native else '.'))
     print('Shared live RPC reply, undefined allocator tail, ready/running scheduling equivalence, queue timing and audio playback are not equated.')

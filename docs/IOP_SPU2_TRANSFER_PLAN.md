@@ -22,3 +22,7 @@ The owned SPU2 device models only the observed CRI AutoDMA startup and FIFO chec
 ## Limits and stop conditions
 
 No audio output, voice playback or SPU2 timing is claimed. Do not fabricate completion for read transfers (SPU2 → IOP) or AutoDMA outside its owner. Stop if a reached handler requires a suspended RPC frame, or if transfer sizes/addresses cannot be validated against owned memory.
+
+## Outcome (2026-10-07)
+
+Steps 1–4 are implemented. While a later sound command runs, the owned SPU2 device accepts LIBSD's write transfers on DMA4/DMA7 (core 1 for the reached commands; DMA7 at `0x1F801500`), copies the IOP bytes into `spu2_sound_ram` at the transfer address and runs LIBSD's IRQ 36/40 handler at once on a stack below the live stack pointer. `QueryIntrContext` is provided. Two sound-driver commands (`0x80D0` and its follow-up) complete through the original handlers; a unit test covers the register sequence, bounds and handler ordering. Main's later SOUNDS command `0x20` starts the SOUNDS worker, which allocates an IOP hardware timer: see [IOP_HARDWARE_TIMER_PLAN.md](IOP_HARDWARE_TIMER_PLAN.md).
