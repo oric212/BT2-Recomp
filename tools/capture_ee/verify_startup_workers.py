@@ -38,7 +38,9 @@ def native_scope(r):
     require(r['main_priority_admissions']==1 and r['main_priority_previous']==2 and r['startup_scheduler_active']==0
         and r['startup_dispatch_parent_pc']==0x32EAF8,'Main priority admission differs')
     # Later owned VBlank wakes resume the parked helpers; each resume ends in another first-site sleep.
-    require(r['startup_worker_dispatches']==2 and r['startup_worker_waits']==2+r.get('worker_resumes',0),'Helper dispatch/wait count differs')
+    # A boundary at a helper's pending NCMD read leaves that helper resumed but not yet re-parked.
+    pending=r.get('selector')==0x77 and r.get('ncmd_ready_calls',0)==r.get('ncmd_read_calls',0)+1
+    require(r['startup_worker_dispatches']==2 and r['startup_worker_waits']==2+r.get('worker_resumes',0)-pending,'Helper dispatch/wait count differs')
     # Every critical enter has its restore and every resume of helper 4 its suspend.
     # A later boundary may fall inside main's critical section: one resume/raise not yet undone.
     open_section=r['scheduled_resumes']-r['scheduled_suspends']
@@ -48,7 +50,9 @@ def native_scope(r):
     state={t[0]:t for t in r['startup_worker_state']}
     require(state[4][2:5]==([1,0,8] if open_section else [0,1,8]) and state[7][2:5]==[0,1,25],'Suspended helper state differs') # ID 4 is resumed inside an open section.
     require(state[5]==[5,0x2EDF48,0,0,16,0x38BDF0,0x34E430,0x2EE00C,1],'Helper 5 first wait differs')
-    require(state[6]==[6,0x2EE050,0,0,18,0x38BDF0,0x34F430,0x2EE100,1],'Helper 6 first wait differs')
+    # At a pending NCMD read helper 6 is the running owned stack (ready, not waiting).
+    require(state[6]==[6,0x2EE050,0,0,18,0x38BDF0,0x34F430,0x2EE100,1] or (pending and state[6][:6]==[6,0x2EE050,1,0,18,0x38BDF0] and state[6][8]==0),
+        'Helper 6 first wait differs')
 
 def verify(root,native):
     for point in EXPECTED:original(root,point)

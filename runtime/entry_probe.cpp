@@ -379,11 +379,8 @@ int main(int argc, char** argv) {
             const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
                 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
-            // Main's system-time read after display setup: Timer 2 COUNT is not modelled yet.
-            const bool timer2_clock=runtime.display_reset_phase==13 && stop.address==0x10001000 && stop.size==4
-                && context.pc==0x339430 && context.r[29].low==runtime.initial_sp-64;
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !timer2_clock) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff || timer2_clock) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -946,7 +943,7 @@ int main(int argc, char** argv) {
                 << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
                 << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
                 << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
-                << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
+                << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
                 << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
                 << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns

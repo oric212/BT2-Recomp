@@ -449,6 +449,9 @@ void PS2Runtime::receiveNcmdRead(std::uint8_t* rdram,R5900Context* context) {
         || (repeat ? !(startup_scheduler_active && current_thread_id>=4 && current_thread_id<=7) || ncmd_ready_calls<=ncmd_read_calls
                    : d!=initial_sp-720 || semaphores.size()!=10 || rid!=46)
         || context->r[5].low!=2)throw UnsupportedSyscall(0x77,context->pc);
+    // More than 16 sectors streams through the FSV ring in chunks (sceCdRV cache count 16);
+    // that CDVDMAN streaming protocol is not modelled. Stop before the IOP is entered.
+    if(read32(rdram,0x3684C4)>16)throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> desc={0x3684C0,0x43DB8,24,0,0x203A97C0,0x1E640,64,0x44};
     const std::array<unsigned,14> packet={0x1840,0x43DB8,0x8000000A,0,5,0x203A97C0,rid,0x369590,1,24,0,0,1,0x43418};
     for(unsigned n=0;n<8;++n)if(read32(rdram,d+n*4)!=desc[n])throw UnsupportedSyscall(0x77,context->pc);

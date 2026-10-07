@@ -71,6 +71,22 @@ void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtim
 }
 int main() {
     {
+        // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.
+        LogicalTimer2 t;reject([&]{t.advanceField();});reject([&]{t.start(0x80,0,0);});
+        t.start(0x382,0,0xFFFF);
+        for(unsigned n=0;n<5;++n)t.advanceField();
+        require(t.count()==48048 && t.mode()==0x382 && !t.interruptPending() && !t.wraps);
+        for(unsigned n=0;n<2;++n)t.advanceField();
+        require(t.wraps==1 && t.count()==(67267u&0xFFFF) && (t.mode()&0xC00)==0xC00 && t.interruptPending());
+        reject([&]{t.writeMode(0x383);});
+        t.writeMode(0x382|0x800);require((t.mode()&0xC00)==0x400 && t.interruptPending());
+        t.writeComp(0);t.writeMode(0x382|0x400);require(!t.interruptPending() && t.comp()==0);
+        for(unsigned n=0;n<6;++n)t.advanceField();
+        require(t.wraps==1 && !t.interruptPending());t.advanceField();
+        require(t.wraps==2 && (t.mode()&0xC00)==0xC00); // COMP 0 matches at the wrap itself.
+        reject([&]{t.writeComp(0x10000);});
+    }
+    {
         PS2Runtime cache; cache.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size)); R5900Context ctx;
         ctx.r[4].low=0x1000;ctx.r[5].low=0x1040;
         ctx.pc=0x32F4CC;

@@ -21,3 +21,7 @@ After display setup, main reads the system time (`0x100658` → `0x339410`) and 
 ## Limits and stop conditions
 
 The original seed is timing-dependent and is not reproduced. Do not fabricate alarm callbacks. Stop if a reached alarm needs thread wake semantics beyond the existing scheduler, or if compare programming requires cycle timing.
+
+## Outcome (2026-10-07)
+
+Steps 1–5 are implemented. Logical Timer 2 starts from the startup mode at COUNT 0 / COMP 0 (BIOS residue unobservable), advances one field per logical VBlank (delivered or polled) and delivers cause 11 before the VBlank handlers at the same point. The original handler acknowledges every wrap (16 by the current checkpoint) and reprograms COMP to 0. Library state matches the original apart from the overflow count (logical time) and the model-local handler ID. `verify_timer2.py` reports the native and original seeds without equating them.

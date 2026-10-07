@@ -28,14 +28,14 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
-| Complete startup and thread scheduling | 🔧 In progress — VBlank delivery, helper wakes and display setup verified; system timer pending |
+| Complete startup and thread scheduling | 🔧 In progress — VBlank, helper wakes, display setup and Timer 2 clock verified; streamed disc reads pending |
 | Game asset loading and first presented frame | ⏳ Pending |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** main's first EE Timer 2 COUNT read (system time, `0x339430`) after display setup.
+**Current blocker:** helper 6's first 52-sector NCMD read, which streams through the IOP FSV ring in 16-sector chunks (not modelled).
 
-**Last measured, 2026-10-07:** **531 EE entries entered / 524 completed**, **42 CRI calls**, **53 original IOP disc reads**, **105 logical VBlanks**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **564 EE entries entered / 556 completed**, **42 CRI calls**, **54 original IOP disc reads**, **109 logical VBlanks**, **16 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

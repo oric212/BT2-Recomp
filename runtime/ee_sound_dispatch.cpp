@@ -248,25 +248,50 @@ bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t select
     return false;
 }
 
-void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
-    // Run registered VBLANK_START handlers in chain order with the kernel handler ABI
-    // (a0 cause, a1 argument, registered GP) on the captured kernel interrupt stack.
-    constexpr std::uint32_t cause=2,stack=0x81FC0,callback_return=0xFFFFFFF8;
-    if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
-        throw UnsupportedSyscall(0x14,interrupted->pc);
+void PS2Runtime::advanceLogicalField() {
+    // Timer 2 runs from the startup mode write; its BIOS-era COUNT/COMP residue is not observable
+    // (initial MODE already had CUE set), so the logical counter starts at COUNT 0, COMP 0.
+    if(!timer2.started()) {
+        if(!timer2_mode_writes)return; // Timer 2 never programmed: nothing counts.
+        if(timer2_mode_writes!=1 || timer2_mode_after_write!=0x382 || !(intc_mask&(1u<<11)))throw std::runtime_error("Timer 2 startup state differs");
+        timer2.start(timer2_mode_after_write,0,0);
+    }
+    timer2.advanceField();
+}
+
+void PS2Runtime::runIntcHandlers(std::uint8_t* rdram,R5900Context* interrupted,std::uint32_t cause,const char* name) {
+    // Registered handlers in chain order with the kernel handler ABI (a0 cause, a1 argument,
+    // registered GP) on the captured kernel interrupt stack.
+    constexpr std::uint32_t stack=0x81FC0,callback_return=0xFFFFFFF8;
     checkMemory(rdram,stack-0x800,0x800);
-    in_interrupt_=true;++vblank_deliveries;
+    in_interrupt_=true;delivering_cause_=cause;
     try {
         for(const auto id:intc_handler_order) {
             const auto& h=intc_handlers.at(id-1);
             if(h.cause!=cause)continue;
             R5900Context ic{};ic.pc=h.address;ic.r[4].low=cause;ic.r[5].low=h.arg;ic.r[28].low=h.gp;
             ic.r[29].low=stack;ic.r[31].low=callback_return;ic.cop0_status=interrupted->cop0_status&~0x10001u;
-            dispatchGuestBranch(rdram,&ic,h.address,interrupted->pc,callback_return,GuestBranchKind::DirectCall,"VBLANK_START handler");
+            dispatchGuestBranch(rdram,&ic,h.address,interrupted->pc,callback_return,GuestBranchKind::DirectCall,name);
             if(static_cast<std::int32_t>(ic.r[2].low)<0)break; // A negative result ends the chain.
         }
-    } catch(...) {in_interrupt_=false;throw;}
-    in_interrupt_=false;
+    } catch(...) {in_interrupt_=false;delivering_cause_=0;throw;}
+    in_interrupt_=false;delivering_cause_=0;
+}
+
+void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
+    constexpr std::uint32_t cause=2;
+    if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
+        throw UnsupportedSyscall(0x14,interrupted->pc);
+    advanceLogicalField();
+    // A Timer 2 event inside the elapsed field precedes this VBLANK_START. The library handler
+    // only services its alarm list (empty here; callbacks are not modelled) and overflow count.
+    if(timer2.interruptPending() && (intc_mask&(1u<<11))) {
+        if(read32(rdram,0x36BAE8))throw UnsupportedSyscall(0x14,interrupted->pc);
+        runIntcHandlers(rdram,interrupted,11,"Timer 2 handler");++timer2_deliveries;
+        if(timer2.interruptPending())throw UnsupportedSyscall(0x14,interrupted->pc); // Handler must acknowledge.
+    }
+    ++vblank_deliveries;
+    runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");
     runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
 }
 

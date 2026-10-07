@@ -17,6 +17,7 @@
 #include "intc_checkpoint.h"
 #include "retained_ee_stack.h"
 #include "gif_dma_staging.h"
+#include "logical_timer2.h"
 #include "post_reset_sif.h"
 #include "vif_startup.h"
 #include "texture_gif_startup.h"
@@ -111,6 +112,8 @@ public:
     unsigned vblank_deliveries=0,worker_wakes=0,worker_resumes=0,worker_sleep_returns=0;
     bool handleInterruptSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void deliverVblank(std::uint8_t*,R5900Context*);
+    void advanceLogicalField();
+    void runIntcHandlers(std::uint8_t*,R5900Context*,std::uint32_t,const char*);
     void runReadyThreads(std::uint8_t*,R5900Context*);
     void queueSoundsBind(R5900Context*,const std::array<unsigned,16>&);
     void finishQueuedSoundsBind(std::uint8_t*,R5900Context*);
@@ -989,6 +992,12 @@ public:
             if(++load_poll_idles>1000)throw UnsupportedGuestBranch(target,source,resume);
             deliverVblank(rdram,context);
         }
+        if(target==0x2EF218 && source==0x100D20 && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active
+            && display_reset_phase==13) {
+            // Main's synchronous file load (0x100CB8) polls the same file service; same logical time model.
+            if(++file_load_idles>20000)throw UnsupportedGuestBranch(target,source,resume);
+            deliverVblank(rdram,context);
+        }
         const auto found = functions_.find(target);
         if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
             if(!sound_thread_start_supplied || sound_thread_checkpoint || current_thread_id!=1 || main_thread_priority!=2
@@ -1431,7 +1440,14 @@ public:
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
     // 4 CRT(1,2,1), 5 VSync wait, 6 two GIF requests. 7 field sample (0x271178). Display setup
     // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
-    unsigned display_reset_phase=0,polled_vblanks=0;
+    unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0;
+    unsigned delivering_cause_=0;
+    LogicalTimer2 timer2;
+    bool timer2Context(const R5900Context* context) const {
+        // Main after admission, or the cause-11 handler during a logical delivery.
+        return timer2.started() && ((in_interrupt_ && delivering_cause_==11)
+            || (!in_interrupt_ && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active)) && context;
+    }
     std::uint32_t display_intc_stat=0;
     bool display_field=true; // Toggles per polled VBlank; anchored to the original 0x271178 sample (field 1).
     std::optional<GifDmaStaging> clear_repeat_gif;
@@ -1604,6 +1620,9 @@ public:
                 checkMemory(rdram,0,0);dmac_priority=value;++dmac_startup_writes;return;
             }
         }
+        if((address==0xB0001010 || address==0xB0001020) && context->pc==0x338B30 && timer2Context(context)) {
+            checkMemory(rdram,0,0);if(address==0xB0001010)timer2.writeMode(value);else timer2.writeComp(value);return;
+        }
         if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
             checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
         }
@@ -1640,11 +1659,14 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
+            checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
+        }
         if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
             checkMemory(rdram,0,0);
             // Logical time: a poll that finds VBLANK_START clear advances one VBlank (START and END latch).
             // Cause 2 is disabled here, so no handler runs; FIELD toggles in interlaced mode.
-            if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;++polled_vblanks;}
+            if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;++polled_vblanks;advanceLogicalField();}
             return display_intc_stat;
         }
         if(clear_repeat_gif && displayResetStep(context,6,context->pc,624)) {

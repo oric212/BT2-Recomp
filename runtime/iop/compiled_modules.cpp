@@ -573,7 +573,7 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
     const bool repeat=disc_read_calls && disc_ready_calls>disc_read_calls; // A readiness query precedes each read.
     if(epoch!=epoch_ || failed_ || input.size()!=sizeof(expected) || ee.size()!=32*1024*1024
         || (first ? (disc_ready_calls!=1 || in!=expected)
-                  : (!repeat || !in[1] || in[1]>20 || in[2]%64 || in[2]<0x100000 || in[2]+in[1]*2048>ee.size()
+                  : (!repeat || !in[1] || in[1]>16 || in[2]%64 || in[2]<0x100000 || in[2]+in[1]*2048>ee.size()
                      || (in[3]!=0 && in[3]!=0x100) || in[4]!=expected[4] || in[5]!=expected[5])))
         throw std::runtime_error("Unsupported owned disc read");
     const auto lbn=in[0],count=in[1],dest=in[2],mode=in[3],bytes=count*2048;
