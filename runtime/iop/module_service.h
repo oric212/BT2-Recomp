@@ -77,6 +77,9 @@ public:
     std::vector<std::uint8_t> callSoundsCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input);
     unsigned sound_command_requests=0;
     void advanceSoundTimer(unsigned epoch); // IOP hardware timer ticks for one logical NTSC field.
+    // Boot FILEIO file server (0x80000001): original handler, request in its native receive buffer.
+    std::vector<std::uint8_t> callFileio(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory,const std::string& disc_path);
+    unsigned fileio_requests=0,fileio_dma_submissions=0;
     std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service=0x80000701);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);

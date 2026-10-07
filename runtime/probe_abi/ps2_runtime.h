@@ -236,6 +236,11 @@ public:
 #ifdef BT2_NATIVE_IOP
         if(code==0 && selector==0x77 && display_reset_phase==13 && current_thread_id==1 && main_priority_admissions
             && !startup_scheduler_active && !in_interrupt_ && context->r[31].low==0x28BA48) {receiveIopUpload(rdram,context);return;}
+        if(code==0 && selector==0x77 && display_reset_phase==13 && current_thread_id==1 && main_priority_admissions
+            && !startup_scheduler_active && !in_interrupt_ && read32(rdram,0x3A97DC)==0x3AC740) {
+            if(!fileio_binds)receiveFileioBind(rdram,context);else receiveFileioCall(rdram,context);
+            return;
+        }
         if(code==0 && selector==0x76 && iop_uploads && context->r[4].low==0x5A0000+iop_uploads && context->pc==0x32F008
             && context->r[31].low==0x28BA58 && current_thread_id==1 && !startup_scheduler_active) {
             ++iop_upload_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no DMA timing.
@@ -884,9 +889,12 @@ public:
             // The C library's lazily created stdio lock ("SceStdioFioSema", count 1) after admission.
             const bool stdio_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333770
                 && maximum==1 && initial==1 && option==0x383988 && read32(rdram,0x36AB24)==0xFFFFFFFF;
+            // Its per-open file semaphore ("SceStdioOpenSema", count 0) for each opened stream.
+            const bool stdio_open_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333F28
+                && maximum==1 && initial==0 && option==0x3839A0;
             if(ncmd_bind_sema)++ncmd_bind_semaphores;
             if (disc_bind_sema) ++disc_bind_semaphores;
-            if (attributes != 0 && !admitted_rpc_sema && !stdio_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+            if (attributes != 0 && !admitted_rpc_sema && !stdio_sema && !stdio_open_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
                 if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
                 throw std::runtime_error("Unsupported semaphore attributes");
             }
@@ -1457,6 +1465,7 @@ public:
     // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
     bool sounds_hardware_timers_supported=true; // IOP_HARDWARE_TIMER_PLAN.md
     bool sound_voice_transfers_supported=true; // Owned SPU2 voice transfers (IOP_SPU2_TRANSFER_PLAN.md).
+    unsigned fileio_binds=0,fileio_calls=0;
     unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;
     LogicalTimer2 timer2;
@@ -1996,6 +2005,8 @@ private:
     void receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapCopy(std::uint8_t* rdram,R5900Context* context);
     void receiveIopUpload(std::uint8_t* rdram,R5900Context* context);
+    void receiveFileioBind(std::uint8_t* rdram,R5900Context* context);
+    void receiveFileioCall(std::uint8_t* rdram,R5900Context* context);
     void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
         const bool bind=!post_cd.scmd_binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
         if(context->r[29].low!=d || d!=initial_sp-(bind?432:448) || context->r[5].low!=(bind?1u:2u)

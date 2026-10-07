@@ -702,3 +702,5 @@ New capture points: `rpc-display-init-after` (main returns from display setup at
 `python tools/capture_ee/verify_timer2.py --native work/bt2-generation/entry-stop.json` compares the EE timer library state and alarm list with `rpc-timer-seed-after`, checks that every logical Timer 2 wrap was delivered and acknowledged, and reports the native and original system-time seeds without equating them.
 
 New capture point: `rpc-sound-bank-after` (main returns from its first sound-bank load at its loop head `0x100680`, first entry). `python tools/capture_ee/verify_sound_bank.py --native work/bt2-generation/entry-stop.json` compares the IOP sound block, both bank blocks at their captured heap placements, the SOUNDS request record and the loader slot table.
+
+New capture point: `rpc-dbzp-loaded` (main's first frame step after closing its first loaded file, `0x10036C`): `DBZP.BIN` in EE RAM and FILEIO read-buffer residue in IOP RAM.

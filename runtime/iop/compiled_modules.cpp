@@ -351,6 +351,43 @@ void NativeIopService::advanceSoundTimer(unsigned epoch) {
     try {runtime.advanceSoundTimerField();} catch(...) {failed_=true;throw;}
 }
 
+std::vector<std::uint8_t> NativeIopService::callFileio(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee,const std::string& disc_path) {
+    // FILEIO's server thread is not started natively; the registered handler (base+0x1E68) runs on an
+    // owned stack with the request in its receive buffer (base+0x33A0), as the heap handler does.
+    if(epoch!=epoch_ || failed_ || !boot_heap_allocations || input.size()>0x800 || result_size>0x800 || ee.size()!=32u*1024*1024 || runtime.current_thread || disc_path.empty())
+        throw std::runtime_error("Unsupported FILEIO request");
+    const auto buffer=iop_fileio_boot_base+0x33A0;
+    const auto saved=runtime.providers;
+    try {
+        runtime.check(buffer,static_cast<unsigned>(input.size()));
+        std::copy(input.begin(),input.end(),runtime.ram.begin()+buffer);
+        // IOP -> EE transfers of results/data: copied at once into checked EE memory.
+        runtime.providers[{"sifman",7}]=[this,ee](IopRuntime& rt,IopContext& c) {
+            const auto count=c.get(5);if(!count || count>16)throw std::runtime_error("Unsupported FILEIO SIF DMA count");
+            for(unsigned n=0;n<count;++n) {
+                const auto d=c.get(4)+n*16;const auto src=rt.read(d,4),dst=rt.read(d+4,4)&0x1FFFFFFF,size=rt.read(d+8,4);
+                rt.check(IopRuntime::physical(src),size);
+                if(!size || dst>=ee.size() || size>ee.size()-dst)throw std::runtime_error("FILEIO SIF DMA outside EE memory");
+                for(unsigned k=0;k<size;++k)ee[dst+k]=static_cast<std::uint8_t>(rt.read(src+k,1));
+            }
+            return 0x780001+fileio_dma_submissions++;
+        };
+        runtime.providers[{"sifman",8}]=[](IopRuntime&,IopContext&) {return 0xFFFFFFFFu;}; // Owned copies completed.
+        IopContext c;c.pc=iop_fileio_boot_base+0x1E68;c.set(4,command);c.set(5,buffer);c.set(6,static_cast<unsigned>(input.size()));
+        c.set(28,iop_fileio_boot_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);
+        runtime.execute(runtime,c);
+        runtime.providers=saved;
+        if(c.pc!=IopRuntime::sentinel || (result_size && !c.get(2)))throw std::runtime_error("FILEIO handler did not return a response");
+        ++fileio_requests;
+        if(!result_size)return {};
+        runtime.check(IopRuntime::physical(c.get(2)),result_size);
+        return {runtime.ram.begin()+IopRuntime::physical(c.get(2)),runtime.ram.begin()+IopRuntime::physical(c.get(2))+result_size};
+    } catch(const std::exception& e) {
+        runtime.providers=saved;failed_=true;
+        throw std::runtime_error(std::string(e.what())+" / FILEIO command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc)+" / address="+std::to_string(runtime.blocked_address));
+    }
+}
+
 std::vector<std::uint8_t> NativeIopService::callSoundsCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
     // Later SOUNDS service commands from main (256-byte request, 64-byte reply): original handler.
     if(epoch!=epoch_ || failed_ || sounds_rpc_requests!=1 || input.size()!=256 || residents.size()!=13)

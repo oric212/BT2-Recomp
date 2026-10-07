@@ -20,3 +20,15 @@ Main's frame step (`0x1002D8`) loads `cdrom0:\BIN\DBZP.BIN;1` with the C library
 ## Limits and stop conditions
 
 No host file-system shortcut: reads come from the local ISO through the original handlers or owned models of the reached device calls. Stop if a reached path needs IOP device behaviour without evidence.
+
+## Findings (2026-10-07)
+
+- Bind and initialization run: boot FILEIO's file server descriptor `0x47788` (handler `0x46298` = retail base `0x44430` + `0x1E68`), buffer `0x477D0`, validated in captured IOP RAM. The C library's first FILEIO request `0xFF` (8 bytes: EE result buffers `0x3ABCC0`/`0x3AC100`) completes through the original handler, run directly on an owned stack with the request in its native buffer (`NativeIopService::callFileio`).
+- File operations are asynchronous. The open request (function 0, 0x418 bytes: flags, mode and `cdrom0:\BIN\DBZP.BIN;1`) makes the handler allocate a 0xC40-byte request record (AllocSysMemory, mode 1) and hand it to a worker; completion reaches the EE through IOP→EE SIF commands into the buffers registered by request `0xFF`, and the C library waits on a per-open semaphore ("SceStdioOpenSema"). The open now stops before the IOP is entered.
+- Original evidence (`rpc-dbzp-loaded`, after main's first close): `DBZP.BIN` (LBA `0x64C`, 0x7D48F bytes) is loaded at EE `0x3B3100`, byte-identical to the ISO. FILEIO's 16 KB read buffer was at IOP `0x1E7100` (last chunk residue); the read data also passes through the CDVD ring at `0x32EF0`, so the `cdrom0` device reads through CDVDMAN's streaming path.
+
+## Next steps
+
+1. Trace the worker side: how the request record is queued (message box/thread), the IOMAN calls it makes, and the SIF command it sends back (command ID, payload, EE handler registered by the C library).
+2. Model IOP→EE SIF command delivery into the EE command handler at an owned scheduling point, and the request-record placement (capture or derive it).
+3. Serve IOMAN `cdrom0:` from the local ISO through the reached CDVDMAN path; compare the loaded bytes with `rpc-dbzp-loaded`.
