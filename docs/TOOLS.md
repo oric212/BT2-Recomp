@@ -719,3 +719,7 @@ New capture point: `rpc-overlay-dispenv` (`0x311860`, the overlay frame's first 
 `prepare_map.py` treats coprocessor arithmetic (COP1/COP2 with rs ≥ 16) as data flow in padding proofs. BC0/BC1/BC2 condition branches are checked against padding like other conditional branches; COP0 CO-group operations stay refused. `prepare_runtime.py` routes the generated BC2T/BC2F condition to `PS2Runtime::cop2Condition`.
 
 The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` stops at the first entry to, or return to, that address, as a branch boundary with a normal report. Use it to compare earlier-phase capture verifiers against a later checkpoint. Copy the report before the next run; it does not change guest behavior. Reports also list the live guest return stack at a stop (`stop_returns`).
+
+**Rendering the frame.** `tools/capture_ee/render_gs_frame.py --native work/bt2-generation/entry-stop.json --output work/frames/frame-latest.png` renders the displayed framebuffer from the probe's owned GS memory dump (`entry-stop.json.gs.bin`: value and known-bit mask per word). It uses the report's DISPFB/DISPLAY registers; pixels the model never wrote show as a magenta checker. The PNG comes from game data, so it stays in ignored `work/`.
+
+**Frame budget.** The entry probe stops after 120 display flips by default, as a checked boundary after a completed flip. `BT2_FRAME_LIMIT=<n>` changes the budget and `0` disables it. Each Timer 1 delay wait is capped separately (100,000 polls) to detect a wait that never ends.

@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 #include <optional>
+#include <iostream>
 #include <immintrin.h>
 #include "intc_checkpoint.h"
 #include "retained_ee_stack.h"
@@ -1513,42 +1514,64 @@ public:
     struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0;unsigned starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0;
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes interpreted. Only the reached codes are supported (FRAME_GIF_PLAN.md).
-    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0;
+    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
         std::uint32_t blocked_code=0,blocked_tag=0,blocked_tadr=0;unsigned unsupported=0;} frame_vif1;
     struct FrameVif1Unsupported {std::uint32_t code,tag;};
-    static void frameVif1Code(std::uint32_t code,std::uint32_t tag) {
-        if(code)throw FrameVif1Unsupported{code,tag}; // NOP only so far; other codes carry data (VIF1/VU1 plan).
-    }
     void frameVif1Start(std::uint32_t value) {
         auto& v=frame_vif1;
         if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
-        // Walk the whole chain first; an unsupported code stops before any channel effect.
-        std::uint32_t tag=v.tadr,next_tadr=0;unsigned tags=0,codes=0;
-        try {
-            for(unsigned n=0;;++n) {
-                if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
-                std::uint64_t lo,hi;std::memcpy(&lo,memory_.data()+tag,8);std::memcpy(&hi,memory_.data()+tag+8,8);
-                const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
-                if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
-                frameVif1Code(std::uint32_t(hi),tag);frameVif1Code(std::uint32_t(hi>>32),tag);++tags;codes+=2;
-                const bool inline_data=id==1 || id==2 || id==7;
-                if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
-                if(qwc) {
-                    const auto data=inline_data?tag+16:addr;
-                    if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
-                    for(std::uint32_t k=0;k<qwc*4;++k) {std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);frameVif1Code(w,tag);++codes;}
-                }
-                if(id==0 || id==7) {next_tadr=id==7?tag+16+qwc*16:tag+16;break;}
-                tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
+        // Walk the whole chain first. Each DMA tag contributes its upper 64 bits (two VIF codes at
+        // qword positions 2-3) and then its data qwords; codes are parsed with their real lengths.
+        // NOP and FLUSH/FLUSHE/FLUSHA (no VU1 program or other path is running) have no effect;
+        // DIRECT/DIRECTHL hand quadword-aligned PATH2 data to the GS. Any other code, or a DIRECT
+        // payload that crosses a tag, stops at the channel start before any effect.
+        struct Word {std::uint32_t value,tag;unsigned segment,phase;const std::uint8_t* at;};
+        std::vector<Word> stream;std::uint32_t tag=v.tadr,next_tadr=0;unsigned tags=0,segment=0;
+        for(unsigned n=0;;++n) {
+            if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
+            std::uint64_t lo;std::memcpy(&lo,memory_.data()+tag,8);
+            const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
+            if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
+            if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
+            ++segment;for(unsigned k=2;k<4;++k){std::uint32_t w;std::memcpy(&w,memory_.data()+tag+k*4,4);stream.push_back({w,tag,segment,k,memory_.data()+tag+k*4});}
+            ++tags;
+            if(qwc) {
+                const auto data=(id==1 || id==2 || id==7)?tag+16:addr;
+                if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
+                ++segment;
+                for(std::uint32_t k=0;k<qwc*4;++k){std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);stream.push_back({w,tag,segment,k%4,memory_.data()+data+k*4});}
             }
+            if(id==0 || id==7) {next_tadr=id==7?tag+16+qwc*16:tag+16;break;}
+            tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
+        }
+        std::vector<std::span<const std::uint8_t>> directs;std::uint64_t direct_qwords=0;
+        try {
+            for(std::size_t i=0;i<stream.size();) {
+                const auto& w=stream[i];const unsigned cmd=(w.value>>24)&0x7F;
+                if(cmd==0 || cmd==0x10 || cmd==0x11 || cmd==0x13) {++i;continue;}
+                if(cmd==0x50 || cmd==0x51) {
+                    const std::size_t qwords=(w.value&0xFFFF)?(w.value&0xFFFF):65536,first=i+1,last=first+qwords*4;
+                    if(last>stream.size() || stream[first].phase || stream[first].segment!=stream[last-1].segment)
+                        throw FrameVif1Unsupported{w.value,w.tag};
+                    directs.emplace_back(stream[first].at,qwords*16);direct_qwords+=qwords;i=last;continue;
+                }
+                throw FrameVif1Unsupported{w.value,w.tag};
+            }
+            gif_dma.gs.transferAll(directs); // One GS transaction: refused as a whole, without effects.
         } catch(const FrameVif1Unsupported& u) {
             v.blocked_code=u.code;v.blocked_tag=u.tag;v.blocked_tadr=v.tadr;++v.unsupported;
             throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
+        } catch(const std::runtime_error& e) {
+            std::cerr<<"VIF1 DIRECT refused by the GS model: "<<e.what()<<"\n";
+            v.blocked_code=0x50000000;v.blocked_tag=v.tadr;v.blocked_tadr=v.tadr;++v.unsupported;
+            throw UnsupportedGuestMemory(0x10009000,4);
         }
-        v.tadr=next_tadr;v.tags+=tags;v.codes+=codes;v.chcr=value&~0x100u;v.cis=true;++v.starts;
+        v.tadr=next_tadr;v.tags+=tags;v.codes+=unsigned(stream.size());v.directs+=unsigned(directs.size());v.direct_qwords+=direct_qwords;
+        v.chcr=value&~0x100u;v.cis=true;++v.starts;
     }
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
-    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
+    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
+    unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
@@ -1694,7 +1717,11 @@ public:
             if(n==13 && value)throw UnsupportedGuestMemory(address,8); // EXTWRITE: write-back circuit stays off.
             if(!gs_display_flips && context->pc!=0x3118D0 && !gs_display_writes)throw UnsupportedGuestMemory(address,8); // First write is the library flip.
             gs_privileged[n]=value;++gs_display_writes;
-            if(context->pc==0x311908 && n==14)++gs_display_flips;
+            if(context->pc==0x311908 && n==14) {
+                ++gs_display_flips;
+                // Probe frame budget: stop after this completed flip (its store is applied) as a checked boundary.
+                if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(address,8);}
+            }
             return;
         }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
@@ -1753,7 +1780,7 @@ public:
         }
         // Main's H-BLANK delay helpers (0x28C778 start, 0x28C790 wait >= 400 and stop): logical Timer 1.
         if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
-            if(address==0x10000810 && context->pc==0x28C78C && value==(timer1.mode()|0x80)) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_starts;return;}
+            if(address==0x10000810 && context->pc==0x28C78C && value==(timer1.mode()|0x80)) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_starts;timer1_wait_polls=0;return;}
             if(address==0x10000810 && context->pc==0x28C7CC && value==(timer1.mode()&~0x80u) && timer1.counting()) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_stops;return;}
             if(address==0x10000800 && context->pc==0x28C7D4 && !value && !timer1.counting()) {checkMemory(rdram,0,0);timer1.writeCount(0);return;}
         }
@@ -1837,7 +1864,7 @@ public:
                 // Logical time: each poll of the delay loop waits one line; a crossed field boundary
                 // delivers that VBLANK_START first (interrupt handlers and woken threads run).
                 checkMemory(rdram,0,0);
-                if(++timer1_polls>100000)throw UnsupportedGuestMemory(address,4);
+                ++timer1_polls;if(++timer1_wait_polls>100000)throw UnsupportedGuestMemory(address,4); // One wait never ends.
                 const auto target=timer1.nextLine();
                 if(timer1.crossesField(target)) {deliverVblank(rdram,context);++timer1_vblanks;}
                 timer1.lineTo(target);return timer1.count();

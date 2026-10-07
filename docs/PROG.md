@@ -14,13 +14,13 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-07
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — first overlay asset read completes; frame 2 reaches its first texture upload; nothing presented |
+| Game asset loading and first presented frame | 🔧 In progress — first screen (controller-missing message) rendered offline from the owned GS model every frame; no window yet |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the overlay's second frame starts its first VIF1 chain with content (PATH2 DIRECT: a PSMT4 texture, its CLUT and one textured sprite), held as a checked boundary at the channel start ([GS texture plan](GS_TEXTURE_PLAN.md)).
+**Current blocker:** the game shows its "No DUALSHOCK®2 analog controller connected" screen and waits: no controller is modelled on the SIO2 bus ([controller plan](CONTROLLER_PLAN.md)). The probe stops at its 120-frame budget.
 
-**Last measured, 2026-10-07:** **642 EE entries entered / 633 completed**, **42 CRI calls**, **58 original IOP disc reads**, **123 logical VBlanks**, **18 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **642 EE entries entered / 633 completed**, **120 rendered frames**, **42 CRI calls**, **58 original IOP disc reads**, **357 logical VBlanks**, **52 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
@@ -30,21 +30,21 @@ Helper 5/6 execution is now part of normal startup; the former separate helper d
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 642 distinct entered / 633 completed (4 overlay entries selected); kernel 2 / 2; 97,963 call events / 97,899 returns |
+| EE | 642 distinct entered / 633 completed (4 overlay entries selected); kernel 2 / 2; 225,038 call events / 224,871 returns over 120 frames |
 | Mapping | 9,405 provisional EE entries (152 quarantined); 9,408 raw generated files; 567 extra entries selected; overlay map 425 entries, 4 selected |
-| IOP | 229,661 instructions; SPU2 voice positions/ENDX from owned ADPCM block flags (no samples/ADSR); 24 logical SOUNDS timer ticks; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
+| IOP | 1,181,339 instructions; SPU2 voice positions/ENDX from owned ADPCM block flags (no samples/ADSR); 960 logical SOUNDS timer ticks; 236 controller-port requests through the original DBC handlers; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
 | Memory / threads | Nine IOP heap allocations / two frees (two sound-bank blocks at captured placements); four EE startup pools; main priority 2 → 24 admitted; 117 logical VBLANK_START deliveries (+2 polled); 234 owned helper wakes/resumes; logical Timer 2 with 16 overflow interrupts |
 | Disc | Directory read plus 56 archive reads (57 total) through original CDVDFSV handlers, including main's first synchronous file load and a 52-sector streamed read (4 ring chunks, bytes equal the ISO); first AFS table (0x6880 bytes) byte-identical to original |
 | Sound | 42 CRI calls (all five second-channel pairs); three EE→IOP sound uploads; two sound-driver commands through the original handlers with owned SPU2 voice transfers (DMA7 + IRQ 40); IOP sound block and bank blocks match the original; SOUNDS worker started with its IOP hardware timer; first 2,048-byte AutoDMA half programmed; two EE→IOP CRI stream-buffer copies; no consumption / completion IRQ / native playback verified |
 | Cards | Six DMA pairs / five timed FIFO probes; absent-card path only |
-| GS | Five packets / four clear draws / 1,146,880 sprite pixels; startup clear repeated; display setup (512×448 double buffer, VSync callback) matches original; no presented frame or VU execution |
+| GS | Startup: five packets / four clear draws; frames: 120 flips, 819 VIF1 DIRECT transfers, 117 PSMT4 texture/CLUT uploads (960,336 image pixels), 236 sprites (34,963,456 pixels) with textured, blended drawing; displayed 512×448 framebuffer fully written; no window or VU execution |
 
-Previous normal checkpoint → current: distinct EE **620 / 609 → 642 / 633**, calls/returns **92,419 / 92,358 → 97,963 / 97,899**, IOP instructions **203,146 → 229,661**. Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE unchanged at **642 / 633**; the run now continues through **120 frames** of the controller-missing screen (calls/returns **97,963 / 97,899 → 225,038 / 224,871**, IOP instructions **229,661 → 1,181,339**). Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
-Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **175 capture**, **63 recompilation**, **13 IOP** and 3 Ghidra Python tests, **26 normal-startup comparisons**, four phase-matched comparisons (`BT2_PHASE_STOP`) and the unchanged sound-worker diagnostic (302/295). Proprietary inputs and generated output remain ignored.
+Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **178 capture**, **63 recompilation**, **13 IOP** and 3 Ghidra Python tests, **27 normal-startup comparisons**, six phase-matched comparisons (`BT2_PHASE_STOP`) and the unchanged sound-worker diagnostic (302/295). The rendered frame was inspected visually (`render_gs_frame.py`). Proprietary inputs, generated output and rendered frames remain ignored.
 
 ## Current blocker and next step
 
@@ -55,7 +55,7 @@ All five late CRI `0x408` pairs complete through the original IOP handler; their
 - **Path sync and render kick:** the GS library's path sync sees idle paths, and the game's render kick sends an empty VIF1 chain.
 - **Display setup:** the game's own display writes configure both read circuits.
 
-The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. The second frame's render kick then carries the first real GS work (texture, CLUT, textured sprite), held at the VIF1 channel start: next, [GS texture plan](GS_TEXTURE_PLAN.md). The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
+The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. From the second frame on, each render kick sends VIF1 DIRECT GS work: a PSMT4 texture and CLUT upload and a textured sprite ([GS texture plan](GS_TEXTURE_PLAN.md)). The rendered framebuffer shows the game's "No DUALSHOCK®2 analog controller connected" message; the game repeats it while it waits for a controller. Next, [controller plan](CONTROLLER_PLAN.md); a live presentation window is planned alongside it. The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
 
 Remaining: IOP stream consumption, sound command processing, general timers, mounted cards, archive decompression/use, audio and presentation. Complete startup and a presented game frame remain unverified.
 

@@ -32,6 +32,53 @@ int main() {
         bool odd=false;try{gs.transfer(std::span<const std::uint8_t>(t.data(),8));}catch(const std::runtime_error&){odd=true;}
         check(odd);
     }
+    {
+        // PSMT4 layout: explicit entries from the public column/block layout, then a bijection check
+        // over one 128x128 page (16,384 nibbles in its 2,048 words).
+        auto n=[](unsigned x,unsigned y){return GsCommandSink::t4Nibble(0,2,x,y);};
+        // Entries of the public PSMT4 column layout (column 0 rows 0-3, column 1 row 4).
+        check(n(0,0)==0 && n(1,0)==8 && n(2,0)==32 && n(3,0)==40 && n(4,0)==64 && n(7,0)==104 && n(8,0)==2 && n(31,0)==110);
+        check(n(0,1)==16 && n(0,2)==65 && n(4,2)==1 && n(0,3)==81 && n(4,3)==17 && n(31,3)==63);
+        check(n(0,4)==192 && n(4,4)==128 && n(0,6)==128+1 && n(4,6)==128+65); // Odd column: 64 stride flipped.
+        check(n(32,0)==2*512 && n(0,16)==1*512 && n(64,0)==8*512 && n(0,32)==4*512 && n(0,64)==16*512); // Block order.
+        std::set<std::size_t> seen;for(unsigned y=0;y<128;++y)for(unsigned x=0;x<128;++x)seen.insert(n(x,y));
+        check(seen.size()==16384 && *seen.rbegin()==16383);
+        check(GsCommandSink::t4Nibble(0,4,128,0)==2048*8); // Second page in the row (TBW 4 = 256 pixels).
+    }
+    {
+        // Textured sprite: a 16-entry CT32 CLUT and a PSMT4 texture uploaded as CT32 words, drawn
+        // 1:1 with nearest filtering, then blended; and a refused group leaves nothing behind.
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        auto ad=[&](std::vector<std::pair<unsigned,std::uint64_t>> w,bool eop=false){q(0x1000000000000000ULL|(eop?0x8000:0)|w.size(),0xE);for(auto [r,v]:w)q(v,r);};
+        ad({{0x1A,1},{0x01,0x80808080},{0x4C,0x10000},{0x4E,0x101000020ULL},{0x18,0},{0x40,0x0007000000070000ULL},{0x47,0x30000},{0x46,1},{0x45,0},{0x14,0},{0x08,0},
+            {0x50,0x00000100ULL<<32},{0x51,0},{0x52,0x0000000200000008ULL},{0x53,0}},true); // EOP: later packets in the transfer still run.
+        q(0x0800000000000004ULL,0); // IMAGE, 4 qwords: CLUT entry i = 0x80 alpha, red i*16.
+        for(unsigned i=0;i<16;i+=2)if(i%4==0)q((std::uint64_t(0x80000000u|((i+1)*16))<<32)|(0x80000000u|(i*16)),(std::uint64_t(0x80000000u|((i+3)*16))<<32)|(0x80000000u|((i+2)*16)));
+        // Texture: one CT32 page (64x32 words) of 0x76543210 at block 0x200 (TBW 2: a 128-pixel T4 page).
+        ad({{0x50,(std::uint64_t(0x200)|(2ULL<<16))<<32},{0x52,0x0000002000000040ULL},{0x53,0}});
+        q(0x0800000000000000ULL|512,0);for(unsigned k=0;k<512;++k)q(0x7654321076543210ULL,0x7654321076543210ULL);
+        const std::uint64_t tex0=0x200|(2ULL<<14)|(0x14ULL<<20)|(7ULL<<26)|(7ULL<<30)|(1ULL<<34)|(0x100ULL<<37)|(1ULL<<61);
+        ad({{0x06,tex0},{0x00,0x156&~0x40},{0x03,0},{0x05,0},{0x03,(8ULL<<4)<<16|(8ULL<<4)},{0x05,0x00800080}},true);
+        GsCommandSink gs;gs.transfer(t);
+        check(gs.clut_loads==1 && gs.image_pixels==16+2048 && gs.frame_sprites==1 && gs.frame_pixels==64 && !gs.state.trx);
+        for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x) {
+            const auto index=unsigned(GsCommandSink::t4Nibble(0x200,2,x,y)%8);
+            check(gs.word(GsCommandSink::ct32Word(0,1,x,y)).value==(0x80000000u|(index*16)));
+        }
+        // A group whose second transfer is refused (STQ sprite) leaves no trace of its first, blended
+        // sprite (ALPHA (Cs-0)*FIX>>7+0, FIX 0x40); alone, that sprite halves the texel colors.
+        const auto before=gs.word(GsCommandSink::ct32Word(0,1,1,1));const auto writes=gs.register_writes;
+        std::vector<std::uint8_t> good;std::swap(t,good);
+        ad({{0x42,0x00000040000000A8ULL},{0x00,0x156},{0x03,0},{0x05,0},{0x03,(8ULL<<4)<<16|(8ULL<<4)},{0x05,0x00800080}});
+        auto blended=t;t.clear();ad({{0x00,0x56},{0x05,0},{0x05,0x00800080}},true);auto refused=t;
+        const std::array<std::span<const std::uint8_t>,2> group={std::span<const std::uint8_t>(blended),std::span<const std::uint8_t>(refused)};
+        bool rejected=false;try{gs.transferAll(group);}catch(const std::runtime_error&){rejected=true;}
+        check(rejected && gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==before.value && gs.register_writes==writes && gs.transfers==1);
+        gs.transfer(blended);
+        const auto index=unsigned(GsCommandSink::t4Nibble(0x200,2,1,1)%8);
+        check(gs.frame_sprites==2 && gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==(0x80000000u|(index*8)));
+    }
     std::vector<std::uint8_t> p(240);
     auto put=[&](unsigned offset,std::uint64_t value){std::memcpy(p.data()+offset,&value,8);};
     put(0,0x100000000000800EULL);put(8,14);

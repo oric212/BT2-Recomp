@@ -1461,17 +1461,27 @@ int main() {
             require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
         }
         {
-            // Frame VIF1 chain: a NOP-only chain completes; a chain with any other code (here DIRECT)
-            // is refused at the channel start with no channel effect and the code/tag recorded.
+            // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS);
+            // UNPACK, a DIRECT crossing a tag, or a DIRECT the GS refuses stop at the channel start
+            // with no channel or GS effect and the code/tag recorded.
             PS2Runtime vf;vf.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=vf.memory().data();
             auto tag=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
             tag(0x2000,0x70000000,0);vf.frame_vif1.tadr=0x2000;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && vf.frame_vif1.cis);
-            tag(0x3000,0x10000001,0x5000000100000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);
-            vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3000;
-            bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
-            require(refused && vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x3000 && !vf.frame_vif1.cis
-                && vf.frame_vif1.blocked_code==0x50000001 && vf.frame_vif1.blocked_tag==0x3000 && vf.frame_vif1.unsupported==1);
+            tag(0x2100,0x10000001,0x5000000110000000ull);tag(0x2110,0x8000,0);tag(0x2120,0x70000000,0); // FLUSHE, DIRECT 1: empty GIFtag (EOP).
+            vf.frame_vif1.tadr=0x2100;vf.frameVif1Start(0x145);
+            require(vf.frame_vif1.starts==2 && vf.frame_vif1.directs==1 && vf.frame_vif1.direct_qwords==1 && vf.gif_dma.gs.transfers==1 && vf.frame_vif1.tadr==0x2130);
+            auto refuse=[&](std::uint32_t at,std::uint32_t code) {
+                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;
+                bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
+                require(refused && vf.frame_vif1.starts==2 && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gif_dma.gs.transfers==1
+                    && vf.frame_vif1.blocked_code==code && vf.frame_vif1.unsupported==before+1);
+            };
+            tag(0x3000,0x10000001,0x6C01000000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x6C010000); // UNPACK.
+            tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0x8000,0);
+            refuse(0x3100,0x50000002); // DIRECT payload continues in the next tag.
+            tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x0800000000008001ull,0);tag(0x3220,0x70000000,0);
+            refuse(0x3200,0x50000000); // DIRECT IMAGE without a host-to-local transfer: refused by the GS.
         }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;

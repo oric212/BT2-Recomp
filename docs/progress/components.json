@@ -18,8 +18,8 @@
     {"name": "Game", "items": [
       {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN; first asset"},
       {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
-      {"name": "GS rendering", "status": "partial", "note": "Frame clears; textures next"},
-      {"name": "Frame presentation", "status": "pending", "note": "No visible game frame"},
+      {"name": "GS rendering", "status": "partial", "note": "Textured sprites; first screen"},
+      {"name": "Frame presentation", "status": "partial", "note": "Offline PNG; no window yet"},
       {"name": "Menu, battle and audio", "status": "pending", "note": "End-to-end behavior unverified"}
     ]}
   ]

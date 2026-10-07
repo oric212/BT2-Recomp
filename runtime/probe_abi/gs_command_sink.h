@@ -5,6 +5,7 @@
 #include <cstring>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 // Scoped software command consumption, separate from DMA and presentation.
@@ -91,24 +92,57 @@ public:
         }
         tex0=next_tex0;pabe=next_pabe;++packets;++configuration_packets;
     }
-    // General GIF transfer (frame path): GIFtags in PACKED, REGLIST or IMAGE form update the GS
-    // register file; vertex kicks draw the supported primitives. The whole transfer is validated in
-    // a dry run before any register or VRAM effect, so a rejected transfer changes nothing.
-    void transfer(std::span<const std::uint8_t> data) {
-        if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
-        auto saved=state;
-        try {run(data,false);} catch(...) {state=saved;throw;}
-        state=saved;run(data,true);++transfers;
+    // General GIF transfers (frame path): GIFtags in PACKED, REGLIST or IMAGE form update the GS
+    // register file, host->local image transfers write VRAM and vertex kicks draw the supported
+    // primitives. A group of transfers is one transaction: register state, CLUT, VRAM and counters
+    // are restored if any part is refused, so a rejected group changes nothing.
+    void transfer(std::span<const std::uint8_t> data) {transferAll(std::span<const std::span<const std::uint8_t>>(&data,1));}
+    void transferAll(std::span<const std::span<const std::uint8_t>> group) {
+        for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
+        const auto saved_state=state;const auto saved_clut=clut_;const auto saved_vram=vram_;
+        const std::array<std::uint64_t,6> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads};
+        try {for(const auto& data:group){run(data,true);++transfers;}}
+        catch(...) {
+            state=saved_state;clut_=saved_clut;vram_=saved_vram;
+            transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
+            frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);throw;
+        }
     }
     struct State {
         std::array<std::uint64_t,0x64> regs{};
-        std::array<std::uint64_t,3> vertex_xyz{};std::array<std::uint64_t,3> vertex_rgbaq{};unsigned vertices=0;
+        std::array<std::uint64_t,3> vertex_xyz{};std::array<std::uint64_t,3> vertex_rgbaq{};std::array<std::uint64_t,3> vertex_uv{};unsigned vertices=0;
         std::uint32_t q=0x3F800000; // ST packing sets Q; RGBAQ packing takes it.
+        // Host->local transfer in progress (TRXDIR 0): destination and pixel position.
+        bool trx=false;unsigned trx_bp=0,trx_bw=0,trx_x0=0,trx_y0=0,trx_w=0,trx_h=0,trx_x=0,trx_y=0;
     };
     State state;
-    unsigned transfers=0,frame_sprites=0,register_writes=0;
-    std::uint64_t frame_pixels=0;
+    unsigned transfers=0,frame_sprites=0,register_writes=0,clut_loads=0;
+    std::uint64_t frame_pixels=0,image_pixels=0;
+    // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
+    static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+        unsigned bx=(x%64)/8,by=(y%32)/8;
+        unsigned block=(bx&1)|((by&1)<<1)|((bx&2)<<1)|((by&2)<<2)|((bx&4)<<2);
+        unsigned px=x%8,py=y%8;
+        unsigned pixel=(px&1)|((py&1)<<1)|((px&6)<<1)|((py&6)<<3);
+        return (std::size_t(bp)*64+(std::size_t(y/32)*bw+x/64)*2048+block*64+pixel)%(1024*1024);
+    }
+    // PSMT4 nibble: 128x128 pages, 32x16 blocks, four 32x4 columns per block (128 nibbles each).
+    // Within a column, pixel x = 8g+k places k's bits at nibble strides 8, 32 and 64 and g at stride 2;
+    // odd rows add 16, rows 2-3 add 1 and flip the 64 stride, as do odd columns (public GS layout,
+    // expressed as bit placement and checked against the reference layout). Returns word*8+nibble.
+    static std::size_t t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+        const unsigned pages_per_row=bw/2;
+        const unsigned page=(y/128)*pages_per_row+x/128;
+        const unsigned bx=(x%128)/32,by=(y%128)/16;
+        const unsigned block=(by&1)|((bx&1)<<1)|((by&2)<<1)|((bx&2)<<2)|((by&4)<<2);
+        const unsigned cx=x%32,cy=y%16,column=cy/4,row=cy%4,k=cx%8,g=cx/8;
+        const unsigned n=2*g+8*(k&1)+32*((k>>1)&1)+64*(((k>>2)&1)^(row>>1)^(column&1))+16*(row&1)+(row>>1);
+        const std::size_t nibble=std::size_t(column)*128+n;
+        return ((std::size_t(bp)+std::size_t(page)*32+block)*64*8+nibble)%(std::size_t(1024)*1024*8);
+    }
 private:
+    struct Clut {std::array<std::uint32_t,256> color{};std::array<bool,256> known{};};
+    Clut clut_;
     void run(std::span<const std::uint8_t> data,bool apply) {
         auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,data.data()+offset,8);return v;};
         std::size_t at=0;
@@ -125,13 +159,52 @@ private:
                 if(at+((words+1)/2)*16>data.size())throw std::runtime_error("GIF REGLIST data exceeds transfer");
                 for(std::size_t w=0;w<words;++w) {
                     const unsigned d=unsigned((regs>>(4*(w%nreg)))&15);
-                    if(d==0xE)throw std::runtime_error("GIF REGLIST A+D is undefined");
-                    if(d!=0xF)write(d,read(at+w*8),apply);
+                    // A+D has no REGLIST meaning; that descriptor's data is not a register write.
+                    if(d!=0xE && d!=0xF)write(d,read(at+w*8),apply);
                 }
                 at+=((words+1)/2)*16;
-            } else throw std::runtime_error("Unsupported GIF IMAGE transfer");
-            if(tag&0x8000)break; // EOP: the transfer's remaining data belongs to no tag.
+            } else {
+                if(at+std::size_t(nloop)*16>data.size())throw std::runtime_error("GIF IMAGE data exceeds transfer");
+                image(data.subspan(at,std::size_t(nloop)*16));at+=std::size_t(nloop)*16;
+            }
+            // EOP ends this GIF packet; any further data in the transfer starts the next packet.
         }
+    }
+    void image(std::span<const std::uint8_t> data) {
+        // Host->local PSMCT32 pixels in transfer order (left to right, top to bottom).
+        auto& t=state;
+        if(!t.trx)throw std::runtime_error("GIF IMAGE without an active host-to-local transfer");
+        for(std::size_t i=0;i<data.size();i+=4) {
+            if(t.trx_y>=t.trx_h)throw std::runtime_error("GIF IMAGE data exceeds the transfer region");
+            std::uint32_t v;std::memcpy(&v,data.data()+i,4);
+            vram_[ct32Word(t.trx_bp,t.trx_bw,t.trx_x0+t.trx_x,t.trx_y0+t.trx_y)]={v,UINT32_MAX};++image_pixels;
+            if(++t.trx_x==t.trx_w) {t.trx_x=0;++t.trx_y;}
+        }
+        if(t.trx_y==t.trx_h)t.trx=false;
+    }
+    void startTransfer(std::uint64_t dir) {
+        const auto bitblt=state.regs[0x50],pos=state.regs[0x51],reg=state.regs[0x52];
+        const unsigned dbp=unsigned((bitblt>>32)&0x3FFF),dbw=unsigned((bitblt>>48)&63),dpsm=unsigned((bitblt>>56)&63);
+        const unsigned dx=unsigned((pos>>32)&0x7FF),dy=unsigned((pos>>48)&0x7FF),order=unsigned((pos>>59)&3);
+        const unsigned w=unsigned(reg&0xFFF),h=unsigned((reg>>32)&0xFFF);
+        // Host->local, CT32 destination, upper-left order, inside the buffer (one page when DBW is 0).
+        // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS.
+        if((dir&3)!=0 || dpsm!=0 || order || !w || !h
+            || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048)
+            throw std::runtime_error("Unsupported GS image transfer: dir "+std::to_string(dir&3)+" dpsm "+std::to_string(dpsm)
+                +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));
+        state.trx=true;state.trx_bp=dbp;state.trx_bw=dbw;state.trx_x0=dx;state.trx_y0=dy;state.trx_w=w;state.trx_h=h;state.trx_x=state.trx_y=0;
+    }
+    void loadClut(std::uint64_t tex0) {
+        // CLD 1: load at this TEX0 write. CSM1, CT32 entries, 4-bit indices (16 entries at CSA*16).
+        const unsigned psm=unsigned((tex0>>20)&63),cbp=unsigned((tex0>>37)&0x3FFF),cpsm=unsigned((tex0>>51)&15);
+        const unsigned csm=unsigned((tex0>>55)&1),csa=unsigned((tex0>>56)&31);
+        if(psm!=0x14 || cpsm!=0 || csm || csa>15)throw std::runtime_error("Unsupported GS CLUT load");
+        for(unsigned i=0;i<16;++i) {
+            const auto& w=vram_[ct32Word(cbp,1,i%8,i/8)];
+            clut_.color[csa*16+i]=w.value;clut_.known[csa*16+i]=w.known==UINT32_MAX;
+        }
+        ++clut_loads;
     }
     void packed(unsigned d,std::uint64_t lo,std::uint64_t hi,bool apply) {
         switch(d) {
@@ -148,42 +221,105 @@ private:
         }
     }
     void write(unsigned reg,std::uint64_t value,bool apply) {
-        if(reg>=state.regs.size() || (reg>0x0F && reg<0x14) || reg==0x53 || reg==0x54)
+        if(reg>=state.regs.size() || (reg>0x0F && reg<0x14) || reg==0x54)
             throw std::runtime_error("Unsupported GS register write");
         state.regs[reg]=value;if(apply)++register_writes;
+        if(reg==0x53) {startTransfer(value);return;}
+        if(reg==0x06 || reg==0x07) {
+            const unsigned cld=unsigned((value>>61)&7);
+            if(cld==1)loadClut(value);else if(cld)throw std::runtime_error("Unsupported GS CLUT load control");
+            return;
+        }
         if(reg==0x00)state.vertices=0;
         if(reg!=0x04 && reg!=0x05 && reg!=0x0C && reg!=0x0D)return;
         const auto prim=(state.regs[0x1A]&1)?state.regs[0x00]:state.regs[0x1B];
         const unsigned type=unsigned(state.regs[0x00]&7),needed=type==6?2:type==3?3:0;
         if(!needed)throw std::runtime_error("Unsupported GS primitive type");
         if(state.vertices>=needed)state.vertices=0;
-        state.vertex_xyz[state.vertices]=value;state.vertex_rgbaq[state.vertices]=state.regs[0x01];++state.vertices;
+        state.vertex_xyz[state.vertices]=value;state.vertex_rgbaq[state.vertices]=state.regs[0x01];state.vertex_uv[state.vertices]=state.regs[0x03];++state.vertices;
         if(state.vertices<needed || reg==0x0C || reg==0x0D)return;
         if(type!=6)throw std::runtime_error("Unsupported GS triangle drawing");
         sprite(prim,apply);state.vertices=0;
     }
+    struct Rgba {int r,g,b,a;};
+    static Rgba unpack(std::uint32_t c) {return {int(c&255),int((c>>8)&255),int((c>>16)&255),int(c>>24)};}
+    std::uint32_t texel(std::uint64_t tex0,int u,int v) const {
+        const unsigned tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63),csa=unsigned((tex0>>56)&31);
+        const auto n=t4Nibble(tbp,tbw,unsigned(u),unsigned(v));
+        const auto& w=vram_[n/8];const unsigned shift=unsigned(n%8)*4;
+        if(((w.known>>shift)&15)!=15)throw std::runtime_error("GS texture reads unwritten VRAM at texel "+std::to_string(u)+","+std::to_string(v)+" (TBP "+std::to_string(tbp)+", TBW "+std::to_string(tbw)+", word "+std::to_string(n/8)+")");
+        const unsigned index=csa*16+((w.value>>shift)&15);
+        if(!clut_.known[index])throw std::runtime_error("GS texture reads an unloaded CLUT entry");
+        return clut_.color[index];
+    }
     void sprite(std::uint64_t prim,bool apply) {
         auto reject=[](){throw std::runtime_error("Unsupported GS sprite state");};
-        if(prim&0x7F8)reject(); // IIP/TME/FGE/ABE/AA1/FST: flat, untextured, unblended only.
+        // IIP is irrelevant for sprites; TME (with FST UVs) and ABE are supported; FGE/AA1 are not.
+        const bool tme=(prim>>4)&1,abe=(prim>>6)&1,fst=(prim>>8)&1;
+        if((prim&0xA0) || (tme && !fst))reject();
         const unsigned c=unsigned((prim>>9)&1);
         const auto frame=state.regs[0x4C+c],zbuf=state.regs[0x4E+c],offset=state.regs[0x18+c],scissor=state.regs[0x40+c],test=state.regs[0x47+c];
         const unsigned fbp=unsigned(frame&511),width=unsigned((frame>>16)&63),psm=unsigned((frame>>24)&63);
         const unsigned zbp=unsigned(zbuf&511),zpsm=unsigned((zbuf>>24)&15);const bool zmsk=(zbuf>>32)&1;
-        // Alpha and destination-alpha tests off; depth test off or ALWAYS (other modes later).
-        if(!width || (psm!=0 && psm!=1) || (test&1) || (test&0x4000) || ((test>>16)&1 && ((test>>17)&3)!=1) || (!zmsk && zpsm!=0 && zpsm!=1))reject();
+        // Alpha and destination-alpha tests off; depth test off or ALWAYS; no dither or FBA.
+        if(!width || (psm!=0 && psm!=1) || (test&1) || (test&0x4000) || ((test>>16)&1 && ((test>>17)&3)!=1) || (!zmsk && zpsm!=0 && zpsm!=1)
+            || (state.regs[0x45]&1) || (state.regs[0x4A+c]&1))reject();
         const unsigned ox=unsigned(offset&0xFFFF),oy=unsigned((offset>>32)&0xFFFF);
         auto x=[&](unsigned v){return int(v&0xFFFF)-int(ox);};auto y=[&](unsigned v){return int((v>>16)&0xFFFF)-int(oy);};
         const auto v0=state.vertex_xyz[0],v1=state.vertex_xyz[1];
-        int x0=(std::min(x(unsigned(v0)),x(unsigned(v1)))+15)>>4,x1=(std::max(x(unsigned(v0)),x(unsigned(v1)))+15)>>4;
-        int y0=(std::min(y(unsigned(v0)),y(unsigned(v1)))+15)>>4,y1=(std::max(y(unsigned(v0)),y(unsigned(v1)))+15)>>4;
+        const int X0=x(unsigned(v0)),X1=x(unsigned(v1)),Y0=y(unsigned(v0)),Y1=y(unsigned(v1));
+        int x0=(std::min(X0,X1)+15)>>4,x1=(std::max(X0,X1)+15)>>4;
+        int y0=(std::min(Y0,Y1)+15)>>4,y1=(std::max(Y0,Y1)+15)>>4;
         x0=std::max(x0,int(scissor&2047));y0=std::max(y0,int((scissor>>32)&2047));
         x1=std::min(x1,int((scissor>>16)&2047)+1);y1=std::min(y1,int((scissor>>48)&2047)+1);
         if(x1>int(width*64) || y1>2048)reject();
+        // Texture state: PSMT4 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
+        // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
+        const auto tex0=state.regs[0x06+c],tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
+        const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15),tfx=unsigned((tex0>>35)&3);
+        const bool tcc=(tex0>>34)&1,linear=(tex1>>5)&1;
+        const unsigned wms=unsigned(clamp&3),wmt=unsigned((clamp>>2)&3);
+        if(tme && (((tex0>>20)&63)!=0x14 || tw>10 || th>10 || tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(linear?1u:0u) || wms>1 || wmt>1))reject();
+        // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
+        const auto alpha=state.regs[0x42+c];
+        const unsigned sa=unsigned(alpha&3),sb=unsigned((alpha>>2)&3),sc=unsigned((alpha>>4)&3),sd=unsigned((alpha>>6)&3);
+        const int fix=int((alpha>>32)&255);const bool colclamp=state.regs[0x46]&1,pabe=state.regs[0x49]&1;
+        if(abe && (sa==3 || sb==3 || sc==3 || sd==3))reject();
+        const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
+        const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
+        auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
+        auto sample=[&](int u,int v)->Rgba { // u,v in 1/16 texels at the pixel.
+            if(!linear)return unpack(texel(tex0,wrap(u>>4,tw,wms),wrap(v>>4,th,wmt)));
+            const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
+            const auto c00=unpack(texel(tex0,wrap(iu,tw,wms),wrap(iv,th,wmt))),c10=unpack(texel(tex0,wrap(iu+1,tw,wms),wrap(iv,th,wmt)));
+            const auto c01=unpack(texel(tex0,wrap(iu,tw,wms),wrap(iv+1,th,wmt))),c11=unpack(texel(tex0,wrap(iu+1,tw,wms),wrap(iv+1,th,wmt)));
+            auto mix=[&](int a,int b,int c2,int d){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+d*fu*fv)>>8;};
+            return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
+        };
         if(!apply)return;
-        const std::uint32_t color=std::uint32_t(state.vertex_rgbaq[1]),mask=std::uint32_t(frame>>32)|(psm==1?0xFF000000u:0u);
+        const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
+        const std::uint32_t mask=std::uint32_t(frame>>32)|(psm==1?0xFF000000u:0u);
         const std::uint32_t z=std::uint32_t(v1>>32)&(zpsm==1?0xFFFFFFu:0xFFFFFFFFu),zmask=zpsm==1?0xFFFFFFu:0xFFFFFFFFu;
         for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
-            auto& w=vram_[address(fbp,width,unsigned(px),unsigned(py),false)];
+            Rgba s=vertex;
+            if(tme) {
+                const int u=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
+                const int v=Y1==Y0?V0:V0+int((std::int64_t(V1-V0)*(py*16-Y0))/(Y1-Y0));
+                const auto t=sample(u,v);
+                if(tfx==0)s={std::min(255,(t.r*vertex.r)>>7),std::min(255,(t.g*vertex.g)>>7),std::min(255,(t.b*vertex.b)>>7),tcc?std::min(255,(t.a*vertex.a)>>7):vertex.a};
+                else s={t.r,t.g,t.b,tcc?t.a:vertex.a};
+            }
+            auto& w=vram_[ct32Word(fbp*32,width,unsigned(px),unsigned(py))];
+            if(abe && !(pabe && s.a<0x80)) {
+                const std::uint32_t needed=((sa==1 || sb==1 || sd==1)?0xFFFFFFu:0u)|(sc==1?0xFF000000u:0u);
+                if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
+                const auto d=unpack(w.value);
+                auto pick=[](unsigned sel,int cs,int cd){return sel==0?cs:sel==1?cd:0;};
+                const int ca=sc==0?s.a:sc==1?d.a:fix;
+                auto blend=[&](int cs,int cd){const int r=((pick(sa,cs,cd)-pick(sb,cs,cd))*ca>>7)+pick(sd,cs,cd);return colclamp?std::clamp(r,0,255):(r&255);};
+                s={blend(s.r,d.r),blend(s.g,d.g),blend(s.b,d.b),s.a};
+            }
+            const std::uint32_t color=std::uint32_t(s.r)|(std::uint32_t(s.g)<<8)|(std::uint32_t(s.b)<<16)|(std::uint32_t(s.a&255)<<24);
             w.value=(w.value&mask)|(color&~mask);w.known|=~mask;
             if(!zmsk) {auto& d=vram_[address(zbp,width,unsigned(px),unsigned(py),true)];d.value=(d.value&~zmask)|z;d.known|=zmask;}
             ++frame_pixels;

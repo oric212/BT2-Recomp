@@ -47,3 +47,20 @@ So the frame draws one 512×128 4-bit CLUT image, uploaded as 256×32 CT32 words
 - No presentation is claimed until DISPFB contents reach a window.
 - UNPACK, VU1 microprograms and XGKICK remain a separate later plan.
 - Stop if the drawn result needs GS features beyond the reached registers (fog, mipmapping, other CLUT modes).
+
+## Progress (2026-10-08)
+
+Steps 1–5 are implemented for the reached state:
+- **VIF1:** commands are parsed with their real lengths; FLUSH variants are no-ops; DIRECT payloads reach the GS.
+- **GS transactions:** a whole chain's GS work is one transaction, with state, CLUT, VRAM and counters rolled back on any refusal.
+- **GIF parsing:** packets after an EOP in the same transfer are parsed, as on the GS.
+- **Image transfers:** host→local transfers into CT32. A new TRXDIR write abandons an incomplete transfer.
+- **Texture addressing:** PSMT4 uses the public column layout, written as bit placement and checked against the reference layout at all 512 block positions.
+- **CLUT:** CSM1 loads with CT32 entries.
+- **Sprites:** textured and blended (modulate/decal, nearest or bilinear, REPEAT/CLAMP, the general blend equation with COLCLAMP and PABE).
+
+**Result.** Normal startup draws the controller-missing screen every frame. Rendered from the owned VRAM model (`render_gs_frame.py`), the displayed framebuffer is fully written and the text is legible. It matches the game's message.
+
+**Not yet verified.** Bilinear rounding against GS output, and a framebuffer comparison with an original GS dump.
+
+The next blocker is controller input: [CONTROLLER_PLAN.md](CONTROLLER_PLAN.md).

@@ -79,6 +79,9 @@ int main(int argc, char** argv) {
         PS2Runtime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
+        // Frame budget: stop after this many display flips (default 120; BT2_FRAME_LIMIT=0 disables).
+        runtime.frame_limit = 120;
+        if (const char* limit = std::getenv("BT2_FRAME_LIMIT")) runtime.frame_limit = static_cast<unsigned>(std::stoul(limit));
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);
         if (snapshot_mode) {
@@ -390,9 +393,11 @@ int main(int argc, char** argv) {
             // send polls GIF DMA (frame GIF DMA is the next subsystem; EE_OVERLAY_PLAN.md).
             // Frame path handoffs: the draw-environment send polling GIF DMA, then the game's own
             // render kick polling VIF1 before its chain DMA (VIF1/VU1 is the next subsystem).
-            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && stop.size==4
+            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || runtime.frame_budget_reached)
                 && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350)
-                    || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1)); // First VIF1 chain with data (VIF1/VU1 plan).
+                    || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1) // VIF1 chain refused at its start.
+                    || (stop.address==0x10000800 && context.pc==0x28C798) // Timer 1 delay poll outside the admitted wait.
+                    || (stop.address==0x120000E0 && runtime.frame_budget_reached)); // Probe frame budget after a completed flip.
             if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff) throw; // Explicit subsystem boundaries only.
             if(vif_handoff || texture_handoff || frame_gif_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
@@ -656,7 +661,8 @@ int main(int argc, char** argv) {
                                 && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
                                 && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
                                 "Fresh SIF prior GS synchronization differs");
-                            for(unsigned page : {0u,140u}) {
+                            // Frame-phase textured drawing reuses this memory with the 512-pixel layout.
+                            if(!runtime.gif_dma.gs.image_pixels)for(unsigned page : {0u,140u}) {
                                 const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
                                 require(pixel.value==0 && pixel.known==UINT32_MAX,"Fresh SIF startup framebuffer edge differs");
                             }
@@ -779,9 +785,9 @@ int main(int argc, char** argv) {
             report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
                 << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
                 << ",\"resume_pc\":" << stop_resume << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
-                << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"timer1_polls\":" << runtime.timer1_polls
+                << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"frame_budget_reached\":" << (runtime.frame_budget_reached?1:0) << ",\"timer1_counting\":" << (runtime.timer1.counting()?1:0) << ",\"timer1_mode\":" << runtime.timer1.mode() << ",\"timer1_polls\":" << runtime.timer1_polls
                 << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
-                << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
+                << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_directs\":" << runtime.frame_vif1.directs << ",\"vif1_direct_qwords\":" << runtime.frame_vif1.direct_qwords << ",\"gs_image_pixels\":" << runtime.gif_dma.gs.image_pixels << ",\"gs_clut_loads\":" << runtime.gif_dma.gs.clut_loads << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
                 << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
                 << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
@@ -1065,6 +1071,15 @@ int main(int argc, char** argv) {
                     std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
                     ee_dump.write(reinterpret_cast<const char*>(runtime.memory().data()),runtime.memory().size());
                     if(!ee_dump)throw std::runtime_error("EE evidence dump failed");
+                }
+                if(runtime.gs_display_flips) {
+                    // Owned GS memory model: per 32-bit word, value then known-bit mask (ignored evidence).
+                    std::ofstream gs_dump(std::string(argv[2])+".gs.bin",std::ios::binary);
+                    for(std::size_t i=0;i<1024*1024;++i) {
+                        const auto w=runtime.gif_dma.gs.word(i);
+                        gs_dump.write(reinterpret_cast<const char*>(&w.value),4);gs_dump.write(reinterpret_cast<const char*>(&w.known),4);
+                    }
+                    if(!gs_dump)throw std::runtime_error("GS evidence dump failed");
                 }
                 std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);
                 if(!dump.write(reinterpret_cast<const char*>(runtime.native_iop->runtime.ram.data()),runtime.native_iop->runtime.ram.size()))throw std::runtime_error("Native IOP checkpoint write failed");

@@ -29,13 +29,13 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — first overlay asset read completes; frame 2 reaches its first texture upload; nothing presented |
+| Game asset loading and first presented frame | 🔧 In progress — first screen (controller-missing message) rendered offline from the owned GS model every frame; no window yet |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the overlay's second frame starts its first VIF1 chain with content (PATH2 DIRECT: a PSMT4 texture, its CLUT and one textured sprite), held as a checked boundary at the channel start ([GS texture plan](GS_TEXTURE_PLAN.md)).
+**Current blocker:** the game shows its "No DUALSHOCK®2 analog controller connected" screen and waits: no controller is modelled on the SIO2 bus ([controller plan](CONTROLLER_PLAN.md)). The probe stops at its 120-frame budget.
 
-**Last measured, 2026-10-07:** **642 EE entries entered / 633 completed**, **42 CRI calls**, **58 original IOP disc reads**, **123 logical VBlanks**, **18 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **642 EE entries entered / 633 completed**, **120 rendered frames**, **42 CRI calls**, **58 original IOP disc reads**, **357 logical VBlanks**, **52 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
