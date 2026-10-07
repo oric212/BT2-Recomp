@@ -8,7 +8,7 @@
 // Read-only bytes owned by the caller. This performs no guest DMA, IRQ or completion.
 inline std::vector<std::uint8_t> read_iso_sectors(const std::string& path,
         std::uint32_t lba,std::uint32_t count) {
-    constexpr std::uint32_t sector_size=2048,maximum_sectors=16;
+    constexpr std::uint32_t sector_size=2048,maximum_sectors=512; // Streamed CDVDFSV requests read whole requests from the ISO.
     if(!count || count>maximum_sectors)throw std::runtime_error("Unsupported bounded sector count");
     std::ifstream file(path,std::ios::binary|std::ios::ate);
     if(!file || file.tellg()<0)throw std::runtime_error("Local disc unavailable");

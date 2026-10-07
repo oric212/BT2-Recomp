@@ -573,15 +573,28 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
     const bool repeat=disc_read_calls && disc_ready_calls>disc_read_calls; // A readiness query precedes each read.
     if(epoch!=epoch_ || failed_ || input.size()!=sizeof(expected) || ee.size()!=32*1024*1024
         || (first ? (disc_ready_calls!=1 || in!=expected)
-                  : (!repeat || !in[1] || in[1]>16 || in[2]%64 || in[2]<0x100000 || in[2]+in[1]*2048>ee.size()
+                  : (!repeat || !in[1] || in[1]>512 || in[2]%64 || in[2]<0x100000 || in[2]+in[1]*2048>ee.size()
                      || (in[3]!=0 && in[3]!=0x100) || in[4]!=expected[4] || in[5]!=expected[5])))
         throw std::runtime_error("Unsupported owned disc read");
     const auto lbn=in[0],count=in[1],dest=in[2],mode=in[3],bytes=count*2048;
+    // Requests above 16 sectors stream through the 16-sector FSV ring: the handler reprograms
+    // CDVD DMA channel 3 for each further chunk (retail block layout: 43 blocks of 12 words).
+    constexpr unsigned ring_sectors=16,block_words=12,blocks_per_sector=43;
+    const unsigned chunks=(count+ring_sectors-1)/ring_sectors;
+    unsigned ring_offset=0,ring_count=0,signalled=0,sector_dmas=0,completions=0,progress_dmas=0,last_progress=0;
+    std::uint32_t dma3_madr=0,dma3_bcr=0,dma3_chcr=0;bool dma3_stopped=false;
     const unsigned dma_base=disc_read_dma_submissions,alarm_base=disc_read_alarm_cancels,set_base=disc_read_alarm_sets;
     const auto payload=read_iso_sectors(path,lbn,count);
     const auto saved=runtime.providers;const auto event=runtime.next_event++;
     const auto wait=saved.at({"thevent",10});unsigned stage=0;bool accepted=false,callback=false;
     constexpr unsigned workspace=0x1D4B00,buffer=0x1D5B00,raw=buffer+0x1248,token=0x770001;
+    auto fill_ring=[&](IopRuntime& rt,unsigned offset,unsigned sectors) {
+        for(unsigned sector=0;sector<sectors;++sector){const auto at=raw+sector*2064,id=0x20030000+lbn+offset+sector;
+            for(unsigned n=0;n<4;++n)rt.write(at+n,(id>>(8*(3-n)))&255,1);
+            for(unsigned n=0;n<2048;++n)rt.write(at+12+n,payload[(offset+sector)*2048+n],1);
+        }
+        ring_offset=offset;ring_count=sectors;
+    };
     try {
         if(first){runtime.map(workspace,std::vector<std::uint8_t>(256));runtime.map(buffer,std::vector<std::uint8_t>(42128));}
         runtime.events.emplace(event,IopRuntime::Event{0,0,0});
@@ -614,15 +627,14 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
         };
         runtime.providers[{"cdvdman",63}]=[&](IopRuntime& rt,IopContext& c) {
             if(stage!=5 || accepted || c.pc!=iop_disc_base+0x4B80 || c.get(4)!=lbn || c.get(5)!=count || c.get(6)!=raw || c.get(7)!=iop_disc_base+0x54F0
-                || rt.read(c.get(29)+16,4)!=count || rt.read(c.get(29)+20,4)!=iop_disc_base+0xB00 || rt.read(c.get(7),4)!=mode)
+                || rt.read(c.get(29)+16,4)!=std::min(count,ring_sectors) || rt.read(c.get(29)+20,4)!=iop_disc_base+0xB00 || rt.read(c.get(7),4)!=mode)
                 throw std::runtime_error("Unsupported RV destination/mode/callback: buf="+std::to_string(c.get(6))+" modeptr="+std::to_string(c.get(7))
                     +" arg5="+std::to_string(rt.read(c.get(29)+16,4))+" cb="+std::to_string(rt.read(c.get(29)+20,4))+" mode="+std::to_string(rt.read(c.get(7),4)));
-            // sceCdRV arg5 is the cache sector count (= sectors here). Captured DVD records contain a
-            // 12-byte header, 2048 ISO bytes and four trailing bytes.
-            for(unsigned sector=0;sector<count;++sector){const auto at=raw+sector*2064,id=0x20030000+lbn+sector;
-                for(unsigned n=0;n<4;++n)rt.write(at+n,(id>>(8*(3-n)))&255,1);
-                for(unsigned n=0;n<2048;++n)rt.write(at+12+n,payload[sector*2048+n],1);
-            }
+            // sceCdRV arg5 is the cache (ring) sector count. Captured DVD records contain a 12-byte
+            // header, 2048 ISO bytes and four trailing bytes. CDVDMAN's DMA block fields come from
+            // the retail workspace (12-word blocks, 43 per sector).
+            rt.write(workspace+164,block_words,2);rt.write(workspace+166,blocks_per_sector,2);
+            fill_ring(rt,0,std::min(count,ring_sectors));
             accepted=true;return 1u;
         };
         auto deliver_read_completion=[&](IopRuntime& rt) {
@@ -633,15 +645,21 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
                 rt.in_interrupt=true;try{rt.execute(rt,completion);rt.in_interrupt=false;}catch(...){rt.in_interrupt=false;throw;}
                 if(completion.pc!=IopRuntime::sentinel || completion.get(2)!=0 || rt.events.at(event).bits!=0x20)
                     throw std::runtime_error("Original read callback effects differ");
-                callback=true;++disc_read_callbacks;
+                // One callback per ring chunk; the read completes with the last chunk.
+                callback=true;++signalled;if(ring_offset+ring_count==count)++disc_read_callbacks;
         };
         runtime.providers[{"thevent",10}]=[&](IopRuntime& rt,IopContext& c) {
             if(c.get(4)==event && c.get(5)==0x20 && !callback)throw std::runtime_error("Disc wait before synchronization completed");
             return wait(rt,c);
         };
         runtime.providers[{"cdvdman",11}]=[&](IopRuntime& rt,IopContext& c) {
-            if(!accepted || c.pc!=iop_disc_base+0x4AF0 || (c.get(4)!=32 && !(c.get(4)==5 && callback)))throw std::runtime_error(std::string("Unsupported owned read synchronization / accepted=")+(accepted?"1":"0")+" callback="+(callback?"1":"0"));
-            if(!callback)deliver_read_completion(rt);
+            const bool all=ring_offset+ring_count==count && signalled==chunks;
+            if(!accepted || c.pc!=iop_disc_base+0x4AF0 || (c.get(4)!=32 && !(c.get(4)==5 && all)))throw std::runtime_error(std::string("Unsupported owned read synchronization / accepted=")+(accepted?"1":"0")+" callback="+(callback?"1":"0"));
+            if(c.get(4)==32) {
+                // The current ring chunk's data and DMA completion; the next chunk needs a DMA restart.
+                if(signalled!=ring_offset/ring_sectors || sector_dmas!=signalled)throw std::runtime_error("Read chunk synchronization out of order");
+                deliver_read_completion(rt);
+            }
             return 0u;
         };
         runtime.providers[{"cdvdman",8}]=[&](IopRuntime&,IopContext& c) {
@@ -654,23 +672,51 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
             if(c.get(5))rt.write(c.get(5),0xFFFFFF99,4);
             return 0xFFFFFF99u; // Actual driver completion already disabled DMA3.
         };
+        runtime.providers[{"dmacman",8}]=[&](IopRuntime& rt,IopContext& c) {
+            if(c.get(4)!=3 || c.pc!=iop_disc_base+0x490C || sector_dmas!=signalled || !signalled || ring_offset+ring_count>=count)
+                throw std::runtime_error("Unsupported CDVD DMA control");
+            if(!c.get(5)) {dma3_stopped=true;dma3_chcr=0;return 0u;}
+            const auto next=std::min(ring_sectors,count-ring_offset-ring_count);
+            if(!dma3_stopped || c.get(5)!=0x41000200 || dma3_madr!=raw || dma3_bcr!=((blocks_per_sector*next)<<16|block_words)
+                || rt.read(workspace+0xA8,4)!=raw)throw std::runtime_error("Unsupported CDVD DMA restart");
+            // The drive continues the original request: the next chunk streams into the ring start.
+            fill_ring(rt,ring_offset+ring_count,next);dma3_stopped=false;dma3_chcr=c.get(5);dma3_madr=dma3_bcr=0;return 0u;
+        };
+        runtime.providers[{"dmacman",9}]=[&](IopRuntime&,IopContext& c) {
+            if(c.get(4)!=3 || c.pc!=iop_disc_base+0x4914)throw std::runtime_error("Unsupported CDVD DMA status");
+            return dma3_chcr;
+        };
+        runtime.providers[{"dmacman",4}]=[&](IopRuntime&,IopContext& c) {
+            if(c.get(4)!=3 || c.pc!=iop_disc_base+0x48FC || !dma3_stopped)throw std::runtime_error("Unsupported CDVD DMA address");
+            dma3_madr=c.get(5);return 0u;
+        };
+        runtime.providers[{"dmacman",6}]=[&](IopRuntime&,IopContext& c) {
+            if(c.get(4)!=3 || c.pc!=iop_disc_base+0x4904 || !dma3_stopped)throw std::runtime_error("Unsupported CDVD DMA block count");
+            dma3_bcr=c.get(5);return 0u;
+        };
         std::set<unsigned> polled;
         runtime.providers[{"sifman",7}]=[&](IopRuntime& rt,IopContext& c) {
             if(!callback || c.pc!=iop_disc_base+0x4A3C)throw std::runtime_error("Sector DMA before owned completion");
-            const auto k=disc_read_dma_submissions-dma_base;
-            if(k==0) {
-                if(c.get(4)!=iop_disc_base+0x53E0 || c.get(5)!=count)throw std::runtime_error("Unsupported first sector DMA");
-                for(unsigned sector=0;sector<count;++sector) {
-                    const std::array<unsigned,4> d={raw+sector*2064+12,dest+sector*2048,2048,0};
+            if(c.get(4)==iop_disc_base+0x53E0) {
+                // One sector DMA per signalled ring chunk, to the chunk's EE offset.
+                if(c.get(5)!=ring_count || sector_dmas+1!=signalled)throw std::runtime_error("Unsupported sector DMA");
+                for(unsigned sector=0;sector<ring_count;++sector) {
+                    const std::array<unsigned,4> d={raw+sector*2064+12,dest+(ring_offset+sector)*2048,2048,0};
                     for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+sector*16+n*4,4)!=d[n])throw std::runtime_error("Sector DMA descriptor differs");
                     for(unsigned n=0;n<2048;++n)ee[d[1]+n]=static_cast<std::uint8_t>(rt.read(d[0]+n,1));
                 }
+                ++sector_dmas;
             }else {
-                const bool progress=k==1 || k==3;
-                if(k>3 || c.get(5)!=1 || c.get(4)!=iop_disc_base+(progress?0x5508:0x54F8))throw std::runtime_error("Unsupported read completion DMA / batch="+std::to_string(disc_read_dma_submissions)+" src="+std::to_string(rt.read(c.get(4),4))+" dst="+std::to_string(rt.read(c.get(4)+4,4))+" bytes="+std::to_string(rt.read(c.get(4)+8,4))+" value="+std::to_string(rt.read(rt.read(c.get(4),4),4)));
+                const bool progress=c.get(4)==iop_disc_base+0x5508;
+                if(c.get(5)!=1 || (!progress && (c.get(4)!=iop_disc_base+0x54F8 || completions || sector_dmas!=chunks)))throw std::runtime_error("Unsupported read completion DMA / batch="+std::to_string(disc_read_dma_submissions)+" src="+std::to_string(rt.read(c.get(4),4))+" dst="+std::to_string(rt.read(c.get(4)+4,4))+" bytes="+std::to_string(rt.read(c.get(4)+8,4))+" value="+std::to_string(rt.read(rt.read(c.get(4),4),4)));
                 const std::array<unsigned,4> d={iop_disc_base+(progress?0x5818:0x5580),progress?0x369580u:0x3694C0u,progress?4u:144u,0};
                 for(unsigned n=0;n<4;++n)if(rt.read(c.get(4)+n*4,4)!=d[n])throw std::runtime_error("Read completion descriptor differs");
-                if(progress && rt.read(d[0],4)!=(k==1?0u:bytes))throw std::runtime_error("Read progress differs");
+                if(progress) {
+                    // Progress only grows (chunked reads add the next chunk ahead); the final value is every byte.
+                    const auto value=rt.read(d[0],4);
+                    if(value>bytes || value<last_progress || (completions && value!=bytes))throw std::runtime_error("Read progress differs: "+std::to_string(value));
+                    last_progress=value;++progress_dmas;
+                } else ++completions;
                 if(!progress && (rt.read(d[0],4) || rt.read(d[0]+4,4) || rt.read(d[0]+8,4)!=dest || rt.read(d[0]+12,4)!=dest+bytes))throw std::runtime_error("Owned completion range differs");
                 for(unsigned n=0;n<d[2];++n)ee[d[1]+n]=static_cast<std::uint8_t>(rt.read(d[0]+n,1));
             }
@@ -684,7 +730,8 @@ std::uint32_t NativeIopService::callDiscRead(unsigned epoch,std::span<const std:
         };
         IopContext c;c.pc=iop_disc_base+0x3ABC;c.set(4,1);c.set(5,iop_disc_base+0x6088);c.set(6,24);
         c.set(28,iop_disc_gp);c.set(29,0x1FFF00);c.set(31,IopRuntime::sentinel);runtime.execute(runtime,c);
-        if(c.pc!=IopRuntime::sentinel || stage!=6 || !accepted || !callback || disc_read_dma_submissions!=dma_base+4 || !disc_read_dma_polls || disc_read_alarm.deadline || disc_read_alarm_cancels!=alarm_base+1)
+        if(c.pc!=IopRuntime::sentinel || stage!=6 || !accepted || !callback || signalled!=chunks || sector_dmas!=chunks || completions!=1
+            || progress_dmas<2 || last_progress!=bytes || disc_read_dma_submissions!=dma_base+chunks+progress_dmas+1 || !disc_read_dma_polls || disc_read_alarm.deadline || disc_read_alarm_cancels!=alarm_base+1)
             throw std::runtime_error("Original sector handler incomplete");
         // The original handler resubmits its updated progress word after the completion buffer.
         if(runtime.read(iop_disc_base+0x5818,4)!=bytes)throw std::runtime_error("Final owned progress differs");

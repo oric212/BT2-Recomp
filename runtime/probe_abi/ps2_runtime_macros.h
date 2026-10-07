@@ -120,6 +120,12 @@ inline void ps2TraceGuestWrite(std::uint8_t*, std::uint32_t, unsigned, std::uint
                               std::uint64_t, const char*, R5900Context*) {}
 
 #define FAST_READ32(address) READ32(address)
+// Remaining fast-path widths use the same checked memory API as their plain forms.
+#define FAST_WRITE16(address, value) WRITE16(address, value)
+#define FAST_READ16(address) READ16(address)
+#define FAST_WRITE64(address, value) WRITE64(address, value)
+#define FAST_WRITE128(address, value) WRITE128(address, value)
+#define FAST_READ8(address) READ8(address)
 
 inline std::uint32_t SLL32(std::uint32_t value, unsigned amount) { return value << (amount & 31); }
 
