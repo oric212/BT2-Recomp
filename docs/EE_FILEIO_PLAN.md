@@ -32,3 +32,7 @@ No host file-system shortcut: reads come from the local ISO through the original
 1. Trace the worker side: how the request record is queued (message box/thread), the IOMAN calls it makes, and the SIF command it sends back (command ID, payload, EE handler registered by the C library).
 2. Model IOP→EE SIF command delivery into the EE command handler at an owned scheduling point, and the request-record placement (capture or derive it).
 3. Serve IOMAN `cdrom0:` from the local ISO through the reached CDVDMAN path; compare the loaded bytes with `rpc-dbzp-loaded`.
+
+## Progress (2026-10-07, later)
+
+Prepared behind `fileio_workers_supported` (off; normal startup still stops at the open): FILEIO-scoped providers for IOP message boxes (CreateMbx/DeleteMbx/SendMbx/ReceiveMbx, with direct hand-over to a waiting worker), SIF commands to the EE (extra data copied, header queued and delivered after the RPC to handler `0x333378` with argument `0x3AC780` via `deliverEeCommand`), the IOMAN `cdrom0:` device (open/lseek/read/close from the local ISO) and model-local FILEIO allocations in an owned IOP area (`0x197000`–`0x19F000`; these addresses never reach the EE). Enabled, the open runs the dispatcher, allocates the request record, creates and starts the worker, and stops at the worker's first IOP semaphore wait (`thsemap`), which is the next step.

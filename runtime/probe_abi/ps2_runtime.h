@@ -1465,7 +1465,8 @@ public:
     // (0x100650 -> 0x271078): 8 CSR reset, 9 CSR read, 10 IMR, 11 CRT(1,2,0), 12 handler re-added.
     bool sounds_hardware_timers_supported=true; // IOP_HARDWARE_TIMER_PLAN.md
     bool sound_voice_transfers_supported=true; // Owned SPU2 voice transfers (IOP_SPU2_TRANSFER_PLAN.md).
-    unsigned fileio_binds=0,fileio_calls=0;
+    unsigned fileio_binds=0,fileio_calls=0,fileio_completions=0;
+    bool fileio_workers_supported=false;
     unsigned display_reset_phase=0,polled_vblanks=0,timer2_deliveries=0,file_load_idles=0,iop_uploads=0,iop_upload_polls=0;
     unsigned delivering_cause_=0;
     LogicalTimer2 timer2;
@@ -1929,6 +1930,21 @@ private:
         ++sif_bind_callbacks;
         ++sif_dma_submissions;
         context->r[2].low = 0x801;
+    }
+    // An IOP->EE SIF command handler call: packet header at the EE command buffer (0x3A94C0),
+    // run on a CPU copy below the interrupted stack, as RPC_END is.
+    void deliverEeCommand(std::uint8_t* rdram,R5900Context* context,std::uint32_t handler,std::uint32_t argument) {
+        std::array<std::uint8_t,sizeof(R5900Context)> saved_cpu;std::memcpy(saved_cpu.data(),context,saved_cpu.size());
+        auto callback=*context;callback.r[4].low=0x3A94C0;callback.r[5].low=argument;callback.r[28].low=0x38BDF0;
+        constexpr std::uint32_t callback_return=0xFFFFFFF8;callback.r[31].low=callback_return;
+        const auto scratch=static_cast<std::uint32_t>(callback.r[29].low)-128;checkMemory(rdram,scratch,128);
+        std::array<std::uint8_t,128> saved_stack;std::copy_n(memory_.data()+scratch,128,saved_stack.data());
+        rpc_end_callback_active_=true;
+        try {dispatchGuestBranch(rdram,&callback,handler,context->pc,callback_return,GuestBranchKind::DirectCall,"FILEIO SIF command");}
+        catch(...) {rpc_end_callback_active_=false;std::copy(saved_stack.begin(),saved_stack.end(),memory_.begin()+scratch);throw;}
+        rpc_end_callback_active_=false;std::copy(saved_stack.begin(),saved_stack.end(),memory_.begin()+scratch);
+        if(callback.r[29].low!=context->r[29].low || std::memcmp(saved_cpu.data(),context,saved_cpu.size()))
+            throw std::runtime_error("FILEIO SIF command handler changed interrupted CPU state");
     }
     void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
                        std::uint32_t client = 0x3A87A8, unsigned semaphore = 3,

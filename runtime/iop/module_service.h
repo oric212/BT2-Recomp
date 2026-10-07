@@ -80,6 +80,16 @@ public:
     // Boot FILEIO file server (0x80000001): original handler, request in its native receive buffer.
     std::vector<std::uint8_t> callFileio(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory,const std::string& disc_path);
     unsigned fileio_requests=0,fileio_dma_submissions=0;
+    // IOP->EE SIF commands sent by FILEIO workers (16-byte header; extra data already copied).
+    struct EeCommand {std::uint32_t cid=0;std::array<std::uint8_t,16> header{};};
+    std::vector<EeCommand> pending_ee_commands;unsigned ee_commands_sent=0;
+    // Owned IOMAN cdrom0: device: read-only ISO9660 files from the local disc image.
+    struct OwnedFile {std::uint32_t lba=0,size=0,position=0;};
+    std::map<std::uint32_t,OwnedFile> cdrom_files;std::uint32_t next_cdrom_fd=1;
+    unsigned cdrom_opens=0,cdrom_reads=0,cdrom_closes=0;std::uint64_t cdrom_bytes=0;
+    // FILEIO's internal allocations (request records, read buffers): model-local placement in an
+    // owned IOP area; these addresses never reach the EE.
+    std::map<std::uint32_t,std::uint32_t> fileio_allocations;
     std::vector<std::uint8_t> callSoundRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t service=0x80000701);
     std::uint32_t allocateBootHeap(unsigned epoch,unsigned size);
     Resident loadBootBuffer(unsigned epoch,unsigned pointer);

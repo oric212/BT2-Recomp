@@ -163,10 +163,10 @@ void PS2Runtime::receiveFileioCall(std::uint8_t* rdram,R5900Context* context) {
     if(read32(rdram,0x3AC740)!=0x203A97C0 || read32(rdram,0x3AC754)!=0x477D0 || read32(rdram,0x3AC764)!=0x47788)throw UnsupportedSyscall(0x77,context->pc);
     if(send_size)checkMemory(rdram,source,send_size);
     if(receive_size)checkMemory(rdram,receive,receive_size);
-    // Only the stdio initialization request (0xFF) is synchronous. File operations (open/read/...)
-    // are queued to per-request FILEIO worker threads that complete through IOP->EE SIF commands,
-    // which are not modelled (EE_FILEIO_PLAN.md): stop before the IOP is entered.
-    if(command!=0xFF)throw UnsupportedSyscall(0x77,context->pc);
+    // File operations (open/read/...) run on FILEIO worker threads that report through IOP->EE SIF
+    // commands. The worker path is modelled up to its first IOP semaphore wait, which is not yet
+    // owned (EE_FILEIO_PLAN.md): only the synchronous initialization request (0xFF) enters the IOP.
+    if(command!=0xFF && !fileio_workers_supported)throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;auto& rt=native_iop->runtime;
     try {response=native_iop->callFileio(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+source,send_size),receive_size,memory_,local_disc_path);}
     catch(const std::exception& e) {
@@ -177,6 +177,14 @@ void PS2Runtime::receiveFileioCall(std::uint8_t* rdram,R5900Context* context) {
     const std::array<std::uint32_t,16> reply={receive_size<<8,receive_size?receive:0u,0x80000008,0,0,0,0,0x3AC740,0x8000000A,0,0,0,0,0,0,0};
     for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,0x3AC740,sema,0x47788,0x477D0);
+    // FILEIO workers report through IOP->EE SIF commands; deliver them to the C library's handler
+    // (registered at stdio initialization: 0x80000011 -> 0x333378, argument 0x3AC780).
+    auto commands=std::move(native_iop->pending_ee_commands);native_iop->pending_ee_commands.clear();
+    for(const auto& command:commands) {
+        if(command.cid!=0x80000011)throw UnsupportedSyscall(0x77,context->pc);
+        std::copy(command.header.begin(),command.header.end(),memory_.begin()+0x3A94C0);
+        deliverEeCommand(rdram,context,0x333378,0x3AC780);++fileio_completions;
+    }
     ++fileio_calls;++sif_dma_submissions;context->r[2].low=0x70100+fileio_calls;
     native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
 }

@@ -6,7 +6,7 @@ Normal checkpoint: **595 entered / 587 completed**, kernel 2/2, 92,247 calls / 9
 
 ## Next implementation
 
-Follow the findings and next steps in [EE_FILEIO_PLAN.md](../EE_FILEIO_PLAN.md): trace FILEIO's per-request worker and the IOP→EE SIF command it sends, model that delivery into the C library's EE handler, place the 0xC40-byte request record, and serve IOMAN `cdrom0:` from the local ISO. Original evidence: `rpc-dbzp-loaded` (DBZP.BIN at EE `0x3B3100`; FILEIO read buffer at IOP `0x1E7100`). The SOUNDS hardware timer has not ticked yet in normal startup. The IOP stream consumer acknowledgement remains unmodelled. `div.s` is still emitted inline with IEEE semantics.
+Follow [EE_FILEIO_PLAN.md](../EE_FILEIO_PLAN.md) (see its later progress section: mailboxes, SIF command delivery, `cdrom0:` and allocations are prepared behind `fileio_workers_supported`; enabling it stops at the worker's first `thsemap` wait): trace FILEIO's per-request worker and the IOP→EE SIF command it sends, model that delivery into the C library's EE handler, place the 0xC40-byte request record, and serve IOMAN `cdrom0:` from the local ISO. Original evidence: `rpc-dbzp-loaded` (DBZP.BIN at EE `0x3B3100`; FILEIO read buffer at IOP `0x1E7100`). The SOUNDS hardware timer has not ticked yet in normal startup. The IOP stream consumer acknowledgement remains unmodelled. `div.s` is still emitted inline with IEEE semantics.
 
 ## Verification and evidence
 

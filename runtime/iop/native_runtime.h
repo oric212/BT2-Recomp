@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <deque>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -64,6 +65,8 @@ public:
     // sound-driver command runs. Transfers complete in logical time; LIBSD's IRQ 36/40 handler runs
     // at once when CPU interrupts are enabled. No playback, read-back transfers or timing.
     unsigned sound_worker_starts=0;
+    // Message boxes (thmsgbx) used by FILEIO's per-file workers: queued message pointers.
+    std::map<unsigned,std::deque<std::uint32_t>> mailboxes;unsigned next_mailbox=1;
     // One IOP hardware timer allocated by the SOUNDS worker (captured: root counter 5, id 0x5BF80149).
     // Logical time: it advances one NTSC field per EE logical VBlank at the 36.864 MHz system clock.
     struct HardTimer {bool allocated=false,started=false;std::uint32_t id=0,compare=0,handler=0,common=0,gp=0;std::uint64_t tenths=0;unsigned ticks=0;} sound_timer;
@@ -91,7 +94,7 @@ public:
     bool cpu_interrupts_enabled=true; // Owned diagnostic kernel starts dispatch enabled.
     struct Interrupt {std::uint32_t mode,handler,argument; bool enabled=false;std::uint32_t gp=0;};
     std::map<unsigned,Interrupt> interrupts;
-    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;unsigned wait_semaphore=0;bool wait_sleep=false;unsigned wakeups=0;};
+    struct Thread {std::uint32_t attr,option,entry,stack,stacksize,priority,gp; IopContext context; bool ready=false,waiting=false,wait_satisfied=false; unsigned wait_event=0;std::uint32_t wait_bits=0,wait_mode=0,wait_result=0,wait_rpc=0;std::uint64_t wait_order=0;bool wait_ee_bind=false;unsigned wait_semaphore=0;bool wait_sleep=false;unsigned wakeups=0;unsigned wait_mbx=0;std::uint32_t wait_mbx_out=0,mbx_message=0;};
     std::map<unsigned,Thread> threads;
     std::uint64_t next_wait_order=0;
     std::uint64_t logical_time_us=0,timed_deadline_us=0;
