@@ -117,9 +117,14 @@ def main():
             "tail_dispatch_hooks": count})
     # Every actually selected extra entry gets the same deterministic tail routing.
     # Preserve raw generation and record hashes; no handwritten per-function stub list.
-    from expand_startup import verify_extra
-    for address in verify_extra():
-        source=ROOT/'game/generated/bt2'/f'FUN_{address:08X}_0x{address:x}.cpp'
+    from expand_startup import verify_extra,verify_overlays
+    import overlay_programs
+    selected=[(address,ROOT/'game/generated/bt2'/f'FUN_{address:08X}_0x{address:x}.cpp',patched) for address in verify_extra()]
+    # Selected overlay entries: same deterministic routing into each overlay's own prepared folder.
+    for program,functions in verify_overlays().items():
+        files=overlay_programs.paths(program);files['runtime'].mkdir(parents=True,exist_ok=True)
+        selected+=[(row['start'],files['output']/f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp",files['runtime']) for row in functions]
+    for address,source,prepared in selected:
         text,count=route_tail_calls(source.read_text(encoding='utf-8'))
         text,vu_count=route_vu_status(text)
         text,control_count=route_vu_control(text)
@@ -128,7 +133,7 @@ def main():
             raise ValueError('Reached indexed cache helper shape/count differs')
         text,halfword_count=route_fast_halfword_reads(text)
         text,byte_count=route_fast_byte_reads(text)
-        destination=patched/source.name
+        destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
                                  'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count})

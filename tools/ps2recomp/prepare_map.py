@@ -11,6 +11,7 @@ import struct
 from pathlib import Path
 
 from generate_game import ROOT, LOCAL_CANDIDATE_SHA256
+import overlay_programs
 
 
 def has_tail_nop_gap(candidate, metadata, data):
@@ -195,26 +196,33 @@ def select_candidates(report, metadata, max_size=0x5000, data=None):
 
 
 def main():
-    executable = ROOT / "rom/SLUS_214.41"
-    data = executable.read_bytes()
-    if hashlib.sha256(data).hexdigest() != LOCAL_CANDIDATE_SHA256:
-        raise ValueError("Local executable hash differs from the inspected candidate.")
-    export = ROOT / "work/ghidra/exports/analysis.json"
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--program", choices=sorted(overlay_programs.PROGRAMS), help="Prepare a wrapped overlay's separate map")
+    args = parser.parse_args()
+    if args.program:
+        _, data = overlay_programs.load(args.program)
+        files = overlay_programs.paths(args.program)
+        identity, export, folder = hashlib.sha256(data).hexdigest(), files["exports"] / "analysis.json", files["generation"]
+    else:
+        data = (ROOT / "rom/SLUS_214.41").read_bytes()
+        identity, export, folder = LOCAL_CANDIDATE_SHA256, ROOT / "work/ghidra/exports/analysis.json", ROOT / "work/bt2-generation"
+        if hashlib.sha256(data).hexdigest() != LOCAL_CANDIDATE_SHA256:
+            raise ValueError("Local executable hash differs from the inspected candidate.")
     report = json.loads(export.read_text(encoding="utf-8"))
-    if report["language"] != "r5900:LE:32:default" or report["executable_sha256"].lower() != LOCAL_CANDIDATE_SHA256:
+    if report["language"] != "r5900:LE:32:default" or report["executable_sha256"].lower() != identity:
         raise ValueError("Export language/hash differs from the executable.")
     spec = importlib.util.spec_from_file_location("bt2_elf", ROOT / "tools/inspect_elf/inspect_elf.py")
     inspector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inspector)
     metadata = inspector.inspect(data)
     selected, excluded = select_candidates(report, metadata, data=data)
-    folder = ROOT / "work/bt2-generation"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "candidates.csv"
     text = "Name,Start,End,Size\n" + "".join(
         f"FUN_{row['start']:08X},0x{row['start']:08X},0x{row['end']:08X},{row['end']-row['start']}\n" for row in selected)
     path.write_text(text, encoding="utf-8")
-    manifest = {"status": "automated provisional EE map", "executable_sha256": LOCAL_CANDIDATE_SHA256,
+    manifest = {"status": "automated provisional EE map", "executable_sha256": identity, "program": args.program or "executable",
                 "map_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "export_sha256": hashlib.sha256(export.read_bytes()).hexdigest(), "language": report["language"],
                 "selected_count": len(selected), "covered_bytes": sum(row["end"]-row["start"] for row in selected),

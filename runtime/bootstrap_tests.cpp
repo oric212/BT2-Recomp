@@ -71,6 +71,42 @@ void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtim
 }
 int main() {
     {
+        // Overlay functions dispatch only while RAM holds the exact bytes they were generated from.
+        PS2Runtime overlay;overlay.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        auto* ram=overlay.memory().data();R5900Context ctx{};
+        const std::uint8_t code[8]={0x08,0x00,0xE0,0x03,0x00,0x00,0x00,0x00}; // Synthetic JR RA / NOP.
+        reject([&]{overlay.registerOverlayFunction(0x400000,return_leaf,std::span<const std::uint8_t>(code,6));});
+        reject([&]{overlay.registerOverlayFunction(0x400000,return_leaf,std::span<const std::uint8_t>());});
+        overlay.registerOverlayFunction(0x400000,return_leaf,code);
+        reject([&]{overlay.registerOverlayFunction(0x400000,return_leaf,code);});
+        ctx.r[31].low=0x204;
+        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"not loaded");});
+        require(!overlay.overlay_dispatch_validations);
+        std::copy(std::begin(code),std::end(code),ram+0x400000);
+        overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"loaded");
+        require(overlay.overlay_dispatch_validations==1 && ctx.pc==0x204);
+        ram[0x400004]=1; // Any change to the bound body is refused.
+        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"changed");});
+        require(overlay.overlay_dispatch_validations==1);
+    }
+    {
+        // Logical Timer 1, H-BLANK clock: 525 half-lines per field, one count per HBLANK while CUE.
+        LogicalTimer1 t;reject([&]{t.writeMode(0x83);});reject([&]{t.configure(1);});
+        t.configure(3);t.field();require(t.halflines()==525 && t.count()==0); // Stopped: no counting.
+        t.writeMode(0x83);require(t.counting());
+        for(unsigned n=0;n<10;++n){const auto target=t.nextLine();require(!t.crossesField(target));t.lineTo(target);}
+        require(t.count()==10 && t.halflines()==545);
+        t.field();require(t.halflines()==1050 && t.count()==10+(1050/2-545/2)); // 253 more HBLANKs.
+        const auto before=t.count();
+        t.field();require(t.count()==before+(1575/2-1050/2));
+        reject([&]{t.writeCount(0);});reject([&]{t.writeMode(0x82);});
+        t.writeMode(3);require(!t.counting());t.writeCount(0);require(t.count()==0);
+        // A line that reaches the boundary: the field is delivered first, then the line completes.
+        LogicalTimer1 u;u.configure(3);u.writeMode(0x83);
+        while(!u.crossesField(u.nextLine()))u.lineTo(u.nextLine());
+        const auto target=u.nextLine();u.field();u.lineTo(target);require(u.halflines()==target && u.count()==target/2);
+    }
+    {
         // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.
         LogicalTimer2 t;reject([&]{t.advanceField();});reject([&]{t.start(0x80,0,0);});
         t.start(0x382,0,0xFFFF);

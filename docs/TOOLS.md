@@ -708,3 +708,10 @@ New capture point: `rpc-dbzp-loaded` (main's first frame step after closing its 
 `python tools/capture_ee/verify_dbzp_load.py --native work/bt2-generation/entry-stop.json` checks the native FILEIO lifecycle (bind, six calls, five worker completions). It then compares the loaded `DBZP.BIN` (0x7D48F bytes at `0x3B3100`) with `rpc-dbzp-loaded`.
 
 `prepare_map.py`'s bounded switch proof accepts a second compiler layout: SLTIU bound / BEQ / LUI in the delay slot / SLL / ADDIU / ADDU / LW / JR through any register. Its registers are decoded and checked, and the LW displacement is part of the table address.
+
+Runtime-loaded overlays (`tools/ps2recomp/overlay_programs.py`).
+- `python tools/ps2recomp/overlay_programs.py --extract <ISO>` extracts `DBZP.BIN`, checks its pinned identity and wraps it as an ignored local ELF.
+- `analyze_game.py`, `prepare_map.py` and `generate_game.py` accept `--program dbzp` and keep a separate Ghidra project, exports, map and output.
+- `inspect_blocker.py` and `expand_startup.py` route targets inside the overlay range to the overlay map and receipt (`work/bt2-generation/overlays.json`, `overlays.cmake`, `bt2_overlays.h`).
+
+New capture point: `rpc-overlay-dispenv` (`0x311860`, the overlay frame's first display-environment flip). `verify_overlay_dispenv.py` compares the display block, the overlay range and the recorded GS display registers.

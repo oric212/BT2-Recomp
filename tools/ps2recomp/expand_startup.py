@@ -8,8 +8,10 @@ import csv
 import json
 from pathlib import Path
 from run_pipeline import ROOT, verify_generated
+import overlay_programs
 
 FOLDER = ROOT / 'work/bt2-generation'
+OVERLAY_RECEIPT, OVERLAY_CMAKE, OVERLAY_HEADER = (FOLDER / name for name in ('overlays.json', 'overlays.cmake', 'bt2_overlays.h'))
 
 
 def render(addresses):
@@ -44,6 +46,77 @@ def verify_extra():
     return addresses
 
 
+def render_overlays(selection):
+    """Overlay bindings: each selected function is registered with the bytes it was generated from."""
+    cmake = 'target_sources(bt2-entry-probe PRIVATE\n'
+    declarations, tables, registrations = [], [], []
+    for program, functions in sorted(selection.items()):
+        image, _ = overlay_programs.load(program)
+        base = overlay_programs.PROGRAMS[program]['base']
+        for row in functions:
+            start, end = row['start'], row['end']
+            if not base <= start < end <= base + len(image):
+                raise ValueError('Overlay function outside its image.')
+            name = f'FUN_{start:08X}_0x{start:x}'
+            cmake += f'    "${{BT2_GENERATED_DIR}}/../{program}-runtime/{name}.cpp"\n'
+            declarations.append(f'void {name}(uint8_t* rdram, R5900Context* ctx, PS2Runtime* runtime);\n')
+            body = ','.join(map(str, image[start - base:end - base]))
+            tables.append(f'inline constexpr std::uint8_t bt2_overlay_{start:08X}[] = {{{body}}};\n')
+            registrations.append(f'    runtime.registerOverlayFunction(0x{start:08X}, {name}, bt2_overlay_{start:08X});\n')
+    header = ('#pragma once\n#include <cstdint>\n' + ''.join(declarations) + ''.join(tables)
+              + 'inline void registerOverlays(PS2Runtime& runtime) {\n' + ''.join(registrations) + '}\n')
+    return cmake + ')\n', header
+
+
+def overlay_rows(program):
+    with (overlay_programs.paths(program)['generation'] / 'candidates.csv').open(newline='', encoding='utf-8') as stream:
+        return list(csv.DictReader(stream))
+
+
+def verify_overlays():
+    """Selected overlay functions: generation provenance, map rows, raw hashes and rendered bindings."""
+    if not OVERLAY_RECEIPT.exists():
+        if OVERLAY_CMAKE.exists() or OVERLAY_HEADER.exists():
+            raise ValueError('Overlay bindings have no receipt.')
+        return {}
+    receipt = json.loads(OVERLAY_RECEIPT.read_text(encoding='utf-8'))
+    selection = {}
+    for program, entry in receipt['programs'].items():
+        manifest = overlay_programs.verify_generated(program)
+        if entry['map_sha256'] != manifest['map_sha256']:
+            raise ValueError('Overlay selection/map differs.')
+        rows = {int(row['Start'], 0): int(row['End'], 0) for row in overlay_rows(program)}
+        for row in entry['functions']:
+            name = f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp"
+            if rows.get(row['start']) != row['end'] or entry['files'].get(name) != manifest['files'].get(name):
+                raise ValueError('Overlay raw source/map provenance differs.')
+        selection[program] = entry['functions']
+    cmake, header = render_overlays(selection)
+    if OVERLAY_CMAKE.read_text(encoding='utf-8') != cmake or OVERLAY_HEADER.read_text(encoding='utf-8') != header:
+        raise ValueError('Overlay binding fragment differs.')
+    return selection
+
+
+def select_overlay(program, target):
+    rows = [row for row in overlay_rows(program) if int(row['Start'], 0) == target]
+    if len(rows) != 1:
+        raise ValueError('Reached overlay target is not an exact, unique mapped entry.')
+    selection = verify_overlays()
+    if any(row['start'] == target for row in selection.get(program, [])):
+        raise ValueError('Reached overlay entry was already selected; inspect actual dispatch failure.')
+    selection.setdefault(program, []).append({'start': target, 'end': int(rows[0]['End'], 0)})
+    receipt = {'programs': {}, 'limitations': 'Actually reached overlay entries; registered with the bytes they were generated from.'}
+    for name, functions in selection.items():
+        manifest = overlay_programs.verify_generated(name)
+        files = {f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp": manifest['files'][f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp"] for row in functions}
+        receipt['programs'][name] = {'functions': functions, 'files': files, 'map_sha256': manifest['map_sha256']}
+    cmake, header = render_overlays(selection)
+    OVERLAY_CMAKE.write_text(cmake, encoding='utf-8')
+    OVERLAY_HEADER.write_text(header, encoding='utf-8')
+    OVERLAY_RECEIPT.write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
+    print(f'Selected neutral overlay entry FUN_{target:08X} ({program}); bindings remain ignored.')
+
+
 def select_target(target, rows):
     if not isinstance(target, int) or target <= 0 or target >= 0x80000000 or target % 4:
         raise ValueError('Expected an aligned main-ELF target.')
@@ -59,6 +132,10 @@ def main():
     verify_generated()
     addresses = verify_extra()
     stop = json.loads(args.report.read_text(encoding='utf-8'))
+    program = overlay_programs.program_for(stop.get('target'))
+    if program:
+        select_overlay(program, stop['target'])
+        return
     with (FOLDER / 'candidates.csv').open(newline='', encoding='utf-8') as stream:
         target = select_target(stop.get('target'), list(csv.DictReader(stream)))
     if target in addresses:

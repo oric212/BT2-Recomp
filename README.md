@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** main calls into the loaded `DBZP.BIN` overlay (`0x3B7FA8`); overlay code is not analysed or generated yet ([EE overlay plan](EE_OVERLAY_PLAN.md)).
+**Current blocker:** the overlay's first frame sends its draw environment through GIF DMA channel 2 (`0x3100D0`); per-frame GIF DMA and GS register state are not modelled yet ([frame GIF plan](FRAME_GIF_PLAN.md)).
 
-**Last measured, 2026-10-07:** **601 EE entries entered / 595 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **608 EE entries entered / 597 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 <!-- progress-summary:end -->

@@ -249,6 +249,7 @@ bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t select
 }
 
 void PS2Runtime::advanceLogicalField() {
+    timer1.field(); // Display time reaches the field boundary (credits Timer 1 HBLANKs while counting).
     // Timer 2 runs from the startup mode write; its BIOS-era COUNT/COMP residue is not observable
     // (initial MODE already had CUE set), so the logical counter starts at COUNT 0, COMP 0.
     if(!timer2.started()) {

@@ -13,6 +13,9 @@
 #ifdef BT2_EXTRA_STARTUP_BINDINGS
 #include <bt2_extra_startup.h>
 #endif
+#ifdef BT2_OVERLAY_BINDINGS
+#include <bt2_overlays.h>
+#endif
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -323,6 +326,9 @@ int main(int argc, char** argv) {
 #ifdef BT2_EXTRA_STARTUP_BINDINGS
         registerExtraStartup(runtime);
 #endif
+#ifdef BT2_OVERLAY_BINDINGS
+        registerOverlays(runtime);
+#endif
         if (timer_mode) {
 #ifdef BT2_KERNEL_PAYLOAD
             runtime.registerKernelFunction(0x80076000, FUN_80076000_0x80076000,
@@ -379,8 +385,12 @@ int main(int argc, char** argv) {
             const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
                 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            // Overlay frame path: after a complete display flip, the GS library's draw-environment
+            // send polls GIF DMA (frame GIF DMA is the next subsystem; EE_OVERLAY_PLAN.md).
+            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.gs_display_writes%5==0
+                && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4 && runtime.current_thread_id==1;
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff || frame_gif_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -760,7 +770,12 @@ int main(int argc, char** argv) {
             if (!report) throw std::runtime_error("Could not write SCMD report");
             report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
                 << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
-                << ",\"resume_pc\":" << stop_resume << ",\"calls\":" << runtime.guest_calls << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
+                << ",\"resume_pc\":" << stop_resume << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
+                << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"timer1_polls\":" << runtime.timer1_polls
+                << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
+                << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10]
+                << ",\"timer1_stops\":" << runtime.timer1_stops << ",\"timer1_count\":" << runtime.timer1.count()
+                << ",\"calls\":" << runtime.guest_calls << ",\"distinct_ee_entered\":" << std::count_if(runtime.entered_functions.begin(),runtime.entered_functions.end(),[](auto a){return a<0x80000000;})
                 << ",\"distinct_ee_completed\":" << std::count_if(runtime.completed_functions.begin(),runtime.completed_functions.end(),[](auto a){return a<0x80000000;})
                 << ",\"ee_entered_addresses\":" << jsonEEAddresses(runtime.entered_functions)
                 << ",\"ee_completed_addresses\":" << jsonEEAddresses(runtime.completed_functions)
@@ -1355,6 +1370,7 @@ int main(int argc, char** argv) {
                << ",\"extended_registrations\":" << runtime.extended_registrations
                << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
                << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
+               << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
                << ",\"sif_dma_submissions\":" << runtime.sif_dma_submissions << ",\"sif_rpc_reads\":" << runtime.sif_rpc_reads
                << ",\"uncached_word_accesses\":" << runtime.uncached_word_accesses << ",\"uncached_byte_accesses\":" << runtime.uncached_byte_accesses
                << ",\"sif_command_reads\":" << runtime.sif_command_reads << ",\"data_cache_lines\":" << runtime.data_cache_lines

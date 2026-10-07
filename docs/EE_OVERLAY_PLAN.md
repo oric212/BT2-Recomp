@@ -30,3 +30,14 @@ Both get checked against later captures, not assumed.
 - Do not assume the BT3 project's overlay format or base. Its overlay tooling is a structural reference only ([REFERENCE_ARCHITECTURE.md](REFERENCE_ARCHITECTURE.md)).
 - Stop if the overlay is modified or replaced at runtime, or if it needs relocation, without evidence of how.
 - Generated overlay code, the wrapped image and its maps stay in ignored `work/` folders.
+
+## Progress (2026-10-07)
+
+All five design steps are implemented:
+1. The wrapper and identity check live in `tools/ps2recomp/overlay_programs.py`.
+2. Ghidra uses a separate project and exports; the separate map has 380 entries.
+3. Generation goes into `game/generated/dbzp`.
+4. Overlay bindings are registered with their exact bytes and checked on every dispatch.
+5. The selection loop classifies overlay targets.
+
+Two overlay entries run (`0x3B7FA8`, `0x3BC310`) and call back into executable code. Their state matches the original at `rpc-overlay-dispenv` (`verify_overlay_dispenv.py`). The overlay has not been modified or replaced at runtime so far. Execution continues in the [frame GIF plan](FRAME_GIF_PLAN.md).

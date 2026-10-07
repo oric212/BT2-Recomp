@@ -49,12 +49,24 @@ def main():
     maps.add_argument("--function-map", type=Path, help="Reviewed CSV with Name,Start,End,Size columns.")
     maps.add_argument("--candidate-map", type=Path, help="Automated provisional map from prepare_map.py; requires its manifest.")
     parser.add_argument("--executable", type=Path, default=ROOT / "rom" / "SLUS_214.41")
+    parser.add_argument("--program", help="Generate a wrapped runtime-loaded overlay into its own output")
     args = parser.parse_args()
     try:
-        if args.executable.stat().st_size != 2675936:
-            raise ValueError("Input size differs from the locally inspected executable candidate.")
-        data = args.executable.read_bytes()
-        if hashlib.sha256(data).hexdigest() != LOCAL_CANDIDATE_SHA256:
+        if args.program:
+            import overlay_programs
+            if args.program not in overlay_programs.PROGRAMS:
+                raise ValueError("Unknown overlay program.")
+            _, data = overlay_programs.load(args.program)
+            files = overlay_programs.paths(args.program)
+            args.executable, identity = files["elf"], hashlib.sha256(data).hexdigest()
+            folder, output = files["generation"], files["output"]
+        else:
+            if args.executable.stat().st_size != 2675936:
+                raise ValueError("Input size differs from the locally inspected executable candidate.")
+            data = args.executable.read_bytes()
+            identity = LOCAL_CANDIDATE_SHA256
+            folder, output = ROOT / "work" / "bt2-generation", ROOT / "game" / "generated" / "bt2"
+        if hashlib.sha256(data).hexdigest() != identity:
             raise ValueError("Input differs from the locally inspected candidate; inspect and document the new file first.")
         spec = importlib.util.spec_from_file_location("bt2_inspector", ROOT / "tools" / "inspect_elf" / "inspect_elf.py")
         inspector = importlib.util.module_from_spec(spec)
@@ -65,7 +77,7 @@ def main():
         if args.candidate_map:
             manifest = json.loads(function_map.with_suffix(".manifest.json").read_text(encoding="utf-8"))
             if (manifest["status"] != "automated provisional EE map"
-                    or manifest["executable_sha256"] != LOCAL_CANDIDATE_SHA256
+                    or manifest["executable_sha256"] != identity
                     or manifest["map_sha256"] != hashlib.sha256(function_map.read_bytes()).hexdigest()
                     or manifest["language"] != "r5900:LE:32:default"):
                 raise ValueError("Candidate map provenance does not match.")
@@ -74,9 +86,7 @@ def main():
         provenance = json.loads((build / "bt2-tool-provenance.json").read_text(encoding="utf-8"))
         if provenance["lock_sha256"] != hashlib.sha256((ROOT / "config" / "ps2recomp.lock.json").read_bytes()).hexdigest() or provenance["recompiler_sha256"] != hashlib.sha256(tool.read_bytes()).hexdigest():
             raise ValueError("Tool provenance does not match the lock file; rebuild with build_tools.py.")
-        folder = ROOT / "work" / "bt2-generation"
         folder.mkdir(parents=True, exist_ok=True)
-        output = ROOT / "game" / "generated" / "bt2"
         if not output.resolve().is_relative_to(ROOT.resolve()) or not folder.resolve().is_relative_to(ROOT.resolve()):
             raise ValueError("Generation paths must stay within the project root.")
         # Preserve prior output and start from an empty directory to prevent stale functions.
@@ -99,7 +109,7 @@ def main():
         if not files:
             raise ValueError("Recompiler produced no source files.")
         (folder / "generation.manifest.json").write_text(json.dumps({
-            "executable_sha256": LOCAL_CANDIDATE_SHA256,
+            "executable_sha256": identity, "program": args.program or "executable",
             "map_sha256": hashlib.sha256(function_map.read_bytes()).hexdigest(),
             "lock_sha256": provenance["lock_sha256"],
             "recompiler_sha256": provenance["recompiler_sha256"], "map_kind": "provisional" if args.candidate_map else "reviewed",

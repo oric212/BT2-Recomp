@@ -18,6 +18,7 @@
 #include "retained_ee_stack.h"
 #include "gif_dma_staging.h"
 #include "logical_timer2.h"
+#include "logical_timer1.h"
 #include "post_reset_sif.h"
 #include "vif_startup.h"
 #include "texture_gif_startup.h"
@@ -119,7 +120,7 @@ public:
     void finishQueuedSoundsBind(std::uint8_t*,R5900Context*);
 
 
-    enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump, IndirectJump=TailJump };
+    enum class GuestBranchKind { Return, DirectCall, IndirectCall, TailJump, IndirectJump=TailJump, DirectJump=TailJump };
     static constexpr std::size_t ram_size = 32 * 1024 * 1024;
 
     void clearLLBit(R5900Context* context) { context->ll_bit = false; }
@@ -127,6 +128,15 @@ public:
     void registerFunction(std::uint32_t address, RecompiledFunction function) {
         if (address >= 0x80000000 || !function || !functions_.emplace(address, function).second)
             throw std::runtime_error("Invalid or duplicate guest registration");
+    }
+
+    // A function generated from a runtime-loaded overlay: dispatchable only while main RAM holds the
+    // exact bytes it was generated from (checked on every dispatch; EE_OVERLAY_PLAN.md).
+    void registerOverlayFunction(std::uint32_t address, RecompiledFunction function, std::span<const std::uint8_t> expected) {
+        if (address >= ram_size || !function || expected.empty() || expected.size() % 4 || expected.size() > ram_size - address
+                || !functions_.emplace(address, function).second)
+            throw std::runtime_error("Invalid or duplicate overlay registration");
+        overlay_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected.begin(), expected.end()));
     }
 
     void registerKernelFunction(std::uint32_t address, RecompiledFunction function,
@@ -1462,6 +1472,9 @@ public:
     unsigned ee_heap_lock_waits=0,ee_heap_lock_signals=0,heap_end_queries=0;
     unsigned timer1_setup_writes=0;
     std::uint32_t timer1_mode=0;
+    // GS privileged display registers (0x12000000 + 16*n) as last written; PMODE n=0 .. BGCOLOR n=14.
+    std::array<std::uint64_t,15> gs_privileged{};unsigned gs_display_writes=0,gs_display_flips=0;
+    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0;
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
@@ -1593,6 +1606,18 @@ public:
         if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
             gif_dma.gs.resetDrawingState();++display_reset_phase;return;
         }
+        // The GS library's display-environment flip (0x311860, second branch): PMODE, SMODE2, DISPFB2,
+        // DISPLAY2 and BGCOLOR are recorded as privileged display state. No presentation is claimed.
+        if(current_thread_id==1 && !in_interrupt_ && display_reset_phase==13) {
+            static constexpr std::array<std::pair<std::uint32_t,std::uint32_t>,5> flip={{
+                {0x3118D0,0x12000000},{0x3118EC,0x12000020},{0x3118F8,0x12000090},{0x311900,0x120000A0},{0x311908,0x120000E0}}};
+            for(unsigned n=0;n<flip.size();++n)if(context->pc==flip[n].first && address==flip[n].second) {
+                if(gs_display_writes%flip.size()!=n)throw UnsupportedGuestMemory(address,8); // Whole flips, in order.
+                gs_privileged[(address-0x12000000)/16]=value;
+                if(++gs_display_writes%flip.size()==0)++gs_display_flips;
+                return;
+            }
+        }
         if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
                 || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
             throw UnsupportedGuestMemory(address,8);
@@ -1628,7 +1653,13 @@ public:
     void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
         if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
             && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
-            checkMemory(rdram,0,0);timer1_mode=value;++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
+            checkMemory(rdram,0,0);timer1_mode=value;timer1.configure(value);++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
+        }
+        // Main's H-BLANK delay helpers (0x28C778 start, 0x28C790 wait >= 400 and stop): logical Timer 1.
+        if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
+            if(address==0x10000810 && context->pc==0x28C78C && value==(timer1.mode()|0x80)) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_starts;return;}
+            if(address==0x10000810 && context->pc==0x28C7CC && value==(timer1.mode()&~0x80u) && timer1.counting()) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_stops;return;}
+            if(address==0x10000800 && context->pc==0x28C7D4 && !value && !timer1.counting()) {checkMemory(rdram,0,0);timer1.writeCount(0);return;}
         }
         if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
             if(address==0x1000A020 && context->pc==0x28B96C) {checkMemory(rdram,0,0);texture_gif.count(value);return;}
@@ -1690,6 +1721,18 @@ public:
     }
 
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+        if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
+            if(address==0x10000810 && (context->pc==0x28C780 || context->pc==0x28C7C0)) {checkMemory(rdram,0,0);return timer1.mode();}
+            if(address==0x10000800 && context->pc==0x28C798 && timer1.counting()) {
+                // Logical time: each poll of the delay loop waits one line; a crossed field boundary
+                // delivers that VBLANK_START first (interrupt handlers and woken threads run).
+                checkMemory(rdram,0,0);
+                if(++timer1_polls>100000)throw UnsupportedGuestMemory(address,4);
+                const auto target=timer1.nextLine();
+                if(timer1.crossesField(target))deliverVblank(rdram,context);
+                timer1.lineTo(target);return timer1.count();
+            }
+        }
         if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
             checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
         }
@@ -1905,6 +1948,7 @@ public:
     static bool stdioCallSema(std::uint32_t option) {
         return option==0x3839A0 || option==0x3839B8 || option==0x3839D0 || option==0x3839E8;
     }
+    std::uint64_t overlay_dispatch_validations=0;
 private:
     void receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
         if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2
@@ -2197,6 +2241,13 @@ private:
     }
     std::uint32_t startup_zero_start_ = 0, startup_zero_end_ = 0;
     void verifyKernelBinding(std::uint32_t address) {
+        if (const auto overlay = overlay_code_bindings_.find(address); overlay != overlay_code_bindings_.end()) {
+            if (memory_.size() < address + overlay->second.size()
+                    || !std::equal(overlay->second.begin(), overlay->second.end(), memory_.begin() + address))
+                throw std::runtime_error("Loaded overlay code differs from its generated binding");
+            ++overlay_dispatch_validations;
+            return;
+        }
         const auto found = kernel_code_bindings_.find(address);
         if (found == kernel_code_bindings_.end()) return;
         for (std::size_t offset = 0; offset < found->second.size(); offset += 4) {
@@ -2209,6 +2260,7 @@ private:
         ++kernel_dispatch_validations;
     }
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> kernel_code_bindings_;
+    std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> overlay_code_bindings_;
     void checkMemory(std::uint8_t* rdram, std::uint32_t address, std::size_t count) const {
         if (memory_.empty() || rdram != memory_.data() || address > memory_.size() || count > memory_.size() - address)
             throw UnsupportedGuestMemory(address, count);
