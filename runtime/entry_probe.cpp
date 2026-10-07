@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
         PS2Runtime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
+        if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);
         if (snapshot_mode) {
             std::ifstream kernel(argv[3], std::ios::binary | std::ios::ate);
@@ -390,7 +391,8 @@ int main(int argc, char** argv) {
             // Frame path handoffs: the draw-environment send polling GIF DMA, then the game's own
             // render kick polling VIF1 before its chain DMA (VIF1/VU1 is the next subsystem).
             const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && stop.size==4
-                && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350));
+                && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350)
+                    || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1)); // First VIF1 chain with data (VIF1/VU1 plan).
             if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff) throw; // Explicit subsystem boundaries only.
             if(vif_handoff || texture_handoff || frame_gif_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
@@ -779,7 +781,7 @@ int main(int argc, char** argv) {
                 << ",\"resume_pc\":" << stop_resume << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
                 << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"timer1_polls\":" << runtime.timer1_polls
                 << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
-                << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes
+                << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
                 << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
                 << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
@@ -838,6 +840,7 @@ int main(int argc, char** argv) {
                 << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
                 << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls << ",\"ncmd_read_calls\":" << runtime.ncmd_read_calls << ",\"cri_rpc_binds\":" << runtime.cri_rpc_binds << ",\"cri_rpc_calls\":" << runtime.cri_rpc_calls << ",\"disc_read_calls\":" << (runtime.native_iop?runtime.native_iop->disc_read_calls:0) << ",\"disc_read_callbacks\":" << (runtime.native_iop?runtime.native_iop->disc_read_callbacks:0) << ",\"disc_read_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_read_dma_submissions:0)
                 << ",\"probe_initial_sp\":" << runtime.initial_sp << ",\"probe_semaphore_count\":" << runtime.semaphores.size() << ",\"ncmd_rpc_binds\":" << runtime.ncmd_rpc_binds << ",\"ncmd_bind_semaphores\":" << runtime.ncmd_bind_semaphores << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
+                << ",\"stop_returns\":[" << [&]{std::string s;for(auto a:runtime.stop_returns){if(!s.empty())s+=',';s+=std::to_string(a);}return s;}() << "]"
                 << ",\"stop_ra\":" << GPR_U32(&context,31) << ",\"stop_s1\":" << GPR_U32(&context,17) << ",\"stop_s3\":" << GPR_U32(&context,19)
                 << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
                 << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)
@@ -978,7 +981,7 @@ int main(int argc, char** argv) {
                 << ",\"spu2_playback_blocks\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.blocks:0)
                 << ",\"spu2_endx\":[" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[0]:0) << "," << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[1]:0) << "]"
                 << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_timer_started\":" << (runtime.native_iop && runtime.native_iop->runtime.sound_timer.started ? 1 : 0) << ",\"fileio_binds\":" << runtime.fileio_binds << ",\"fileio_calls\":" << runtime.fileio_calls << ",\"fileio_completions\":" << runtime.fileio_completions << ",\"iop_timer_ticks\":" << (runtime.native_iop ? runtime.native_iop->runtime.sound_timer.ticks : 0u) << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
-                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"scmd_calls\":" << runtime.scmd_calls
+                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"asset_poll_idles\":" << runtime.asset_poll_idles << ",\"timer1_vblanks\":" << runtime.timer1_vblanks << ",\"dbc_port_calls\":" << runtime.dbc_port_calls << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
                 << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns
                 << ",\"startup_dispatch_parent_pc\":" << runtime.startup_dispatch_parent.pc

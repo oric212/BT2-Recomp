@@ -39,3 +39,5 @@ Steps 1–3 are implemented for the reached shapes:
 - flat untextured sprite drawing with dry-run validation.
 
 The first frame's draw-environment send clears 512×448. The path sync and the game's VIF1 render kick are modeled for idle paths. The VIF1 interpreter accepts NOP only; the first frame's chain is empty. Real geometry (VIF1 UNPACK/MSCAL, VU1 microprograms, XGKICK) has not been reached yet. When it is, it needs its own plan.
+
+The second frame's render kick carries the first VIF1 chain with content: PATH2 DIRECT texture/CLUT uploads and a textured sprite, without VU1. It is refused as a checked boundary at the channel start; continued in [GS_TEXTURE_PLAN.md](GS_TEXTURE_PLAN.md).

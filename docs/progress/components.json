@@ -16,9 +16,9 @@
       {"name": "Memory cards", "status": "partial", "note": "Absent-card queries only"}
     ]},
     {"name": "Game", "items": [
-      {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN via FILEIO"},
+      {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN; first asset"},
       {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
-      {"name": "GS rendering", "status": "partial", "note": "Frame clear; no VU/present"},
+      {"name": "GS rendering", "status": "partial", "note": "Frame clears; textures next"},
       {"name": "Frame presentation", "status": "pending", "note": "No visible game frame"},
       {"name": "Menu, battle and audio", "status": "pending", "note": "End-to-end behavior unverified"}
     ]}

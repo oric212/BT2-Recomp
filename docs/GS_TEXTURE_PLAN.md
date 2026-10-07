@@ -1,0 +1,49 @@
+# VIF1 DIRECT, GS image transfers and the first textured sprite
+
+## Why this is a new subsystem
+
+The overlay's second frame starts its render kick (`0x28B3E8`, second VIF1 chain start) with real content. The VIF1 interpreter accepted only NOP. The chain is now refused as a checked boundary at the channel start (`frame_vif1.unsupported`, no partial effect).
+
+The first non-empty chain uses no VU1 at all. It is PATH2 GS traffic that needs:
+- host→local image transfers;
+- 4-bit texture addressing;
+- CLUT loads;
+- textured sprite drawing.
+
+None of this exists in the GS model yet, and together it is the GS texturing subsystem.
+
+## Evidence (2026-10-07, native report at the boundary)
+
+The chain at `0x430600` has 8 DMA tags (5 CNT, 2 REF, 1 END). Its VIF codes are FLUSHE ×3, NOP ×14 and DIRECT ×7, covering 2,081 quadwords. There is no UNPACK, MPG or MSCAL. The DIRECT payloads are:
+
+1. **Draw state (A+D):** ALPHA_1 `0x44` (Cs−Cd)·As+Cd, TEX1_1 `0x60` (linear MMAG/MMIN), TEST_1 `0x30000` (Z test ALWAYS).
+2. **Texture upload:**
+   - BITBLTBUF: DBP `0x3000`, DBW 4, DPSM CT32.
+   - A REF to `0x8D53A0`: TRXPOS, TRXREG 256×32, TRXDIR host→local, then IMAGE 2,048 qwords and TEXFLUSH.
+3. **CLUT upload:** BITBLTBUF DBP `0x30C0` CT32, then a REF to `0x8DD420`: TRXREG 8×2, IMAGE 4 qwords, TEXFLUSH.
+4. **TEXFLUSH.**
+5. **Draw (REGLIST, 8 registers):**
+   - RGBAQ `0x80808080`;
+   - TEX0_1: TBP0 `0x3000`, TBW 8, PSMT4, 512×128, TCC 1, TFX modulate, CBP `0x30C0`, CPSM CT32, CSM1, CLD 1;
+   - PRIM `0x156`: sprite, TME, ABE, FST;
+   - UV/XYZ2 ×2: a 512×128 sprite at (1792,1908)–(2304,2036), UV 0–512 / 0–128.
+
+So the frame draws one 512×128 4-bit CLUT image, uploaded as 256×32 CT32 words. This relies on GS memory swizzling to reinterpret the layout. That makes exact PSMCT32 write and PSMT4 read addressing a requirement, not an optimization.
+
+## Bounded design
+
+1. **VIF1 command parser.** Parse codes with their real lengths: NOP; FLUSHE, FLUSH and FLUSHA as no-ops while no VU1 program runs; DIRECT/DIRECTHL handing quadword-aligned payloads to the general GS transfer. All other codes (UNPACK, MPG, MSCAL and so on) stay checked boundaries. Keep the whole-chain dry run, so a refused chain has no effects.
+2. **Host→local transfer.** Handle BITBLTBUF, TRXPOS, TRXREG and TRXDIR (direction 0), then IMAGE data written pixel by pixel in the destination format. Start with PSMCT32 destinations, using the existing CT32 swizzle. Other destination formats, local→host and local→local stop as boundaries.
+3. **Texture addressing.** Add PSMT4 (and PSMT8 when reached) read addressing over the same word memory, expressed from the public GS page, block and column layout. Do not copy reference tables.
+4. **CLUT.** Implement the TEX0 CLD load into a CLUT buffer for CSM1 and CPSM CT32 (16 entries for T4), with CSA. Other CLUT modes stay boundaries.
+5. **Textured sprite.** For the reached state: FST UVs; modulate with TCC; bilinear MMAG/MMIN with clamp behavior per CLAMP_1 (record CLAMP and refuse unknown modes); alpha blend per ALPHA_1, with FBA, PABE and DTHE off.
+6. **Verification.**
+   - Unit-test the swizzles on round trips (CT32 written, T4 read) against independently derived expectations.
+   - Compare the uploaded VRAM pages with the original. A capture point after the frame's VIF1 transfer can read GS memory through the PCSX2 debug interface if available; otherwise compare the EE source images.
+   - Compare the drawn framebuffer region with a PCSX2 GS dump or screenshot where obtainable. Without one, state that limit.
+
+## Limits and stop conditions
+
+- No presentation is claimed until DISPFB contents reach a window.
+- UNPACK, VU1 microprograms and XGKICK remain a separate later plan.
+- Stop if the drawn result needs GS features beyond the reached registers (fog, mipmapping, other CLUT modes).

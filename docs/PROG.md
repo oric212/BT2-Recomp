@@ -14,16 +14,15 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-07
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | ⏳ Pending |
+| Game asset loading and first presented frame | 🔧 In progress — first overlay asset read completes; frame 2 reaches its first texture upload; nothing presented |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the first SOUNDS timer tick (inside the frame's Timer 1 wait) is held as a checked boundary: its worker reads SPU2 ENDX, which needs a voice playback model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)).
+**Current blocker:** the overlay's second frame starts its first VIF1 chain with content (PATH2 DIRECT: a PSMT4 texture, its CLUT and one textured sprite), held as a checked boundary at the channel start ([GS texture plan](GS_TEXTURE_PLAN.md)).
 
-**Last measured, 2026-10-07:** **620 EE entries entered / 609 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **642 EE entries entered / 633 completed**, **42 CRI calls**, **58 original IOP disc reads**, **123 logical VBlanks**, **18 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
-Implementation checkpoint: SPU2 position/ENDX and first-frame VSync changes are committed **unverified**, with testing pending and an indexed-asset poll still stalled. The verified measurements above are unchanged; see [ACTIVE_PASS.md](progress/ACTIVE_PASS.md).
 
 <!-- progress-summary:end -->
 
@@ -31,21 +30,21 @@ Implementation checkpoint: SPU2 position/ENDX and first-frame VSync changes are 
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 620 distinct entered / 609 completed (2 in the DBZP.BIN overlay); kernel 2 / 2; 92,419 call events / 92,358 returns |
-| Mapping | 9,405 provisional EE entries (152 quarantined); 9,408 raw generated files; 547 extra entries selected; overlay map 425 entries, 2 selected |
-| IOP | 203,146 instructions; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
+| EE | 642 distinct entered / 633 completed (4 overlay entries selected); kernel 2 / 2; 97,963 call events / 97,899 returns |
+| Mapping | 9,405 provisional EE entries (152 quarantined); 9,408 raw generated files; 567 extra entries selected; overlay map 425 entries, 4 selected |
+| IOP | 229,661 instructions; SPU2 voice positions/ENDX from owned ADPCM block flags (no samples/ADSR); 24 logical SOUNDS timer ticks; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
 | Memory / threads | Nine IOP heap allocations / two frees (two sound-bank blocks at captured placements); four EE startup pools; main priority 2 → 24 admitted; 117 logical VBLANK_START deliveries (+2 polled); 234 owned helper wakes/resumes; logical Timer 2 with 16 overflow interrupts |
 | Disc | Directory read plus 56 archive reads (57 total) through original CDVDFSV handlers, including main's first synchronous file load and a 52-sector streamed read (4 ring chunks, bytes equal the ISO); first AFS table (0x6880 bytes) byte-identical to original |
 | Sound | 42 CRI calls (all five second-channel pairs); three EE→IOP sound uploads; two sound-driver commands through the original handlers with owned SPU2 voice transfers (DMA7 + IRQ 40); IOP sound block and bank blocks match the original; SOUNDS worker started with its IOP hardware timer; first 2,048-byte AutoDMA half programmed; two EE→IOP CRI stream-buffer copies; no consumption / completion IRQ / native playback verified |
 | Cards | Six DMA pairs / five timed FIFO probes; absent-card path only |
 | GS | Five packets / four clear draws / 1,146,880 sprite pixels; startup clear repeated; display setup (512×448 double buffer, VSync callback) matches original; no presented frame or VU execution |
 
-Previous normal checkpoint → current: distinct EE **608 / 597 → 620 / 609**, calls/returns **92,401 / 92,339 → 92,419 / 92,358**, IOP instructions unchanged at **203,146** (the SOUNDS timer handler stops on its first tick). Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE **620 / 609 → 642 / 633**, calls/returns **92,419 / 92,358 → 97,963 / 97,899**, IOP instructions **203,146 → 229,661**. Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
-Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **168 capture tests**, **57 recompilation tests**, **13 IOP tooling tests**, **22 normal-startup comparisons** (new sound-bank comparison) and the separate sound-worker diagnostic. Proprietary inputs and generated output remain ignored.
+Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **175 capture**, **63 recompilation**, **13 IOP** and 3 Ghidra Python tests, **26 normal-startup comparisons**, four phase-matched comparisons (`BT2_PHASE_STOP`) and the unchanged sound-worker diagnostic (302/295). Proprietary inputs and generated output remain ignored.
 
 ## Current blocker and next step
 
@@ -56,7 +55,7 @@ All five late CRI `0x408` pairs complete through the original IOP handler; their
 - **Path sync and render kick:** the GS library's path sync sees idle paths, and the game's render kick sends an empty VIF1 chain.
 - **Display setup:** the game's own display writes configure both read circuits.
 
-The frame's Timer 1 wait then reaches a field boundary. That logical VBlank would run the IOP SOUNDS timer for the first time, and its worker reads SPU2 ENDX, so it is held as a checked boundary: next, [SPU2 voice plan](SPU2_VOICE_PLAN.md). The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
+The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. The second frame's render kick then carries the first real GS work (texture, CLUT, textured sprite), held at the VIF1 channel start: next, [GS texture plan](GS_TEXTURE_PLAN.md). The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
 
 Remaining: IOP stream consumption, sound command processing, general timers, mounted cards, archive decompression/use, audio and presentation. Complete startup and a presented game frame remain unverified.
 

@@ -546,6 +546,14 @@ std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint3
 
 }
 
+std::vector<std::uint8_t> NativeIopService::callDbcPort(unsigned epoch,std::uint32_t service,std::uint32_t client,std::uint32_t result,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size) {
+    if(epoch!=epoch_ || failed_ || dbc_rpc_requests!=4 || (service!=0x8000131E && service!=0x8000131F) || command>1
+        || input.size()!=144 || result_size!=144)
+        throw std::runtime_error("Unsupported DBC port request");
+    auto response=executeRegisteredRpc(service,command,input,result_size,client,result);
+    ++dbc_port_requests;return response;
+}
+
 std::vector<std::uint8_t> NativeIopService::executeRegisteredRpc(std::uint32_t service,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::uint32_t client,std::uint32_t result) {
     const auto found=runtime.rpc_servers.find(service);
     if(found==runtime.rpc_servers.end())throw std::runtime_error("No owned registered RPC server");

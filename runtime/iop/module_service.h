@@ -71,6 +71,9 @@ public:
     bool ee_sound_server_owned=false;
     void ownEeSoundServer(unsigned epoch,std::span<const std::uint8_t> ee);
     std::vector<std::uint8_t> callDbcRpc(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory={});
+    // Frame-phase no-wait requests on the DBC services 0x8000131E/0x8000131F: original handlers.
+    std::vector<std::uint8_t> callDbcPort(unsigned epoch,std::uint32_t service,std::uint32_t client,std::uint32_t result,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size);
+    unsigned dbc_port_requests=0;
     std::vector<std::uint8_t> callMcQuery(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcRpc(unsigned epoch,std::span<const std::uint8_t> input);
     // Later sound-service commands from main (after display setup): original registered handler.

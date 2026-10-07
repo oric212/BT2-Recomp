@@ -1,31 +1,32 @@
-# Active pass: SPU2 playback and frame VSync — unverified
+# Resume handoff: GS textures
 
-Updated: 2026-10-07. **Committed at the user's request with final testing pending. The verified checkpoint remains 620 / 609 at starting commit `4454ba1`.** Do not promote the current implementation or diagnostic counts into verified progress.
+Updated: 2026-10-07. **Pass verified and committed; next subsystem planned, not started.**
 
-## Implemented, unverified
+Normal checkpoint: **642 entered / 633 completed**, kernel 2/2, 97,963 calls / 97,899 returns, 229,661 IOP instructions, 123 logical VBlanks.
 
-- `runtime/iop/spu2_playback.h`: owned ADPCM block flags, 28-sample blocks, pitch/position, KON/KOFF and ENDX; no samples, ADSR or mixing. `native_runtime.h` splits logical fields at each SOUNDS timer compare; `module_service.h` enables the bounded model. Active pitch/manual-loop changes and ENVX stay unsupported.
-- `runtime/ee_sound_dispatch.cpp` and `runtime/probe_abi/ps2_runtime.h`: admit reached sound timer ticks, refresh IOP report counters, register one-shot SetVSyncFlag pointers and publish the flag/CSR through the existing VBlank handler/worker path. Original registration preserves V0. Physical timing and FIELD phase are excluded.
-- `runtime/entry_probe.cpp`: private playback/frame counters; preserve a report when the existing execution budget is exhausted, without treating arbitrary runtime errors as checked stops.
-- Synthetic fixtures in `runtime/iop/spu2_playback_tests.h`, `native_tests.cpp` and `bootstrap_tests.cpp`; capture points and comparisons in `tools/capture_ee/`. The newest fixtures and final combined state have not passed the full verification gate.
-- Ignored mapped selections: executable 0x32F180, 0x32EFD0, 0x28B218, 0x100D58; DBZP overlay 0x3BC5A8 and 0x3BC460. Prepared/generated code remains local.
+The interrupted SPU2/frame VSync checkpoint (`149466c`) is now verified (see the 2026-10 history).
 
-## Evidence and latest boundary
+**Boundary.** The second frame's render kick (`0x28B3E8`) starts VIF1 chain DMA at `0x430600`. The chain carries PATH2 DIRECT GS traffic: draw state, a 256×32 CT32 upload of a 512×128 PSMT4 texture, a 16-entry CLUT and one textured, blended sprite. It is refused as a checked boundary at the channel start, with no channel effect (`vif1_blocked_*` report fields).
 
-Pinned PCSX2 SPU2 register/KON references and Mixer.cpp establish halfword addresses, flags and pitch. See `docs/SPU2_VOICE_PLAN.md` and `docs/REFERENCE_ARCHITECTURE.md`; public references are ignored local copies. Pinned Play!/PS2SDK guidance was adapted for VSync, with the actual return behavior determined by captures.
+## Next implementation
 
-Original captures `rpc-frame-vsync-before`, `rpc-vsync-flags-after`, `rpc-frame-vsync-after` and `rpc-frame-end` succeeded. The first wait publishes flag 1 and CSR 0x551B400C. Completed frame bookkeeping sets both field-buffer words to 1; the phase-matched display block and entire overlay matched an intermediate native checkpoint.
+Follow [GS_TEXTURE_PLAN.md](../GS_TEXTURE_PLAN.md):
+1. VIF1 code parsing with DIRECT to the GS;
+2. host→local IMAGE transfers;
+3. PSMT4 addressing and the CSM1 CLUT;
+4. the textured sprite.
 
-Normal exploratory startup advances eight SOUNDS ticks, completes 400 Timer 1 polls and the first frame wait/cleanup, then enters the indexed-asset loader. The latest ignored normal report (`work/bt2-generation/entry-stop.json`) records **626 entered / 616 completed**, 210,874 IOP instructions, 119 logical VBlanks and `execution_budget_exhausted=1` at EE PC 0x3BC4C8. Its 3,609,471 calls / 3,609,411 returns are inflated by the stalled poll and are not a new verified checkpoint. Do not mix these with the separate sound-worker diagnostic.
+## Verification and evidence
 
-New original capture `rpc-asset-poll` at 0x100E10 succeeded. Its loader slots match the native poll (0x366A58, 0x12, 0x8CC200); loader state differs (original 1, native 2). The entire overlay and slot pointer 0x8CC140 match this phase. No asset-poll scheduling fix has been implemented. Existing logical time advances at owned idle/frame boundaries; this busy poll has exhausted the budget without further VBlanks. Trace request ownership and wake/time requirements before changing scheduling.
+Reports are the ignored `work/bt2-generation/entry-stop.json` and `sound-worker-stop.json`.
 
-## Testing remains unverified
+**Phase-matched comparisons.** Set `BT2_PHASE_STOP=<hex>` to stop the probe at the first entry to, or return to, that address, then copy the report before the next run. Phases:
+- `311860`: `verify_dbzp_load.py`;
+- `310518`: `verify_frame_vsync.py`;
+- `28b218`: `verify_overlay_dispenv.py`, `verify_display_reset.py`, `verify_cri_autodma.py`, `verify_dbc_rpc.py`.
 
-Earlier isolated runs passed playback/MMIO fixtures and explicit entry builds; Python suites passed 175 capture, 63 recompilation, 13 IOP and 3 Ghidra tests before the latest capture/report changes. TEMP/TMP under ignored `work/test-temp` avoided Windows sandbox temporary-directory errors. These are partial evidence, not final pass validation.
+At the final checkpoint, these change for legitimate later-frame reasons: overlay data, stack reuse, controller client IDs and frame cache operations.
 
-An intermediate normal checkpoint passed 25 capture comparisons. Later loader execution changes stack publications and overlay data, so older-phase DBZP/overlay/frame comparisons need phase-matched inputs or retained earlier checkpoints. `work/bt2-generation/verify-spu2-pass.py` and its logs are exploratory; do not report its latest failures as resolved. The separate sound-worker diagnostic has not been rerun.
+**Earlier-phase-only verifiers:** `verify_disc_read.py`, `verify_spu2_initialization.py`, `verify_cri_rpc.py`, `verify_cri_preemption.py`, `verify_second_heap.py`.
 
-Remaining: inspect/review the newest capture and budget reporting, build ALL and explicitly rebuild `bt2-entry-probe`, run 17 CTests and relevant Python suites, rerun normal and separate diagnostic probes, compare applicable original phases, then publish only allowlisted verified counters and synchronize progress/README/dashboard. No new verified export was made in this interrupted pass.
-
-The user explicitly requested stopping development/testing and committing/pushing with testing left unverified. No Astra High agents were used for the remaining work. Five-hour usage was last checked at 58% used / 42% remaining.
+**Still open:** the IOP stream consumer acknowledgement is unmodelled, and the asset bytes have not yet been compared with the original.

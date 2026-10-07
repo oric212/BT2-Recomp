@@ -1460,6 +1460,19 @@ int main() {
             vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);
             require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
         }
+        {
+            // Frame VIF1 chain: a NOP-only chain completes; a chain with any other code (here DIRECT)
+            // is refused at the channel start with no channel effect and the code/tag recorded.
+            PS2Runtime vf;vf.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=vf.memory().data();
+            auto tag=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
+            tag(0x2000,0x70000000,0);vf.frame_vif1.tadr=0x2000;vf.frameVif1Start(0x145);
+            require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && vf.frame_vif1.cis);
+            tag(0x3000,0x10000001,0x5000000100000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);
+            vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3000;
+            bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
+            require(refused && vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x3000 && !vf.frame_vif1.cis
+                && vf.frame_vif1.blocked_code==0x50000001 && vf.frame_vif1.blocked_tag==0x3000 && vf.frame_vif1.unsupported==1);
+        }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

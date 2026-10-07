@@ -29,16 +29,15 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | ⏳ Pending |
+| Game asset loading and first presented frame | 🔧 In progress — first overlay asset read completes; frame 2 reaches its first texture upload; nothing presented |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** the first SOUNDS timer tick (inside the frame's Timer 1 wait) is held as a checked boundary: its worker reads SPU2 ENDX, which needs a voice playback model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)).
+**Current blocker:** the overlay's second frame starts its first VIF1 chain with content (PATH2 DIRECT: a PSMT4 texture, its CLUT and one textured sprite), held as a checked boundary at the channel start ([GS texture plan](GS_TEXTURE_PLAN.md)).
 
-**Last measured, 2026-10-07:** **620 EE entries entered / 609 completed**, **42 CRI calls**, **57 original IOP disc reads**, **117 logical VBlanks**, **17 Timer 2 overflows**. Complete startup is not yet verified.
+**Last measured, 2026-10-07:** **642 EE entries entered / 633 completed**, **42 CRI calls**, **58 original IOP disc reads**, **123 logical VBlanks**, **18 Timer 2 overflows**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
-Implementation checkpoint: SPU2 position/ENDX and first-frame VSync changes are committed **unverified**, with testing pending and an indexed-asset poll still stalled. The verified measurements above are unchanged; see [ACTIVE_PASS.md](progress/ACTIVE_PASS.md).
 
 <!-- progress-summary:end -->
 

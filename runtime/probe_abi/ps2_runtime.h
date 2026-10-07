@@ -95,6 +95,10 @@ public:
     // The priority request remains pending; the first wait is a checked boundary.
     void probeReadySoundThread(std::uint8_t*, R5900Context*);
     bool ee_sound_dispatch_probe = false, ee_sound_probe_attempted = false;
+    // Diagnostic phase stop for capture comparisons: the first entry to this address, or the first
+    // return to it, stops as a branch boundary. Zero disables it; it never changes guest state.
+    std::uint32_t phase_stop = 0;
+    std::vector<std::uint32_t> stop_returns; // Guest return addresses live when a stop first unwound.
     R5900Context ee_sound_probe_frontier{}, ee_sound_probe_parent{};
     unsigned ee_sound_probe_waits = 0;
     RetainedEeStack* active_ee_stack = nullptr;
@@ -110,7 +114,7 @@ public:
     bool startup_scheduler_active=false;
     unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
     std::uint32_t main_priority_previous=0;
-    unsigned cri_stream_transfers=0,load_poll_idles=0,scmd_calls=0;
+    unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
     bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
@@ -248,6 +252,7 @@ public:
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && mc_rpc_calls<=1 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
+        if(code==0 && selector==0x77 && dbc_rpc_calls==4 && (read32(rdram,0x3A97DC)==0x3A0460 || read32(rdram,0x3A97DC)==0x3A0438)) {receiveDbcPort(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && display_reset_phase==13 && sounds_rpc_calls>=1 && read32(rdram,0x3A97DC)==0x6351C0
@@ -1047,6 +1052,12 @@ public:
             if(++file_load_idles>20000)throw UnsupportedGuestBranch(target,source,resume);
             deliverVblank(rdram,context);
         }
+        if(target==0x2EC990 && source==0x100E38 && current_thread_id==1 && frameGifContext() && timer1_stops) {
+            // The overlay's indexed-asset loop polls the CRI file status with no idle call. The same
+            // logical time model: each status poll is one idle point receiving one VBLANK_START.
+            if(++asset_poll_idles>20000)throw UnsupportedGuestBranch(target,source,resume);
+            deliverVblank(rdram,context);
+        }
         const auto found = functions_.find(target);
         if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
             if(!sound_thread_start_supplied || sound_thread_checkpoint || current_thread_id!=1 || main_thread_priority!=2
@@ -1064,6 +1075,7 @@ public:
             explicit DepthGuard(unsigned& value) : depth(value) { ++depth; }
             ~DepthGuard() { --depth; }
         } depth_guard(dispatch_depth_);
+        if (phase_stop && target == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
         if (kind == GuestBranchKind::TailJump) {
             entered_functions.insert(target);
             context->pc = target;
@@ -1079,9 +1091,10 @@ public:
         try {
             found->second(rdram, context, this);
             if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller");
-        } catch (...) { call_returns_.pop_back(); throw; }
+        } catch (...) { if (stop_returns.empty()) stop_returns = call_returns_; call_returns_.pop_back(); throw; }
         call_returns_.pop_back();
         completed_functions.insert(target);
+        if (phase_stop && resume == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
         return true;
     }
 
@@ -1500,35 +1513,42 @@ public:
     struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0;unsigned starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0;
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes interpreted. Only the reached codes are supported (FRAME_GIF_PLAN.md).
-    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0;} frame_vif1;
-    void frameVif1Code(std::uint32_t code) {
-        if(code)throw std::runtime_error("Unsupported VIF1 code "+std::to_string(code>>24&0x7F)); // NOP only so far.
-        ++frame_vif1.codes;
+    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0;
+        std::uint32_t blocked_code=0,blocked_tag=0,blocked_tadr=0;unsigned unsupported=0;} frame_vif1;
+    struct FrameVif1Unsupported {std::uint32_t code,tag;};
+    static void frameVif1Code(std::uint32_t code,std::uint32_t tag) {
+        if(code)throw FrameVif1Unsupported{code,tag}; // NOP only so far; other codes carry data (VIF1/VU1 plan).
     }
     void frameVif1Start(std::uint32_t value) {
         auto& v=frame_vif1;
         if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
-        std::uint32_t tag=v.tadr;
-        for(unsigned n=0;;++n) {
-            if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
-            std::uint64_t lo,hi;std::memcpy(&lo,memory_.data()+tag,8);std::memcpy(&hi,memory_.data()+tag+8,8);
-            const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
-            if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
-            frameVif1Code(std::uint32_t(hi));frameVif1Code(std::uint32_t(hi>>32));++v.tags;
-            const bool inline_data=id==1 || id==2 || id==7;
-            if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
-            if(qwc) {
-                const auto data=inline_data?tag+16:addr;
-                if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
-                for(std::uint32_t k=0;k<qwc*4;++k) {std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);frameVif1Code(w);}
+        // Walk the whole chain first; an unsupported code stops before any channel effect.
+        std::uint32_t tag=v.tadr,next_tadr=0;unsigned tags=0,codes=0;
+        try {
+            for(unsigned n=0;;++n) {
+                if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
+                std::uint64_t lo,hi;std::memcpy(&lo,memory_.data()+tag,8);std::memcpy(&hi,memory_.data()+tag+8,8);
+                const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
+                if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
+                frameVif1Code(std::uint32_t(hi),tag);frameVif1Code(std::uint32_t(hi>>32),tag);++tags;codes+=2;
+                const bool inline_data=id==1 || id==2 || id==7;
+                if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
+                if(qwc) {
+                    const auto data=inline_data?tag+16:addr;
+                    if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
+                    for(std::uint32_t k=0;k<qwc*4;++k) {std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);frameVif1Code(w,tag);++codes;}
+                }
+                if(id==0 || id==7) {next_tadr=id==7?tag+16+qwc*16:tag+16;break;}
+                tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
             }
-            if(id==0 || id==7) {v.tadr=id==7?tag+16+qwc*16:tag+16;break;}
-            tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
+        } catch(const FrameVif1Unsupported& u) {
+            v.blocked_code=u.code;v.blocked_tag=u.tag;v.blocked_tadr=v.tadr;++v.unsupported;
+            throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
         }
-        v.chcr=value&~0x100u;v.cis=true;++v.starts;
+        v.tadr=next_tadr;v.tags+=tags;v.codes+=codes;v.chcr=value&~0x100u;v.cis=true;++v.starts;
     }
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
-    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0,sound_tick_boundaries=0;
+    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
@@ -1819,7 +1839,7 @@ public:
                 checkMemory(rdram,0,0);
                 if(++timer1_polls>100000)throw UnsupportedGuestMemory(address,4);
                 const auto target=timer1.nextLine();
-                if(timer1.crossesField(target))deliverVblank(rdram,context);
+                if(timer1.crossesField(target)) {deliverVblank(rdram,context);++timer1_vblanks;}
                 timer1.lineTo(target);return timer1.count();
             }
         }
@@ -2120,7 +2140,7 @@ private:
         rpc_end_callback_active_ = false;
         std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
         if (callback.r[29].low != context->r[29].low || (semaphore ? semaphores[semaphore].count != 1 :
-                    ((client != 0x3A6F80 && client != 0x369590) || read32(rdram,client+8) != UINT32_MAX))
+                    ((client != 0x3A6F80 && client != 0x369590 && client != 0x3A0460 && client != 0x3A0438) || read32(rdram,client+8) != UINT32_MAX))
                 || read32(rdram, client) != 0 || read32(rdram, client + 36) != server
                 || read32(rdram, client + 20) != buffer || read32(rdram, 0x3A97D0) != 4
                 || read32(rdram, 0x3A97D8) != 0)
@@ -2138,6 +2158,8 @@ private:
     void receiveCriCreate(std::uint8_t*,R5900Context*);
     void receiveCriBind(std::uint8_t*,R5900Context*);
     void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);
+    void receiveDbcPort(std::uint8_t* rdram,R5900Context* context);
+
     void receiveSoundRpc(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);
 #endif
