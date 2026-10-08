@@ -31,7 +31,30 @@ Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscov
 
 During investigation, prefer the fastest narrow validation path first: unit tests, offline tools and data checks (for example decoding a captured or dumped buffer in Python), subsystem tests, targeted builds and existing diagnostics. Do not rebuild `bt2-entry-probe` or ALL after every small edit; a change to `ps2_runtime.h`, `gs_command_sink.h` or another header reached by the generated units recompiles all of them. Batch related changes, iterate with narrow checks, and run the expensive full build/probe only when the change set is stable enough for an integration gate or before commit. This changes when expensive gates run, not how much is verified: every pass still completes the full build, test and probe gate before commit.
 
-Every generated unit includes `ps2_runtime.h`, so keep that header to declarations, state and small hot helpers. Put implementation in the focused `runtime/probe_abi/ps2_runtime_*.cpp` files (syscalls, memory, services, dispatch) or `gs_command_sink.cpp`, where an edit rebuilds one unit in seconds. MSVC targets compile in parallel (`/MP`), and the entry probe precompiles stable standard headers only. Do not use unity builds, and do not merge generated units.
+Every generated unit includes `ps2_runtime.h` (generated IOP modules include `native_runtime.h`). Keep those headers and `gs_command_sink.h` to declarations, state and small hot helpers. Put implementation in the focused `.cpp` files of their folders (`runtime/ee/ps2_runtime_*.cpp`, `runtime/gs/`, `runtime/iop/core/`), where an edit rebuilds one unit in seconds. MSVC targets compile in parallel (`/MP`), and the entry probe precompiles stable standard headers only. Do not use unity builds, and do not merge generated units.
+
+## Build artifacts after a pass
+
+When a pass finishes, leave only two build artifacts:
+- **Host build:** `build/` (`bt2-port`).
+- **Probe build:** `build/probe/`, from the final gate.
+
+Delete everything else the pass produced:
+- trial, A/B and scratch builds, and copied binaries;
+- intermediate directories of removed targets;
+- archived build trees;
+- build, run and test logs (keep each folder's `generation.log`);
+- generator `previous-output-*` backups;
+- stale report sidecars, such as GIF mismatch dumps;
+- temp output.
+
+Keep inputs, not artifacts:
+- the pinned recompiler build `build/ps2recomp-tools/` and dependency checkouts;
+- generated code (`game/generated/`, `work/iop/*_native.*`, the `work/` CMake bindings);
+- captures (`work/pcsx2-capture/`);
+- the evidence files the probe reads, and the reports the verifiers read.
+
+Check that the startup probe's inputs are still present after cleaning.
 
 ## Code organization
 
@@ -41,6 +64,8 @@ Keep the codebase clean and modular:
 - **Check before adding:** before adding substantial code to an existing file, consider whether it belongs in its own focused file or module.
 - **No artificial splits:** organize by meaning, readability and maintainability.
 - **Preserve boundaries:** keep existing behavior and the generated-code boundaries.
+
+[docs/RUNTIME_LAYOUT.md](docs/RUNTIME_LAYOUT.md) maps the `runtime/` folders (EE, GS, host, IOP core/devices/providers/services/EE bridge, probes, tests), the include convention and where new code goes.
 
 ## Documentation encoding
 

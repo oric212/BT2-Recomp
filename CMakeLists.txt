@@ -8,6 +8,15 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "BT2 Recomp requires x64. Configure with -A x64 in a fresh build directory.")
 endif()
 
+# Shared settings for every handwritten target. Handwritten code includes its headers by path from
+# runtime/ (for example "gs/gs_command_sink.h"); generated code includes ps2_runtime.h or
+# native_runtime.h by name through the per-target include directories below.
+function(bt2_target_defaults target)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+endfunction()
+
 add_executable(bt2-port runtime/main.cpp)
 set_target_properties(bt2-port PROPERTIES
     CXX_STANDARD 20
@@ -16,16 +25,60 @@ set_target_properties(bt2-port PROPERTIES
 )
 target_compile_options(bt2-port PRIVATE /W4 /permissive- /utf-8)
 
-# Out-of-line runtime shared by every probe and test target that includes ps2_runtime.h.
-set(BT2_PROBE_RUNTIME_SOURCES
-    runtime/ee_sound_dispatch.cpp
-    runtime/probe_abi/retained_ee_stack.cpp
-    runtime/probe_abi/ps2_fpu.cpp
-    runtime/probe_abi/gs_command_sink.cpp
-    runtime/probe_abi/ps2_runtime_dispatch.cpp
-    runtime/probe_abi/ps2_runtime_memory.cpp
-    runtime/probe_abi/ps2_runtime_services.cpp
-    runtime/probe_abi/ps2_runtime_syscalls.cpp)
+# EE runtime: the out-of-line PS2Runtime and GS implementation shared by every probe and test target
+# that includes ps2_runtime.h.
+set(BT2_EE_RUNTIME_SOURCES
+    runtime/ee/ee_sound_dispatch.cpp
+    runtime/ee/retained_ee_stack.cpp
+    runtime/ee/ps2_fpu.cpp
+    runtime/gs/gs_command_sink.cpp
+    runtime/ee/ps2_runtime_dispatch.cpp
+    runtime/ee/ps2_runtime_memory.cpp
+    runtime/ee/ps2_runtime_services.cpp
+    runtime/ee/ps2_runtime_syscalls.cpp)
+
+# Native IOP: the locally generated (ignored) original modules; the handwritten IOP runtime (CPU state,
+# memory-mapped hardware, logical time and the high-level kernel/library providers); and the module
+# service that loads the modules and runs their RPC services.
+set(BT2_IOP_WORK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
+set(BT2_IOP_GENERATED_MODULES)
+foreach(bt2_module sio2man mcman mcserv dbcman sio2d ds2ud libsd sdrdrv modhsyn modsesq2 cdvdstm sounds cri_adxi fileio_boot embedded disc)
+    list(APPEND BT2_IOP_GENERATED_MODULES "${BT2_IOP_WORK_DIR}/${bt2_module}_native.cpp")
+endforeach()
+set(BT2_IOP_RUNTIME_SOURCES
+    runtime/iop/core/native_runtime.cpp
+    runtime/iop/core/native_runtime_io.cpp
+    runtime/iop/core/native_runtime_timing.cpp
+    runtime/iop/providers/kernel_system.cpp
+    runtime/iop/providers/kernel_interrupts.cpp
+    runtime/iop/providers/kernel_dma.cpp
+    runtime/iop/providers/kernel_sync.cpp
+    runtime/iop/providers/kernel_time.cpp
+    runtime/iop/providers/kernel_threads.cpp
+    runtime/iop/providers/sound_scope_providers.cpp
+    runtime/iop/providers/library_provider.cpp
+    runtime/iop/providers/ioman_provider.cpp
+    runtime/iop/providers/sif_rpc_provider.cpp
+    runtime/iop/providers/vblank_provider.cpp
+    runtime/iop/providers/cdvd_provider.cpp)
+set(BT2_IOP_SERVICE_SOURCES
+    runtime/iop/services/compiled_modules.cpp
+    runtime/iop/services/native_iop_service.cpp
+    runtime/iop/services/boot_heap_service.cpp
+    runtime/iop/services/fileio_service.cpp
+    runtime/iop/services/sound_service.cpp
+    runtime/iop/services/pad_service.cpp
+    runtime/iop/services/memory_card_service.cpp
+    runtime/iop/services/disc_service.cpp
+    runtime/iop/services/cri_service.cpp)
+set(BT2_EE_IOP_BRIDGE_SOURCES
+    runtime/iop/ee_bridge/ee_bridge_modules.cpp
+    runtime/iop/ee_bridge/ee_bridge_fileio.cpp
+    runtime/iop/ee_bridge/ee_bridge_sound.cpp
+    runtime/iop/ee_bridge/ee_bridge_pad.cpp
+    runtime/iop/ee_bridge/ee_bridge_memory_card.cpp
+    runtime/iop/ee_bridge/ee_bridge_disc.cpp
+    runtime/iop/ee_bridge/ee_bridge_cri.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -34,79 +87,61 @@ if(BT2_BUILD_GENERATED_PROBE)
     if(NOT EXISTS "${BT2_PROBE_SOURCE}")
         message(FATAL_ERROR "Generate local BT2 code with tools/ps2recomp/run_pipeline.py first.")
     endif()
-    add_executable(bt2-generated-probe runtime/generated_probe.cpp "${BT2_PROBE_SOURCE}")
-    target_include_directories(bt2-generated-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-generated-probe PRIVATE cxx_std_20)
-    target_compile_options(bt2-generated-probe PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-generated-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     enable_testing()
+    # EE probes and tests: generated units include ps2_runtime.h through runtime/ee.
+    function(bt2_ee_target target)
+        bt2_target_defaults(${target})
+        target_include_directories(${target} PRIVATE runtime/ee "${BT2_GENERATED_DIR}")
+    endfunction()
+    add_executable(bt2-generated-probe runtime/probe/generated_probe.cpp "${BT2_PROBE_SOURCE}")
+    bt2_ee_target(bt2-generated-probe)
+    target_compile_definitions(bt2-generated-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     add_test(NAME generated-bt2-probe COMMAND bt2-generated-probe)
-    add_executable(bt2-disc-metadata-tests runtime/iop/disc_metadata_tests.cpp)
-    target_compile_features(bt2-disc-metadata-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-disc-metadata-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-disc-metadata-tests runtime/tests/iop/disc_metadata_tests.cpp)
+    bt2_target_defaults(bt2-disc-metadata-tests)
     add_test(NAME disc-metadata COMMAND bt2-disc-metadata-tests)
-    add_executable(bt2-bootstrap-tests runtime/bootstrap_tests.cpp)
-    target_include_directories(bt2-bootstrap-tests PRIVATE runtime/probe_abi)
-    target_compile_features(bt2-bootstrap-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-bootstrap-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp)
+    bt2_ee_target(bt2-bootstrap-tests)
     add_test(NAME bootstrap-runtime COMMAND bt2-bootstrap-tests)
-    add_executable(bt2-ee-stack-tests runtime/retained_ee_stack_tests.cpp runtime/probe_abi/retained_ee_stack.cpp)
-    target_include_directories(bt2-ee-stack-tests PRIVATE runtime/probe_abi)
-    target_compile_features(bt2-ee-stack-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-ee-stack-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-ee-stack-tests runtime/tests/retained_ee_stack_tests.cpp runtime/ee/retained_ee_stack.cpp)
+    bt2_ee_target(bt2-ee-stack-tests)
     add_test(NAME retained-ee-stack COMMAND bt2-ee-stack-tests)
-
-    add_executable(bt2-gs-command-tests runtime/gs_command_tests.cpp)
-    target_include_directories(bt2-gs-command-tests PRIVATE runtime/probe_abi)
-    target_compile_features(bt2-gs-command-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-gs-command-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-gs-command-tests runtime/tests/gs_command_tests.cpp)
+    bt2_ee_target(bt2-gs-command-tests)
     add_test(NAME gs-command-consumption COMMAND bt2-gs-command-tests)
-    add_executable(bt2-post-sif-tests runtime/post_reset_sif_tests.cpp)
-    target_include_directories(bt2-post-sif-tests PRIVATE runtime/probe_abi)
-    target_compile_features(bt2-post-sif-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-post-sif-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-post-sif-tests runtime/tests/post_reset_sif_tests.cpp)
+    bt2_ee_target(bt2-post-sif-tests)
     add_test(NAME post-reset-sif COMMAND bt2-post-sif-tests)
-    add_executable(bt2-kernel-handler-tests runtime/kernel_handler_tests.cpp
+    # Single generated functions checked against handwritten expectations.
+    function(bt2_generated_test target test_name source strict)
+        add_executable(${target} runtime/tests/${source} ${ARGN})
+        bt2_ee_target(${target})
+        if(strict)
+            target_compile_definitions(${target} PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+        endif()
+        add_test(NAME ${test_name} COMMAND ${target})
+    endfunction()
+    bt2_generated_test(bt2-kernel-handler-tests generated-kernel-handler kernel_handler_tests.cpp ON
         "${BT2_GENERATED_DIR}/FUN_00338388_0x338388.cpp")
-    target_include_directories(bt2-kernel-handler-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-kernel-handler-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-kernel-handler-tests PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-kernel-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
-    add_test(NAME generated-kernel-handler COMMAND bt2-kernel-handler-tests)
-    add_executable(bt2-buffer-fill-tests runtime/buffer_fill_tests.cpp "${BT2_GENERATED_DIR}/FUN_003251DC_0x3251dc.cpp")
-    target_include_directories(bt2-buffer-fill-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-buffer-fill-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-buffer-fill-tests PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-buffer-fill-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
-    add_test(NAME generated-buffer-fill COMMAND bt2-buffer-fill-tests)
-    add_executable(bt2-timer-write-tests runtime/timer_write_tests.cpp "${BT2_GENERATED_DIR}/FUN_00338AD8_0x338ad8.cpp")
-    target_include_directories(bt2-timer-write-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-timer-write-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-timer-write-tests PRIVATE /W4 /permissive- /utf-8)
-    add_test(NAME generated-timer-write COMMAND bt2-timer-write-tests)
-    add_executable(bt2-copy-handler-tests runtime/copy_handler_tests.cpp "${BT2_GENERATED_DIR}/FUN_0033A7C8_0x33a7c8.cpp")
-    target_include_directories(bt2-copy-handler-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-copy-handler-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-copy-handler-tests PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-copy-handler-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
-    add_test(NAME generated-copy-handler COMMAND bt2-copy-handler-tests)
-    add_executable(bt2-compare-bytes-tests runtime/compare_bytes_tests.cpp "${BT2_GENERATED_DIR}/FUN_00325098_0x325098.cpp" "${BT2_GENERATED_DIR}/FUN_00326270_0x326270.cpp")
-    target_include_directories(bt2-compare-bytes-tests PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-compare-bytes-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-compare-bytes-tests PRIVATE /W4 /permissive- /utf-8)
-    target_compile_definitions(bt2-compare-bytes-tests PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
-    add_test(NAME generated-byte-comparison COMMAND bt2-compare-bytes-tests)
+    bt2_generated_test(bt2-buffer-fill-tests generated-buffer-fill buffer_fill_tests.cpp ON
+        "${BT2_GENERATED_DIR}/FUN_003251DC_0x3251dc.cpp")
+    bt2_generated_test(bt2-timer-write-tests generated-timer-write timer_write_tests.cpp OFF
+        "${BT2_GENERATED_DIR}/FUN_00338AD8_0x338ad8.cpp")
+    bt2_generated_test(bt2-copy-handler-tests generated-copy-handler copy_handler_tests.cpp ON
+        "${BT2_GENERATED_DIR}/FUN_0033A7C8_0x33a7c8.cpp")
+    bt2_generated_test(bt2-compare-bytes-tests generated-byte-comparison compare_bytes_tests.cpp ON
+        "${BT2_GENERATED_DIR}/FUN_00325098_0x325098.cpp" "${BT2_GENERATED_DIR}/FUN_00326270_0x326270.cpp")
     # Independent response validation; no entry-path interrupt delivery.
-    add_executable(bt2-rpc-bind-probe runtime/rpc_bind_probe.cpp
+    add_executable(bt2-rpc-bind-probe runtime/probe/rpc_bind_probe.cpp
         "${BT2_GENERATED_DIR}/FUN_003322E8_0x3322e8.cpp"
         "${BT2_GENERATED_DIR}/FUN_00332258_0x332258.cpp"
         "${BT2_GENERATED_DIR}/FUN_0032EC90_0x32ec90.cpp")
-    target_include_directories(bt2-rpc-bind-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-rpc-bind-probe PRIVATE cxx_std_20)
-    target_compile_options(bt2-rpc-bind-probe PRIVATE /W4 /permissive- /utf-8)
+    bt2_ee_target(bt2-rpc-bind-probe)
     target_compile_definitions(bt2-rpc-bind-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
-    add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/entry_probe.cpp
+    add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/probe/entry_probe.cpp
+        runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
+        runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_0033A238_0x33a238.cpp"
@@ -207,10 +242,8 @@ if(BT2_BUILD_GENERATED_PROBE)
         target_include_directories(bt2-entry-probe PRIVATE "${BT2_STARTUP_KERNEL_DIR}")
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_STARTUP_KERNEL_PAYLOAD=1)
     endif()
-    target_sources(bt2-entry-probe PRIVATE ${BT2_PROBE_RUNTIME_SOURCES})
-    target_include_directories(bt2-entry-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
-    target_compile_features(bt2-entry-probe PRIVATE cxx_std_20)
-    target_compile_options(bt2-entry-probe PRIVATE /W4 /permissive- /utf-8)
+    target_sources(bt2-entry-probe PRIVATE ${BT2_EE_RUNTIME_SOURCES})
+    bt2_ee_target(bt2-entry-probe)
     target_compile_definitions(bt2-entry-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     # Build speed only: precompile the stable standard headers that every generated unit reaches through
     # ps2_runtime.h. Project and generated headers (ps2_runtime.h, gs_command_sink.h, generated
@@ -224,22 +257,27 @@ if(BT2_BUILD_GENERATED_PROBE)
 endif()
 
 option(BT2_BUILD_IOP_PROBE "Build isolated locally generated MIPS-I module probe" OFF)
+# IOP targets: generated modules include native_runtime.h through runtime/iop/core.
+function(bt2_iop_target target)
+    bt2_target_defaults(${target})
+    target_include_directories(${target} PRIVATE runtime/iop/core "${BT2_IOP_WORK_DIR}")
+endfunction()
 if(BT2_BUILD_IOP_PROBE)
     enable_testing()
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcman_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcserv_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/dbcman_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2d_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/ds2ud_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/libsd_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sdrdrv_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modhsyn_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modsesq2_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cdvdstm_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sounds_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cri_adxi_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/fileio_boot_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/embedded_native.cpp" OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/disc_native.cpp")
-        message(FATAL_ERROR "Generate local modules with tools/iop/generate_native.py, tools/iop/generate_boot_heap.py and tools/iop/generate_embedded.py first; see docs/TOOLS.md.")
-    endif()
-    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/synthetic_native.cpp"
+    foreach(bt2_module_source IN LISTS BT2_IOP_GENERATED_MODULES)
+        if(NOT EXISTS "${bt2_module_source}")
+            message(FATAL_ERROR "Generate local modules with tools/iop/generate_native.py, tools/iop/generate_boot_heap.py and tools/iop/generate_embedded.py first; see docs/TOOLS.md.")
+        endif()
+    endforeach()
+    add_custom_command(OUTPUT "${BT2_IOP_WORK_DIR}/synthetic_native.cpp"
         COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/iop/make_synthetic.py"
         DEPENDS tools/iop/make_synthetic.py tools/iop/generate_native.py)
-    add_executable(bt2-iop-tests runtime/iop/native_tests.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/synthetic_native.cpp")
-    add_executable(bt2-iop-rpc-tests runtime/iop/rpc_tests.cpp)
-    add_executable(bt2-iop-probe runtime/iop/module_probe.cpp runtime/iop/compiled_modules.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcserv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/dbcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2d_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/ds2ud_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/libsd_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sdrdrv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modhsyn_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modsesq2_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cdvdstm_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sounds_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cri_adxi_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/fileio_boot_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/embedded_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/disc_native.cpp")
-    add_executable(bt2-iop-service-tests runtime/iop/service_tests.cpp runtime/iop/compiled_modules.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcserv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/dbcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2d_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/ds2ud_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/libsd_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sdrdrv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modhsyn_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modsesq2_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cdvdstm_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sounds_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cri_adxi_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/fileio_boot_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/embedded_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/disc_native.cpp")
-    foreach(bt2_iop_target bt2-iop-tests bt2-iop-probe bt2-iop-service-tests bt2-iop-rpc-tests)
-        target_include_directories(${bt2_iop_target} PRIVATE runtime/iop "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
-        target_compile_features(${bt2_iop_target} PRIVATE cxx_std_20)
-        target_compile_options(${bt2_iop_target} PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-iop-tests runtime/tests/iop/native_tests.cpp "${BT2_IOP_WORK_DIR}/synthetic_native.cpp" ${BT2_IOP_RUNTIME_SOURCES})
+    add_executable(bt2-iop-rpc-tests runtime/tests/iop/rpc_tests.cpp ${BT2_IOP_RUNTIME_SOURCES})
+    add_executable(bt2-iop-probe runtime/probe/iop_module_probe.cpp ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
+    add_executable(bt2-iop-service-tests runtime/tests/iop/service_tests.cpp ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
+    foreach(bt2_iop_test bt2-iop-tests bt2-iop-probe bt2-iop-service-tests bt2-iop-rpc-tests)
+        bt2_iop_target(${bt2_iop_test})
     endforeach()
     add_test(NAME native-iop-synthetic COMMAND bt2-iop-tests)
     add_test(NAME native-iop-rpc COMMAND bt2-iop-rpc-tests)
@@ -251,26 +289,25 @@ if(BT2_LINK_NATIVE_IOP)
     if(NOT TARGET bt2-entry-probe)
         message(FATAL_ERROR "Native IOP bridge requires the generated entry probe")
     endif()
-    target_sources(bt2-entry-probe PRIVATE runtime/iop/ee_loadfile_bridge.cpp runtime/iop/compiled_modules.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcserv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/dbcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2d_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/ds2ud_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/libsd_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sdrdrv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modhsyn_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modsesq2_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cdvdstm_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sounds_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cri_adxi_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/fileio_boot_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/embedded_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/disc_native.cpp")
-    target_include_directories(bt2-entry-probe PRIVATE runtime/iop "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
+    target_sources(bt2-entry-probe PRIVATE ${BT2_EE_IOP_BRIDGE_SOURCES} ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
+    target_include_directories(bt2-entry-probe PRIVATE runtime/iop/core "${BT2_IOP_WORK_DIR}")
     target_compile_definitions(bt2-entry-probe PRIVATE BT2_NATIVE_IOP=1)
-    add_executable(bt2-ee-iop-tests runtime/iop/ee_bridge_tests.cpp runtime/iop/ee_loadfile_bridge.cpp runtime/iop/compiled_modules.cpp "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2man_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/mcserv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/dbcman_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sio2d_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/ds2ud_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/libsd_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sdrdrv_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modhsyn_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/modsesq2_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cdvdstm_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/sounds_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/cri_adxi_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/fileio_boot_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/embedded_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/work/iop/disc_native.cpp")
-    target_include_directories(bt2-ee-iop-tests PRIVATE runtime/probe_abi runtime/iop "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
-    target_compile_features(bt2-ee-iop-tests PRIVATE cxx_std_20)
-    target_compile_options(bt2-ee-iop-tests PRIVATE /W4 /permissive- /utf-8)
+    add_executable(bt2-ee-iop-tests runtime/tests/iop/ee_bridge_tests.cpp ${BT2_EE_IOP_BRIDGE_SOURCES} ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
+    bt2_target_defaults(bt2-ee-iop-tests)
+    target_include_directories(bt2-ee-iop-tests PRIVATE runtime/ee runtime/iop/core "${BT2_IOP_WORK_DIR}")
     target_compile_definitions(bt2-ee-iop-tests PRIVATE BT2_NATIVE_IOP=1)
     add_test(NAME ee-native-iop-failure COMMAND bt2-ee-iop-tests)
 endif()
 
 if(BT2_BUILD_GENERATED_PROBE)
-    add_executable(bt2-disc-sector-tests runtime/iop/disc_sector_tests.cpp)
-    target_compile_features(bt2-disc-sector-tests PRIVATE cxx_std_20)
+    add_executable(bt2-disc-sector-tests runtime/tests/iop/disc_sector_tests.cpp)
+    bt2_target_defaults(bt2-disc-sector-tests)
     add_test(NAME disc-sector-bounds COMMAND bt2-disc-sector-tests)
 endif()
 
-foreach(bt2_probe_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe bt2-ee-iop-tests)
-    if(TARGET ${bt2_probe_target})
-        target_sources(${bt2_probe_target} PRIVATE ${BT2_PROBE_RUNTIME_SOURCES})
+foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe bt2-ee-iop-tests)
+    if(TARGET ${bt2_ee_runtime_target})
+        target_sources(${bt2_ee_runtime_target} PRIVATE ${BT2_EE_RUNTIME_SOURCES})
     endif()
 endforeach()
 

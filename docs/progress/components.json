@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-07",
+  "updated": "2026-10-08",
   "groups": [
     {"name": "Foundation", "items": [
       {"name": "Native Windows host", "status": "verified", "note": "CMake / MSVC executable builds"},
@@ -13,12 +13,12 @@
       {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
       {"name": "SIF / RPC / DMA", "status": "partial", "note": "NCMD/SCMD calls; IOP ack pending"},
       {"name": "CRI sound setup", "status": "partial", "note": "42 calls; AutoDMA half pending"},
-      {"name": "Controller and cards", "status": "partial", "note": "Emulated pad; card check next"}
+      {"name": "Controller and cards", "status": "partial", "note": "Emulated pad; absent-card checks"}
     ]},
     {"name": "Game", "items": [
       {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN; first asset"},
       {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
-      {"name": "GS rendering", "status": "partial", "note": "Textured sprites; first screen"},
+      {"name": "GS rendering", "status": "partial", "note": "Sprites, triangles; card screen"},
       {"name": "Frame presentation", "status": "partial", "note": "Live window; ~12 fps Debug"},
       {"name": "Menu, battle and audio", "status": "pending", "note": "End-to-end behavior unverified"}
     ]}

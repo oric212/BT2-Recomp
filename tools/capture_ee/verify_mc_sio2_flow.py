@@ -36,9 +36,11 @@ def verify(root,native):
     r=json.loads(native.read_text(encoding='utf-8'));nr=Path(str(native)+'.iop.bin').read_bytes()
     from verify_sound_rpc import completed_card_query
     require(completed_card_query(r),'Native timed query lifecycle differs')
-    require(r['sio2_card_transfer_counts']==[6,6] and r['sio2_dma_channels']==[[11,0x320B0,0x10024,0x201,1],[12,0x326E0,0x10024,0x40000200,1]],'Native transfer/register state differs')
+    # Every query (startup plus frame-phase) repeats the six DMA pairs and ends on the same final pair.
+    q=r.get('mc_query_requests',1)
+    require(r['sio2_card_transfer_counts']==[6*q,6*q] and r['sio2_dma_channels']==[[11,0x320B0,0x10024,0x201,1],[12,0x326E0,0x10024,0x40000200,1]],'Native transfer/register state differs')
     require(nr[0x32020:0x320B0]==tx and nr[0x32650:0x326E0]==rx,'Native owned buffers differ')
     require(r['sio2_card_controls'] and all(v==0x3BD for v in r['sio2_card_controls']),'Native control values differ')
-    print('Six absent-card DMA pairs, five timed FIFO probes and native query completion verified. Control counts/scheduling are not equated.')
+    print(f'Six absent-card DMA pairs per query ({q} native), five timed FIFO probes and native query completion verified. Control counts/scheduling are not equated.')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path,default=Path('work/bt2-generation/entry-stop.json'));a=p.parse_args();verify(a.root,a.native)

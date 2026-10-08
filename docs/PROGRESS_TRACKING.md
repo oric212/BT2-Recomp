@@ -29,7 +29,8 @@ Only verified evidence updates verified counters or checks a milestone. Include 
 3. Before interruption, record enough file paths, evidence and commands to resume. Do not rely on chat history or transient terminal session IDs. A question during implementation does not close the pass.
 4. Run required checks; record what passed and what remains. Keep last-known-good counts if the latest changes have not been run successfully.
 5. After verification, refresh `PROG.md`, append the monthly outcome and clear or replace the active handoff. Record the source commit/report used to measure results; the documentation commit can follow that measurement.
-6. Synchronize and review README, encoding, links and staged files, then commit and push. Do not include unverified implementation in a documentation-only commit.
+6. Clean build artifacts as AGENTS.md describes: keep only the host build and the final probe build.
+7. Synchronize and review README, encoding, links and staged files, then commit and push. Do not include unverified implementation in a documentation-only commit.
 
 ## README synchronization
 

@@ -93,7 +93,7 @@ The probe executes generated EE and translated IOP code, performs reads against 
 **Build times.** MSVC targets compile their sources in parallel (`/MP`), and the entry probe precompiles the stable standard headers. Measured on a 10-core / 20-thread machine:
 - **Clean entry-probe build:** about 40 s (804 objects).
 - **Change to a header every generated unit includes** (`ps2_runtime.h`, `gs_command_sink.h`): about 35 s.
-- **Edit to a runtime implementation file** (`ps2_runtime_*.cpp`, `gs_command_sink.cpp`): about 3 s.
+- **Edit to a runtime implementation file** (for example `runtime/ee/ps2_runtime_*.cpp`, `runtime/gs/gs_command_sink.cpp`): about 3 s. See [the runtime layout](RUNTIME_LAYOUT.md).
 
 Peak memory is about 23 GB with 20 parallel compilers.
 

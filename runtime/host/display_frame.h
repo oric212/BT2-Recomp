@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
-#include "gs_command_sink.h"
+#include "gs/gs_command_sink.h"
 
 // Decodes the displayed framebuffer of the owned GS memory model into a BGRA image (host order for
 // Win32 DIBs). The privileged DISPFB/DISPLAY registers select the buffer: FBP (2048-word pages),

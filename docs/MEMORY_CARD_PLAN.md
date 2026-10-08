@@ -2,7 +2,7 @@
 
 ## Current model: absent cards
 
-Memory card requests run through the original IOP modules (MCSERV, MCMAN, SIO2MAN). On the SIO2 bus, the card ports answer as an empty slot. This is the device policy `sio2_card_absent` in `runtime/iop/native_runtime.h`.
+Memory card requests run through the original IOP modules (MCSERV, MCMAN, SIO2MAN). On the SIO2 bus, the card ports answer as an empty slot. This is the device policy `sio2_card_absent` in `runtime/iop/core/native_runtime.h`.
 
 **Startup query.** MCSERV's GetInfo for port 0 / slot 0 calls MCMAN's card detection. Because the card type stays "no card", every detection runs the PS2 probe and then the PS1 probe, matching the public `mcman_detectcard`:
 - five `0x11` DMA probe packets and one `0xF3` authentication packet, each 144 bytes;
