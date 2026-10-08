@@ -29,12 +29,12 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
 | Controller check | ✅ Verified — passed with an emulated DualShock 2 |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
-| Opening movie | 🔧 Current — decoder set up; stops before the first movie frame |
-| Title screen | ⏳ Pending — waits for Start |
-| Demo fight (no input) | ⏳ Pending |
-| Gameplay (menus, versus battle) | ⏳ Pending |
-| Audio | ⏳ Pending — sound driver set up; no sound output |
-| Saves | ⏳ Pending — no memory card image yet |
+| Opening movie | ⛔ Blocking — decoder set up; GIF DMA chain mode stops the run before the first movie frame |
+| Title screen | ⏳ Not Reached — waits for Start |
+| Demo fight (no input) | ⏳ Not Reached |
+| Gameplay (menus, versus battle) | ⏳ Not Reached |
+| Audio | 🔧 Incomplete — sound driver set up; no sound output |
+| Saves | ⏳ Not Reached — no memory card image yet |
 
 **Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
@@ -48,6 +48,8 @@ Progress is tracked in five categories:
 - **Runtime coverage:** unique functions run in the verified startup run.
 - **Subsystem status:** which PS2 parts (EE, IOP, GS, GIF/VIF, IPU, audio, input, memory card, disc) work, and their scope.
 - **Verification:** tests, and comparisons of recompiled state with the original game in PCSX2.
+
+Statuses: ✅ Verified · 🟢 Operational (working on exercised paths, not yet validated more broadly) · 🔧 Incomplete · ⛔ Blocking (stops the game from progressing) · ⏳ Not Reached.
 
 ### Next steps
 

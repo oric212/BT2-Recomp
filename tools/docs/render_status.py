@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STATES = {"verified": ("#16835d", "Verified scope"), "partial": ("#b77912", "Partial / active"), "pending": ("#8793a5", "Pending")}
+STATES = {"verified": ("#16835d", "Verified"), "working": ("#2b78b8", "Operational"), "incomplete": ("#b77912", "Incomplete"),
+          "blocked": ("#c2410c", "Blocking"), "not_reached": ("#8793a5", "Not Reached")}
+FILLS = {"verified": "#ecfdf5", "working": "#eff6ff", "incomplete": "#fff7e6", "blocked": "#fff1eb", "not_reached": "#fff"}
 
 
 FLOW_TOP = 84     # Game-flow track: how far the port gets through the game's own sequence.
@@ -25,7 +27,7 @@ def render_flow(stages, esc):
             raise ValueError("Game flow label too long; shorten it for readability")
         color, label = STATES[stage["status"]]
         x = 24 + i * (chip + gap)
-        fill = {"verified": "#ecfdf5", "partial": "#fff7e6", "pending": "#fff"}[stage["status"]]
+        fill = FILLS[stage["status"]]
         parts += [f'<g><title>{esc(stage["name"])}: {esc(label)}. {esc(stage.get("note", ""))}</title>',
                   f'<rect x="{x:.1f}" y="{y}" width="{chip:.1f}" height="44" rx="22" fill="{fill}" stroke="{color}" stroke-width="{2 if stage.get("current") else 1.2}"/>',
                   f'<text x="{x + chip / 2:.1f}" y="{y + 27}" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">{esc(stage["name"])}</text>']
@@ -49,7 +51,7 @@ def render(data):
              '<text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>',
              f'<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">{esc(data["updated"])} · last measured checkpoint</text>']
     for i, (color, label) in enumerate(STATES.values()):
-        x = 24 + i * 175
+        x = 24 + i * 170
         parts += [f'<circle cx="{x+5}" cy="59" r="4" fill="{color}"/>',
                   f'<text x="{x+17}" y="63" font-size="12" fill="#475569">{label}</text>']
     parts += render_flow(data["flow"], esc)

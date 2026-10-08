@@ -12,12 +12,12 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 st
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
 | Controller check | ✅ Verified — passed with an emulated DualShock 2 |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
-| Opening movie | 🔧 Current — decoder set up; stops before the first movie frame |
-| Title screen | ⏳ Pending — waits for Start |
-| Demo fight (no input) | ⏳ Pending |
-| Gameplay (menus, versus battle) | ⏳ Pending |
-| Audio | ⏳ Pending — sound driver set up; no sound output |
-| Saves | ⏳ Pending — no memory card image yet |
+| Opening movie | ⛔ Blocking — decoder set up; GIF DMA chain mode stops the run before the first movie frame |
+| Title screen | ⏳ Not Reached — waits for Start |
+| Demo fight (no input) | ⏳ Not Reached |
+| Gameplay (menus, versus battle) | ⏳ Not Reached |
+| Audio | 🔧 Incomplete — sound driver set up; no sound output |
+| Saves | ⏳ Not Reached — no memory card image yet |
 
 **Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
@@ -31,6 +31,14 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 st
 | **Runtime coverage** | Unique functions entered and completed in the verified run |
 | **Subsystem status** | Which PS2 parts are implemented, and their scope |
 | **Verification** | Tests, and comparisons of recompiled state with the original game in PCSX2 |
+
+| Status | Meaning |
+| --- | --- |
+| ✅ **Verified** | Implemented and verified against expected/original behavior for the relevant scope. |
+| 🟢 **Operational** | Implemented and demonstrably working on the paths currently exercised, but broader behavior is not yet validated. |
+| 🔧 **Incomplete** | Some required functionality is still missing, but the implemented portion works. |
+| ⛔ **Blocking** | Missing/incorrect functionality currently prevents the game from progressing. |
+| ⏳ **Not Reached** | The game has not yet exercised enough of this subsystem to assess it. |
 
 ## Static coverage
 
@@ -61,15 +69,16 @@ The run stops at a checked boundary: a GIF DMA transfer in chain mode (`0x1000A0
 
 | Subsystem | Status | Scope |
 | --- | --- | --- |
-| EE CPU and kernel services | 🔧 Partial | Recompiled game code; threads, semaphores, interrupts, sleep/wake and priorities as the game reaches them |
-| IOP | 🔧 Partial | Original modules run natively; SIF RPC to disc, file I/O, sound, controller, memory card and CRI services |
-| GS | 🔧 Partial | Software GS model: sprites, triangles, PSMT4/PSMT8 textures with palettes, both display circuits, reset |
-| GIF / VIF / VU | 🔧 Partial | GIF normal-mode DMA and VIF1 DIRECT work; GIF chain mode is the current blocker; VIF unpack and VU1 not reached |
-| IPU / video | 🔧 Setup only | Decoder tables, thresholds and reset; no MPEG decoding |
-| Audio | 🔧 Partial | Sound driver, sound banks and SPU2 voice setup through the original modules; no sample playback or output |
-| Input | 🔧 Partial | Emulated DualShock 2 with scripted input; no host controller or keyboard yet |
-| Memory card | 🔧 Partial | Card queries through the original modules with no card inserted; no card image or saves |
-| Disc / filesystem | ✅ Verified (reached reads) | ISO-backed CDVD reads, streaming and file I/O; archive table and overlay byte-identical to the original |
+| EE CPU and kernel services | 🟢 Operational | Recompiled game code; threads, semaphores, interrupts, sleep/wake and priorities as the game reaches them; startup states match captures, frame-phase scheduling not yet compared |
+| IOP | 🟢 Operational | Original modules run natively; SIF RPC to disc, file I/O, sound, controller, memory card and CRI services; the CRI lifecycle comparison fails |
+| GS | 🔧 Incomplete | Software GS model: sprites, triangles, PSMT4/PSMT8 textures with palettes, both display circuits, reset |
+| GIF / VIF | ⛔ Blocking | GIF normal-mode DMA and VIF1 DIRECT work; GIF chain mode stops the run; VIF unpack not reached |
+| VU | ⏳ Not Reached | No VU microprogram has run yet |
+| IPU / video | 🔧 Incomplete | Decoder tables, thresholds and reset; no MPEG decoding |
+| Audio | 🔧 Incomplete | Sound driver, sound banks and SPU2 voice setup through the original modules; no sample playback or output |
+| Input | 🔧 Incomplete | Emulated DualShock 2 with scripted input; no host controller or keyboard yet |
+| Memory card | 🔧 Incomplete | Card queries through the original modules with no card inserted; no card image or saves |
+| Disc / filesystem | ✅ Verified | ISO-backed CDVD reads, streaming and file I/O; archive table and overlay byte-identical to the original |
 
 ## Verification
 
