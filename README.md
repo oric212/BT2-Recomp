@@ -69,7 +69,7 @@ cmake --build build --config Debug
 .\build\Debug\bt2-port.exe
 ```
 
-The foundation host prints its startup message. Before recompiling or testing BT2, prepare your own North American SLUS-21441 disc image, extract its original executable and boot configuration, and validate them using the [game-file preparation steps](docs/BUILDING.md#3-prepare-your-own-game-files-before-recompilation). Testing generated startup uses a separate developer probe with locally prepared inputs and your ISO. See [building and startup tests](docs/BUILDING.md) for setup and commands. The game is not yet playable.
+The foundation host prints its startup message. Before recompiling or testing BT2, prepare your own North American SLUS-21441 disc image, extract its original executable and boot configuration, and validate them using the [game-file preparation steps](docs/guides/BUILDING.md#3-prepare-your-own-game-files-before-recompilation). Testing generated startup uses a separate developer probe with locally prepared inputs and your ISO. See [building and startup tests](docs/guides/BUILDING.md) for setup and commands. The game is not yet playable.
 
 ## Architecture
 
@@ -97,13 +97,13 @@ flowchart LR
 | **GS** | Software rasterizer for the game's draw packets |
 | **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
 
-Details: [runtime layout](docs/RUNTIME_LAYOUT.md) · [reference architecture](docs/REFERENCE_ARCHITECTURE.md)
+Details: [runtime layout](docs/guides/RUNTIME_LAYOUT.md) · [reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md)
 
 ## Repository layout
 
 | Directory | Purpose |
 | --- | --- |
-| `runtime/` | Native host, compatibility services and execution probes ([layout](docs/RUNTIME_LAYOUT.md)) |
+| `runtime/` | Native host, compatibility services and execution probes ([layout](docs/guides/RUNTIME_LAYOUT.md)) |
 | `game/` | Handwritten BT2 integration; generated game code is ignored |
 | `config/` | Recompiler configuration, layout and pinned tool versions |
 | `tools/` | Validation, generation, capture and progress tooling |
@@ -116,14 +116,14 @@ Dependency checkouts, generated translations and analysis output live in ignored
 
 | Start here | Details |
 | --- | --- |
-| [Build and test](docs/BUILDING.md) | Host build, local prerequisites and startup probe |
+| [Build and test](docs/guides/BUILDING.md) | Host build, local prerequisites and startup probe |
 | [Current progress](docs/PROG.md) | Verified measurements, blocker and milestones |
 | [Active pass](docs/progress/ACTIVE_PASS.md) | Pending changes, missing checks and resume steps |
-| [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Goals and subsystem-scale working rules |
-| [Reference architecture](docs/REFERENCE_ARCHITECTURE.md) | Reference projects and adaptation guidance |
-| [Tools and evidence](docs/TOOLS.md) | Local tooling; [reverse-engineering notes](docs/REVERSE_ENGINEERING.md) |
-| [History](docs/progress/2026-10.md) | Detailed pass records; [tracking rules](docs/PROGRESS_TRACKING.md) |
-| [Content and licenses](docs/LEGAL.md) | Local game-file policy and dependency licenses |
+| [Implementation plan](docs/project/IMPLEMENTATION_PLAN.md) | Goals and subsystem-scale working rules |
+| [Reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md) | Reference projects and adaptation guidance |
+| [Tools and evidence](docs/guides/TOOLS.md) | Local tooling; [reverse-engineering notes](docs/reference/REVERSE_ENGINEERING.md) |
+| [History](docs/progress/2026-10.md) | Detailed pass records; [tracking rules](docs/project/PROGRESS_TRACKING.md) |
+| [Content and licenses](docs/project/LEGAL.md) | Local game-file policy and dependency licenses |
 ## AI tools and manual testing
 
 Development of this project involves AI tools for coding, investigation and documentation. AI-assisted changes will be reviewed and tested manually, alongside automated tests and comparisons against the original game's behavior. Unverified work is labeled in the progress records; use of AI does not establish correctness or mean that all current changes have passed manual testing.
@@ -148,7 +148,7 @@ Development of this project involves AI tools for coding, investigation and docu
 
 Libraries used by the toolchain: [ELFIO](https://github.com/serge1/ELFIO), [toml11](https://github.com/ToruNiina/toml11), [fmt](https://github.com/fmtlib/fmt), [libdwarf](https://github.com/davea42/libdwarf-code), [Rabbitizer](https://github.com/Decompollaborate/rabbitizer) and [nlohmann/json](https://github.com/nlohmann/json).
 
-Reference projects inform architecture and investigation; BT2-specific behavior is validated against local evidence. Dependency versions and licenses are recorded in [the content and license documentation](docs/LEGAL.md).
+Reference projects inform architecture and investigation; BT2-specific behavior is validated against local evidence. Dependency versions and licenses are recorded in [the content and license documentation](docs/project/LEGAL.md).
 
 ### License and game ownership
 

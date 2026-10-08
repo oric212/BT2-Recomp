@@ -97,13 +97,13 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 **Startup.** The game's own code, from its entry point and C library on, runs recompiled; kernel services are provided by the runtime. The original IOP modules run natively with SIF RPC between the two processors. The first archive table and the `DBZP.BIN` overlay load byte-identical to the original.
 
-**Frames.** The overlay's frame loop sends its graphics through GIF and VIF1 DMA into the GS model, shown live with `run_startup_probe.py --viewer` (see [BUILDING.md](BUILDING.md)). The emulated DualShock 2 passes the controller check. The memory card check runs with no card, and scripted input answers its "Continue anyway?" prompt. The GS reset for the next scene matches the original.
+**Frames.** The overlay's frame loop sends its graphics through GIF and VIF1 DMA into the GS model, shown live with `run_startup_probe.py --viewer` (see [BUILDING.md](guides/BUILDING.md)). The emulated DualShock 2 passes the controller check. The memory card check runs with no card, and scripted input answers its "Continue anyway?" prompt. The GS reset for the next scene matches the original.
 
 **Toward the opening movie (current).** The game sets up the movie decoder (IPU), copies its scratchpad memory to main RAM and starts its frame-pacing threads: worker 7 serves per-frame callbacks, main sleeps at frame end, worker 4 wakes it. Nothing new is drawn after frame 650 yet.
 
 ## Next steps
 
-1. **GIF DMA chain mode:** the current blocker ([frame GIF plan](FRAME_GIF_PLAN.md)).
+1. **GIF DMA chain mode:** the current blocker ([frame GIF plan](plans/graphics/FRAME_GIF_PLAN.md)).
 2. **Movie decoding:** real IPU MPEG-2 decoding, a new subsystem that needs its own plan.
 3. **Title screen and demo fight:** the title screen waits for Start; without input the game runs a CPU-vs-CPU demo fight.
 4. **Later:** VU microprograms, audio output, a memory card image with save import, host controller input.
@@ -113,6 +113,6 @@ Resume details: [active-pass handoff](progress/ACTIVE_PASS.md). Numeric snapshot
 ## History and working rules
 
 - [October 2026 history](progress/2026-10.md): every pass's evidence and earlier checkpoints.
-- [Implementation plan](IMPLEMENTATION_PLAN.md), [reference architecture](REFERENCE_ARCHITECTURE.md), [runtime layout](RUNTIME_LAYOUT.md), [tools](TOOLS.md), [reverse-engineering evidence](REVERSE_ENGINEERING.md), [tracking rules](PROGRESS_TRACKING.md).
+- [Implementation plan](project/IMPLEMENTATION_PLAN.md), [reference architecture](reference/REFERENCE_ARCHITECTURE.md), [runtime layout](guides/RUNTIME_LAYOUT.md), [tools](guides/TOOLS.md), [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md), [tracking rules](project/PROGRESS_TRACKING.md).
 
 A plain "continue" runs the permanent subsystem-scale pass rule (AGENTS.md). Keep this page short; detailed pass results belong in the monthly history.

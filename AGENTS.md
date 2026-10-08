@@ -1,6 +1,6 @@
 # BT2 project working instructions
 
-Use this repository as the project root. Before continuing development, read docs/PROG.md and docs/IMPLEMENTATION_PLAN.md. Consult docs/REFERENCE_ARCHITECTURE.md and its linked sources before architecture or unfamiliar PS2 subsystem work.
+Use this repository as the project root. Before continuing development, read docs/PROG.md and docs/project/IMPLEMENTATION_PLAN.md. Consult docs/reference/REFERENCE_ARCHITECTURE.md and its linked sources before architecture or unfamiliar PS2 subsystem work.
 
 ## Permanent meaning of "continue"
 
@@ -25,7 +25,7 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 
 Use a blocker-driven approach, but work at subsystem scale whenever possible. When several blockers belong to the same subsystem, trace and implement the bounded set needed to complete that subsystem instead of stopping after each individual function/syscall.
 
-Use docs/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is completing startup subsystems far enough to reach game asset loading, real draw submission and presentation. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
+Use docs/reference/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is completing startup subsystems far enough to reach game asset loading, real draw submission and presentation. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
 
 ## Build efficiency
 
@@ -48,7 +48,20 @@ Keep the codebase clean and modular:
 - **No artificial splits:** organize by meaning, readability and maintainability.
 - **Preserve boundaries:** keep existing behavior and the generated-code boundaries.
 
-[docs/RUNTIME_LAYOUT.md](docs/RUNTIME_LAYOUT.md) maps the `runtime/` folders (EE, GS, host, IOP core/devices/providers/services/EE bridge, probes, tests), the include convention and where new code goes.
+[docs/guides/RUNTIME_LAYOUT.md](docs/guides/RUNTIME_LAYOUT.md) maps the `runtime/` folders (EE, GS, host, IOP core/devices/providers/services/EE bridge, probes, tests), the include convention and where new code goes.
+
+## Documentation organization
+
+Keep `docs/` sorted by purpose:
+
+- `docs/PROG.md`: current progress (read by `tools/docs/sync_progress.py`; keep it at this path).
+- `docs/progress/`: the active-pass handoff, monthly history and dashboard data.
+- `docs/guides/`: how to build, use the tools, and find your way around the runtime (BUILDING, TOOLS, RUNTIME_LAYOUT).
+- `docs/project/`: the implementation plan, progress-tracking rules and legal/licensing.
+- `docs/reference/`: reference architecture and reverse-engineering evidence.
+- `docs/plans/<subsystem>/`: subsystem implementation plans, grouped as `ee`, `iop`, `graphics`, `sound`, `disc`, `input` and `memory-card`. Create a new subsystem folder only when no existing one fits (for example, `plans/video/` for IPU decoding).
+
+Put every new document in the matching folder, never loose in `docs/`. When a file moves, update every relative link and every `docs/...` path that refers to it (Markdown, code comments with full paths, CMake messages). Check that all links resolve before committing. Keep historical entries unchanged except for those path updates.
 
 ## Documentation encoding
 
@@ -60,7 +73,7 @@ Preserve aggressive subsystem-scale passes while usage is plentiful. Reduce scop
 
 ## Progress and interrupted-pass tracking
 
-Follow docs/PROGRESS_TRACKING.md. Read docs/progress/ACTIVE_PASS.md when resuming unfinished work; record pending changes and remaining verification before an interruption. Keep docs/PROG.md's verified checkpoint distinct from unverified implementation. Export only allowlisted counters from ignored startup reports, synchronize the marked README dashboard with tools/docs/sync_progress.py, and run its --check before progress commits. Detailed completed outcomes belong in monthly history. Never count isolated service coverage as full startup coverage.
+Follow docs/project/PROGRESS_TRACKING.md. Read docs/progress/ACTIVE_PASS.md when resuming unfinished work; record pending changes and remaining verification before an interruption. Keep docs/PROG.md's verified checkpoint distinct from unverified implementation. Export only allowlisted counters from ignored startup reports, synchronize the marked README dashboard with tools/docs/sync_progress.py, and run its --check before progress commits. Detailed completed outcomes belong in monthly history. Never count isolated service coverage as full startup coverage.
 
 ## Parallel evidence gathering
 

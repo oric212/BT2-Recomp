@@ -272,7 +272,7 @@ if(BT2_BUILD_IOP_PROBE)
     enable_testing()
     foreach(bt2_module_source IN LISTS BT2_IOP_GENERATED_MODULES)
         if(NOT EXISTS "${bt2_module_source}")
-            message(FATAL_ERROR "Generate local modules with tools/iop/generate_native.py, tools/iop/generate_boot_heap.py and tools/iop/generate_embedded.py first; see docs/TOOLS.md.")
+            message(FATAL_ERROR "Generate local modules with tools/iop/generate_native.py, tools/iop/generate_boot_heap.py and tools/iop/generate_embedded.py first; see docs/guides/TOOLS.md.")
         endif()
     endforeach()
     add_custom_command(OUTPUT "${BT2_IOP_WORK_DIR}/synthetic_native.cpp"
