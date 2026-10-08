@@ -5,24 +5,26 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 st
 <!-- progress-summary:start -->
 ![BT2 port status](progress/dashboard.svg)
 
-**Where the port is:** the recompiled game boots, completes its startup and runs its own frame loop. It has presented **650 frames** in a live window: the controller check and the memory card screens, up to the transition into the opening movie. It then prepares the movie and stops at the next unimplemented hardware feature. Playing the movie needs MPEG decoding, which is not implemented yet.
-
-| Milestone | Status |
+| Stage | Status |
 | --- | --- |
-| Recompilation pipeline (validation, map, code generation, native host) | ✅ Verified |
-| Startup: kernel services, original IOP modules, disc reads, threads | ✅ Verified — reaches the main frame loop; key states match original captures |
-| First presented frame | ✅ Verified — boot screens drawn by the GS model and shown in a live window |
-| Controller and memory card checks | ✅ Verified — emulated DualShock 2; no card mounted, prompt answered by scripted input |
-| Opening movie | 🔧 In progress — decoder setup done; graphics DMA chain mode next, then MPEG decoding |
-| Title screen and attract-mode demo fight | ⏳ Pending |
-| Menus and playable versus battle | ⏳ Pending |
-| Audio output | ⏳ Pending — sound driver set up; no sound produced |
+| Recompilation pipeline | ✅ Verified — validation, function map, code generation, native host |
+| Startup | ✅ Verified — boots to the main frame loop; key states match original captures |
+| First presented frame | ✅ Verified — 650 frames shown in a live window |
+| Controller check | ✅ Verified — passed with an emulated DualShock 2 |
+| Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
+| Opening movie | 🔧 In progress — decoder set up; stops before the first movie frame |
+| Title screen | ⏳ Pending — waits for Start |
+| Demo fight (no input) | ⏳ Pending |
+| Menus and versus battle | ⏳ Pending |
+| Audio output | ⏳ Pending — sound driver set up; no sound yet |
 | Memory card saves | ⏳ Pending |
 
 **Last measured, 2026-10-08:** **1,254 game functions entered / 1,243 completed**, **650 presented frames**, **1,034 logical VBlanks**, **186 original IOP disc reads**, **43 CRI sound calls**, **77 memory card queries**.
 <!-- progress-summary:end -->
 
 ## What runs today
+
+The game boots, completes its startup and runs its own frame loop. It presents 650 frames (the controller check and the memory card screens), prepares the opening movie, and stops at the next unimplemented hardware feature.
 
 **Startup.** The game's own code, from its entry point and C library on, runs recompiled; kernel services are provided by the runtime. The original IOP modules (disc, file I/O, sound, controller, memory card, CRI middleware) are recompiled too and run natively, with SIF RPC between the two processors. Main and its worker threads are scheduled, VBlank and timer interrupts run in logical time, and the first archive table and the `DBZP.BIN` overlay load from the disc byte-identical to the original.
 
