@@ -39,7 +39,19 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 **Last measured, 2026-10-08:** **1,254 game functions entered / 1,243 completed**, **650 presented frames**, **1,034 logical VBlanks**, **186 original IOP disc reads**, **43 CRI sound calls**, **77 memory card queries**.
 <!-- progress-summary:end -->
 
-[Detailed measurements](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
+### What runs today
+
+- **Startup:** the game's recompiled code and its original IOP modules run natively, from boot to the main frame loop.
+- **Frames:** controller check and memory card screens, drawn by the GS model and shown in a live window.
+- **Toward the movie:** decoder setup and frame-pacing threads run; the run stops at GIF DMA chain mode.
+
+### Next steps
+
+1. GIF DMA chain mode (current blocker).
+2. MPEG movie decoding (IPU).
+3. Title screen and the attract-mode demo fight.
+
+[Full progress](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
 
 ## Building
 
