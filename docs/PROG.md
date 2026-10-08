@@ -19,7 +19,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 st
 | Audio | ⏳ Pending — sound driver set up; no sound output |
 | Saves | ⏳ Pending — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ## How progress is measured
@@ -78,8 +78,8 @@ Verified 2026-10-08:
 - **Original comparisons:** 46 comparison scripts check recompiled state against PCSX2 captures of the original game.
   - 23 pass on the full run.
   - 12 startup-scoped checks pass at captured phase stops (`BT2_PHASE_STOP`, four phases).
-  - 7 need separate capture inputs and were not rerun this pass.
-  - 4 check earlier startup points that have no phase stop in the current gate.
+  - 7 pass with their own inputs: six capture checks (`cd_init`, `rpc_bind`, `heap_bind`, `heap_allocation`, `heap_copy`, `spu2_transfer`), whose regenerated probe inputs are byte-identical, and `disc_read` against the early-stop sound-worker run.
+  - 4 fail: `cri_rpc` and `second_heap` (native lifecycle differs), `cri_preemption` (checks a former blocker) and `spu2_initialization` (no current IOP-module-probe report).
 - **Frames:** inspected visually.
 
 Proprietary inputs, generated code, captures and rendered frames stay local and ignored.

@@ -135,10 +135,10 @@
 <circle cx="661" cy="416" r="3.5" fill="#16835d"/>
 <text x="672" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
 <text x="657" y="438" font-size="11.5" fill="#64748b">18/18 CTests; Python suites pass</text></g>
-<g><title>Original comparisons: Partial / active. 35 of 46 pass at this checkpoint</title>
+<g><title>Original comparisons: Partial / active. 42 of 46 pass at this checkpoint</title>
 <rect x="644" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="661" cy="478" r="3.5" fill="#b77912"/>
 <text x="672" y="482" font-size="13" font-weight="600" fill="#1e293b">Original comparisons</text>
-<text x="657" y="500" font-size="11.5" fill="#64748b">35 of 46 pass at this checkpoint</text></g>
+<text x="657" y="500" font-size="11.5" fill="#64748b">42 of 46 pass at this checkpoint</text></g>
 </g></svg>

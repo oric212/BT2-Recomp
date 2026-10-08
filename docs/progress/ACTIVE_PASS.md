@@ -12,6 +12,10 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames). Histo
 4. **Frame field:** handler-delivered VBlanks while main sleeps do not toggle `display_field` (only polled VBlanks and VSync-flag deliveries do). Check this against an original capture if a field-dependent path diverges.
 5. **Memory card, host input (XInput/SDL, keyboard), 16:9:** unchanged from the previous handoff.
 
+## Comparisons outside the gate script
+
+Run these with their own inputs (`$C=work/pcsx2-capture`, outputs to a scratch folder): `verify_cd_init.py $C/cd-init-after/capture.json --semaphores-capture $C/cd-semaphores/capture.json`; `verify_rpc_bind.py $C/sif-bind-after/capture.json --call-sema-capture $C/rpc-call-sema/capture.json`; `verify_heap_bind.py`, `verify_heap_allocation.py` and `verify_heap_copy.py` with `--capture $C/fileio-bind-after|heap-alloc-after|heap-copy-after --disc <ISO> --output <scratch>`; `verify_spu2_transfer.py --disc <ISO>`; `verify_disc_read.py --disc <ISO> --native work/bt2-generation/sound-worker-stop.json --workspace 0x1D4B00`. `cri_rpc`, `second_heap`, `cri_preemption` and `spu2_initialization` currently fail.
+
 ## Possible follow-ups (not started)
 
 - **GS rasterizer:** about 75% of a Release run.

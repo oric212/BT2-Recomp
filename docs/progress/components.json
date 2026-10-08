@@ -29,7 +29,7 @@
       {"name": "Retail validation", "status": "verified", "note": "Disc and embedded ELF confirmed"},
       {"name": "Static coverage", "status": "verified", "note": "9,493 EE functions generated"},
       {"name": "Tests", "status": "verified", "note": "18/18 CTests; Python suites pass"},
-      {"name": "Original comparisons", "status": "partial", "note": "35 of 46 pass at this checkpoint"}
+      {"name": "Original comparisons", "status": "partial", "note": "42 of 46 pass at this checkpoint"}
     ]}
   ]
 }

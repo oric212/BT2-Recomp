@@ -36,7 +36,7 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Audio | ⏳ Pending — sound driver set up; no sound output |
 | Saves | ⏳ Pending — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ### How progress is measured
