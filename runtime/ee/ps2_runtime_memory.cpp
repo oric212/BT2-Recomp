@@ -134,6 +134,9 @@ void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32
         && context->pc==0x30FE44 && context->r[29].low==initial_sp-112 && gs_csr_reset_writes==1) {
         gif_dma.gs.resetDrawingState();graph_startup_phase=1;return;
     }
+    if(address==0x12001000 && value==0x200 && frameGsResetStep(context,0,0x30FE44)) {
+        gif_dma.gs.resetDrawingState();frame_gs_reset_step=1;++frame_gs_resets;return; // VRAM stays as drawn.
+    }
     if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
         gif_dma.gs.resetDrawingState();++display_reset_phase;return;
     }
@@ -168,6 +171,9 @@ std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std
     checkMemory(rdram,0,0);
     if(address==0x12001000 && graph_startup_phase==1 && context->pc==0x30FE50 && context->r[29].low==initial_sp-112) {
         graph_startup_phase=2;return 0x551B4000; // Independently captured second original CSR load; no native video clock.
+    }
+    if(address==0x12001000 && frameGsResetStep(context,1,0x30FE50)) {
+        frame_gs_reset_step=2;return 0x551B4000; // Only the GS revision byte (bits 16..23) is consumed.
     }
     if(address==0x12001000 && (displayResetStep(context,1,0x30FE50,688) || displayResetStep(context,9,0x30FE50,128))) {
         // Only the GS revision byte (bits 16..23) is consumed; the original keeps 0x1B.

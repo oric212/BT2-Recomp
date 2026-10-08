@@ -724,6 +724,13 @@ The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` st
 
 **Frame budget.** The entry probe stops after 120 display flips by default, as a checked boundary after a completed flip. `BT2_FRAME_LIMIT=<n>` changes the budget and `0` disables it. Each Timer 1 delay wait is capped separately (100,000 polls) to detect a wait that never ends.
 
+**Interactive captures.** Some capture points are reached only after an in-game prompt; for example, with no memory card the game asks "Continue anyway?". For these, `capture_ee.py --interactive-pad --timeout 900` shows the PCSX2 window with its automatic renderer instead of the null renderer. It binds pad 1 to:
+- **Keyboard:** arrows for the D-pad, Enter for Cross, Backspace for Circle and Space for Start.
+- **Any controller via SDL:** D-pad, A/South for Cross, B/East for Circle, Start.
+- **Xbox controllers via XInput:** the same buttons.
+
+A person answers the prompt and the capture halts at its point as usual. The capture records `interactive_pad: true`. Example: `--absent-cards --capture-point rpc-frame-gs-reset-after --interactive-pad` (press Left, then Cross, at the prompt), compared by `verify_frame_gs_reset.py` with the native phase stop `BT2_PHASE_STOP=24b81c`.
+
 **Faster loops.** `run_startup_probe.py --config Release` runs the optimized probe (build `--config Release`), which is about 7× faster with identical reports. Selection loops should use it; the verification gate uses Debug. `verify_generated` caches per-file digests by size and modification time (`work/bt2-generation/generated-digests.cache.json`), and `prepare_runtime.py` leaves unchanged prepared sources untouched, so incremental builds skip them.
 
 **Scripted input.** `--pad-script` (default: answer the no-memory-card prompt with Yes) presses DualShock 2 buttons at logical IOP fields; see [BUILDING.md](BUILDING.md).

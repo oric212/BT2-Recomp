@@ -28,7 +28,8 @@ def original(root,point,fields):
 def native_scope(r):
     v=r['vblank_deliveries']
     # Main's display setup removes and re-adds the same handler (phase 13); no delivery happens there.
-    registrations=2 if r.get('display_reset_phase',0)>=13 else 1
+    # Each frame-phase GS reset (verify_frame_gs_reset.py) removes and re-adds it once more.
+    registrations=(2 if r.get('display_reset_phase',0)>=13 else 1)+r.get('frame_gs_resets',0)
     require(r['vblank_handler_registrations']==registrations and r['vblank_enable_calls']==registrations and 2<=v<=21001 and r['load_poll_idles']+r.get('file_load_idles',0)+r.get('asset_poll_idles',0)+r.get('timer1_vblanks',int(r.get('timer1_stops',0)>0))+r.get('frame_vsync_deliveries',0)==v-1,
         'VBlank delivery/idle accounting differs')
     # Each delivery wakes sleeping helpers 5 and 6; each wake is resumed once and re-parks.

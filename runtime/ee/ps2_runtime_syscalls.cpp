@@ -224,6 +224,9 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         return;
     }
     if(code==0 && selector==0x71 && gs_imr_supplied_) {
+        if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C && frameGsResetStep(context,2,0x32EFA8)) {
+            gs_imr=0xFF00;frame_gs_reset_step=3;context->r[2].low=0xFF00;return;
+        }
         if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C
             && (displayResetStep(context,2,0x32EFA8,688) || displayResetStep(context,10,0x32EFA8,128))) {
             gs_imr=0xFF00;++display_reset_phase;context->r[2].low=0xFF00;return;
@@ -238,6 +241,12 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         gs_imr=0xFF00;++gs_imr_writes;context->r[2].low=0xFF00;return;
     }
     if(code==0 && selector==2 && gs_crt_supplied_) {
+        // Frame-phase reset: after PutIMR (no VSync handler registered) or after its removal. NTSC only.
+        if((frameGsResetStep(context,3,0x32E868) || frameGsResetStep(context,4,0x32E868))
+            && context->r[4].low<=1 && context->r[5].low==2 && context->r[6].low<=1) {
+            frame_gs_crt_request={static_cast<std::uint32_t>(context->r[4].low),2,static_cast<std::uint32_t>(context->r[6].low)};
+            gs_crt_request=frame_gs_crt_request;frame_gs_reset_step=0;context->r[2].low=0;return;
+        }
         if(context->r[4].low==1 && context->r[5].low==2 && ((context->r[6].low==1 && context->r[31].low==0x100274
                 && displayResetStep(context,4,0x32E868,608)) || (!context->r[6].low && context->r[31].low==0x2710A0
                 && displayResetStep(context,11,0x32E868,48)))) {

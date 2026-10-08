@@ -33,9 +33,9 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Verified blocker (2026-10-08):** with no memory card, the game asks "Continue anyway?". Scripted controller input answers Yes, and the game continues through its next scene setup. It then resets the GS in the frame phase (`0x30FE44`), a new subsystem kept as a checked boundary.
+**Verified blocker (2026-10-08):** after the memory card prompt (answered Yes by scripted input), the game resets the GS for its next scene. That frame-phase reset now runs and matches a new original capture. The game then stops at the next unselected function (`FUN_002B7938`).
 
-**Last measured, 2026-10-08:** **801 EE entries entered / 791 completed**, **649 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **804 EE entries entered / 793 completed**, **650 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 

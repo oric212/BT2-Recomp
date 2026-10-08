@@ -2,16 +2,14 @@
 
 Updated: 2026-10-08. **No pass in progress.**
 
-The verified checkpoint is **801 entered / 791 completed** (649 frames), stopping at a frame-phase GS reset (`0x30FE44`, checked boundary `frame_gs_reset`). History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../RUNTIME_LAYOUT.md).
+The verified checkpoint is **804 entered / 793 completed** (650 frames). The frame-phase GS reset is implemented and matches the original. The run stops at the unselected function `FUN_002B7938`. History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../RUNTIME_LAYOUT.md).
 
 ## Next implementation
 
-1. **Frame-phase GS reset (separate subsystem).** After the memory card prompts the game resets the GS for its next scene. Keep it isolated from performance work, as the user asked:
-   - Model it from an original capture at that reset (new capture point), compare GS/display state and VSync handler changes, and replace the checked boundary only once the comparison holds.
-   - The existing startup reset model (`displayResetStep`, phases 0-13) is phase-locked and must stay as is.
-2. **Selection loop:** use `run_startup_probe.py --config Release` (about 20 s per iteration).
+1. **Selection loop:** continue from `FUN_002B7938` (`run_startup_probe.py --config Release`, about 20 s per iteration) toward the next scene.
+2. **Prompts in captures:** original captures reached only after a prompt use `capture_ee.py --interactive-pad`, with a person pressing the buttons.
 3. **Memory card:** the game sees no card by design (`sio2_card_absent`). A mounted card needs a blank formatted card image first, then save import ([plan](../MEMORY_CARD_PLAN.md)).
-4. **Host input:** XInput/SDL and keyboard for the live window. Scripted input already exists (`--pad-script`).
+4. **Host input:** XInput/SDL and keyboard for the live window.
 5. **Later:** 16:9.
 
 ## Possible follow-ups (not started)

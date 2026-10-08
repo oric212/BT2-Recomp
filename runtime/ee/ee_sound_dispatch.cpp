@@ -196,7 +196,10 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
         const auto next=static_cast<std::int32_t>(context->r[6].low);
         const bool replacement=display_reset_phase==12 && vblank_handler_registrations==1 && address==0x1006D8
             && context->pc==0x32E948 && context->r[31].low==0x311410 && context->r[29].low==initial_sp-96;
-        if(!address || address%4 || next!=-1 || (vblank_handler_registrations && !replacement)
+        // After a frame-phase GS reset removed the VSync handler, the library re-adds one (once).
+        const bool frame_replacement=frame_vsync_handler_removed && display_reset_phase==13 && !frame_gs_reset_step
+            && current_thread_id==1 && !in_interrupt_ && context->pc==0x32E948;
+        if(!address || address%4 || next!=-1 || (vblank_handler_registrations && !replacement && !frame_replacement)
             || std::any_of(intc_handlers.begin(),intc_handlers.end(),[](const IntcHandler& h){return h.cause==cause;}))
             throw UnsupportedSyscall(selector,context->pc);
         checkMemory(rdram,address,4);
@@ -205,11 +208,19 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
         intc_handlers.push_back({cause,address,static_cast<std::uint32_t>(context->r[7].low),static_cast<std::uint32_t>(context->r[28].low)});
         const auto id=static_cast<std::uint32_t>(intc_handlers.size());intc_handler_order.push_back(id);
         // A removed slot is not reused: the original kernel also returned a fresh ID (4 -> 5).
+        if(frame_replacement){frame_vsync_handler_removed=false;frame_vsync_handler=address;}
         ++vblank_handler_registrations;if(replacement)display_reset_phase=13;context->r[2].low=id;return true;
     }
     if(selector==0x11) {
         const auto id=static_cast<std::uint32_t>(context->r[5].low);
         const auto order=std::find(intc_handler_order.begin(),intc_handler_order.end(),id);
+        if(frameGsResetStep(context,3,0x32E968)) {
+            // Frame-phase reset: the GS library unlinks its VSync handler while cause 2 is disabled.
+            if((intc_mask&bit) || order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause || context->r[31].low!=0x30FE90)
+                throw UnsupportedSyscall(selector,context->pc);
+            intc_handler_order.erase(order);intc_handlers.at(id-1).cause=~0u;frame_gs_reset_step=4;frame_vsync_handler_removed=true;
+            context->r[2].low=0;return true;
+        }
         if(!displayResetStep(context,3,0x32E968,688) || (intc_mask&bit) || order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause
             || intc_handlers.at(id-1).address!=0x1006D8 || context->r[31].low!=0x30FE90)throw UnsupportedSyscall(selector,context->pc);
         // Unlinked while cause 2 is disabled; both reached callers ignore the result.

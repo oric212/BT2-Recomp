@@ -448,6 +448,15 @@ public:
     std::uint32_t display_intc_stat=0;
     bool display_field=true; // Toggles per polled VBlank; anchored to the original 0x271178 sample (field 1).
     std::optional<GifDmaStaging> clear_repeat_gif;
+    // Frame-phase GS reset (the GS library reset routine 0x30FDC0, mode 0, called again after display
+    // setup for a new scene): CSR reset, CSR read, PutIMR, VSync handler removal, SetGsCrt. Separate
+    // from the startup sequence above; each step is checked by its program counter.
+    unsigned frame_gs_reset_step=0,frame_gs_resets=0;bool frame_vsync_handler_removed=false;
+    std::array<std::uint32_t,3> frame_gs_crt_request{};std::uint32_t frame_vsync_handler=0;
+    bool frameGsResetStep(const R5900Context* context,unsigned step,std::uint32_t pc) const {
+        return frame_gs_reset_step==step && display_reset_phase==13 && gs_display_flips>=1 && current_thread_id==1
+            && !in_interrupt_ && context->pc==pc;
+    }
     bool displayResetStep(const R5900Context* context,unsigned phase,std::uint32_t pc,std::uint32_t frame) const {
         return display_reset_phase==phase && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active
             && !in_interrupt_ && graph_startup_phase==4 && gs_csr_reset_writes==1 && cri_rpc_calls==42
