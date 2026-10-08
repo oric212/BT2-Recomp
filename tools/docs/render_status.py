@@ -40,7 +40,7 @@ def render(data):
     if len(groups) != 3 or any(len(g["items"]) != 5 for g in groups):
         raise ValueError("Status map expects three groups of five bounded scopes")
     esc = html.escape
-    height = GROUPS_TOP + 14 + 5 * 62 + 46
+    height = GROUPS_TOP + 14 + 5 * 62 + 16
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="960" height="{height}" viewBox="0 0 960 {height}" role="img" aria-labelledby="title desc">',
              '<title id="title">BT2 port status</title>',
              '<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status. Verified scopes are bounded.</desc>',
@@ -67,7 +67,7 @@ def render(data):
                       f'<circle cx="{x+17}" cy="{y+20}" r="3.5" fill="{color}"/>',
                       f'<text x="{x+28}" y="{y+24}" font-size="13" font-weight="600" fill="#1e293b">{esc(item["name"])}</text>',
                       f'<text x="{x+13}" y="{y+42}" font-size="11.5" fill="#64748b">{esc(item["note"])}</text></g>']
-    parts += [f'<text x="24" y="{height - 20}" font-size="12" fill="#64748b">Verified scope means the stated bounded behavior works. It does not imply the entire subsystem is complete.</text>', '</g></svg>']
+    parts += ['</g></svg>']
     return "\n".join(parts) + "\n"
 
 

@@ -19,22 +19,20 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 st
 | Audio | ⏳ Pending — sound driver set up; no sound output |
 | Saves | ⏳ Pending — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** (structural only) · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ## How progress is measured
 
-Progress is tracked in five separate categories. None of them is a completion percentage.
+| Category | What it counts |
+| --- | --- |
+| **Functional milestones** | How far the game gets through its own sequence, from boot to saves |
+| **Static coverage** | Code mapped, generated and compiled ahead of time |
+| **Runtime coverage** | Unique functions entered and completed in the verified run |
+| **Subsystem status** | Which PS2 parts are implemented, and their scope |
+| **Verification** | Tests, and comparisons of recompiled state with the original game in PCSX2 |
 
-| Category | What it counts | What it does not mean |
-| --- | --- | --- |
-| **Functional milestones** | How far the game gets through its own sequence, from boot to saves | — |
-| **Static coverage** | Code mapped, generated and compiled ahead of time | That this code runs correctly, or at all |
-| **Runtime coverage** | Unique functions actually entered and completed in the verified run | How much of the game works; a new scene can reach many new functions at once |
-| **Subsystem status** | Which parts of the PS2 are implemented, and how far | That a subsystem is complete beyond its stated scope |
-| **Verification** | Tests, and comparisons of recompiled state against the original game in PCSX2 | Physical timing equivalence |
-
-## Static coverage (structural)
+## Static coverage
 
 | Item | Count |
 | --- | --- |
@@ -43,7 +41,7 @@ Progress is tracked in five separate categories. None of them is a completion pe
 | EE entries compiled into the startup probe | 1,361 main executable + 12 overlay |
 | IOP modules recompiled into the native IOP runtime | 15 module units (disc, file I/O, sound, controller, memory card, CRI) |
 
-Map boundaries are provisional; functions are compiled once execution reaches them.
+Map boundaries are provisional; functions are compiled when execution reaches them.
 
 ## Runtime coverage (verified run, 2026-10-08)
 
@@ -79,7 +77,7 @@ Verified 2026-10-08:
 - **Tests:** MSVC Debug and Release builds, **18/18 CTests**, and the Python suites (180 capture, 69 recompilation, 13 IOP, 3 Ghidra). Release and Debug reach the same checkpoint.
 - **Original comparisons:** 46 comparison scripts check recompiled state against PCSX2 captures of the original game.
   - 23 pass on the full run.
-  - 12 pass at captured phase stops (`BT2_PHASE_STOP`, four phases). These are startup-scoped checks whose state legitimately moves on later.
+  - 12 startup-scoped checks pass at captured phase stops (`BT2_PHASE_STOP`, four phases).
   - 7 need separate capture inputs and were not rerun this pass.
   - 4 check earlier startup points that have no phase stop in the current gate.
 - **Frames:** inspected visually.

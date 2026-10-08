@@ -36,18 +36,18 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Audio | ⏳ Pending — sound driver set up; no sound output |
 | Saves | ⏳ Pending — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** (structural only) · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ### How progress is measured
 
-There is no completion percentage. Function counts don't say how much of the game works, so progress is tracked in five separate categories:
+Progress is tracked in five categories:
 
 - **Functional milestones:** how far the game gets through its own sequence (the table above).
-- **Static coverage:** code mapped and generated ahead of time. This is structural only, not a measure of what works.
-- **Runtime coverage:** unique functions actually run in the verified startup run.
-- **Subsystem status:** which PS2 parts (EE, IOP, GS, GIF/VIF, IPU, audio, input, memory card, disc) work, and within what scope.
-- **Verification:** tests, and comparisons of recompiled state against the original game running in PCSX2.
+- **Static coverage:** code mapped and generated ahead of time.
+- **Runtime coverage:** unique functions run in the verified startup run.
+- **Subsystem status:** which PS2 parts (EE, IOP, GS, GIF/VIF, IPU, audio, input, memory card, disc) work, and their scope.
+- **Verification:** tests, and comparisons of recompiled state with the original game in PCSX2.
 
 ### Next steps
 
