@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "spu2_playback.h"
+#include "dualshock2.h"
 
 struct IopYield : std::exception {const char* what() const noexcept override {return "IOP thread waiting";}};
 
@@ -112,7 +113,7 @@ public:
     struct Semaphore {std::uint32_t attr,option,count,maximum;};
     std::map<unsigned,Semaphore> semaphores;
     unsigned next_semaphore=0x30001;
-    struct Event {std::uint32_t attr,option,bits;};
+    struct Event {std::uint32_t attr,option,bits,init_bits=0;};
     std::map<unsigned,Event> events;
     unsigned next_event=0x10001,vblank_event=0;
     struct Library {std::uint32_t table; unsigned version; std::vector<std::uint32_t> slots; std::uint32_t gp=0;};
@@ -132,6 +133,8 @@ public:
     std::vector<std::uint8_t> sio2_transmit,sio2_receive;
     unsigned sio2_receive_cursor=0;
     bool sio2_card_absent=true; // Explicit initial device policy; mounted cards are not implemented.
+    // Pad bus: a neutral DualShock 2 on port 1 (SIO2 port 0); port 2 stays absent.
+    DualShock2 pad;bool sio2_pad_reply=false;
     unsigned sio2_card_sends=0,sio2_card_receives=0,sio2_card_fifo_packets=0;
     std::vector<std::uint32_t> sio2_card_controls;
     std::uint32_t sio2_command_status=0;
@@ -234,6 +237,10 @@ public:
     void write(std::uint32_t address,std::uint32_t value,unsigned size) {
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
         access_width=size;access_kind="write";access_value=value;
+        // Diagnostic write watchpoint (BT2_IOP_WATCH): stops on the first nonzero store touching that address.
+        if(watch_address && value && physical(address)<=watch_address && watch_address<physical(address)+size)
+            throw std::runtime_error("IOP watched write: address "+std::to_string(physical(address))+" value "+std::to_string(value)
+                +" pc "+std::to_string(executing_pc)+" thread "+std::to_string(current_thread)+" interrupt "+std::to_string(in_interrupt));
         const auto p=physical(address);
         if(size==2 && spu2_playback.enabled && spu2_io_transfer_completed) {
             const auto offset=(p-0x1F900000)&0x3FF;
@@ -354,12 +361,20 @@ public:
                     && sio2_parameters.at(0x1F808250)==0xFFC00505 && sio2_parameters.at(0x1F808254)==0x201F4) {
                     sio2_receive.assign(3,0xFF);sio2_command_status=0x1D100;sio2_receive_cursor=0;++sio2_card_fifo_packets;
                 } else {
-                const auto port=command->second&1;
-                if((command->second&~1u)!=0x140540 || sio2_transmit!=std::vector<std::uint8_t>({1,0x42,0,0,0})
-                    || sio2_parameters.at(0x1F808240+port*8)!=0xFFC00505 || sio2_parameters.at(0x1F808244+port*8)!=0x20014)
-                    throw std::runtime_error("Unsupported SIO2 device packet/configuration: command="+std::to_string(command->second)+" first="+std::to_string(sio2_transmit[0])+" second="+std::to_string(sio2_transmit[1])+" length="+std::to_string(length));
-                sio2_receive=port?std::vector<std::uint8_t>(5,0xFF):std::vector<std::uint8_t>({0xFF,0x41,0x5A,0xFF,0xFF});
-                sio2_command_status=port?0x2D100:0x1100;sio2_receive_cursor=0;
+                // Pad packets: command word 0x40|port with equal send/receive lengths (5, 9 or 21 bytes)
+                // on an admitted pad timing configuration. Port 1 answers from the DualShock 2 model (the
+                // captured startup poll reply is its digital-mode answer); port 2 is absent.
+                const auto port=command->second&1;const auto received=(command->second>>18)&0x1FF;
+                // PORT_CTRL1/2 select the per-packet bus timing (the driver uses different timing for its
+                // first poll, configuration and full polls); timing is not modelled, so the observed pairs
+                // are admitted explicitly.
+                constexpr std::array<std::pair<std::uint32_t,std::uint32_t>,3> pad_timings{{{0xFFC00505,0x20014},{0xFFC00505,0x0103000A},{0xFF600A0A,0x01030014}}};
+                const auto pad_bus=port<2 && sio2_parameters.contains(0x1F808240+port*8) && sio2_parameters.contains(0x1F808244+port*8)
+                    && std::find(pad_timings.begin(),pad_timings.end(),std::pair{sio2_parameters.at(0x1F808240+port*8),sio2_parameters.at(0x1F808244+port*8)})!=pad_timings.end();
+                if((command->second&0x3F8000FEu)!=0x40 || received!=length || (length!=5 && length!=9 && length!=21) || !pad_bus || sio2_transmit[0]!=1)
+                    throw std::runtime_error("Unsupported SIO2 device packet/configuration: command="+std::to_string(command->second)+" first="+std::to_string(sio2_transmit[0])+" second="+std::to_string(sio2_transmit[1])+" length="+std::to_string(length)+" port_ctrl="+(sio2_parameters.contains(0x1F808240+port*8)?std::to_string(sio2_parameters.at(0x1F808240+port*8)):"-")+"/"+(sio2_parameters.contains(0x1F808244+port*8)?std::to_string(sio2_parameters.at(0x1F808244+port*8)):"-"));
+                sio2_receive=port?std::vector<std::uint8_t>(length,0xFF):pad.transfer(sio2_transmit);
+                sio2_command_status=port?0x2D100:0x1100;sio2_receive_cursor=0;sio2_pad_reply=true;
                 }
             }
             return;
@@ -367,14 +382,14 @@ public:
         if(p>=0x1F808200 && p<0x1F808260 && p%4==0 && size==4) {
             if(p==0x1F808200 && !sio2_transmit.empty()) {
                 if(sio2_receive_cursor!=sio2_receive.size())throw std::runtime_error("SIO2 command reset with unread reply");
-                sio2_transmit.clear();sio2_receive.clear();sio2_receive_cursor=0;
+                sio2_transmit.clear();sio2_receive.clear();sio2_receive_cursor=0;sio2_pad_reply=false;
             }
             sio2_parameters[p]=value;return; // Command/port configuration only; no transfer/device reply.
         }
         if(p==0x1F808280 && size==4 && sio2_irq_status_known) {sio2_irq_status&=~value;return;}
         if(p==0x1F808268 && size==4 && value==0x3BD) {
             const auto irq=interrupts.find(17);
-            if((sio2_receive.size()!=5 && sio2_receive.size()!=144 && !(sio2_receive.size()==3 && sio2_card_fifo_packets)) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
+            if((!sio2_pad_reply && sio2_receive.size()!=144 && !(sio2_receive.size()==3 && sio2_card_fifo_packets)) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
                 throw std::runtime_error("Unsupported SIO2 transfer completion state");
             if(sio2_receive.size()==144) {
                 if(sio2_transmit.size()!=144 || sio2_receive_cursor!=144
@@ -528,6 +543,39 @@ public:
         }
         spu2_playback.advanceTenths(elapsed,spu2_sound_ram);
         t.tenths+=elapsed;
+    }
+    // IOP VBLANK (IRQ 0) and EVBLANK (IRQ 11) edges as the public vblank module signals its event
+    // flag: start sets START|VBLANK (1|2) then clears START/NON_VBLANK (1|8); end sets END|NON_VBLANK
+    // (4|8) then clears VBLANK/END (2|4). Waiters released by the set run at once in priority order
+    // (interrupt return). The flag exists only after a thread first waits on it.
+    unsigned vblank_edges=0;
+    std::uint32_t watch_address=0; // Diagnostic only (BT2_IOP_WATCH); zero disables.
+    void deliverVblankEdge(bool start) {
+        if(!vblank_event)return;
+        if(in_interrupt || current_thread || !execute)throw std::runtime_error("IOP VBlank edge outside an idle point");
+        // Interrupt handler: iSetEventFlag readies the matching waiters, then iClearEventFlag runs in the
+        // same handler; the readied threads run only after it returns (so a thread that loops back to
+        // its wait sees the cleared bit and waits for the next edge).
+        auto& event=events.at(vblank_event);
+        event.bits|=start?3u:12u;
+        std::vector<unsigned> wake;
+        for(auto& [id,t]:threads) {
+            if(!t.waiting || t.wait_event!=vblank_event)continue;
+            const auto shared=event.bits&t.wait_bits;
+            if(!((t.wait_mode&1)?shared!=0:shared==t.wait_bits))continue;
+            if(t.wait_result)write(t.wait_result,event.bits,4);
+            if(t.wait_mode&0x10)event.bits=0;
+            t.waiting=false;t.ready=true;t.wait_satisfied=true;wake.push_back(id);
+        }
+        event.bits&=start?~9u:~6u;
+        std::stable_sort(wake.begin(),wake.end(),[&](unsigned a,unsigned b){return threads.at(a).priority<threads.at(b).priority;});
+        for(auto id:wake) {
+            current_thread=id;
+            try {execute(*this,threads.at(id).context);current_thread=0;throw std::runtime_error("Unexpected IOP worker completion");}
+            catch(const IopYield&) {current_thread=0;}
+            catch(...) {current_thread=0;throw;}
+        }
+        ++vblank_edges;
     }
     void tick(IopContext& c) {live_context=&c;executing_pc=c.pc;if(++steps>50000000)throw std::runtime_error("IOP diagnostic budget exceeded");}
     std::uint32_t import(const char* library,unsigned ordinal,IopContext& c) {

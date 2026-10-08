@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads
+from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -71,6 +71,18 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertIn("GuestBranchKind::TailJump", text)
         self.assertIn("other(rdram, ctx, runtime);", text)
         self.assertEqual(route_tail_calls(text), (text, 0))
+
+    def test_direct_jump_ends_the_path(self):
+        source = ('    ctx->pc = 0x28BB60u;\n'
+                  '    if (!runtime->dispatchGuestBranch(rdram, ctx, 0x28BB60u, 0x3BC5A0u, 0x0u, PS2Runtime::GuestBranchKind::DirectJump, "J")) {\n'
+                  '        return;\n    }\n    ctx->pc = 0x3BC5A8u;\n')
+        text, count = route_direct_jumps(source)
+        self.assertEqual(count, 1)
+        self.assertIn('dispatchGuestBranch(rdram, ctx, 0x28BB60u, 0x3BC5A0u, 0u, PS2Runtime::GuestBranchKind::TailJump, "generated tail jump"); return;', text)
+        self.assertNotIn("DirectJump", text)
+        self.assertEqual(route_direct_jumps(text), (text, 0))
+        other = 'if (!runtime->dispatchGuestBranch(rdram, ctx, ctx->r[31], 0x10u, 0x0u, PS2Runtime::GuestBranchKind::Return, "JR")) {\n return;\n}'
+        self.assertEqual(route_direct_jumps(other), (other, 0))
 
 
 if __name__ == "__main__":

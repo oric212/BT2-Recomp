@@ -36,7 +36,7 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
     };
     rt.providers[{"thevent",4}]=[](IopRuntime& memory,IopContext& c) {
         const auto p=c.get(4);memory.check(IopRuntime::physical(p),12);
-        const IopRuntime::Event event{memory.read(p,4),memory.read(p+4,4),memory.read(p+8,4)};
+        const IopRuntime::Event event{memory.read(p,4),memory.read(p+4,4),memory.read(p+8,4),memory.read(p+8,4)};
         if(event.attr!=0 && event.attr!=2)throw std::runtime_error("Unsupported event attributes");
         const auto id=memory.next_event++;memory.events.emplace(id,event);return id;
     };
@@ -176,11 +176,14 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         ++found->second.count;return 0u; // Zero-count suspension/wait queues remain unsupported.
     };
     rt.providers[{"thsemap",7}]=[](IopRuntime& memory,IopContext& c) {
+        // iSignalSema from interrupt context with no thread waiting on the semaphore: the count rises
+        // (bounded by its maximum). Waking a waiting thread from an interrupt is not modelled yet.
         const auto found=memory.semaphores.find(c.get(4));
-        if(!memory.in_interrupt || memory.cpu_interrupts_enabled || c.pc!=0x31B8C || c.get(4)!=memory.read(0x33F10,4)
-            || found==memory.semaphores.end() || found->second.count || found->second.maximum!=1
-            || memory.card_alarm.callback!=0x29F84 || memory.logical_time_us!=memory.card_alarm.deadline)
-            throw std::runtime_error("IOP interrupt semaphore signal outside card alarm");
+        if(!memory.in_interrupt || memory.cpu_interrupts_enabled || found==memory.semaphores.end()
+            || found->second.count>=found->second.maximum)
+            throw std::runtime_error("IOP interrupt semaphore signal outside an owned interrupt");
+        for(const auto& [id,t]:memory.threads)
+            if(t.waiting && t.wait_semaphore==c.get(4))throw std::runtime_error("IOP interrupt semaphore wake of a waiting thread unsupported");
         ++found->second.count;return 0u;
     };
     rt.providers[{"thsemap",8}]=[](IopRuntime& memory,IopContext& c) {
@@ -217,13 +220,12 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
             if(!((t.wait_mode&1)?shared!=0:shared==t.wait_bits))continue;
             if(!memory.execute)throw std::runtime_error("IOP event wake needs dispatch");
             if(memory.current_thread) {
-                const auto mc=memory.rpc_servers.find(0x80000400);
-                const bool mc_preemption=mc!=memory.rpc_servers.end() && memory.rpc_queues.contains(mc->second.queue)
-                    && memory.rpc_queues.at(mc->second.queue).thread==memory.current_thread
-                    && memory.threads.at(memory.current_thread).priority==104 && t.priority==16
+                // A running thread starting an SIO2MAN transfer wakes SIO2MAN's worker (priority 16), which
+                // preempts the caller at once. Callers so far: MCSERV (104) and the pad threads (DS2U_D/SIO2D).
+                const bool sio2_preemption=memory.threads.at(memory.current_thread).priority>t.priority && t.priority==16
                     && t.entry==0x1039C && t.wait_event==0x10001 && id!=memory.current_thread
                     && c.pc==0x10EA8 && memory.cpu_interrupts_enabled && !memory.in_interrupt;
-                if(!mc_preemption)throw std::runtime_error("Nested IOP event wake outside MCSERV/SIO2 scope");
+                if(!sio2_preemption)throw std::runtime_error("Nested IOP event wake outside the SIO2MAN worker scope");
             }
             if(t.wait_result)memory.check(IopRuntime::physical(t.wait_result),4);
             wake.push_back(id);if(t.wait_mode&0x10)bits=0;
@@ -253,6 +255,19 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
         const auto found=memory.events.find(c.get(4));
         if(found==memory.events.end())throw std::runtime_error("Unknown IOP event clear");
         found->second.bits&=c.get(5);return 0u;
+    };
+    // ReferEventFlagStatus (13, thread context) / iReferEventFlagStatus (14, interrupt context):
+    // attr, option, initial bits, current bits, waiter count (public iop_event_info_t layout).
+    for(unsigned ordinal:{13u,14u})rt.providers[{"thevent",ordinal}]=[ordinal](IopRuntime& memory,IopContext& c) {
+        if((ordinal==14)!=memory.in_interrupt)return static_cast<std::uint32_t>(-100); // KE_ILLEGAL_CONTEXT.
+        const auto found=memory.events.find(c.get(4));
+        if(found==memory.events.end())return static_cast<std::uint32_t>(-409); // KE_UNKNOWN_EVFID.
+        const auto info=c.get(5);memory.check(IopRuntime::physical(info),28);
+        unsigned waiters=0;for(const auto& [id,t]:memory.threads)if(t.waiting && t.wait_event==c.get(4))++waiters;
+        const auto& e=found->second;
+        for(auto [offset,value]:std::array<std::pair<unsigned,std::uint32_t>,5>{{{0,e.attr},{4,e.option},{8,e.init_bits},{12,e.bits},{16,waiters}}})
+            memory.write(info+offset,value,4);
+        return 0u;
     };
     rt.providers[{"thevent",10}]=[](IopRuntime& memory,IopContext& c) {
         const auto found=memory.events.find(c.get(4));
@@ -339,6 +354,11 @@ inline void install_iop_kernel_providers(IopRuntime& rt) {
                 throw std::runtime_error("Higher-priority nested IOP start outside CRI scope");
         }
         auto& t=found->second;t.context={};t.ready=true;t.context.pc=t.entry;t.context.set(4,c.get(5));
+        // As the IOP kernel's StartThread: the 0xB8-byte register-context area at the stack top is zeroed
+        // (public kernel layout). Code that reads an uninitialized local in its first frame (SIO2D's port
+        // scan slot) sees these zeros, not the 0xFF stack fill. The initial SP (top - 0x20) matches the
+        // original: SOUNDS' server descriptor, built in its first frame, is at 0x...90 in captures.
+        for(unsigned offset=0;offset<0xB8;offset+=4)memory.write(t.stack+t.stacksize-0xB8+offset,0,4);
         t.context.set(28,t.gp);t.context.set(29,t.stack+t.stacksize-0x20);t.context.set(30,t.context.get(29));t.context.set(31,IopRuntime::sentinel);
         if(sound_scope) {
             memory.current_thread=found->first;++memory.sound_worker_starts;

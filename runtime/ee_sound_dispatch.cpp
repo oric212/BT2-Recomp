@@ -305,7 +305,7 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
 #ifdef BT2_NATIVE_IOP
     // The IOP's own timer ticks for this field run before EE handlers observe the VBlank.
     if(native_iop) {
-        try {native_iop->advanceSoundTimer(iop_epoch);}
+        try {native_iop->advanceVblank(iop_epoch,std::span<std::uint8_t>(memory_.data(),memory_.size()));native_iop->advanceSoundTimer(iop_epoch);}
         catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;
             native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());throw UnsupportedSyscall(0x14,interrupted->pc);}
         native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_pc=native_iop->runtime.executing_pc;

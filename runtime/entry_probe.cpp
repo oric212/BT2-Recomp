@@ -1,3 +1,7 @@
+#include "host/display_frame.h"
+#ifdef _WIN32
+#include "host/viewer_window.h"
+#endif
 #include "ps2_runtime.h"
 #ifdef BT2_NATIVE_IOP
 #include "module_service.h"
@@ -79,9 +83,24 @@ int main(int argc, char** argv) {
         PS2Runtime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
-        // Frame budget: stop after this many display flips (default 120; BT2_FRAME_LIMIT=0 disables).
-        runtime.frame_limit = 120;
+        // Frame budget: stop after this many display flips (default 120, none in viewer mode;
+        // BT2_FRAME_LIMIT overrides, 0 disables).
+        const bool viewer_mode = std::getenv("BT2_VIEWER") != nullptr;
+        runtime.frame_limit = viewer_mode ? 0 : 120;
         if (const char* limit = std::getenv("BT2_FRAME_LIMIT")) runtime.frame_limit = static_cast<unsigned>(std::stoul(limit));
+#ifdef _WIN32
+        // Viewer mode: present the displayed framebuffer at each flip; keep the last frame visible after
+        // the run stops until the window is closed. Closing the window during a run ends the process.
+        const char* scale = std::getenv("BT2_VIEWER_SCALE");
+        static ViewerWindow viewer(scale && std::string_view(scale) == "stretch" ? ViewerWindow::Scaling::Stretch : ViewerWindow::Scaling::Integer);
+        struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode};
+        if (viewer_mode) runtime.on_display_flip = [&runtime] {
+            const auto dispfb = runtime.gs_privileged[9] ? runtime.gs_privileged[9] : runtime.gs_privileged[7];
+            const auto display = runtime.gs_privileged[9] ? runtime.gs_privileged[10] : runtime.gs_privileged[8];
+            viewer.present(decodeDisplay(runtime.gif_dma.gs, dispfb, display), runtime.gs_display_flips);
+            if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
+        };
+#endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);
         if (snapshot_mode) {
@@ -923,6 +942,10 @@ int main(int argc, char** argv) {
             }
             report<<"],\"dbc_dma_ee_words\":[";
             for(unsigned n=0;n<32;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A27C0+n*4);
+            report<<"],\"dbc_dma_ee_at_transfer_words\":[";
+#ifdef BT2_NATIVE_IOP
+            if(runtime.native_iop)for(unsigned n=0;n<32;++n) {std::uint32_t w;std::memcpy(&w,runtime.native_iop->dbc_dma_ee_snapshot.data()+n*4,4);report<<(n?",":"")<<w;}
+#endif
             report<<"],\"dbc_dma_payload_words\":[";
 #ifdef BT2_NATIVE_IOP
             if(runtime.native_iop)for(unsigned n=0;n<32;++n) {
@@ -987,7 +1010,7 @@ int main(int argc, char** argv) {
                 << ",\"spu2_playback_blocks\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.blocks:0)
                 << ",\"spu2_endx\":[" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[0]:0) << "," << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[1]:0) << "]"
                 << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_timer_started\":" << (runtime.native_iop && runtime.native_iop->runtime.sound_timer.started ? 1 : 0) << ",\"fileio_binds\":" << runtime.fileio_binds << ",\"fileio_calls\":" << runtime.fileio_calls << ",\"fileio_completions\":" << runtime.fileio_completions << ",\"iop_timer_ticks\":" << (runtime.native_iop ? runtime.native_iop->runtime.sound_timer.ticks : 0u) << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
-                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"asset_poll_idles\":" << runtime.asset_poll_idles << ",\"timer1_vblanks\":" << runtime.timer1_vblanks << ",\"dbc_port_calls\":" << runtime.dbc_port_calls << ",\"scmd_calls\":" << runtime.scmd_calls
+                << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"asset_poll_idles\":" << runtime.asset_poll_idles << ",\"timer1_vblanks\":" << runtime.timer1_vblanks << ",\"dbc_port_calls\":" << runtime.dbc_port_calls << ",\"dbc_main_calls\":" << runtime.dbc_main_calls << ",\"scmd_calls\":" << runtime.scmd_calls
                 << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
                 << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns
                 << ",\"startup_dispatch_parent_pc\":" << runtime.startup_dispatch_parent.pc

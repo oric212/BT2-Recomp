@@ -20,10 +20,13 @@ def summary(report):
             f"boundary selector={report['selector']:#x}, PC={report['pc']:#x}, target={report['target']:#x}.\n"
             "Completion counts are observed invocation returns, not full gameplay correctness or startup completion.")
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--viewer',action='store_true',help='Present each display flip in a window; no frame budget unless --frames is given.');p.add_argument('--frames',type=int,help='Stop after this many display flips (0: no budget).');p.add_argument('--scale',choices=('integer','stretch'),default='integer',help='Viewer scaling.');a=p.parse_args()
     cmd=command(ROOT,a.disc.resolve());env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None)
     report=ROOT/'work/bt2-generation'/('sound-worker-stop.json' if a.sound_worker else 'entry-stop.json');cmd[2]=str(report)
     if a.sound_worker:env['BT2_EE_SOUND_DISPATCH_PROBE']='1'
+    env.pop('BT2_VIEWER',None);env.pop('BT2_FRAME_LIMIT',None);env.pop('BT2_VIEWER_SCALE',None)
+    if a.viewer:env['BT2_VIEWER']='1';env['BT2_VIEWER_SCALE']=a.scale
+    if a.frames is not None:env['BT2_FRAME_LIMIT']=str(a.frames)
     subprocess.run(cmd,cwd=ROOT,env=env,check=True)
     print(summary(json.loads(report.read_text(encoding='utf-8'))))
     if a.sound_worker:print('Diagnostic sound-worker scope only: main priority request is pending; the EE stack is cancelled after the checked wait.')

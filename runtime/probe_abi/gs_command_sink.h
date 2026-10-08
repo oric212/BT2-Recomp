@@ -195,10 +195,10 @@ private:
                 +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));
         state.trx=true;state.trx_bp=dbp;state.trx_bw=dbw;state.trx_x0=dx;state.trx_y0=dy;state.trx_w=w;state.trx_h=h;state.trx_x=state.trx_y=0;
     }
-    void loadClut(std::uint64_t tex0) {
+    void loadClut(std::uint64_t texture0) {
         // CLD 1: load at this TEX0 write. CSM1, CT32 entries, 4-bit indices (16 entries at CSA*16).
-        const unsigned psm=unsigned((tex0>>20)&63),cbp=unsigned((tex0>>37)&0x3FFF),cpsm=unsigned((tex0>>51)&15);
-        const unsigned csm=unsigned((tex0>>55)&1),csa=unsigned((tex0>>56)&31);
+        const unsigned psm=unsigned((texture0>>20)&63),cbp=unsigned((texture0>>37)&0x3FFF),cpsm=unsigned((texture0>>51)&15);
+        const unsigned csm=unsigned((texture0>>55)&1),csa=unsigned((texture0>>56)&31);
         if(psm!=0x14 || cpsm!=0 || csm || csa>15)throw std::runtime_error("Unsupported GS CLUT load");
         for(unsigned i=0;i<16;++i) {
             const auto& w=vram_[ct32Word(cbp,1,i%8,i/8)];
@@ -243,8 +243,8 @@ private:
     }
     struct Rgba {int r,g,b,a;};
     static Rgba unpack(std::uint32_t c) {return {int(c&255),int((c>>8)&255),int((c>>16)&255),int(c>>24)};}
-    std::uint32_t texel(std::uint64_t tex0,int u,int v) const {
-        const unsigned tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63),csa=unsigned((tex0>>56)&31);
+    std::uint32_t texel(std::uint64_t texture0,int u,int v) const {
+        const unsigned tbp=unsigned(texture0&0x3FFF),tbw=unsigned((texture0>>14)&63),csa=unsigned((texture0>>56)&31);
         const auto n=t4Nibble(tbp,tbw,unsigned(u),unsigned(v));
         const auto& w=vram_[n/8];const unsigned shift=unsigned(n%8)*4;
         if(((w.known>>shift)&15)!=15)throw std::runtime_error("GS texture reads unwritten VRAM at texel "+std::to_string(u)+","+std::to_string(v)+" (TBP "+std::to_string(tbp)+", TBW "+std::to_string(tbw)+", word "+std::to_string(n/8)+")");
@@ -275,24 +275,24 @@ private:
         if(x1>int(width*64) || y1>2048)reject();
         // Texture state: PSMT4 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
         // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
-        const auto tex0=state.regs[0x06+c],tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
-        const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15),tfx=unsigned((tex0>>35)&3);
-        const bool tcc=(tex0>>34)&1,linear=(tex1>>5)&1;
+        const auto texture0=state.regs[0x06+c],tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
+        const unsigned tw=unsigned((texture0>>26)&15),th=unsigned((texture0>>30)&15),tfx=unsigned((texture0>>35)&3);
+        const bool tcc=(texture0>>34)&1,linear=(tex1>>5)&1;
         const unsigned wms=unsigned(clamp&3),wmt=unsigned((clamp>>2)&3);
-        if(tme && (((tex0>>20)&63)!=0x14 || tw>10 || th>10 || tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(linear?1u:0u) || wms>1 || wmt>1))reject();
+        if(tme && (((texture0>>20)&63)!=0x14 || tw>10 || th>10 || tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(linear?1u:0u) || wms>1 || wmt>1))reject();
         // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
         const auto alpha=state.regs[0x42+c];
         const unsigned sa=unsigned(alpha&3),sb=unsigned((alpha>>2)&3),sc=unsigned((alpha>>4)&3),sd=unsigned((alpha>>6)&3);
-        const int fix=int((alpha>>32)&255);const bool colclamp=state.regs[0x46]&1,pabe=state.regs[0x49]&1;
+        const int fix=int((alpha>>32)&255);const bool colclamp=state.regs[0x46]&1,pabe_on=state.regs[0x49]&1;
         if(abe && (sa==3 || sb==3 || sc==3 || sd==3))reject();
         const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
         const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
         auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
         auto sample=[&](int u,int v)->Rgba { // u,v in 1/16 texels at the pixel.
-            if(!linear)return unpack(texel(tex0,wrap(u>>4,tw,wms),wrap(v>>4,th,wmt)));
+            if(!linear)return unpack(texel(texture0,wrap(u>>4,tw,wms),wrap(v>>4,th,wmt)));
             const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
-            const auto c00=unpack(texel(tex0,wrap(iu,tw,wms),wrap(iv,th,wmt))),c10=unpack(texel(tex0,wrap(iu+1,tw,wms),wrap(iv,th,wmt)));
-            const auto c01=unpack(texel(tex0,wrap(iu,tw,wms),wrap(iv+1,th,wmt))),c11=unpack(texel(tex0,wrap(iu+1,tw,wms),wrap(iv+1,th,wmt)));
+            const auto c00=unpack(texel(texture0,wrap(iu,tw,wms),wrap(iv,th,wmt))),c10=unpack(texel(texture0,wrap(iu+1,tw,wms),wrap(iv,th,wmt)));
+            const auto c01=unpack(texel(texture0,wrap(iu,tw,wms),wrap(iv+1,th,wmt))),c11=unpack(texel(texture0,wrap(iu+1,tw,wms),wrap(iv+1,th,wmt)));
             auto mix=[&](int a,int b,int c2,int d){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+d*fu*fv)>>8;};
             return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
         };
@@ -310,7 +310,7 @@ private:
                 else s={t.r,t.g,t.b,tcc?t.a:vertex.a};
             }
             auto& w=vram_[ct32Word(fbp*32,width,unsigned(px),unsigned(py))];
-            if(abe && !(pabe && s.a<0x80)) {
+            if(abe && !(pabe_on && s.a<0x80)) {
                 const std::uint32_t needed=((sa==1 || sb==1 || sd==1)?0xFFFFFFu:0u)|(sc==1?0xFF000000u:0u);
                 if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
                 const auto d=unpack(w.value);

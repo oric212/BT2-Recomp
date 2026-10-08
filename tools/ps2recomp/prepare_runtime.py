@@ -23,6 +23,16 @@ def route_tail_calls(source):
         'PS2Runtime::GuestBranchKind::TailJump, "generated tail call"); return;', source)
 
 
+def route_direct_jumps(source):
+    # A J to another function (emitted as an inline DirectJump dispatch when the target is outside
+    # this generated program, e.g. an overlay jumping into the main executable) ends the path: the
+    # target returns to this function's caller. Fallthrough after it would overwrite that return PC.
+    pattern=(r'if \(!runtime->dispatchGuestBranch\(rdram, ctx, (0x[0-9A-Fa-f]+u), (0x[0-9A-Fa-f]+u), 0x0u, '
+             r'PS2Runtime::GuestBranchKind::DirectJump, "J"\)\) \{\s*return;\s*\}')
+    return re.subn(pattern,lambda m:f'(void)runtime->dispatchGuestBranch(rdram, ctx, {m[1]}, {m[2]}, 0u, '
+                   'PS2Runtime::GuestBranchKind::TailJump, "generated tail jump"); return;',source)
+
+
 def route_vu_status(source):
     pattern=r"SET_GPR_U32\(ctx, (\d+), ctx->vu0_vpu_stat\);"
     text,count=re.subn(pattern,lambda m:f'SET_GPR_U32(ctx, {m[1]}, runtime->readVuStatus(ctx));',source)
@@ -132,6 +142,7 @@ def main():
         selected+=[(row['start'],files['output']/f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp",files['runtime']) for row in functions]
     for address,source,prepared in selected:
         text,count=route_tail_calls(source.read_text(encoding='utf-8'))
+        text,jump_count=route_direct_jumps(text);count+=jump_count
         text,vu_count=route_vu_status(text)
         text,control_count=route_vu_control(text)
         text,cop2_count=route_cop2_condition(text)

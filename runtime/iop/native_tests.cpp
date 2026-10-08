@@ -156,6 +156,43 @@ int main() {
         };
         host.set(4,kernel.vblank_event);host.set(5,4);check(kernel.import("thevent",6,host)==0 && worker.waiting && worker.wait_bits==0x10 && kernel.current_thread==0);
         host.set(5,~4u);check(kernel.import("thevent",8,host)==0 && !kernel.events.at(kernel.vblank_event).bits);
+        {
+            // VBlank edges: a WaitVblankStart waiter (bit 1) runs at the start edge only; a WaitVblankEnd
+            // waiter (bit 4) at the end edge only; bits follow the public module's set/clear pattern.
+            IopRuntime v;install_iop_kernel_providers(v);
+            v.deliverVblankEdge(true);check(!v.vblank_edges); // No flag yet: nothing to signal.
+            v.vblank_event=0x10001;v.events.emplace(0x10001,IopRuntime::Event{2,0});
+            IopRuntime::Thread a{},b{};a.priority=46;a.waiting=true;a.wait_event=0x10001;a.wait_bits=1;a.wait_mode=1;a.wait_order=1;
+            b=a;b.wait_bits=4;b.wait_order=2;b.priority=20;v.threads.emplace(1,a);v.threads.emplace(2,b);
+            std::vector<unsigned> ran;
+            v.execute=[&](IopRuntime& m,IopContext&){ran.push_back(m.current_thread);auto& t=m.threads.at(m.current_thread);t.waiting=true;t.ready=false;t.wait_satisfied=false;throw IopYield{};};
+            v.deliverVblankEdge(true);
+            check(ran==std::vector<unsigned>{1} && v.events.at(0x10001).bits==2 && v.vblank_edges==1);
+            v.deliverVblankEdge(false);
+            check(ran==std::vector<unsigned>({1,2}) && v.events.at(0x10001).bits==8 && v.vblank_edges==2);
+            v.current_thread=1;bool rejected=false;try{v.deliverVblankEdge(true);}catch(const std::runtime_error&){rejected=true;}
+            check(rejected && v.vblank_edges==2);
+        }
+        {
+            // DualShock 2: the captured digital poll reply, the standard analog configuration sequence,
+            // analog/pressure polls with neutral input, and refusals outside the modelled protocol.
+            DualShock2 pad;using B=std::vector<std::uint8_t>;
+            check(pad.transfer(B{1,0x42,0,0,0})==B({0xFF,0x41,0x5A,0xFF,0xFF}));
+            check(pad.transfer(B{1,0x43,0,1,0})==B({0xFF,0x41,0x5A,0xFF,0xFF}) && pad.config);
+            check(pad.transfer(B{1,0x45,0,0,0,0,0,0,0})==B({0xFF,0xF3,0x5A,3,2,0,2,1,0}));
+            check(pad.transfer(B{1,0x44,0,1,3,0,0,0,0})==B({0xFF,0xF3,0x5A,0,0,0,0,0,0}) && pad.mode==DualShock2::Analog && pad.locked);
+            check(pad.transfer(B{1,0x46,0,0,0,0,0,0,0})==B({0xFF,0xF3,0x5A,0,0,1,2,0,0x0A}));
+            check(pad.transfer(B{1,0x46,0,1,0,0,0,0,0})==B({0xFF,0xF3,0x5A,0,0,1,1,1,0x14}));
+            check(pad.transfer(B{1,0x4C,0,1,0,0,0,0,0})[6]==7);
+            check(pad.transfer(B{1,0x4D,0,0,1,0xFF,0xFF,0xFF,0xFF})==B({0xFF,0xF3,0x5A,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}) && pad.small_motor_map==0 && pad.large_motor_map==1);
+            check(pad.transfer(B{1,0x43,0,0,0x5A,0x5A,0x5A,0x5A,0x5A})==B({0xFF,0xF3,0x5A,0,0,0,0,0,0}) && !pad.config);
+            check(pad.transfer(B{1,0x42,0,0,0,0,0,0,0})==B({0xFF,0x73,0x5A,0xFF,0xFF,0x80,0x80,0x80,0x80}));
+            pad.transfer(B{1,0x43,0,1,0,0,0,0,0});pad.transfer(B{1,0x4F,0,0xFF,0xFF,3,0,0,0});pad.transfer(B{1,0x43,0,0,0,0,0,0,0});
+            B poll21(21,0);poll21[0]=1;poll21[1]=0x42;const auto pressure=pad.transfer(poll21);
+            check(pad.mode==DualShock2::Pressure && pressure.size()==21 && pressure[1]==0x79 && pressure[3]==0xFF && pressure[5]==0x80 && pressure[20]==0);
+            bool refused=false;try{pad.transfer(B{1,0x44,0,1,3,0,0,0,0});}catch(const std::runtime_error&){refused=true;}check(refused); // Not in config.
+            check(pad.transfer(B{1,0x42,0,0,0})==B({0xFF,0x79,0x5A,0xFF,0xFF})); // Short poll: truncated reply with the mode ID.
+        }
         IopRuntime nested;install_iop_kernel_providers(nested);
         nested.events.emplace(0x10001,IopRuntime::Event{2,0});
         IopRuntime::Thread parent{},child{};parent.priority=104;
@@ -273,6 +310,7 @@ int main() {
         sound.abi_read_only_words={{0,0},{4,0},{8,0}};check(sound.read(0,4)==0 && sound.read(8,4)==0);
         refuses([&]{sound.write(0,0,4);});refuses([&]{sound.read(12,4);});refuses([&]{sound.read(0,1);});
         IopRuntime scheduling;install_iop_kernel_providers(scheduling);
+        scheduling.map(0x1000,std::vector<std::uint8_t>(0x100));scheduling.map(0x2000,std::vector<std::uint8_t>(0x100)); // Thread stacks (context area zeroed at start).
         scheduling.threads.emplace(1,IopRuntime::Thread{0,0,0x100,0x1000,0x100,39,0x800,{}});
         scheduling.threads.emplace(2,IopRuntime::Thread{0,0,0x200,0x2000,0x100,48,0x900,{}});
         std::vector<unsigned> order;scheduling.execute=[&](IopRuntime& m,IopContext& context) {
@@ -285,7 +323,7 @@ int main() {
         };
         IopContext start;start.set(4,1);check(scheduling.import("thbase",6,start)==0 && order==std::vector<unsigned>{1,3,2} && !scheduling.current_thread);
         {
-            IopRuntime m;install_iop_kernel_providers(m);m.map(0x1B4A84,std::vector<std::uint8_t>(4));
+            IopRuntime m;install_iop_kernel_providers(m);m.map(0x1B4A84,std::vector<std::uint8_t>(4));m.map(0x2000,std::vector<std::uint8_t>(0x800));
             m.write(0x1B4A84,0x30001,4);m.semaphores.emplace(0x30001,IopRuntime::Semaphore{0,0,0,1});
             m.threads.emplace(1,IopRuntime::Thread{0,0,0x1A77D4,0x1000,0x800,48,0x1BCDF0,{}});
             m.threads.emplace(2,IopRuntime::Thread{0,0,0x1AC890,0x2000,0x800,39,0x1BCDF0,{}});
@@ -312,7 +350,7 @@ int main() {
             IopRuntime m;m.map(0x1000,std::vector<std::uint8_t>(68));m.write(0x1024,0x40C,4);
             m.rpc_servers.emplace(0x90000200,IopRuntime::RpcServer{0x1000,0x90000200,0,0,0x2000,0});
             m.rpc_queues.emplace(0x2000,IopRuntime::RpcQueue{1,{0x90000200}});m.current_thread=1;
-            m.threads.emplace(2,IopRuntime::Thread{0,0,0x1AC890,0,0x800,39,0x1BCDF0,{}});
+            m.threads.emplace(2,IopRuntime::Thread{0,0,0x1AC890,0,0x800,39,0x1BCDF0,{}});m.map(0x0,std::vector<std::uint8_t>(0x800));
             auto& child=m.threads.at(2);child.waiting=true;child.wait_semaphore=0x30001;
             m.spu2_fifo_halfwords=8;m.spu2_reset_status_reads=2;m.spu2_io_status_reads=1;m.executing_pc=0x92250;
             bool denied=false;try {m.read(0x1F8010C8,2);}catch(const std::runtime_error&){denied=true;}check(denied && !m.spu2_dma_idle_reads);

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdlib>
 #include "library_provider.h"
 #include "kernel_provider.h"
 #include "ioman_provider.h"
@@ -22,6 +23,7 @@ public:
     explicit NativeIopService(unsigned epoch,std::vector<NativeIopModule> definitions):epoch_(epoch),definitions_(std::move(definitions)) {
         if(!epoch_)throw std::runtime_error("Native IOP needs a fresh epoch");
         runtime.spu2_playback.enabled=true;
+        if(const char* watch=std::getenv("BT2_IOP_WATCH"))runtime.watch_address=static_cast<std::uint32_t>(std::stoul(watch,nullptr,16));
         runtime.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
         runtime.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
         install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);
@@ -74,6 +76,9 @@ public:
     // Frame-phase no-wait requests on the DBC services 0x8000131E/0x8000131F: original handlers.
     std::vector<std::uint8_t> callDbcPort(unsigned epoch,std::uint32_t service,std::uint32_t client,std::uint32_t result,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size);
     unsigned dbc_port_requests=0;
+    // Frame-phase requests on DBCMAN's main service (0x80001300): original handler.
+    std::vector<std::uint8_t> callDbcMain(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input);
+    unsigned dbc_main_requests=0;
     std::vector<std::uint8_t> callMcQuery(unsigned epoch,std::span<const std::uint8_t> input,std::span<std::uint8_t> ee_memory={});
     std::vector<std::uint8_t> callMcRpc(unsigned epoch,std::span<const std::uint8_t> input);
     // Later sound-service commands from main (after display setup): original registered handler.
@@ -81,6 +86,8 @@ public:
     std::vector<std::uint8_t> callSoundsCommand(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input);
     unsigned sound_command_requests=0;
     void advanceSoundTimer(unsigned epoch); // IOP hardware timer ticks for one logical NTSC field.
+    void advanceVblank(unsigned epoch,std::span<std::uint8_t> ee_memory={}); // IOP VBLANK start and end edges for one logical NTSC field.
+    unsigned dbc_pad_transfers=0,cri_stream_returns=0;
     // Boot FILEIO file server (0x80000001): original handler, request in its native receive buffer.
     std::vector<std::uint8_t> callFileio(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size,std::span<std::uint8_t> ee_memory,const std::string& disc_path);
     unsigned fileio_requests=0,fileio_dma_submissions=0;
@@ -114,6 +121,7 @@ public:
     unsigned mc_dma_submissions=0,mc_dma_polls=0;
     std::array<std::uint8_t,192> mc_dma_payload{};
     std::array<std::uint8_t,128> dbc_dma_payload{};
+    std::array<std::uint8_t,128> dbc_dma_ee_snapshot{}; // EE destination right after the initial DBCMAN DMA.
     unsigned buffer_loads=0;
     unsigned boot_heap_frees=0;
     unsigned boot_heap_allocations=0;

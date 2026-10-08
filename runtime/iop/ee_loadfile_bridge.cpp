@@ -1,3 +1,4 @@
+#include <iostream>
 #include "ps2_runtime.h"
 #include "module_service.h"
 #include <algorithm>
@@ -433,6 +434,36 @@ void PS2Runtime::receiveDbcBind(std::uint8_t* rdram,R5900Context* context) {
     for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,client,7,server.descriptor,server.buffer);
     ++dbc_rpc_binds;++sif_dma_submissions;context->r[2].low=0x70000+dbc_rpc_binds+dbc_rpc_calls;
+}
+
+void PS2Runtime::receiveDbcMain(std::uint8_t* rdram,R5900Context* context) {
+    // Frame-phase blocking requests on DBCMAN's main client (service 0x80001300) in DBCMAN's command
+    // range (0x800013xx), e.g. the socket attach (0x80001303) and the device command (0x8000131A) the
+    // game issues once a controller is present. The original registered IOP
+    // handler produces the 144-byte reply; the call's wait semaphore is the client's own.
+    constexpr std::uint32_t client=0x3A03C0,buffer=0x3A04C0;
+    const auto d=static_cast<std::uint32_t>(context->r[4].low);
+    const auto command=read32(rdram,0x3A97E0),rid=read32(rdram,client+4),sema=read32(rdram,client+8);
+    auto refuse=[&](const char* why){std::cerr<<"DBCMAN main request refused: "<<why<<" (command "<<command<<")"<<std::endl;throw UnsupportedSyscall(0x77,context->pc);};
+    if(!native_iop || iop_epoch!=1 || prior_iop_services_valid || dbc_rpc_binds!=4 || dbc_rpc_calls!=4)refuse("service state");
+    if(current_thread_id!=1 || startup_scheduler_active || in_interrupt_ || !frameGifContext())refuse("thread/phase");
+    if(context->pc!=0x32F028 || context->r[29].low!=d || context->r[5].low!=2 || (command&0xFFFFFF00u)!=0x80001300u)refuse("call shape");
+    if(sema>=semaphores.size() || semaphores[sema].count || semaphores[sema].maximum!=1 || semaphores[sema].option!=0x3838E8)refuse("wait semaphore");
+    auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x80001300);
+    const std::array<std::uint32_t,8> desc={buffer,server.buffer,144,0,0x203A97C0,0x1E640,64,0x44};
+    const std::array<std::uint32_t,14> packet={0x9040,server.buffer,0x8000000A,0,5,0x203A97C0,rid,client,command,144,buffer,144,1,server.descriptor};
+    for(unsigned n=0;n<desc.size();++n)if(read32(rdram,d+n*4)!=desc[n])refuse("descriptor");
+    for(unsigned n=0;n<packet.size();++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])refuse("packet");
+    if(read32(rdram,client)!=0x203A97C0 || read32(rdram,client+20)!=server.buffer || read32(rdram,client+36)!=server.descriptor)refuse("client");
+    checkMemory(rdram,buffer,144);std::vector<std::uint8_t> response;
+    try {response=native_iop->callDbcMain(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+buffer,144));}
+    catch(const std::exception& e) {native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
+    std::copy(response.begin(),response.end(),memory_.begin()+buffer);
+    const std::array<std::uint32_t,16> reply={0x9000,buffer,0x80000008,0,0,0,0,client,0x8000000A,0,0,0,0,0,0,0};
+    for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
+    deliverRpcEnd(rdram,context,client,sema,server.descriptor,server.buffer);
+    ++dbc_main_calls;++sif_dma_submissions;context->r[2].low=0x7C0000+dbc_main_calls; // Owned logical transfer token.
+    native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
 }
 
 void PS2Runtime::receiveDbcPort(std::uint8_t* rdram,R5900Context* context) {

@@ -19,7 +19,9 @@ def verify(root,native=None):
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
         require(r['dbc_rpc_calls']>=2 and r['dbc_dma_submissions']==1 and r['dbc_dma_polls']==1,'Native DMA lifecycle differs')
-        require(r['dbc_dma_ee_words']==r['dbc_dma_payload_words'],'Native owned source/destination differ')
+        # Transport: the EE destination right after the transfer equals the IOP payload (the game's pad
+        # library updates this block later once a controller is configured).
+        require(r.get('dbc_dma_ee_at_transfer_words',r['dbc_dma_ee_words'])==r['dbc_dma_payload_words'],'Native owned source/destination differ')
     print('Actual redirected diagnostic SIF transfer/readback and completion poll verified'+('; native owned 128-byte copy and second RPC cleanup verified.' if native else '.'))
     print('Diagnostic source is an immutable copy; live retail controller-buffer bytes and scheduling are not equated.')
 

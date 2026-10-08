@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 #include <optional>
+#include <functional>
 #include <iostream>
 #include <immintrin.h>
 #include "intc_checkpoint.h"
@@ -115,7 +116,7 @@ public:
     bool startup_scheduler_active=false;
     unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
     std::uint32_t main_priority_previous=0;
-    unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,scmd_calls=0;
+    unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
     bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
@@ -254,6 +255,7 @@ public:
 #ifdef BT2_NATIVE_IOP
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && mc_rpc_calls<=1 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && (read32(rdram,0x3A97DC)==0x3A0460 || read32(rdram,0x3A97DC)==0x3A0438)) {receiveDbcPort(rdram,context);return;}
+        if(code==0 && selector==0x77 && dbc_rpc_calls==4 && read32(rdram,0x3A97DC)==0x3A03C0 && frameGifContext()) {receiveDbcMain(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
         if(code==0 && selector==0x77 && display_reset_phase==13 && sounds_rpc_calls>=1 && read32(rdram,0x3A97DC)==0x6351C0
@@ -1091,7 +1093,7 @@ public:
         context->pc = target;
         try {
             found->second(rdram, context, this);
-            if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller");
+            if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller: target "+std::to_string(target)+" source "+std::to_string(source)+" resume "+std::to_string(resume)+" pc "+std::to_string(context->pc));
         } catch (...) { if (stop_returns.empty()) stop_returns = call_returns_; call_returns_.pop_back(); throw; }
         call_returns_.pop_back();
         completed_functions.insert(target);
@@ -1572,6 +1574,7 @@ public:
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
     LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
+    std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,
@@ -1719,6 +1722,7 @@ public:
             gs_privileged[n]=value;++gs_display_writes;
             if(context->pc==0x311908 && n==14) {
                 ++gs_display_flips;
+                if(on_display_flip)on_display_flip(); // Host presentation of the completed flip (viewer mode).
                 // Probe frame budget: stop after this completed flip (its store is applied) as a checked boundary.
                 if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(address,8);}
             }
@@ -2186,6 +2190,7 @@ private:
     void receiveCriBind(std::uint8_t*,R5900Context*);
     void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);
     void receiveDbcPort(std::uint8_t* rdram,R5900Context* context);
+    void receiveDbcMain(std::uint8_t* rdram,R5900Context* context);
 
     void receiveSoundRpc(std::uint8_t* rdram,R5900Context* context);
     void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);

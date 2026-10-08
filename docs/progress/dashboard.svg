@@ -67,12 +67,12 @@
 <circle cx="351" cy="320" r="3.5" fill="#b77912"/>
 <text x="362" y="324" font-size="13" font-weight="600" fill="#1e293b">CRI sound setup</text>
 <text x="347" y="342" font-size="11.5" fill="#64748b">42 calls; AutoDMA half pending</text></g>
-<g><title>Memory cards: Partial / active. Absent-card queries only</title>
+<g><title>Controller and cards: Partial / active. Emulated pad; card check next</title>
 <rect x="334" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="371" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="382" r="3.5" fill="#b77912"/>
-<text x="362" y="386" font-size="13" font-weight="600" fill="#1e293b">Memory cards</text>
-<text x="347" y="404" font-size="11.5" fill="#64748b">Absent-card queries only</text></g>
+<text x="362" y="386" font-size="13" font-weight="600" fill="#1e293b">Controller and cards</text>
+<text x="347" y="404" font-size="11.5" fill="#64748b">Emulated pad; card check next</text></g>
 <text x="644" y="100" font-size="15" font-weight="600" fill="#334155">Game</text>
 <g><title>Archive payload loading: Partial / active. AFS table; DBZP.BIN; first asset</title>
 <rect x="644" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -92,12 +92,12 @@
 <circle cx="661" cy="258" r="3.5" fill="#b77912"/>
 <text x="672" y="262" font-size="13" font-weight="600" fill="#1e293b">GS rendering</text>
 <text x="657" y="280" font-size="11.5" fill="#64748b">Textured sprites; first screen</text></g>
-<g><title>Frame presentation: Partial / active. Offline PNG; no window yet</title>
+<g><title>Frame presentation: Partial / active. Live window; ~12 fps Debug</title>
 <rect x="644" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="661" cy="320" r="3.5" fill="#b77912"/>
 <text x="672" y="324" font-size="13" font-weight="600" fill="#1e293b">Frame presentation</text>
-<text x="657" y="342" font-size="11.5" fill="#64748b">Offline PNG; no window yet</text></g>
+<text x="657" y="342" font-size="11.5" fill="#64748b">Live window; ~12 fps Debug</text></g>
 <g><title>Menu, battle and audio: Pending. End-to-end behavior unverified</title>
 <rect x="644" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="371" width="3" height="36" rx="1.5" fill="#8793a5"/>

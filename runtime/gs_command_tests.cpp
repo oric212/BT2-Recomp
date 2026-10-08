@@ -1,5 +1,6 @@
 #include "gif_dma_staging.h"
 #include "texture_gif_startup.h"
+#include "host/display_frame.h"
 #include <iostream>
 #include <set>
 void check(bool value) {if(!value)throw std::runtime_error("GS assertion failed");}
@@ -78,6 +79,17 @@ int main() {
         gs.transfer(blended);
         const auto index=unsigned(GsCommandSink::t4Nibble(0x200,2,1,1)%8);
         check(gs.frame_sprites==2 && gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==(0x80000000u|(index*8)));
+    }
+    {
+        // Display decoding for presentation: DISPFB FBW 1 (64 pixels), DISPLAY 64x2; one written pixel
+        // becomes BGRA, the rest are reported as unwritten; an unsupported display PSM is refused.
+        GsCommandSink gs;gs.seedForTest(GsCommandSink::ct32Word(0,1,1,0),0x00332211);
+        const auto f=decodeDisplay(gs,1ULL<<9,(63ULL<<32)|(1ULL<<44));
+        check(f.width==64 && f.height==2 && f.bgra[1]==0x112233 && f.unwritten==127);
+        const auto offset=decodeDisplay(gs,(1ULL<<9)|(1ULL<<32),(0ULL<<32)|(0ULL<<44)); // DBX 1: 1x1 at the written pixel.
+        check(offset.width==1 && offset.height==1 && offset.bgra[0]==0x112233 && !offset.unwritten);
+        bool refused=false;try{decodeDisplay(gs,(1ULL<<9)|(2ULL<<15),63ULL<<32);}catch(const std::runtime_error&){refused=true;}
+        check(refused);
     }
     std::vector<std::uint8_t> p(240);
     auto put=[&](unsigned offset,std::uint64_t value){std::memcpy(p.data()+offset,&value,8);};

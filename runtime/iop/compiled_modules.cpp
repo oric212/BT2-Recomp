@@ -1,3 +1,4 @@
+#include <set>
 #include "module_service.h"
 #include "disc_native.h"
 #include "disc_metadata.h"
@@ -343,6 +344,70 @@ std::vector<std::uint8_t> NativeIopService::callSoundCommand(unsigned epoch,std:
     catch(const std::exception& e){failed_=true;throw std::runtime_error(std::string(e.what())+" / command="+std::to_string(command)+" / pc="+std::to_string(runtime.executing_pc)+" / address="+std::to_string(runtime.blocked_address));}
 }
 
+void NativeIopService::advanceVblank(unsigned epoch,std::span<std::uint8_t> ee_memory) {
+    if(epoch!=epoch_ || failed_)return;
+    // Threads woken at the VBlank edges send to the EE: DBCMAN the pad state, CRI_ADXI its stream
+    // buffers. Owned logical transport (copy at submission), scoped to the edges.
+    const bool scoped=!runtime.providers.contains({"sifman",7}) && !runtime.providers.contains({"sifman",8}) && !runtime.providers.contains({"sifman",32}) && ee_memory.size()==32u*1024*1024;
+    std::set<std::uint32_t> pending;
+    if(scoped) {
+        runtime.providers[{"sifman",7}]=[this,ee_memory,&pending](IopRuntime& rt,IopContext& c) {
+            const auto descriptor=c.get(4);
+            const auto thread=rt.threads.find(rt.current_thread);
+            // DBCMAN: pad state to a registered socket buffer (see sceSifSetDmaIntr below).
+            const bool dbcman=c.pc==0x621DC && c.get(28)==0x6A720;
+            // CRI_ADXI's server thread returns a registered stream buffer to the EE (the reverse of the
+            // EE->IOP stream copies: the same two buffer pairs registered by create commands 0/1).
+            const bool cri=c.pc==0x1B3524 && c.get(28)==0x1BCDF0 && thread!=rt.threads.end() && thread->second.entry==0x1A7088 && cri_create_calls==2;
+            if(c.get(5)!=1 || (!dbcman && !cri) || rt.in_interrupt) {
+                std::string d;for(unsigned n=0;n<c.get(5) && n<4;++n)for(unsigned w=0;w<4;++w)d+=" "+std::to_string(rt.read(c.get(4)+n*16+w*4,4));
+                throw std::runtime_error("Unsupported reverse DMA at VBlank: pc "+std::to_string(c.pc)+" count "+std::to_string(c.get(5))+" thread "+std::to_string(rt.current_thread)
+                    +" entry "+std::to_string(thread!=rt.threads.end()?thread->second.entry:0)+" descriptors"+d);
+            }
+            rt.check(IopRuntime::physical(descriptor),16);
+            const auto src=rt.read(descriptor,4),dst=rt.read(descriptor+4,4),size=rt.read(descriptor+8,4),attr=rt.read(descriptor+12,4);
+            const bool cri_pair=(src==0x14FD40 && dst==0x365BC0) || (src==0x191740 && dst==0x35FD00);
+            if(attr || (dbcman && (dst!=rt.read(0x62774,4) || size!=128)) || (cri && (!cri_pair || size!=0x880)) || dst>ee_memory.size()-size)
+                throw std::runtime_error("Reverse DMA descriptor differs: src "+std::to_string(src)+" dst "+std::to_string(dst)+" size "+std::to_string(size));
+            rt.check(IopRuntime::physical(src),size);
+            std::copy_n(rt.ram.begin()+IopRuntime::physical(src),size,ee_memory.begin()+dst);
+            const auto id=cri?0x740000u+(++cri_stream_returns&0xFFFF):0x720000u+(++dbc_pad_transfers&0xFFFF);
+            pending.insert(id);return id;
+        };
+        runtime.providers[{"sifman",8}]=[&pending](IopRuntime&,IopContext& c) {
+            // Owned logical transfers complete at submission: a status poll of a submitted ID reports done.
+            if(!pending.contains(c.get(4)) || (c.pc!=0x621E4 && (c.pc<0x1A0000 || c.pc>=0x1BD000)))throw std::runtime_error("Unsupported reverse DMA completion poll");
+            pending.erase(c.get(4));return UINT32_MAX;
+        };
+        // sceSifSetDmaIntr: the same transfer with a completion callback, run from the DMA completion
+        // interrupt (logical: the copy completes at once, then the callback runs in interrupt context).
+        runtime.providers[{"sifman",32}]=[this,ee_memory](IopRuntime& rt,IopContext& c) {
+            const auto descriptor=c.get(4),handler=c.get(6),argument=c.get(7);
+            if(c.pc!=0x621F4 || c.get(5)!=1 || c.get(28)!=0x6A720 || !handler || rt.in_interrupt || !rt.current_thread)
+                throw std::runtime_error("Unsupported DBCMAN pad DMA (interrupt) submission");
+            rt.check(IopRuntime::physical(descriptor),16);rt.check(IopRuntime::physical(handler),4);
+            const auto src=rt.read(descriptor,4),dst=rt.read(descriptor+4,4),size=rt.read(descriptor+8,4),attr=rt.read(descriptor+12,4);
+            // Destinations: the EE socket buffers the game registered with DBCMAN in its initialization
+            // requests (slot n: 0x3B0B00+n*0x180 and +0x80, request words 10/11).
+            const bool registered=dst>=0x3B0B00 && dst<0x3B0B00+2*0x180 && ((dst-0x3B0B00)%0x180==0 || (dst-0x3B0B00)%0x180==0x80);
+            if(!registered || size!=128 || attr || dst>ee_memory.size()-size)
+                throw std::runtime_error("DBCMAN pad DMA descriptor differs: src "+std::to_string(src)+" dst "+std::to_string(dst)+" size "+std::to_string(size)+" attr "+std::to_string(attr)+" retained "+std::to_string(rt.read(0x62774,4)));
+            rt.check(IopRuntime::physical(src),size);
+            std::copy_n(rt.ram.begin()+IopRuntime::physical(src),size,ee_memory.begin()+dst);
+            ++dbc_pad_transfers;
+            IopContext callback=c;callback.pc=handler;callback.branch_pending=false;callback.delay_instruction=false;callback.load_register=0;
+            callback.set(4,argument);callback.set(28,0x6A720);callback.set(29,0x1FFE00);callback.set(31,IopRuntime::sentinel);
+            const auto interrupts=rt.cpu_interrupts_enabled;rt.in_interrupt=true;rt.cpu_interrupts_enabled=false;
+            try {rt.execute(rt,callback);} catch(...) {rt.in_interrupt=false;rt.cpu_interrupts_enabled=interrupts;throw;}
+            rt.in_interrupt=false;rt.cpu_interrupts_enabled=interrupts;
+            if(callback.pc!=IopRuntime::sentinel)throw std::runtime_error("DBCMAN DMA completion callback did not return");
+            return 0x730000u+(dbc_pad_transfers&0xFFFF);
+        };
+    }
+    auto release=[&]{if(scoped){runtime.providers.erase({"sifman",7});runtime.providers.erase({"sifman",8});runtime.providers.erase({"sifman",32});}};
+    try {runtime.deliverVblankEdge(true);runtime.deliverVblankEdge(false);release();} catch(...) {release();failed_=true;throw;}
+}
+
 void NativeIopService::advanceSoundTimer(unsigned epoch) {
     // One NTSC field of IOP system clock (36.864 MHz x 1001/60 ms = 615,014.4 clocks, kept in tenths).
     auto& t=runtime.sound_timer;
@@ -529,6 +594,7 @@ std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint3
             // Owned logical transport; bytes come from actual native IOP state.
             std::copy_n(rt.ram.begin()+expected[0],expected[2],dbc_dma_payload.begin());
             std::copy(dbc_dma_payload.begin(),dbc_dma_payload.end(),ee_memory.begin()+expected[1]);
+            std::copy_n(ee_memory.begin()+expected[1],dbc_dma_ee_snapshot.size(),dbc_dma_ee_snapshot.begin());
             ++dbc_dma_submissions;return 0x710001u;
         };
         runtime.providers[{"sifman",8}]=[this](IopRuntime&,IopContext& c) {
@@ -544,6 +610,12 @@ std::vector<std::uint8_t> NativeIopService::callDbcRpc(unsigned epoch,std::uint3
         ++dbc_rpc_requests;return response;
     }catch(...) {if(transfer){runtime.providers.erase({"sifman",7});runtime.providers.erase({"sifman",8});}throw;}
 
+}
+
+std::vector<std::uint8_t> NativeIopService::callDbcMain(unsigned epoch,std::uint32_t command,std::span<const std::uint8_t> input) {
+    if(epoch!=epoch_ || failed_ || dbc_rpc_requests!=4 || (command&0xFFFFFF00u)!=0x80001300u || input.size()!=144)throw std::runtime_error("Unsupported DBCMAN frame request");
+    auto response=executeRegisteredRpc(0x80001300,command,input,144,0x3A03C0,0x3A04C0);
+    ++dbc_main_requests;return response;
 }
 
 std::vector<std::uint8_t> NativeIopService::callDbcPort(unsigned epoch,std::uint32_t service,std::uint32_t client,std::uint32_t result,std::uint32_t command,std::span<const std::uint8_t> input,unsigned result_size) {

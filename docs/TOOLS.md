@@ -723,3 +723,12 @@ The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` st
 **Rendering the frame.** `tools/capture_ee/render_gs_frame.py --native work/bt2-generation/entry-stop.json --output work/frames/frame-latest.png` renders the displayed framebuffer from the probe's owned GS memory dump (`entry-stop.json.gs.bin`: value and known-bit mask per word). It uses the report's DISPFB/DISPLAY registers; pixels the model never wrote show as a magenta checker. The PNG comes from game data, so it stays in ignored `work/`.
 
 **Frame budget.** The entry probe stops after 120 display flips by default, as a checked boundary after a completed flip. `BT2_FRAME_LIMIT=<n>` changes the budget and `0` disables it. Each Timer 1 delay wait is capped separately (100,000 polls) to detect a wait that never ends.
+
+**Viewer mode.** `run_startup_probe.py --viewer [--frames N] [--scale integer|stretch]` presents every flip in a Win32 window (`BT2_VIEWER`, `BT2_VIEWER_SCALE`) and keeps the last frame shown after a stop.
+
+**IOP write watchpoint.** `BT2_IOP_WATCH=<hex>` stops the native IOP on the first nonzero store to that address and reports the writing PC and thread.
+
+**Map and generation.**
+- `prepare_map.py` proves BEQ-guarded switch tables whose delay slot keeps the index register intact.
+- For overlay programs, the padding proof accepts J targets in the main executable's .text.
+- `prepare_runtime.py` routes inline DirectJump dispatches (J to another program's function) as tail jumps.

@@ -81,8 +81,9 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom.
 
     Safety rests on the SLTIU v0,v1,N bound and its guard branch; the instruction producing v1
-    only has to be non-control. With BEQ, SLL is its delay slot. With BEQL, the delay slot runs
-    only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
+    only has to be non-control. With BEQ, SLL is its delay slot, or a non-control delay slot that
+    leaves the index register intact precedes SLL (it runs on both paths). With BEQL, the delay slot
+    runs only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
     def control(ins):
         op=ins>>26
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
@@ -91,8 +92,16 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     if word(address)==0x00600008:
         tail=[word(address+n) for n in (-16,-12,-8,-4)]
         if tail[0]!=0x00031080 or (tail[1]&0xFFFF0000)!=0x3C030000 or tail[2]!=0x00621821 or (tail[3]&0xFFFF0000)!=0x8C630000:return False
+        def keeps_index(ins):
+            # A delay slot that runs on both paths must not write the index (v1): I-type ALU/load
+            # write rt, R-type ALU writes rd. Anything else is not proven.
+            op=ins>>26
+            if op==0:return ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03) and (ins>>11)&31!=3
+            return op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37) and (ins>>16)&31!=3
         if (word(address-20)&0xFFFF0000)==0x10400000:branch=address-20
         elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x50400000 and not control(word(address-20)):branch=address-24
+        elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x10400000 and not control(word(address-20)) and keeps_index(word(address-20)):
+            branch=address-24 # BEQ whose delay slot (both paths) leaves the index intact; SLL follows it.
         else:return False
         index,bound=word(branch-8),word(branch-4)
         if control(index) or (bound&0xFFFF0000)!=0x2C620000:return False
@@ -123,8 +132,11 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
     return all(t%4==0 and any(a<=t<b for a,b in spans) for t in targets)
 
 
-def has_branch_nop_gaps(candidate, metadata, data):
-    """Accept isolated unreachable NOPs after an unconditional branch/jump and delay slot."""
+def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
+    """Accept isolated unreachable NOPs after an unconditional branch/jump and delay slot.
+
+    external_text: extra (start, end) code ranges a J may target, e.g. the main executable's .text
+    for an overlay program (cross-program tail jumps)."""
     start,end=candidate['start'],candidate['end_exclusive']
     try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
     except (ValueError,TypeError):return False
@@ -150,7 +162,7 @@ def has_branch_nop_gaps(candidate, metadata, data):
             if not start<=target<end:return False
         elif transfer>>26==2:
             target=((gap-4)&0xF0000000)|((transfer&0x03FFFFFF)<<2)
-            if not sections[0]['address']<=target<sections[0]['address']+sections[0]['size']:return False
+            if not (sections[0]['address']<=target<sections[0]['address']+sections[0]['size'] or any(a<=target<b for a,b in external_text)):return False
         elif transfer==0x03E00008:
             continue # JR RA returns; the body scan below still rejects any branch into the gap.
         elif bounded_word_switch(gap-8,start,end,spans,metadata,data,word):
@@ -170,12 +182,12 @@ def has_branch_nop_gaps(candidate, metadata, data):
     return True
 
 
-def select_candidates(report, metadata, max_size=0x5000, data=None):
+def select_candidates(report, metadata, max_size=0x5000, data=None, external_text=()):
     rows, excluded = [], []
     for candidate in report["functions"]:
         start, end = candidate["start"], candidate["end_exclusive"]
         reason = None
-        padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data))
+        padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data, external_text))
         if not padding and (not candidate["contiguous_aligned"] or start % 4 or end % 4 or end <= start or candidate["body_size"] != end - start):
             reason = "noncontiguous_or_invalid"
         elif not any(section["name"] == ".text" and section["flags"] & 4 and section["occupies_file_bytes"]
@@ -229,7 +241,12 @@ def main():
     inspector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inspector)
     metadata = inspector.inspect(data)
-    selected, excluded = select_candidates(report, metadata, data=data)
+    external_text=()
+    if args.program:
+        # Overlay code may tail-jump into the main executable: its .text is an accepted J target.
+        main_data=(ROOT / "rom/SLUS_214.41").read_bytes()
+        external_text=tuple((x['address'],x['address']+x['size']) for x in inspector.inspect(main_data)['sections'] if x['name']=='.text')
+    selected, excluded = select_candidates(report, metadata, data=data, external_text=external_text)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "candidates.csv"
     text = "Name,Start,End,Size\n" + "".join(
@@ -242,7 +259,7 @@ def main():
                 "excluded_counts": dict(Counter(row["reason"] for row in excluded)), "excluded": excluded,
                 "nop_padding_candidates": [row["start"] for row in report["functions"]
                     if has_tail_nop_gap(row, metadata, data)],
-                "branch_nop_padding_candidates": [row["start"] for row in report["functions"] if has_branch_nop_gaps(row,metadata,data)],
+                "branch_nop_padding_candidates": [row["start"] for row in report["functions"] if has_branch_nop_gaps(row,metadata,data,external_text)],
                 "max_function_bytes": 0x5000, "limitations": "Boundaries are provisional. Upstream may discover additional functions. No VU map or overlay assumed."}
     path.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Prepared {len(selected)} provisional EE functions; quarantined {len(excluded)}. Map: {path}")
