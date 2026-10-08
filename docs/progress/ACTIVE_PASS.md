@@ -11,6 +11,9 @@ The verified checkpoint is **804 entered / 793 completed** (650 frames). The fra
 3. **Memory card:** the game sees no card by design (`sio2_card_absent`). A mounted card needs a blank formatted card image first, then save import ([plan](../MEMORY_CARD_PLAN.md)).
 4. **Host input:** XInput/SDL and keyboard for the live window.
 5. **Later:** 16:9.
+6. **Viewer flicker (user report, 2026-10-08):** the live window flickers slightly.
+   - **Likely cause:** with integer scaling, `ViewerWindow::paint` (`runtime/host/viewer_window.h`) fills the whole client area black before `StretchDIBits`, without double buffering. Fill only the borders, or paint through a memory DC.
+   - **To check:** whether presenting both interlaced fields' buffers adds to it.
 
 ## Possible follow-ups (not started)
 
