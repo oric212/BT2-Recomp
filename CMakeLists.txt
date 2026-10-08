@@ -16,6 +16,17 @@ set_target_properties(bt2-port PROPERTIES
 )
 target_compile_options(bt2-port PRIVATE /W4 /permissive- /utf-8)
 
+# Out-of-line runtime shared by every probe and test target that includes ps2_runtime.h.
+set(BT2_PROBE_RUNTIME_SOURCES
+    runtime/ee_sound_dispatch.cpp
+    runtime/probe_abi/retained_ee_stack.cpp
+    runtime/probe_abi/ps2_fpu.cpp
+    runtime/probe_abi/gs_command_sink.cpp
+    runtime/probe_abi/ps2_runtime_dispatch.cpp
+    runtime/probe_abi/ps2_runtime_memory.cpp
+    runtime/probe_abi/ps2_runtime_services.cpp
+    runtime/probe_abi/ps2_runtime_syscalls.cpp)
+
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
     set(BT2_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2" CACHE PATH "Ignored generated BT2 sources")
@@ -196,11 +207,17 @@ if(BT2_BUILD_GENERATED_PROBE)
         target_include_directories(bt2-entry-probe PRIVATE "${BT2_STARTUP_KERNEL_DIR}")
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_STARTUP_KERNEL_PAYLOAD=1)
     endif()
-    target_sources(bt2-entry-probe PRIVATE runtime/ee_sound_dispatch.cpp runtime/probe_abi/retained_ee_stack.cpp runtime/probe_abi/ps2_fpu.cpp)
+    target_sources(bt2-entry-probe PRIVATE ${BT2_PROBE_RUNTIME_SOURCES})
     target_include_directories(bt2-entry-probe PRIVATE runtime/probe_abi "${BT2_GENERATED_DIR}")
     target_compile_features(bt2-entry-probe PRIVATE cxx_std_20)
     target_compile_options(bt2-entry-probe PRIVATE /W4 /permissive- /utf-8)
     target_compile_definitions(bt2-entry-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    # Build speed only: precompile the stable standard headers that every generated unit reaches through
+    # ps2_runtime.h. Project and generated headers (ps2_runtime.h, gs_command_sink.h, generated
+    # declarations) change often and stay out of the PCH; unity builds are not used.
+    target_precompile_headers(bt2-entry-probe PRIVATE
+        <algorithm> <array> <bit> <cstdint> <cstdlib> <cstring> <functional> <iostream> <map> <memory>
+        <optional> <set> <span> <stdexcept> <string> <unordered_map> <vector> <immintrin.h>)
     add_test(NAME generated-entry-probe COMMAND bt2-entry-probe
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/guest-memory.bin"
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/entry-stop.json")
@@ -253,6 +270,16 @@ endif()
 
 foreach(bt2_probe_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe bt2-ee-iop-tests)
     if(TARGET ${bt2_probe_target})
-        target_sources(${bt2_probe_target} PRIVATE runtime/ee_sound_dispatch.cpp runtime/probe_abi/retained_ee_stack.cpp runtime/probe_abi/ps2_fpu.cpp)
+        target_sources(${bt2_probe_target} PRIVATE ${BT2_PROBE_RUNTIME_SOURCES})
+    endif()
+endforeach()
+
+# Build speed only: MSBuild compiles a project's sources one at a time unless the compiler is asked to
+# parallelize, so every MSVC target here compiles its translation units in parallel (/MP).
+get_property(bt2_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(bt2_target IN LISTS bt2_all_targets)
+    get_target_property(bt2_target_type ${bt2_target} TYPE)
+    if(bt2_target_type STREQUAL "EXECUTABLE")
+        target_compile_options(${bt2_target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/MP>)
     endif()
 endforeach()

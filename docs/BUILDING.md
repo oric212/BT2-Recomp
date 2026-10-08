@@ -90,6 +90,13 @@ python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso
 
 The probe executes generated EE and translated IOP code, performs reads against your ISO and reports the execution boundary, distinct entries, call/return events and sound/heap counters. It stops at an unsupported or checked runtime boundary; reaching that boundary is not a full game boot.
 
+**Build times.** MSVC targets compile their sources in parallel (`/MP`), and the entry probe precompiles the stable standard headers. Measured on a 10-core / 20-thread machine:
+- **Clean entry-probe build:** about 40 s (804 objects).
+- **Change to a header every generated unit includes** (`ps2_runtime.h`, `gs_command_sink.h`): about 35 s.
+- **Edit to a runtime implementation file** (`ps2_runtime_*.cpp`, `gs_command_sink.cpp`): about 3 s.
+
+Peak memory is about 23 GB with 20 parallel compilers.
+
 The private report is written to `work/bt2-generation/entry-stop.json`. RAM sidecars and generated outputs also stay ignored. A completed entry means at least one invocation returned normally; it does not establish full function correctness or gameplay. See [current progress](PROG.md) and [the active-pass handoff](progress/ACTIVE_PASS.md) for the last verified checkpoint and pending work.
 ### Diagnostic sound-worker path
 

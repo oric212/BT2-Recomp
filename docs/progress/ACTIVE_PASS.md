@@ -36,12 +36,19 @@ The game passes the memory card check and draws textured triangle strips. The se
 
 ## Remaining verification
 
-Before promoting anything:
-1. Run the IOP and Ghidra Python suites.
-2. Run the normal probe, after CTest, which overwrites `entry-stop.json`. Then run the sound-worker diagnostic.
-3. Run all `verify_*.py` normal comparisons, including `verify_mc_frame_query.py`, and the phase-matched ones (311860, 310518, 28b218).
-4. Render the latest frame to PNG and inspect it.
-5. Only then export counters (`sync_progress`) and update the dashboard.
+**Gate run, 2026-10-08, with the build-time refactor, whose runtime output was shown byte-identical by A/B.**
+
+Passed:
+- the ALL/entry build;
+- **17/17 CTests**;
+- the Python suites: 179 capture, 67 recompilation, 13 IOP and 3 Ghidra tests;
+- the sound-worker diagnostic, unchanged at 302/295;
+- the normal probe (**772 entered / 763 completed**, 106 frames, boundary `FUN_0026F888`);
+- **25 normal comparisons**, including the new `verify_mc_frame_query.py` and `verify_dbc_dma.py`;
+- all eight phase-matched comparisons;
+- the PNG render (512×448, no unwritten pixels).
+
+**One failure blocks promotion:** `verify_mc_sio2_flow.py` still requires single-query values (`sio2_card_transfer_counts == [6,6]` and the first query's final DMA registers). It needs the same per-query generalization as `completed_card_query`; then export counters (`sync_progress`) and update the dashboard. Inspect the rendered frame visually as well.
 
 ## Next implementation
 
