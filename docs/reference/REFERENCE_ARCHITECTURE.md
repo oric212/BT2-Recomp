@@ -29,6 +29,18 @@ Snapshot: `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc`. These are source observati
 | VU1 | Interpreter split into `ps2_vu1_core`, `_upper` and `_lower`, with a `ps2_vu1.h` state header. | Follow this split when BT2 first executes a VU1 microprogram; VU discovery stays separate from the EE map (see BT3 above). |
 | Kernel/syscalls | One stub file per subsystem (GS, DMA, Pad, SIF, MemoryCard and so on) and a dispatcher. | Matches our focused files (`runtime/ee`, `runtime/iop/providers`); keep BT2's evidence-checked handlers. |
 
+## paraLLEl-GS (GS rendering reference)
+
+[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs) (snapshot `cc6184af7e0c03da603045ca371ffa5dae9b0655`, LGPL-3.0) is a PS2 Graphics Synthesizer emulator by Hans-Kristian Arntzen (Arntzen Software). It runs on Vulkan compute shaders, written from scratch rather than derived from GSdx. It aims for software-renderer accuracy with optional super-sampling, and handles de-interlacing (weave, CRTC field blending, progressive promotion when FFMD is 0). It is the reference for GS rendering behavior and for a future GPU renderer; PCSX2 remains the behavioral reference for the rest of the hardware.
+
+| Area | paraLLEl-GS | BT2 use |
+| --- | --- | --- |
+| Rendering accuracy | Software-renderer accuracy as the target; varying interpolation not bit-exact with hardware. | Check our CPU rasterizer's primitive, texture and blending rules against it as GS features are reached. |
+| GPU renderer | GS emulation in Vulkan compute (`gs/`, `ubershader.comp`), with Granite as its Vulkan layer. | Architecture reference if the CPU rasterizer (about 75% of a Release run) is replaced by a GPU path. |
+| Presentation | Weave de-interlacer, CRTC field blending, FFMD progressive promotion, optional FSR1 upscaling. | Reference for the live window's interlaced presentation and later scaling. |
+
+Adapt its approach; do not copy code. Its Vulkan/Granite dependency is not part of our current build.
+
 ## Chronicle
 
 Snapshot: `05fd37be122cd5833cfeeceb83475933959d938f`. This is a matching decompilation and port, rather than our PS2Recomp pipeline. Region configs associate hashes, symbol maps, and section layout; its validation tools compare built/reference images. Borrow explicit identity, module/symbol provenance and reproducible comparison, without importing its symbols or assuming byte-matching requirements for native recompilation. [NTSC config](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/config/ntsc/main.yaml), [validator](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/scripts/build/verify.py).

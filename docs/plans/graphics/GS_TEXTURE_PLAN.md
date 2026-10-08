@@ -42,6 +42,11 @@ So the frame draws one 512×128 4-bit CLUT image, uploaded as 256×32 CT32 words
    - Compare the uploaded VRAM pages with the original. A capture point after the frame's VIF1 transfer can read GS memory through the PCSX2 debug interface if available; otherwise compare the EE source images.
    - Compare the drawn framebuffer region with a PCSX2 GS dump or screenshot where obtainable. Without one, state that limit.
 
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): use it as the GS rendering reference as new formats, primitives, blending and presentation modes are reached, and as the architecture reference for a later GPU renderer. Adapt its behavior; do not copy code.
+- PCSX2's GS (`GSLocalMemory`, `GSTables`, drawing environment) remains the reference for memory layout and register defaults.
+
 ## Limits and stop conditions
 
 - No presentation is claimed until DISPFB contents reach a window.

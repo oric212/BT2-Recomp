@@ -143,6 +143,7 @@ Development of this project involves AI tools for coding, investigation and docu
 | [Chronicle](https://github.com/TheMoonPeople/Chronicle) by TheMoonPeople and contributors | Reverse-engineering and progress-reporting reference |
 | [PS2SDK](https://github.com/ps2dev/ps2sdk) by the ps2dev community | Behavioral reference for kernel, SIF/RPC and IOP modules |
 | [PCSX2](https://github.com/PCSX2/pcsx2) | Hardware behavior reference and original-game comparison captures |
+| [paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs) by Arntzen Software | GS rendering reference (LGPL-3.0) |
 | [Play!](https://github.com/jpd002/Play-) by jpd002 and contributors | Kernel/HLE behavior reference |
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Function discovery and reverse engineering |
 
