@@ -109,6 +109,10 @@ int main() {
         LogicalTimer1 w;w.configure(3);w.writeMode(0x83);
         for(unsigned f=0;f<250;++f)w.field();
         require(w.count()==(250*525/2)%0x10000 && w.mode()==0x83);
+        // Frame-phase BUSCLK/256: 9,609.6 ticks per field, exact over five fields; H-BLANK modes unchanged.
+        LogicalTimer1 b;b.configure(3);b.reconfigure(0x82);b.setCount(0);
+        b.field();require(b.count()==9609);for(unsigned f=0;f<4;++f)b.field();require(b.count()==48048);
+        reject([&]{b.reconfigure(0x182);});reject([&]{b.reconfigure(0x81);});
     }
     {
         // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.
@@ -1360,10 +1364,32 @@ int main() {
         reject([&]{stream.consume(std::array<std::uint32_t,1>{0x01010404});});
         PS2Runtime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
         auto* disc_ram=disc_alias.memory().data();disc_alias.write64(disc_ram,0x3A8600,0x123456789ABCDEF0);
-        reject([&]{disc_alias.read64(disc_ram,0x203A8600);});disc_alias.disc_rpc_calls=1;
+        // The uncached alias at every width follows the word/byte rule: only after RPCINIT; owned RAM is
+        // coherent, so the alias reads and writes the same bytes.
+        reject([&]{disc_alias.read64(disc_ram,0x203A8600);});disc_alias.sif_rpc_reads=1;
         require(disc_alias.read64(disc_ram,0x203A8600)==0x123456789ABCDEF0);
-        reject([&]{disc_alias.read64(disc_ram,0x203A8620);});
+        disc_alias.write64(disc_ram,0x20BC9880,0x0102030405060708);require(disc_alias.read64(disc_ram,0xBC9880)==0x0102030405060708);
+        disc_alias.write16(disc_ram,0x20BC9890,0xBEEF);require(disc_alias.read16(disc_ram,0xBC9890)==0xBEEF && disc_alias.uncached_wide_accesses==3);
         reject([&]{disc_alias.read64(disc_ram,0x203A8601);});
+        reject([&]{disc_alias.read64(disc_ram,0x22000000);});
+        // Scratchpad (0x70000000, 16 KB) at every width; raw physical addresses past RAM stay refused;
+        // dumps still cover main RAM only.
+        disc_alias.write32(disc_ram,0x70000010,0xCAFEF00D);require(disc_alias.read32(disc_ram,0x70000010)==0xCAFEF00D);
+        disc_alias.write64(disc_ram,0x70003FF8,0x1122334455667788);require(disc_alias.read8(disc_ram,0x70003FFF)==0x11);
+        require(disc_alias.read32(disc_ram,0x10)!=0xCAFEF00D && disc_alias.memory().size()==PS2Runtime::ram_size);
+        reject([&]{disc_alias.read32(disc_ram,0x70004000);});reject([&]{disc_alias.read32(disc_ram,0x70003FFE);});
+        reject([&]{disc_alias.read32(disc_ram,0x02000000);});
+        // toSPR then fromSPR (normal mode, synchronous): RAM 0x100000 -> SPR 0x100 -> RAM 0x200000.
+        disc_alias.gs_display_flips=1;
+        disc_alias.write32(disc_ram,0x100000,0x13579BDF);
+        disc_alias.ipuWrite(0x1000D410,0x100000);disc_alias.ipuWrite(0x1000D420,2);disc_alias.ipuWrite(0x1000D480,0x100);
+        disc_alias.ipuWrite(0x1000D400,0x100);require(disc_alias.read32(disc_ram,0x70000100)==0x13579BDF && disc_alias.scratchpad_transfers==1);
+        disc_alias.ipuWrite(0x1000D010,0x200000);disc_alias.ipuWrite(0x1000D020,2);disc_alias.ipuWrite(0x1000D080,0x100);
+        disc_alias.ipuWrite(0x1000D000,0x100);require(disc_alias.read32(disc_ram,0x200000)==0x13579BDF);
+        std::uint32_t chcr=0;require(disc_alias.ipuRead(0x1000D000,chcr) && !(chcr&0x100));
+        disc_alias.ipuWrite(0x1000D020,0x400);disc_alias.ipuWrite(0x1000D080,0x10);
+        reject([&]{disc_alias.ipuWrite(0x1000D000,0x100);}); // Would wrap the scratchpad.
+        disc_alias.ipuWrite(0x1000D080,0);reject([&]{disc_alias.ipuWrite(0x1000D000,0x104);}); // Chain mode.
 
         PS2Runtime sound_dispatch;
         sound_dispatch.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
@@ -1408,8 +1434,14 @@ int main() {
             require(call(0x37,4,0)==4 && sched.threads[2].suspended && !sched.threads[2].ready && call(0x29,0,24)==1);
             reject([&]{call(0x30,9,0x1000);});reject([&]{call(0x30,1,0x1000);});reject([&]{call(0x37,1,0);});
             sched.threads[3].waiting=false;sched.threads[3].ready=true;         // Ready ID 5 (16) above main.
-            reject([&]{call(0x39,4,0);});
-            require(sched.threads[2].suspended && !sched.threads[2].ready && sched.scheduled_resumes==1 && sched.scheduled_suspends==1);
+            // Resuming ID 4 (8) from main yields: the ready workers run before main continues (ID 4
+            // first); its unregistered entry stops at a checked branch with main restored.
+            bool yielded=false;
+            sched.threads[2].entry=0x100000;
+            try{call(0x39,4,0);}catch(const UnsupportedGuestBranch& e){yielded=e.target==0x100000;}
+            require(yielded && sched.startup_worker_dispatches==1 && sched.scheduled_resumes==2 && sched.scheduled_suspends==1
+                && sched.current_thread_id==1 && !sched.startup_scheduler_active && !sched.active_ee_stack);
+            sched.threads[2].suspended=true;sched.threads[2].ready=false;
             sched.threads[3].ready=false;sched.threads[3].waiting=true;     // Re-park ID 5 before VBlank delivery.
             // VBLANK_START registration requires the explicit mask checkpoint; no delivery is modeled.
             reject([&]{call(0x14,2,0);});
@@ -1447,6 +1479,29 @@ int main() {
             R5900Context badadd=add;bad.handleSyscall(bad.memory().data(),&badadd,0);
             reject([&]{bad.deliverVblank(bad.memory().data(),&main);});
             require(!bad.in_interrupt_ && bad.vblank_deliveries==1);
+        }
+        {
+            // Main sleep/wake: an interrupt wakeup before the sleep is banked and returns at once;
+            // sleeping with nothing to wake main is refused; a worker sees main WAIT while it
+            // sleeps and READY otherwise, and its WakeupThread ends the sleep.
+            PS2Runtime ms;ms.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=ms.memory().data();
+            ms.thread_initialized=true;ms.current_thread_id=1;ms.main_thread_priority=24;ms.main_priority_admissions=1;
+            ms.threads.resize(1);ms.threads[0].id=2;ms.threads[0].current_priority=8;ms.threads[0].context.pc=0x100000;ms.threads[0].waiting=true;
+            R5900Context wake{};wake.pc=0x1006D8;wake.r[3].low=0xFFFFFFCCu;wake.r[4].low=1;
+            ms.in_interrupt_=true;ms.handleSyscall(ram,&wake,0);ms.in_interrupt_=false;
+            require(wake.r[2].low==1 && ms.main_wakeups==1 && ms.main_wakes==1);
+            R5900Context sleep{};sleep.pc=0x32EB88;sleep.r[3].low=0x32;ms.handleSyscall(ram,&sleep,0);
+            require(sleep.r[2].low==1 && !ms.main_wakeups && ms.main_sleeps==1 && !ms.main_sleeping);
+            reject([&]{R5900Context again=sleep;ms.handleSyscall(ram,&again,0);}); // VBLANK_START disabled: nothing wakes main.
+            require(!ms.main_sleeping && ms.main_sleeps==1 && !ms.main_sleep_fields);
+            ms.current_thread_id=2;ms.main_sleeping=true;
+            R5900Context query{};query.r[4].low=1;query.r[5].low=0x1000;
+            require(ms.handleScheduledThreadSyscall(ram,0x30,&query) && query.r[2].low==4 && ms.read32(ram,0x1000)==4);
+            R5900Context worker_wake{};worker_wake.r[4].low=1;
+            require(ms.handleScheduledThreadSyscall(ram,0x33,&worker_wake) && worker_wake.r[2].low==1 && !ms.main_sleeping && ms.main_wakes==2);
+            require(ms.handleScheduledThreadSyscall(ram,0x30,&query) && query.r[2].low==2);
+            ms.main_sleeping=true;ms.threads[0].current_priority=30;          // Waking main above the worker would preempt it.
+            reject([&]{R5900Context w=worker_wake;ms.handleScheduledThreadSyscall(ram,0x33,&w);});
         }
         {
             // Synthetic one-shot VSync registration: preserve the void ABI, reject aliasing/replacement,

@@ -24,7 +24,7 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
             || read32(rdram,client+28)!=0x31DD60 || read32(rdram,client+32)!=0x3A7480
             || read32(rdram,client+20)!=server.buffer || read32(rdram,client+36)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
         std::vector<std::uint8_t> response;
-        try {response=native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48),memory_);}
+        try {response=native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48),memory());}
         catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
         std::copy(response.begin(),response.end(),memory_.begin()+0x3A8540);
         const std::array<std::uint32_t,16> reply={0x400,0x3A8540,0x80000008,0,0,0,0,client,0x8000000A};
@@ -46,7 +46,7 @@ void PS2Runtime::receiveMcRpc(std::uint8_t* rdram,R5900Context* context) {
             || read32(rdram,client+28)!=0x31DD60 || read32(rdram,client+32)!=0x3A7480
             || read32(rdram,client+20)!=server.buffer || read32(rdram,client+36)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
         std::vector<std::uint8_t> response;
-        try {response=native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48),memory_);}
+        try {response=native_iop->callMcQuery(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A7000,48),memory());}
         catch(const std::exception& e){native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
         std::copy(response.begin(),response.end(),memory_.begin()+0x3A8540);
         const std::array<std::uint32_t,16> reply={0x400,0x3A8540,0x80000008,0,0,0,0,client,0x8000000A};

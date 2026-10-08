@@ -15,7 +15,7 @@ void PS2Runtime::receiveDiscSearch(std::uint8_t* rdram,R5900Context* context) {
     for(unsigned n=0;n<14;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
     if(read32(rdram,0x3A8788)!=10 || read32(rdram,0x3A8794)!=0x441C8 || read32(rdram,0x3A87A4)!=0x433D0)throw UnsupportedSyscall(0x77,context->pc);
     auto& rt=native_iop->runtime;unsigned result;
-    try{result=native_iop->callDiscSearch(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A8600,300),memory_,local_disc_path);}
+    try{result=native_iop->callDiscSearch(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3A8600,300),memory(),local_disc_path);}
     catch(const std::exception& e){native_iop_error=e.what();native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());throw UnsupportedSyscall(0x77,context->pc);}
     write32(rdram,0x3A8740,result);
     const std::array<unsigned,16> reply={0x400,0x3A8740,0x80000008,0,0,0,0,0x3A8780,0x8000000A,0,0,0,0,0,0,0};
@@ -96,7 +96,7 @@ void PS2Runtime::receiveNcmdRead(std::uint8_t* rdram,R5900Context* context) {
     const std::array<unsigned,10> client={0x203A97C0,rid,UINT32_MAX,0,0,0x43DB8,0x38BDF0,0x31ECF8,0x3694C0,0x43418};
     for(unsigned n=0;n<10;++n)if(read32(rdram,0x369590+n*4)!=client[n])throw UnsupportedSyscall(0x77,context->pc);
     auto& rt=native_iop->runtime;
-    try{native_iop->callDiscRead(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3684C0,24),memory_,local_disc_path);}
+    try{native_iop->callDiscRead(iop_epoch,std::span<const std::uint8_t>(memory_.data()+0x3684C0,24),memory(),local_disc_path);}
     catch(const std::exception& e){native_iop_error=e.what();native_iop_pc=rt.executing_pc;native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());throw UnsupportedSyscall(0x77,context->pc);}
     const std::array<unsigned,16> reply={0,0,0x80000008,0,0,0,0,0x369590,0x8000000A,0,0,0,0,0,0,0};
     for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);

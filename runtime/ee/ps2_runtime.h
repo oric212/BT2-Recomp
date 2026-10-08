@@ -24,6 +24,8 @@
 #include "post_reset_sif.h"
 #include "gs/vif_startup.h"
 #include "gs/texture_gif_startup.h"
+#include "ipu_device.h"
+#include "stopped_dma_channels.h"
 #include <memory>
 struct EeExecutionOwner;
 #ifdef BT2_NATIVE_IOP
@@ -115,6 +117,13 @@ public:
     // kernel thread semantics; any transition requiring preemption fails closed.
     bool startup_scheduler_active=false;
     unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
+    unsigned scheduled_wakes=0,main_yields=0;
+    // Main's own sleep: it is not runnable while sleeping; wakeups that arrive first are banked.
+    unsigned frame_csr_reads=0;
+    bool main_sleeping=false;unsigned main_wakeups=0,main_sleeps=0,main_wakes=0,main_sleep_fields=0;
+    bool sleepMainThread(std::uint8_t*,R5900Context*);
+    void wakeMainThread();
+    bool mainYieldsToReadyWorkers(std::uint8_t*,R5900Context*);
     std::uint32_t main_priority_previous=0;
     unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
@@ -195,6 +204,17 @@ public:
     }
 
     std::span<std::uint8_t> memory() { return memory_; }
+    // Scratchpad RAM (0x70000000-0x70003FFF), a separate 16 KiB buffer zero-filled as on reset. Every
+    // accessor checks this window before main RAM; accesses must be naturally aligned and inside it.
+    static constexpr std::size_t scratchpad_size = 16 * 1024;
+    std::span<std::uint8_t> scratchpad() { return scratchpad_; }
+    std::uint8_t* scratchpadAt(std::uint32_t address, unsigned size) {
+        if (address < 0x70000000 || address >= 0x70000000 + scratchpad_size) return nullptr;
+        if (address % size || address - 0x70000000 + size > scratchpad_size) throw UnsupportedGuestMemory(address, size);
+        ++scratchpad_accesses;
+        return scratchpad_.data() + (address - 0x70000000);
+    }
+    unsigned scratchpad_accesses = 0;
 
     // PS2SDK UNCACHED_SEG: reached low 32 MiB main-RAM alias only.
     // Enabled after the explicit RPCINIT query; no TLB/MMIO or cache state.
@@ -216,29 +236,46 @@ public:
         return physical;
     }
     unsigned uncached_byte_accesses = 0;
+    // The same alias for halfword, doubleword and quadword accesses (owned RAM is coherent).
+    std::uint32_t uncachedWideAddress(std::uint32_t address, unsigned size) {
+        if (address < 0x20000000 || address >= 0x22000000) return address;
+        if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, size);
+        ++uncached_wide_accesses;
+        return address - 0x20000000;
+    }
+    unsigned uncached_wide_accesses = 0;
     void write8(std::uint8_t* rdram, std::uint32_t address, std::uint8_t value) {
+        if (auto* spr = scratchpadAt(address, 1)) {*spr = value; return;}
         address = uncachedByteAddress(rdram, address);
         checkMemory(rdram, address, 1);
         memory_[address] = value;
         ++byte_writes;
     }
 
-    std::uint16_t read16(std::uint8_t* rdram,std::uint32_t address) const {
+    std::uint16_t read16(std::uint8_t* rdram,std::uint32_t address) {
+        if(auto* spr=scratchpadAt(address,2)){std::uint16_t value;std::memcpy(&value,spr,2);return value;}
+        address=uncachedWideAddress(address,2);
         checkMemory(rdram,address,2);
         if(address%2)throw std::runtime_error("Unsupported unaligned halfword load");
         std::uint16_t value;std::memcpy(&value,memory_.data()+address,2);return value;
     }
     void write16(std::uint8_t* rdram,std::uint32_t address,std::uint16_t value) {
+        if(auto* spr=scratchpadAt(address,2)){std::memcpy(spr,&value,2);return;}
+        address=uncachedWideAddress(address,2);
         checkMemory(rdram,address,2);
         if(address%2)throw std::runtime_error("Unsupported unaligned halfword store");
         std::memcpy(memory_.data()+address,&value,2);++halfword_writes;
     }
-    ProbeGpr read128(std::uint8_t* rdram,std::uint32_t address) const {
+    ProbeGpr read128(std::uint8_t* rdram,std::uint32_t address) {
+        if(auto* spr=scratchpadAt(address,16)){ProbeGpr value;std::memcpy(&value,spr,16);return value;}
+        address=uncachedWideAddress(address,16);
         checkMemory(rdram,address,sizeof(ProbeGpr));
         if(address%16)throw std::runtime_error("Unsupported unaligned quadword load");
         ProbeGpr value;std::memcpy(&value,memory_.data()+address,sizeof(value));return value;
     }
     void write128(std::uint8_t* rdram, std::uint32_t address, const ProbeGpr& value) {
+        if (auto* spr = scratchpadAt(address, 16)) {std::memcpy(spr, &value, 16); return;}
+        address = uncachedWideAddress(address, 16);
         checkMemory(rdram, address, sizeof(value));
         if (address % 16) throw std::runtime_error("Unsupported unaligned quadword store");
         std::memcpy(memory_.data() + address, &value, sizeof(value));
@@ -257,19 +294,22 @@ public:
         return mmioWindow(address)?Load64(rdram,context,address):read64(rdram,address);
     }
     void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
+        if (auto* spr = scratchpadAt(address, 8)) {std::memcpy(spr, &value, 8); return;}
+        address = uncachedWideAddress(address, 8);
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword store");
         std::memcpy(memory_.data() + address, &value, 8);
         ++doubleword_writes;
     }
     std::uint8_t read8(std::uint8_t* rdram, std::uint32_t address) {
+        if (auto* spr = scratchpadAt(address, 1)) return *spr;
         address = uncachedByteAddress(rdram, address);
         checkMemory(rdram, address, 1);
         return memory_[address];
     }
     std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
-        // Generated bounded searches copy their owned results through the uncached EE alias.
-        if(disc_rpc_calls>=1 && disc_rpc_calls<=6 && address>=0x203A8600 && address<=0x203A8618 && !(address&7))address-=0x20000000;
+        if (auto* spr = scratchpadAt(address, 8)) {std::uint64_t value; std::memcpy(&value, spr, 8); return value;}
+        address = uncachedWideAddress(address, 8); // E.g. bounded searches copying owned results.
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
         std::uint64_t value;
@@ -421,7 +461,7 @@ public:
     struct FrameVif1Unsupported {std::uint32_t code,tag;};
     void frameVif1Start(std::uint32_t value);
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
-    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
+    LogicalTimer1 timer1;unsigned timer1_frame_writes=0,timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
     std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
     unsigned graph_startup_phase=0;
@@ -540,6 +580,15 @@ public:
     std::vector<std::uint32_t> dmac_handler_order;
     std::uint32_t dmac_mask = 0, dmac_enable_calls = 0, dmac_disable_calls = 0, dmac_removals = 0;
 
+    // Frame phase: IPU setup registers (ipu_device.h) and the DMAC master enable, idle (reset value
+    // 0x1201; D_ENABLEW mirrors into D_ENABLER, and only the suspend bit CPND may change).
+    IpuDevice ipu;std::uint32_t dmac_enabler=0x1201;unsigned dmac_suspends=0;
+    StoppedDmaChannels scratchpad_dma{0x1000D000,0x1000D400}; // fromSPR (8), toSPR (9).
+    unsigned scratchpad_transfers=0;
+    void scratchpadTransfer(std::uint32_t address,std::uint32_t value);
+    bool ipuContext() const {return gs_display_flips>=1 && !in_interrupt_;}
+    bool ipuRead(std::uint32_t address,std::uint32_t& value);
+    bool ipuWrite(std::uint32_t address,std::uint32_t value);
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
     void Store128(std::uint8_t* rdram,R5900Context* context,std::uint32_t address,const ProbeGpr& value) {
         if(address==0x10005000 && context->r[29].low==initial_sp-32
@@ -548,6 +597,11 @@ public:
             if(value.low!=expected.low || value.high!=expected.high)throw UnsupportedGuestMemory(address,16);
             std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
             vif_startup.consume(words);++vif_startup.phase;return;
+        }
+        if(address==0x10007010 && ipuContext()) {
+            std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
+            try {ipu.writeFifo(address,words);} catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,16);}
+            return;
         }
         write128(rdram,address,value); // Other FIFO/MMIO paths still reject through checked RAM bounds.
     }
@@ -737,6 +791,7 @@ private:
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
     std::vector<std::uint8_t> memory_, kernel_snapshot_, startup_kernel_payload_;
+    std::vector<std::uint8_t> scratchpad_ = std::vector<std::uint8_t>(scratchpad_size);
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;

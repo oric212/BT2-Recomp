@@ -25,7 +25,10 @@ std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch,std::u
     const auto index=channel?(channel_setup?0u:cri_control_calls-35):batch?(cri_control_calls-2)/2:0u;
     const auto expected_command=channel?(channel_setup?0x40Au:0x408u):batch?(stream?0x422u:0x400u):cri_control_calls?0x40Cu:0x403u;
     const auto size=channel?(channel_setup?12u:16u):batch?(stream?12u:16u):cri_control_calls?12u:0u;
-    if(epoch!=epoch_ || failed_ || cri_create_calls!=(channel?2u:1u) || cri_control_calls>39 || command!=expected_command || input.size()!=size)
+    // Startup verified five stream-control pairs (indices 0-4); later pairs (movie playback) continue
+    // the same indexed objects and must still match the input pattern and the original return.
+    if(epoch!=epoch_ || failed_ || cri_create_calls!=(channel?2u:1u) || (!channel && cri_control_calls>39) || (channel && index>=64)
+        || command!=expected_command || input.size()!=size)
         throw std::runtime_error("CRI control outside observed lifecycle");
     if(command==0x40C) {
         const std::array<unsigned,3> expected={0xBB80,0xFFFF,0xFFFF};
@@ -33,7 +36,8 @@ std::vector<std::uint8_t> NativeIopService::callCriControl(unsigned epoch,std::u
             if(word!=expected[n])throw std::runtime_error("CRI 0x40C input differs");}
     }
     if(batch || channel) {
-        if(boot_heap_allocations!=(channel?6u:4u) || !runtime.spu2_auto_dma.pending)throw std::runtime_error("CRI group lacks owned buffer");
+        // Stream pairs: the channel buffer (checked below) stays allocated while later allocations happen.
+        if((channel?boot_heap_allocations<6u:boot_heap_allocations!=4u) || !runtime.spu2_auto_dma.pending)throw std::runtime_error("CRI group lacks owned buffer");
         const std::array<unsigned,4> expected=channel?(channel_setup?std::array<unsigned,4>{0x10,0x192000,0x4040,0}
             :std::array<unsigned,4>{2,0,iop_cri_adxi_base+0x14A40+index*0x60,iop_cri_adxi_base+0x14A70+index*0x60})
             :stream?std::array<unsigned,4>{1,0x150640+index*0x4100,0x100,0}

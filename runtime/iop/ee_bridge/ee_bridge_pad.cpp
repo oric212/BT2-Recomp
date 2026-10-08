@@ -21,7 +21,7 @@ void PS2Runtime::receiveDbcBind(std::uint8_t* rdram,R5900Context* context) {
         if(read32(rdram,0x3A03C0)!=0x203A97C0 || read32(rdram,0x3A03C4)!=id || read32(rdram,0x3A03C8)!=semaphore
             || read32(rdram,0x3A03D4)!=server.buffer || read32(rdram,0x3A03E4)!=server.descriptor)throw UnsupportedSyscall(0x77,context->pc);
         checkMemory(rdram,0x3A04C0,144);std::vector<std::uint8_t> response;
-        try {response=native_iop->callDbcRpc(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+0x3A04C0,144),144,memory_);}
+        try {response=native_iop->callDbcRpc(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+0x3A04C0,144),144,memory());}
         catch(const std::exception& e) {native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;throw UnsupportedSyscall(0x77,context->pc);}
         std::copy(response.begin(),response.end(),memory_.begin()+0x3A04C0);
         const std::array<std::uint32_t,16> reply={0x9000,0x3A04C0,0x80000008,0,0,0,0,0x3A03C0,0x8000000A,0,0,0,0,0,0,0};

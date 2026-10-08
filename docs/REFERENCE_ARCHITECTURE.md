@@ -17,6 +17,18 @@ Snapshot: `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc`. These are source observati
 | GS/rendering | GPU renderer records commands on GIF/DMA side and replays on the presentation thread. Native engine-seam rendering is a separate evolving path. | Rendering is a later compatibility boundary; no graphics dependency needed for the first generated execution. [GPU interface](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/ps2xRuntime/include/runtime/ps2_gs_gpu_renderer.h), [native seam design](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/docs/NATIVE-RENDER-SEAM.md). |
 | Patches/build | Authored post-generation patches use anchors and report missing matches; Windows setup delegates to Python and selects ClangCL. | Keep any future BT2 patch deterministic, evidence-based and checked. Retain our MSVC/C++20 target. [Patches](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/games/bt3/apply_patches.py), [Windows workflow](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/scripts/build-windows.ps1). |
 
+## PS2Recomp runtime (architectural reference)
+
+[PS2Recomp](https://github.com/ran-j/PS2Recomp) is our pinned recompiler (`config/ps2recomp.lock.json`). Its runtime, `ps2xRuntime`, is the architectural reference for runtime structure (local checkout: `work/dependencies/ps2recomp-<revision>`). PS2SDK and PCSX2 remain the behavioral references. Each pattern is reused where a BT2 blocker needs it, without replacing working, verified BT2 code.
+
+| Area | PS2Recomp structure | BT2 use |
+| --- | --- | --- |
+| GS | GIF parsing (`gs_frontend`) separate from a CPU rasterizer (`gs_cpu_backend`); GS memory and one swizzle module per pixel format (`ps2_gs_psmct32/16`, `psmt8`, `psmt4`); a texture page cache. | Our `gs_command_sink` combines parsing, memory and rasterization. Split along these lines when GS work next grows (new formats, VU1 output), keeping the validated layouts and the transaction rollback. |
+| GIF paths | `ps2_gif_arbiter` arbitrates PATH1 (VU1 XGKICK), PATH2 (VIF1 DIRECT) and PATH3 (GIF DMA). | Needed once VU1 XGKICK output must interleave with VIF1 DIRECT and GIF DMA; until then frames use PATH2/3 in issue order. |
+| VIF1 | `ps2_vif1_interpreter`: a code-by-code VIF1 interpreter (UNPACK, MSCAL, DIRECT and friends). | Our frame VIF1 path walks chains and accepts only NOP/FLUSH/DIRECT. Extend it code by code as BT2 reaches UNPACK, MSCAL and others. |
+| VU1 | Interpreter split into `ps2_vu1_core`, `_upper` and `_lower`, with a `ps2_vu1.h` state header. | Follow this split when BT2 first executes a VU1 microprogram; VU discovery stays separate from the EE map (see BT3 above). |
+| Kernel/syscalls | One stub file per subsystem (GS, DMA, Pad, SIF, MemoryCard and so on) and a dispatcher. | Matches our focused files (`runtime/ee`, `runtime/iop/providers`); keep BT2's evidence-checked handlers. |
+
 ## Chronicle
 
 Snapshot: `05fd37be122cd5833cfeeceb83475933959d938f`. This is a matching decompilation and port, rather than our PS2Recomp pipeline. Region configs associate hashes, symbol maps, and section layout; its validation tools compare built/reference images. Borrow explicit identity, module/symbol provenance and reproducible comparison, without importing its symbols or assuming byte-matching requirements for native recompilation. [NTSC config](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/config/ntsc/main.yaml), [validator](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/scripts/build/verify.py).

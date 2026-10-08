@@ -4,6 +4,7 @@
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
 
 void PS2Runtime::write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+    if(auto* spr=scratchpadAt(address,4)) {std::memcpy(spr,&value,4);return;}
     address = uncachedWordAddress(rdram, address);
     if(address==0x10003000 && vif_startup.phase==5 && value==1 && !vif_startup.pending_mask) {
         checkMemory(rdram,0,0);
@@ -189,6 +190,12 @@ std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std
         && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
         ++gs_field_reads;return 0x551B6004; // Independent captured field, not timed native GS state.
     }
+    if(address==0x12001000 && gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_ && !startup_scheduler_active
+        && !frame_gs_reset_step && display_reset_phase==13) {
+        // Frame-phase CSR sample on main: revision 0x1B, the latched status bits and the field the
+        // logical VBlank model last published (the same FIELD the VSync callback receives).
+        ++frame_csr_reads;return 0x551B4000u|(display_intc_stat&0x1Fu)|(display_field?0x2000u:0u);
+    }
     if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes!=1 || gs_csr_reads
             || context->pc!=0x30FE50 || context->r[29].low!=initial_sp-688)
         throw UnsupportedGuestMemory(address,8);
@@ -196,6 +203,7 @@ std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std
 }
 
 void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+    if(ipuWrite(address,value)) {checkMemory(rdram,0,0);return;}
     if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
         && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
         checkMemory(rdram,0,0);timer1_mode=value;timer1.configure(value);++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
@@ -222,6 +230,13 @@ void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32
         if(address==0x10000810 && context->pc==0x28C78C && value==(timer1.mode()|0x80)) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_starts;timer1_wait_polls=0;return;}
         if(address==0x10000810 && context->pc==0x28C7CC && value==(timer1.mode()&~0x80u) && timer1.counting()) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_stops;return;}
         if(address==0x10000800 && context->pc==0x28C7D4 && !value && !timer1.counting()) {checkMemory(rdram,0,0);timer1.writeCount(0);return;}
+    }
+    // Frame phase: other Timer 1 users (the game's counter allocator 0x2D87E8 sets BUSCLK/256 0x82).
+    if(timer1_setup_writes==1 && gs_display_flips>=1 && !in_interrupt_ && (address==0x10000800 || address==0x10000810)) {
+        checkMemory(rdram,0,0);
+        try {if(address==0x10000810)timer1.reconfigure(value);else timer1.setCount(value);}
+        catch(const std::runtime_error&) {throw UnsupportedGuestMemory(address,4);}
+        ++timer1_frame_writes;return;
     }
     if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
         if(address==0x1000A020 && context->pc==0x28B96C) {checkMemory(rdram,0,0);texture_gif.count(value);return;}
@@ -283,6 +298,7 @@ void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32
 }
 
 std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+    if(std::uint32_t value=0;ipuRead(address,value)) {checkMemory(rdram,0,0);return value;}
     if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020)) {
         checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;
         return address==0x1000A000?frame_gif.chcr:address==0x1000A010?frame_gif.madr:frame_gif.qwc;
@@ -308,6 +324,9 @@ std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std
             if(timer1.crossesField(target)) {deliverVblank(rdram,context);++timer1_vblanks;}
             timer1.lineTo(target);return timer1.count();
         }
+    }
+    if(timer1_setup_writes==1 && gs_display_flips>=1 && !in_interrupt_ && (address==0x10000800 || address==0x10000810)) {
+        checkMemory(rdram,0,0);return address==0x10000800?timer1.count():timer1.mode(); // Reads do not advance time.
     }
     if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
         checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
@@ -381,6 +400,7 @@ std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std
 }
 
 std::uint32_t PS2Runtime::read32(std::uint8_t* rdram, std::uint32_t address) {
+    if(auto* spr=scratchpadAt(address,4)) {std::uint32_t value;std::memcpy(&value,spr,4);return value;}
     address = uncachedWordAddress(rdram, address);
     if (address == 0x1000E010 && dma_status_supplied_ && !dma_status_reads) {
         checkMemory(rdram, 0, 0);
@@ -409,4 +429,39 @@ std::uint32_t PS2Runtime::read32(std::uint8_t* rdram, std::uint32_t address) {
     std::uint32_t value;
     std::memcpy(&value, memory_.data() + address, sizeof(value));
     return value;
+}
+
+bool PS2Runtime::ipuRead(std::uint32_t address,std::uint32_t& value) {
+    if(!ipuContext())return false;
+    if(address==0x1000F520) {value=dmac_enabler;return true;}
+    if(const auto spr=scratchpad_dma.read32(address)) {value=*spr;return true;}
+    const auto ipu_value=ipu.read32(address);
+    if(!ipu_value)return false;
+    value=*ipu_value;return true;
+}
+
+bool PS2Runtime::ipuWrite(std::uint32_t address,std::uint32_t value) {
+    if(!ipuContext())return false;
+    if(address==0x1000F590) {
+        if((value&~0x10000u)!=(dmac_enabler&~0x10000u))throw UnsupportedGuestMemory(address,4);
+        if(value&0x10000u)++dmac_suspends;
+        dmac_enabler=value;return true; // D_ENABLEW mirrors into D_ENABLER; no channel is running.
+    }
+    if((address==0x1000D000 || address==0x1000D400) && (value&0x100u)) {scratchpadTransfer(address,value);return true;}
+    try {return scratchpad_dma.write32(address,value) || ipu.write32(address,value);}
+    catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,4);}
+}
+
+// Scratchpad DMA in normal mode (MOD 0), completed synchronously: fromSPR (0x1000D000) copies QWC
+// quadwords from SADR to main RAM at MADR; toSPR (0x1000D400) copies the other way. Chain/interleave
+// modes, transfers that wrap the 16 KB scratchpad and channel interrupts are refused.
+void PS2Runtime::scratchpadTransfer(std::uint32_t address,std::uint32_t value) {
+    auto& c=scratchpad_dma.channels.at(address);
+    const bool from_spr=address==0x1000D000;
+    const std::uint32_t madr=c.madr&0x0FFFFFF0u,bytes=c.qwc*16;
+    if(((value>>2)&3) || (value&0xC0u) || !c.qwc || (c.madr&0x80000000u) || c.madr%16 || madr+bytes>ram_size || c.sadr+bytes>scratchpad_size)
+        throw UnsupportedGuestMemory(address,4);
+    auto ram=memory().subspan(madr,bytes);auto spr=scratchpad().subspan(c.sadr,bytes);
+    if(from_spr)std::copy(spr.begin(),spr.end(),ram.begin());else std::copy(ram.begin(),ram.end(),spr.begin());
+    c.madr+=bytes;c.sadr=(c.sadr+bytes)&0x3FF0u;c.qwc=0;c.chcr=value&~0x100u;++scratchpad_transfers;
 }

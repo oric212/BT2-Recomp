@@ -1,6 +1,6 @@
 import unittest
 import struct
-from prepare_map import select_candidates, has_tail_nop_gap, has_branch_nop_gaps
+from prepare_map import select_candidates, has_tail_nop_gap, has_branch_nop_gaps, has_switch_case_gaps
 
 
 class CandidateMapTests(unittest.TestCase):
@@ -181,3 +181,23 @@ class BoundedSwitchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SwitchCaseGapTests(unittest.TestCase):
+    # The reached shape (0x2B3C30): SLTIU on the argument index, BEQ to the default, table jump, and a
+    # case block (JR RA / DADDU) reached only through the table, left out of the analysis body.
+    words=[0x2C820006,0x1040000A,0,0x00041080,0x3C030000,0x00621821,0x8C631038,0x00600008,0,
+           0,0x03E00008,0x0000102D,0x03E00008,0x24020001,0x1030,0x1030,0x1028,0x1028,0x1030,0x1030]
+    metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+    candidate={'start':0x1000,'end_exclusive':0x1038,'body_size':44,'contiguous_aligned':False,'body_ranges':['1000-1023','1030-1037']}
+
+    def test_case_block_reached_only_by_the_table(self):
+        pack=lambda w:struct.pack('<20I',*w)
+        self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(self.words)))
+        self.assertEqual(select_candidates({'functions':[self.candidate]},self.metadata,data=pack(self.words))[0],[{'start':0x1000,'end':0x1038}])
+        # Each change breaks the proof: bound, guard, table target outside, block without a return,
+        # padding that is not NOP, a control instruction in the delay slot, no table target in the hole.
+        for index,value in [(0,0x2C820000),(1,0x1440000A),(16,0x1040),(10,0x00000000),(9,0x24020001),(11,0x03E00008),(16,0x1030)]:
+            changed=self.words.copy();changed[index]=value
+            if index==16:changed[17]=value
+            self.assertFalse(has_switch_case_gaps(self.candidate,self.metadata,pack(changed)))

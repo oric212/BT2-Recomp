@@ -106,6 +106,7 @@ int main(int argc, char** argv) {
                 && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350)
                     || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1) // VIF1 chain refused at its start.
                     || (stop.address==0x10000800 && context.pc==0x28C798) // Timer 1 delay poll outside the admitted wait.
+                    || (stop.address==0x1000A030 && context.pc==0x312084) // GIF chain-mode tag address (next subsystem).
                     || (stop.address==0x120000E0 && runtime.frame_budget_reached)); // Probe frame budget after a completed flip.
             // Frame-phase GS reset (the GS library's CSR reset during the frame loop; next subsystem).
             const bool frame_gs_reset=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && runtime.display_reset_phase==13

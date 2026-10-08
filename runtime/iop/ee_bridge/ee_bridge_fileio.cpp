@@ -45,7 +45,7 @@ void PS2Runtime::receiveFileioCall(std::uint8_t* rdram,R5900Context* context) {
     // IOP->EE SIF commands delivered below (EE_FILEIO_PLAN.md).
     if(command!=0xFF && !fileio_workers_supported)throw UnsupportedSyscall(0x77,context->pc);
     std::vector<std::uint8_t> response;auto& rt=native_iop->runtime;
-    try {response=native_iop->callFileio(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+source,send_size),receive_size,memory_,local_disc_path);}
+    try {response=native_iop->callFileio(iop_epoch,command,std::span<const std::uint8_t>(memory_.data()+source,send_size),receive_size,memory(),local_disc_path);}
     catch(const std::exception& e) {
         native_iop_error=e.what();native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
         throw UnsupportedSyscall(0x77,context->pc);

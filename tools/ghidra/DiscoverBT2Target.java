@@ -28,7 +28,15 @@ public class DiscoverBT2Target extends GhidraScript {
                 int ins2 = currentProgram.getMemory().getInt(address.add(4L * n));
                 frame |= (ins2 & 0xFFFF0000) == 0x27BD0000 && (short) ins2 < 0;
             }
+            // A previous function's JR RA / delay slot ends right before the target, possibly followed by
+            // up to three alignment NOPs.
+            // (The delay slot itself may be a NOP, so the adjacent case is checked first.)
             frame |= currentProgram.getMemory().getInt(address.subtract(8)) == 0x03E00008;
+            Address before = address;
+            for (int pad = 0; pad < 3 && currentProgram.getMemory().getInt(before.subtract(4)) == 0; ++pad) {
+                before = before.subtract(4);
+                frame |= currentProgram.getMemory().getInt(before.subtract(8)) == 0x03E00008;
+            }
             boolean called = false;
             for (Reference ref : getReferencesTo(address)) called |= ref.getReferenceType().isCall();
             if ((frame || called) && !targets.contains(address)) targets.add(address);

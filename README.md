@@ -29,13 +29,13 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt (649 frames) |
+| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt; the frame-pacing threads run (650 frames) |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Verified blocker (2026-10-08):** after the memory card prompt (answered Yes by scripted input), the game resets the GS for its next scene. That frame-phase reset now runs and matches a new original capture. The game then stops at the next unselected function (`FUN_002B7938`).
+**Verified blocker (2026-10-08):** after the frame-phase GS reset, the game sets up the IPU and saves the scratchpad for the opening movie. It then runs its frame-pacing threads: worker 7 serves the frame callbacks, main sleeps at frame end, and worker 4 wakes it. The run stops at the next subsystem, a GIF DMA chain-mode transfer (`0x1000A030`).
 
-**Last measured, 2026-10-08:** **804 EE entries entered / 793 completed**, **650 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **1,254 EE entries entered / 1,243 completed**, **650 rendered frames**, **43 CRI calls**, **186 original IOP disc reads**, **1,034 logical VBlanks**, **76 memory card queries**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
@@ -122,10 +122,15 @@ Development of this project involves AI tools for coding, investigation and docu
 
 | Project | Contribution |
 | --- | --- |
-| [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors | Static recompilation toolchain; GPL-3.0 |
+| [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors | Static recompiler (GPL-3.0); its `ps2xRuntime` is the runtime architecture reference |
 | [BT3-Recomp](https://github.com/z3xox/BT3-Recomp) by z3xox and contributors | Primary architectural and tooling reference |
 | [Chronicle](https://github.com/TheMoonPeople/Chronicle) by TheMoonPeople and contributors | Reverse-engineering and progress-reporting reference |
-| [PCSX2](https://github.com/PCSX2/pcsx2) and [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Behavioral comparison and reverse-engineering tools |
+| [PS2SDK](https://github.com/ps2dev/ps2sdk) by the ps2dev community | Behavioral reference for kernel, SIF/RPC and IOP modules |
+| [PCSX2](https://github.com/PCSX2/pcsx2) | Hardware behavior reference and original-game comparison captures |
+| [Play!](https://github.com/jpd002/Play-) by jpd002 and contributors | Kernel/HLE behavior reference |
+| [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Function discovery and reverse engineering |
+
+Libraries used by the toolchain: [ELFIO](https://github.com/serge1/ELFIO), [toml11](https://github.com/ToruNiina/toml11), [fmt](https://github.com/fmtlib/fmt), [libdwarf](https://github.com/davea42/libdwarf-code), [Rabbitizer](https://github.com/Decompollaborate/rabbitizer) and [nlohmann/json](https://github.com/nlohmann/json).
 
 Reference projects inform architecture and investigation; BT2-specific behavior is validated against local evidence. Dependency versions and licenses are recorded in [the content and license documentation](docs/LEGAL.md).
 

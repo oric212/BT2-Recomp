@@ -14,13 +14,13 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-08
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt (649 frames) |
+| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt; the frame-pacing threads run (650 frames) |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Verified blocker (2026-10-08):** after the memory card prompt (answered Yes by scripted input), the game resets the GS for its next scene. That frame-phase reset now runs and matches a new original capture. The game then stops at the next unselected function (`FUN_002B7938`).
+**Verified blocker (2026-10-08):** after the frame-phase GS reset, the game sets up the IPU and saves the scratchpad for the opening movie. It then runs its frame-pacing threads: worker 7 serves the frame callbacks, main sleeps at frame end, and worker 4 wakes it. The run stops at the next subsystem, a GIF DMA chain-mode transfer (`0x1000A030`).
 
-**Last measured, 2026-10-08:** **804 EE entries entered / 793 completed**, **650 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **1,254 EE entries entered / 1,243 completed**, **650 rendered frames**, **43 CRI calls**, **186 original IOP disc reads**, **1,034 logical VBlanks**, **76 memory card queries**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
@@ -30,7 +30,7 @@ Helper 5/6 execution is now part of normal startup; the former separate helper d
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 804 distinct entered / 793 completed; kernel 2 / 2; 7,657,836 call events / 7,657,373 returns over 649 frames |
+| EE | 1,254 distinct entered / 1,243 completed; kernel 2 / 2; 7,660,652 call events / 7,660,189 returns over 650 frames |
 | Mapping | 9,446 provisional EE entries; 608 extra entries selected; overlay map 456 entries, 8 selected |
 | IOP | 10,866,546 instructions; scripted DualShock 2 input (`--pad-script`); IOP VBlank start/end every field (pad, SIO2D and CRI threads run); emulated DualShock 2 on port 1 (configured into pressure mode, polled each field); 5 DBCMAN and 50 controller-port requests through the original handlers; CRI stream buffers returned to the EE; SPU2 voice positions/ENDX (no samples/ADSR); 132 logical SOUNDS timer ticks; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
 | Memory / threads | Nine IOP heap allocations / two frees (two sound-bank blocks at captured placements); four EE startup pools; main priority 2 → 24 admitted; 117 logical VBLANK_START deliveries (+2 polled); 234 owned helper wakes/resumes; logical Timer 2 with 16 overflow interrupts |
@@ -39,15 +39,15 @@ Helper 5/6 execution is now part of normal startup; the former separate helper d
 | Cards | 77 queries (startup plus one per frame while the card screens run), each six DMA pairs / five timed FIFO probes; absent cards only; frame-phase reply matches the original |
 | GS | Startup: five packets / four clear draws; frames: 649 flips, 23,854 VIF1 DIRECT transfers, PSMT4 and PSMT8 textures with 16- and 256-entry CLUTs, 330,666 sprites and 2,618 triangles (530,581,870 pixels); memory card dialogs rendered; no VU execution |
 
-Previous normal checkpoint → current: distinct EE **772 / 763 → 801 / 791**. The no-card prompt renders (PSMT8 textures), Timer 1 wraps past long frames, and scripted input answers the prompt, so the game runs 649 frames to its next scene setup. Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE **804 / 793 → 1,254 / 1,243**. IPU setup, scratchpad RAM and DMA, wide uncached accesses, Timer 1 BUSCLK counting and frame-phase thread scheduling (main yields to readied workers, main sleep/wake) carry the game into its pre-movie frame loop. Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
 Verified 2026-10-08:
-- **Build and unit tests:** serialized MSVC entry/ALL builds and **17/17 CTests**, with new PSMT8 layout/CLUT, Timer 1 wrap and pad-script tests.
-- **Python suites:** **180 capture**, **68 recompilation**, **13 IOP** and 3 Ghidra tests.
-- **Comparisons:** **27 normal-startup comparisons** and all nine phase-matched comparisons (`BT2_PHASE_STOP`), including the frame-phase GS reset against an interactive original capture. The remaining failures are the known phase-scoped and argument cases.
+- **Build and unit tests:** serialized MSVC entry/ALL builds and **18/18 CTests**, with new IPU setup, scratchpad/SPR DMA, Timer 1 BUSCLK, main yield and main sleep/wake tests.
+- **Python suites:** **180 capture**, **69 recompilation**, **13 IOP** and 3 Ghidra tests.
+- **Comparisons:** **23 normal-startup comparisons** and all nine phase-matched comparisons (`BT2_PHASE_STOP`). The startup-scoped worker/CRI checks (`startup_workers`, `ee_main_status`, `cri_second_channel`) now run at the phase stops, because frame-phase scheduling legitimately changes worker state after them; they pass at every phase stop. The remaining failures are the known phase-scoped and argument cases.
 - **Diagnostics:** the sound-worker diagnostic is unchanged at 302/295; rendered frames were inspected visually.
 - **No behavior change from the performance work:** the GS rasterizer optimizations and the Release build produce reports and RAM/GS dumps byte-identical to Debug and to the previous code.
 
@@ -63,6 +63,8 @@ All five late CRI `0x408` pairs complete through the original IOP handler; their
 - **Display setup:** the game's own display writes configure both read circuits.
 
 The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. From the second frame on, each render kick sends VIF1 DIRECT GS work: a PSMT4 texture and CLUT upload and a textured sprite ([GS texture plan](GS_TEXTURE_PLAN.md)). Without a controller, the rendered framebuffer shows the game's "No DUALSHOCK®2 analog controller connected" message; frames can be watched live (`run_startup_probe.py --viewer`, [live window plan](LIVE_WINDOW_PLAN.md)). The native IOP now receives VBlank start/end every field, so the original pad, SIO2 and CRI threads run. An emulated DualShock 2 answers the pad protocol on port 1 ([controller plan](CONTROLLER_PLAN.md)). With it connected, the game leaves that screen and runs its memory card check through the original MCSERV/MCMAN/SIO2MAN modules with absent cards. Its "Continue anyway?" prompt is answered by scripted input. The game then resets the GS for its next scene: the reset runs and matches the original. The next boundary is the unselected function `FUN_002B7938`. The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
+
+After the frame-phase GS reset, the game prepares its opening movie. It loads the IPU's quantizer and VQ tables (setup only, no decoding) and copies the 16 KiB scratchpad to main RAM through scratchpad DMA. It then runs its frame-pacing threads. Main resumes worker 7, which preempts it, serves the frame callback table and sleeps. At frame end main sleeps; the idle CPU takes logical VBlanks and worker 4 wakes main. The next stop is a GIF DMA chain-mode transfer (`0x1000A030`, pc `0x312084`). The opening movie itself needs IPU MPEG decoding, a separate plan.
 
 Remaining: IOP stream consumption, sound command processing, general timers, mounted cards, archive decompression/use, audio and presentation. Complete startup and a presented game frame remain unverified.
 

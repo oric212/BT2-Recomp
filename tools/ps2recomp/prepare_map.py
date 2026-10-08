@@ -78,6 +78,10 @@ def cop_control(ins):
 
 
 def bounded_word_switch(address,start,end,spans,metadata,data,word):
+    return switch_targets(address,start,end,spans,metadata,data,word) is not None
+
+
+def switch_targets(address,start,end,spans,metadata,data,word):
     """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom.
 
     Safety rests on the SLTIU c,i,N bound and its guard branch on c; the instruction producing the
@@ -88,7 +92,7 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
         op=ins>>26
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
     sign=lambda v:v-65536 if v&32768 else v
-    if address-start<28 or address+8>end or word(address+4)!=0:return False
+    if address-start<28 or address+8>end or word(address+4)!=0:return None
     jr=word(address)
     tail=[word(address+n) for n in (-16,-12,-8,-4)] if address-start>=16 else [0]*4
     # First layout: SLTIU c,i,N / BEQ(L) c,zero / [delay] / SLL s,i,2 / LUI b / ADDU b,b,s / LW j,d(b) / JR j.
@@ -99,7 +103,7 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
         and load>>26==35 and (load>>21)&31==(lui>>16)&31 and (load>>16)&31==(jr>>21)&31)
     if first:
         i,sreg,b=(sll>>16)&31,(sll>>11)&31,(lui>>16)&31
-        if 0 in (i,sreg,b) or b==sreg:return False
+        if 0 in (i,sreg,b) or b==sreg:return None
         def keeps_index(ins):
             # A delay slot that runs on both paths must not write the index: I-type ALU/load
             # write rt, R-type ALU writes rd, stores (SB/SH/SW/SD/SQ) write no register. Anything
@@ -111,37 +115,38 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
         def beq_zero(ins,opcode):return ins>>26==opcode and (ins>>16)&31==0
         if beq_zero(word(address-20),4):branch=address-20
         elif address-start>=32 and beq_zero(word(address-24),20) and not control(word(address-20)):branch=address-24
-        elif address-start>=32 and beq_zero(word(address-24),4) and not control(word(address-20)) and keeps_index(word(address-20)):
+        elif address-start>=28 and beq_zero(word(address-24),4) and not control(word(address-20)) and keeps_index(word(address-20)):
             branch=address-24 # BEQ whose delay slot (both paths) leaves the index intact; SLL follows it.
-        else:return False
-        index,bound=word(branch-8),word(branch-4)
+        else:return None
+        # The index producer precedes the bound; at the function start the index is an incoming argument.
+        index,bound=(word(branch-8) if branch-8>=start else 0),word(branch-4)
         c=(word(branch)>>21)&31
-        if control(index) or bound>>26!=11 or (bound>>21)&31!=i or (bound>>16)&31!=c or c in (0,i):return False
+        if control(index) or bound>>26!=11 or (bound>>21)&31!=i or (bound>>16)&31!=c or c in (0,i):return None
         hi,disp=lui&65535,sign(load&65535)
     else:
         # Second layout: SLTIU c,i,N / BEQ c,zero / LUI b (delay) / SLL s,i,2 / ADDIU b,b,lo /
         # ADDU a,s,b / LW j,0(a) / JR j. Registers are decoded and must keep the index intact.
         jr=word(address)
-        if address-start<32 or jr&0xFC1FFFFF!=8:return False
+        if address-start<32 or jr&0xFC1FFFFF!=8:return None
         j=(jr>>21)&31;branch=address-24
         bound,beq,lui,sll,addiu,addu,load=(word(address+n) for n in (-28,-24,-20,-16,-12,-8,-4))
         c,i=(bound>>16)&31,(bound>>21)&31;b=(lui>>16)&31;sreg=(sll>>11)&31;a=(addu>>11)&31
-        if bound>>26!=11 or beq&0xFFFF0000!=0x10000000|(c<<21) or lui&0xFFE00000!=0x3C000000 or sll&0xFFE0003F!=0 or (sll>>16)&31!=i or (sll>>6)&31!=2:return False
-        if addiu>>26!=9 or (addiu>>21)&31!=b or (addiu>>16)&31!=b or addu&0xFC0007FF!=0x21 or {(addu>>21)&31,(addu>>16)&31}!={sreg,b}:return False
-        if load&0xFFFF0000!=0x8C000000|(a<<21)|(j<<16) or 0 in (c,i,b,sreg,a,j) or b in (i,sreg) or c==i:return False
+        if bound>>26!=11 or beq&0xFFFF0000!=0x10000000|(c<<21) or lui&0xFFE00000!=0x3C000000 or sll&0xFFE0003F!=0 or (sll>>16)&31!=i or (sll>>6)&31!=2:return None
+        if addiu>>26!=9 or (addiu>>21)&31!=b or (addiu>>16)&31!=b or addu&0xFC0007FF!=0x21 or {(addu>>21)&31,(addu>>16)&31}!={sreg,b}:return None
+        if load&0xFFFF0000!=0x8C000000|(a<<21)|(j<<16) or 0 in (c,i,b,sreg,a,j) or b in (i,sreg) or c==i:return None
         hi,disp=lui&65535,sign(addiu&65535)+sign(load&65535) # LW displacement is part of the table address.
     count=bound&65535
-    if not 1<=count<=256:return False
+    if not 1<=count<=256:return None
     immediate=word(branch)&65535;immediate=immediate-65536 if immediate&32768 else immediate
     default=branch+4+immediate*4
-    if not any(a<=default<b for a,b in spans):return False
+    if not any(a<=default<b for a,b in spans):return None
     table=(hi<<16)+disp
     regions=[x for x in metadata['sections'] if x.get('occupies_file_bytes') and x['address']<=table and table+count*4<=x['address']+x['size']]
-    if len(regions)!=1 or table%4:return False
+    if len(regions)!=1 or table%4:return None
     at=regions[0]['file_offset']+table-regions[0]['address']
-    if at<0 or at+count*4>len(data):return False
+    if at<0 or at+count*4>len(data):return None
     targets=struct.unpack_from('<'+str(count)+'I',data,at)
-    return all(t%4==0 and any(a<=t<b for a,b in spans) for t in targets)
+    return targets if all(t%4==0 and any(a<=t<b for a,b in spans) for t in targets) else None
 
 
 def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
@@ -194,12 +199,76 @@ def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
     return True
 
 
+def has_switch_case_gaps(candidate, metadata, data):
+    """Accept holes that hold case blocks of a proven jump-table switch Ghidra did not follow.
+
+    The body must contain exactly one bounded switch (switch_targets, with every table target inside
+    the candidate). Each hole must contain at least one table target; its words are NOP padding before
+    the first target, then straight-line case blocks, each starting exactly at a table target and ending
+    in JR RA or an unconditional branch to the candidate, with a non-control delay slot, all inside the
+    hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
+    start,end=candidate['start'],candidate['end_exclusive']
+    try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
+    except (ValueError,TypeError):return False
+    if start%4 or end%4 or end-start>0x5000 or len(spans)<2 or spans[0][0]!=start or spans[-1][1]!=end:return False
+    if any(a%4 or b%4 or b<=a for a,b in spans) or any(right[0]<=left[1] for left,right in zip(spans,spans[1:])):return False
+    if candidate['body_size']!=sum(b-a for a,b in spans):return False
+    sections=[x for x in metadata['sections'] if x['name']=='.text' and x['flags']&4 and x['occupies_file_bytes'] and x['address']<=start<end<=x['address']+x['size']]
+    if len(sections)!=1:return False
+    offset=sections[0]['file_offset']+start-sections[0]['address']
+    if offset<0 or offset+end-start>len(data):return False
+    def word(address):return struct.unpack_from('<I',data,offset+address-start)[0]
+    def control(ins):
+        op=ins>>26
+        return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
+    whole=[(start,end)]
+    switches=[(a,t) for a in range(start,end,4) if any(x<=a<y for x,y in spans) and word(a)&0xFC1FFFFF==8 and word(a)!=0x03E00008
+              for t in [switch_targets(a,start,end,whole,metadata,data,word)] if t is not None]
+    if len(switches)!=1:return False
+    jump,targets=switches[0];targets=set(targets)
+    holes=[(left[1],right[0]) for left,right in zip(spans,spans[1:])]
+    hole_words=set()
+    for h0,h1 in holes:
+        inside=sorted(t for t in targets if h0<=t<h1)
+        if not inside:return False
+        address=h0
+        for target in inside:
+            if target<address:return False # A target inside an earlier block of this hole.
+            if any(word(a)!=0 for a in range(address,target,4)):return False # Only padding before a block.
+            address=target
+            while True:
+                if address+4>=h1:return False
+                ins=word(address)
+                if not control(ins):address+=4;continue
+                if ins==0x03E00008:pass
+                elif ins&0xFFFF0000==0x10000000:
+                    immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
+                    if not start<=address+4+immediate*4<end:return False
+                else:return False
+                if control(word(address+4)):return False
+                address+=8;break
+        if any(word(a)!=0 for a in range(address,h1,4)):return False
+        hole_words.update(range(h0,h1,4))
+    # The spans: no transfer into a hole except the switch itself; no other indirect jump.
+    for address in range(start,end,4):
+        if address in hole_words:continue
+        ins=word(address);op=ins>>26
+        standard_call=op==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and address!=jump) or (cop_control(ins) and not cop_branch(ins)):return False
+        if op in (1,4,5,6,7,20,21,22,23) or cop_branch(ins):
+            immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
+            if address+4+immediate*4 in hole_words:return False
+        elif op in (2,3) and (((address+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)) in hole_words:return False
+    return True
+
+
 def select_candidates(report, metadata, max_size=0x5000, data=None, external_text=()):
     rows, excluded = [], []
     for candidate in report["functions"]:
         start, end = candidate["start"], candidate["end_exclusive"]
         reason = None
-        padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data, external_text))
+        padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data, external_text)
+                                        or has_switch_case_gaps(candidate, metadata, data))
         if not padding and (not candidate["contiguous_aligned"] or start % 4 or end % 4 or end <= start or candidate["body_size"] != end - start):
             reason = "noncontiguous_or_invalid"
         elif not any(section["name"] == ".text" and section["flags"] & 4 and section["occupies_file_bytes"]

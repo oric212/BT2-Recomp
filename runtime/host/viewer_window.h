@@ -67,7 +67,11 @@ private:
         if(scaling_==Scaling::Integer) {
             const int scale=std::max(1,int(std::min(client.right/LONG(frame_.width),client.bottom/LONG(frame_.height))));
             w=int(frame_.width)*scale;h=int(frame_.height)*scale;x=(client.right-w)/2;y=(client.bottom-h)/2;
-            FillRect(dc,&client,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+            // Black only the borders around the frame: clearing the whole client area first made every
+            // presented frame flash black briefly (flicker).
+            const auto black=static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+            const RECT borders[4]={{0,0,client.right,y},{0,y+h,client.right,client.bottom},{0,y,x,y+h},{x+w,y,client.right,y+h}};
+            for(const auto& border:borders)if(border.right>border.left && border.bottom>border.top)FillRect(dc,&border,black);
         }
         SetStretchBltMode(dc,COLORONCOLOR);
         StretchDIBits(dc,x,y,w,h,0,0,int(frame_.width),int(frame_.height),frame_.bgra.data(),&bi,DIB_RGB_COLORS,SRCCOPY);

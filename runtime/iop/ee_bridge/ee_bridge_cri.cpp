@@ -89,6 +89,9 @@ void PS2Runtime::receiveCriStream(std::uint8_t* rdram,R5900Context* context) {
 void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     const auto d=static_cast<unsigned>(context->r[4].low);
     auto& rt=native_iop->runtime;const auto& server=rt.rpc_servers.at(0x90000200);
+    // Frame phase (movie playback and later): further 0x408 stream-control pairs from any caller frame,
+    // waiting on the client's own call semaphore (client+8) instead of the startup layout.
+    const bool frame_pairs=cri_rpc_calls>=42 && gs_display_flips>=1;
     const bool channel=cri_rpc_calls>=36;
     const bool channel_setup=cri_rpc_calls==36;
     const bool channel_pairs=channel && !channel_setup;
@@ -101,13 +104,14 @@ void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     const auto input_size=channel && !channel_setup?16u:start?16u:12u;
     const auto output_size=channel_setup?0u:channel || batch?4u:cri_rpc_calls==2?12u:0u;
     const bool payload=cri_rpc_calls>=2;
-    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (cri_rpc_calls<1 || cri_rpc_calls>41 || cri_rpc_calls==35)
-        || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-(channel_setup?592u:start?736u:stream?688u:656u) || context->r[5].low!=(payload?2u:1u)
-        || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838E8)
+    const auto call_sema=frame_pairs?read32(rdram,0x355C78):10u;
+    if(iop_epoch!=1 || prior_iop_services_valid || cri_rpc_binds!=1 || (!frame_pairs && (cri_rpc_calls<1 || cri_rpc_calls>41 || cri_rpc_calls==35))
+        || context->pc!=0x32F028 || context->r[29].low!=d || (!frame_pairs && d!=initial_sp-(channel_setup?592u:start?736u:stream?688u:656u)) || context->r[5].low!=(payload?2u:1u)
+        || (!frame_pairs && semaphores.size()!=11) || call_sema>=semaphores.size() || semaphores[call_sema].count || semaphores[call_sema].maximum!=1 || semaphores[call_sema].option!=0x3838E8)
         throw UnsupportedSyscall(0x77,context->pc);
     if(channel_pairs && (!main_priority_admissions || current_thread_id!=1 || startup_scheduler_active
         || main_thread_priority!=1 || !rpc_id || read32(rdram,0x355C70)!=0x203A97C0
-        || read32(rdram,0x355C78)!=10 || read32(rdram,0x355C84)!=server.buffer
+        || read32(rdram,0x355C78)!=call_sema || read32(rdram,0x355C84)!=server.buffer
         || read32(rdram,0x355C94)!=server.descriptor))
         throw UnsupportedSyscall(0x77,context->pc);
     const std::array<unsigned,8> desc={0x39DC80,server.buffer,input_size,0,0x203A97C0,0x1E640,64,0x44};
@@ -122,7 +126,7 @@ void PS2Runtime::receiveCriControl(std::uint8_t* rdram,R5900Context* context) {
     std::copy(response.begin(),response.end(),memory_.begin()+0x39DD80);
     const std::array<unsigned,16> reply={output_size<<8,output_size?0x39DD80u:0u,0x80000008,0,0,0,0,0x355C70,0x8000000A,0,0,0,0,0,0,0};
     for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
-    deliverRpcEnd(rdram,context,0x355C70,10,server.descriptor,server.buffer);
+    deliverRpcEnd(rdram,context,0x355C70,call_sema,server.descriptor,server.buffer);
     ++cri_rpc_calls;++sif_dma_submissions;context->r[2].low=0x780002+cri_rpc_calls-1;
     native_iop_steps=rt.steps;native_iop_targets=static_cast<unsigned>(rt.entries.size());native_iop_pc=rt.executing_pc;
 }

@@ -47,7 +47,7 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
     if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
 #endif
 #ifdef BT2_NATIVE_IOP
-    if(code==0 && selector==0x77 && cri_rpc_binds==1 && (cri_rpc_calls>=1 && cri_rpc_calls<=41 && cri_rpc_calls!=35) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
+    if(code==0 && selector==0x77 && cri_rpc_binds==1 && ((cri_rpc_calls>=1 && cri_rpc_calls<=41 && cri_rpc_calls!=35) || (cri_rpc_calls>=42 && gs_display_flips>=1)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
     if(code==0 && selector==0x77 && cri_rpc_binds==1 && (!cri_rpc_calls || (cri_rpc_calls==35 && heap_calls==5)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
     if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
     if(code==0 && selector==0x77 && ((ncmd_ready_calls==1 && !ncmd_read_calls) || (ncmd_read_calls && startup_scheduler_active))
@@ -742,9 +742,12 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         // "...CloseSema" 0x3839B8, "...LseekSema" 0x3839D0, "...ReadSema" 0x3839E8.
         const bool stdio_open_sema=main_priority_admissions && context->pc==0x32EC68 && stdioCallSema(option)
             && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && maximum==1 && initial==0;
+        // Frame phase (after display setup): the kernel ignores attr (Play!'s CreateSema stores only
+        // init/max/option), so library callers' uninitialized attr residue has no effect.
+        const bool frame_phase_sema=gs_display_flips>=1 && context->pc==0x32EC68;
         if(ncmd_bind_sema)++ncmd_bind_semaphores;
         if (disc_bind_sema) ++disc_bind_semaphores;
-        if (attributes != 0 && !admitted_rpc_sema && !stdio_sema && !stdio_open_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
+        if (attributes != 0 && !frame_phase_sema && !admitted_rpc_sema && !stdio_sema && !stdio_open_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
             if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
             throw std::runtime_error("Unsupported semaphore attributes");
         }

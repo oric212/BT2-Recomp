@@ -290,7 +290,7 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"startup_worker_waits\":" << runtime.startup_worker_waits
         << ",\"main_priority_admissions\":" << runtime.main_priority_admissions << ",\"main_priority_previous\":" << runtime.main_priority_previous
         << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
-        << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes
+        << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes << ",\"scheduled_wakes\":" << runtime.scheduled_wakes << ",\"main_yields\":" << runtime.main_yields << ",\"main_sleeps\":" << runtime.main_sleeps << ",\"main_wakes\":" << runtime.main_wakes << ",\"main_sleep_fields\":" << runtime.main_sleep_fields << ",\"frame_csr_reads\":" << runtime.frame_csr_reads
         << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
         << ",\"spu2_playback_samples\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.samples:0)
         << ",\"spu2_playback_blocks\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.blocks:0)

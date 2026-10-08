@@ -29,13 +29,15 @@ target_compile_options(bt2-port PRIVATE /W4 /permissive- /utf-8)
 # that includes ps2_runtime.h.
 set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ee_sound_dispatch.cpp
+    runtime/ee/ee_thread_scheduler.cpp
     runtime/ee/retained_ee_stack.cpp
     runtime/ee/ps2_fpu.cpp
     runtime/gs/gs_command_sink.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
     runtime/ee/ps2_runtime_services.cpp
-    runtime/ee/ps2_runtime_syscalls.cpp)
+    runtime/ee/ps2_runtime_syscalls.cpp
+    runtime/ee/ipu_device.cpp)
 
 # Native IOP: the locally generated (ignored) original modules; the handwritten IOP runtime (CPU state,
 # memory-mapped hardware, logical time and the high-level kernel/library providers); and the module
@@ -109,6 +111,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-gs-command-tests runtime/tests/gs_command_tests.cpp)
     bt2_ee_target(bt2-gs-command-tests)
     add_test(NAME gs-command-consumption COMMAND bt2-gs-command-tests)
+    add_executable(bt2-ipu-tests runtime/tests/ipu_tests.cpp runtime/ee/ipu_device.cpp)
+    bt2_target_defaults(bt2-ipu-tests)
+    add_test(NAME ipu-setup COMMAND bt2-ipu-tests)
     add_executable(bt2-post-sif-tests runtime/tests/post_reset_sif_tests.cpp)
     bt2_ee_target(bt2-post-sif-tests)
     add_test(NAME post-reset-sif COMMAND bt2-post-sif-tests)

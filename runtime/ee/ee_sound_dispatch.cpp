@@ -1,4 +1,5 @@
 #include "ps2_runtime.h"
+#include "ee_execution_owner.h"
 #include <utility>
 #include <cstdlib>
 #include <algorithm>
@@ -55,38 +56,6 @@ void PS2Runtime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent
     throw UnsupportedSyscall(0x32,ee_sound_probe_frontier.pc);
 }
 
-// A persistent guest invocation owns its CPU, host frames and guest return stack.
-// Main remains live on the parent host stack; each selection swaps only ownership.
-struct EeExecutionOwner {
-    PS2Runtime& rt;
-    R5900Context context;
-    std::vector<unsigned> returns;
-    unsigned depth=0,expected=0x100250,saved_id=0,id=3,entry=0x315380;
-    RetainedEeStack* saved_active=nullptr;
-    std::unique_ptr<RetainedEeStack> stack;
-    explicit EeExecutionOwner(PS2Runtime& runtime,unsigned thread_id=3):rt(runtime),context(runtime.threads.at(thread_id-2).context),id(thread_id),entry(runtime.threads.at(thread_id-2).entry) {
-        stack=std::make_unique<RetainedEeStack>([this] {
-            rt.dispatchGuestBranch(rt.memory().data(),&context,entry,id==3?rt.sound_dispatch_wait_ra:rt.startup_dispatch_parent.pc,0,PS2Runtime::GuestBranchKind::TailJump,"owned EE sound worker");
-            throw std::runtime_error("Unexpected persistent sound worker exit");
-        });
-    }
-    void select() {
-        saved_id=rt.current_thread_id;saved_active=rt.active_ee_stack;
-        std::swap(returns,rt.call_returns_);std::swap(depth,rt.dispatch_depth_);std::swap(expected,rt.expected_return);
-        rt.current_thread_id=id;rt.active_ee_stack=stack.get();
-    }
-    void restore() {
-        rt.current_thread_id=saved_id;rt.active_ee_stack=saved_active;
-        std::swap(returns,rt.call_returns_);std::swap(depth,rt.dispatch_depth_);std::swap(expected,rt.expected_return);
-    }
-    void dispatch() {select();try{stack->resume();}catch(...){restore();throw;}restore();}
-    ~EeExecutionOwner() {
-        if(stack && stack->state()==RetainedEeStack::State::Waiting) {
-            select();stack.reset();restore();
-        }
-    }
-};
-
 void PS2Runtime::queueSoundsBind(R5900Context* context,const std::array<unsigned,16>& reply) {
     if(!ee_queued_sound_rpc || queued_sounds_bind.pending || queued_sound_submissions || sounds_rpc_binds
         || current_thread_id!=1 || main_thread_priority!=2 || iop_epoch!=1 || reply[7]!=0x6351C0 || reply[8]!=0x80000009)
@@ -119,70 +88,6 @@ void PS2Runtime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* contex
     deliverRpcEnd(rdram,context,0x6351C0,7,reply[9],reply[10]);
     queued_sounds_bind.pending=false;++queued_sound_completions;++sounds_rpc_binds;
     if(std::memcmp(&saved,context,sizeof(saved))) throw std::runtime_error("Queued completion changed waiting main CPU");
-}
-
-void PS2Runtime::requireNoPreemption(std::uint32_t selector,const R5900Context* context) const {
-    // Equal priorities keep FIFO order; only a strictly higher-priority ready thread preempts.
-    // Main is runnable whenever it is not the caller; workers are parked or ready below it.
-    const bool main=current_thread_id==1;
-    const auto priority=main?main_thread_priority:threads.at(current_thread_id-2).current_priority;
-    if(!main && main_thread_priority<priority)throw UnsupportedSyscall(selector,context->pc);
-    for(const auto& t:threads)
-        if(t.id!=current_thread_id && t.ready && !t.suspended && !t.waiting && t.current_priority<priority)
-            throw UnsupportedSyscall(selector,context->pc);
-}
-
-bool PS2Runtime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
-    const bool main=current_thread_id==1;
-    if(selector!=0x29 && selector!=0x30 && selector!=0x37 && selector!=0x39 && (main || selector!=0x32))return false;
-    const auto argument=static_cast<std::uint32_t>(context->r[4].low);
-    const auto id=selector==0x32||!argument?current_thread_id:argument; // TH_SELF (0) names the caller.
-    if(selector==0x29 && id==1) {
-        // Main may change only its own priority here; its record is held outside threads.
-        const auto priority=static_cast<std::uint32_t>(context->r[5].low);
-        if(!main || !priority || priority>=128)throw UnsupportedSyscall(selector,context->pc);
-        const auto previous=main_thread_priority;main_thread_priority=priority;
-        try{requireNoPreemption(selector,context);}catch(...){main_thread_priority=previous;throw;}
-        context->r[2].low=previous;++scheduled_priority_changes;return true;
-    }
-    // Main and unknown IDs are otherwise outside this bounded scope.
-    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id)throw UnsupportedSyscall(selector,context->pc);
-    auto& t=threads[id-2];const bool self=id==current_thread_id;
-    if(selector==0x29) {
-        const auto priority=static_cast<std::uint32_t>(context->r[5].low);
-        if(!priority || priority>=128 || !t.context.pc)throw UnsupportedSyscall(selector,context->pc);
-        const auto previous=t.current_priority;t.current_priority=priority;
-        try{requireNoPreemption(selector,context);}catch(...){t.current_priority=previous;throw;}
-        context->r[2].low=previous;++scheduled_priority_changes;return true;
-    }
-    if(selector==0x30) {
-        const auto out=static_cast<std::uint32_t>(context->r[5].low);
-        if(out%4)throw UnsupportedSyscall(selector,context->pc); // Unstarted threads report DORMANT.
-        checkMemory(rdram,out,48);
-        const std::uint32_t status=self?1u:t.suspended?(t.waiting?0xCu:8u):t.waiting?4u:t.ready?2u:0x10u;
-        // Reached callers consume only status; other descriptor fields remain unmodeled.
-        write32(rdram,out,status);context->r[2].low=status;++startup_worker_status_queries;return true;
-    }
-    if(selector==0x37 || selector==0x39) {
-        if(self || !t.context.pc || t.suspended!=(selector==0x39))throw UnsupportedSyscall(selector,context->pc);
-        if(selector==0x37) {t.suspended=true;t.ready=false;++scheduled_suspends;}
-        else {
-            t.suspended=false;t.ready=!t.waiting;
-            try{requireNoPreemption(selector,context);}catch(...){t.suspended=true;t.ready=false;throw;}
-            ++scheduled_resumes;
-        }
-        context->r[2].low=t.id;return true;
-    }
-    if(selector==0x32) {
-        if(t.wakeups)throw UnsupportedSyscall(selector,context->pc); // Banked wakeups are not yet reached.
-        t.ready=false;t.waiting=true;t.context=*context;++startup_worker_waits;
-        active_ee_stack->yield();
-        // Only an owned wake readies a parked worker; the scheduler then resumes this stack.
-        if(t.waiting || !t.ready || t.suspended || current_thread_id!=t.id)
-            throw std::runtime_error("Unvalidated startup worker wake");
-        context->r[2].low=t.id;++worker_sleep_returns;return true; // SleepThread returns the caller ID.
-    }
-    return false;
 }
 
 bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
@@ -235,28 +140,6 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
         return true;
     }
     context->r[2].low=(intc_mask&bit)?1:0;intc_mask&=~bit;++vblank_disable_calls;return true;
-}
-
-bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
-    // Interrupt context: current_thread_id names the interrupted thread; no reschedule happens here.
-    const auto id=static_cast<std::uint32_t>(context->r[4].low);
-    if(selector==0xFFFFFFD1u) {context->r[2].low=current_thread_id;return true;} // iGetThreadId
-    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id)return false;
-    auto& t=threads[id-2];
-    if(selector==0xFFFFFFCFu) { // iReferThreadStatus
-        const auto out=static_cast<std::uint32_t>(context->r[5].low);
-        if(out%4)return false;
-        checkMemory(rdram,out,48);
-        const std::uint32_t status=t.suspended?(t.waiting?0xCu:8u):t.waiting?4u:t.ready?2u:0x10u;
-        write32(rdram,out,status);context->r[2].low=status;return true;
-    }
-    if(selector==0xFFFFFFCCu) { // iWakeupThread
-        if(id==current_thread_id || !t.context.pc)return false;
-        if(t.waiting) {t.waiting=false;t.ready=!t.suspended;}
-        else ++t.wakeups;
-        ++worker_wakes;context->r[2].low=id;return true;
-    }
-    return false;
 }
 
 void PS2Runtime::advanceLogicalField() {
@@ -316,7 +199,7 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
 #ifdef BT2_NATIVE_IOP
     // The IOP's own timer ticks for this field run before EE handlers observe the VBlank.
     if(native_iop) {
-        try {native_iop->advanceVblank(iop_epoch,std::span<std::uint8_t>(memory_.data(),memory_.size()));native_iop->advanceSoundTimer(iop_epoch);}
+        try {native_iop->advanceVblank(iop_epoch,memory());native_iop->advanceSoundTimer(iop_epoch);}
         catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;
             native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());throw UnsupportedSyscall(0x14,interrupted->pc);}
         native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_pc=native_iop->runtime.executing_pc;
@@ -326,49 +209,3 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
 }
 
-void PS2Runtime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
-    // Main is the parent host stack. Ready workers above main run in priority order: a new
-    // owner starts a started worker; a parked owner resumes only after an owned wake.
-    const auto saved=*parent;const bool nested=startup_scheduler_active;
-    if(current_thread_id!=1 || in_interrupt_)throw UnsupportedSyscall(0,parent->pc);
-    startup_scheduler_active=true;
-    try {
-        for(;;) {
-            auto next=threads.end();
-            for(auto t=threads.begin();t!=threads.end();++t)
-                if(t->ready && !t->suspended && !t->waiting && t->current_priority<main_thread_priority
-                    && (next==threads.end() || t->current_priority<next->current_priority))next=t;
-            if(next==threads.end())break;
-            const auto id=next->id;
-            auto found=std::find_if(worker_executions_.begin(),worker_executions_.end(),[&](const auto& o){return o->id==id;});
-            std::shared_ptr<EeExecutionOwner> owner;
-            if(found!=worker_executions_.end()) {
-                owner=*found;
-                if(owner->stack->state()!=RetainedEeStack::State::Waiting)throw UnsupportedSyscall(0,parent->pc);
-                ++worker_resumes;
-            } else {
-                if(id<4 || id>7)throw UnsupportedSyscall(0,parent->pc);
-                owner=std::make_shared<EeExecutionOwner>(*this,id);worker_executions_.push_back(owner);
-                ++startup_worker_dispatches;
-            }
-            try {owner->dispatch();}
-            catch(...) {threads.at(id-2).context=owner->context;*parent=owner->context;throw;}
-            if(owner->stack->state()!=RetainedEeStack::State::Waiting || !threads.at(id-2).waiting
-                || std::memcmp(parent,&saved,sizeof(*parent)))
-                throw std::runtime_error("Scheduler lost retained parent/worker ownership");
-        }
-    } catch(...) {startup_scheduler_active=nested;throw;}
-    startup_scheduler_active=nested;
-}
-
-void PS2Runtime::dispatchReadyStartupWorkers(std::uint8_t* rdram,R5900Context* parent) {
-    if(current_thread_id!=1 || main_thread_priority!=2 || parent->pc!=0x32EAF8
-        || parent->r[4].low!=1 || parent->r[5].low!=24 || parent->r[31].low!=0x2EEA34
-        || queued_sound_completions!=1 || !sound_thread_waiting || threads.size()!=6 || startup_scheduler_active)
-        throw UnsupportedSyscall(0x29,parent->pc);
-    // Admit main's lower priority first; every ready thread above it runs before main resumes.
-    startup_dispatch_parent=*parent;main_priority_previous=main_thread_priority;
-    main_thread_priority=24;++main_priority_admissions;
-    runReadyThreads(rdram,parent);
-    parent->r[2].low=main_priority_previous;++priority_changes;
-}

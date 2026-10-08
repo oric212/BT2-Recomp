@@ -747,3 +747,7 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 ### Frame-phase memory card query
 
 `capture_ee.py --absent-cards --capture-point rpc-mc-frame-callback` halts at the first MCSERV end callback whose GetInfo requested outputs (type flag `0x3A700C` set); startup callbacks continue. `python tools/capture_ee/verify_mc_frame_query.py --native work/bt2-generation/entry-stop.json` compares the original input, endpoint and absent-card result (−11, type 0, free 0) with the native frame query. A capture that times out keeps `ee-ram-timeout.bin` for diagnosis. All outputs stay ignored.
+
+### Switch case gaps and padded tail calls
+
+`prepare_map.py` accepts a noncontiguous candidate when its holes are case blocks of one proven word-table switch that Ghidra did not follow. Each hole must hold a table target, NOP padding and straight-line case blocks that end in `JR RA` or an unconditional branch back into the function, and nothing else may branch into a hole. Tables indexed through a loaded argument word are recognized as well. `DiscoverBT2Target.java` also separates a tail-call target that follows a `JR RA`/delay-slot pair through up to three alignment NOPs.
