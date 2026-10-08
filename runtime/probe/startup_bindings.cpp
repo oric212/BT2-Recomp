@@ -7,15 +7,10 @@
 #ifdef BT2_STARTUP_KERNEL_PAYLOAD
 #include <bt2_startup_kernel_functions.h>
 #endif
-#ifdef BT2_EXTRA_STARTUP_BINDINGS
-#include <bt2_extra_startup.h>
-#endif
-#ifdef BT2_OVERLAY_BINDINGS
-#include <bt2_overlays.h>
-#endif
 
-// Binds the generated (ignored) startup functions, the reached extra startup and overlay entries,
-// and the copied kernel payloads to their guest addresses.
+// Binds the fixed generated (ignored) startup functions and the copied kernel payloads to their guest
+// addresses; the selection loop's entries are bound in their own files (selected_bindings.cpp,
+// overlay_bindings.cpp) so a new selection does not recompile this one.
 
 void registerStartupFunctions(PS2Runtime& runtime) {
     runtime.registerFunction(0x31EDB0, FUN_0031EDB0_0x31edb0);
@@ -89,12 +84,8 @@ void registerStartupFunctions(PS2Runtime& runtime) {
     runtime.registerFunction(0x00338AD8, FUN_00338AD8_0x338ad8);
     runtime.registerFunction(0x00338268, FUN_00338268_0x338268);
     runtime.registerFunction(0x0032E950, FUN_0032E950_0x32e950);
-    #ifdef BT2_EXTRA_STARTUP_BINDINGS
-    registerExtraStartup(runtime);
-    #endif
-    #ifdef BT2_OVERLAY_BINDINGS
-    registerOverlays(runtime);
-    #endif
+    registerSelectedStartup(runtime); // selected_bindings.cpp
+    registerSelectedOverlays(runtime); // overlay_bindings.cpp
 }
 
 void registerKernelPayloads(PS2Runtime& runtime,const ProbeModes& modes) {

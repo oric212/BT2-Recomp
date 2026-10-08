@@ -78,6 +78,39 @@ int main() {
         check(GsCommandSink::t4Nibble(0,4,128,0)==2048*8); // Second page in the row (TBW 4 = 256 pixels).
     }
     {
+        // PSMT8 layout: entries of the public column/block layout, then a bijection over one 128x64 page.
+        auto b=[](unsigned x,unsigned y){return GsCommandSink::t8Byte(0,2,x,y);};
+        check(b(0,0)==0 && b(1,0)==4 && b(2,0)==16 && b(4,0)==32 && b(8,0)==2 && b(0,1)==8);
+        check(b(0,2)==33 && b(4,2)==1 && b(0,3)==41 && b(0,4)==96 && b(4,4)==64 && b(0,6)==65); // Rows 2-3, odd column.
+        check(b(16,0)==256 && b(0,16)==512 && b(32,0)==1024 && b(0,32)==2048 && b(64,0)==4096); // Block order.
+        std::set<std::size_t> seen;for(unsigned y=0;y<64;++y)for(unsigned x=0;x<128;++x)seen.insert(b(x,y));
+        check(seen.size()==8192 && *seen.rbegin()==8191);
+        check(GsCommandSink::t8Byte(0,4,128,0)==2048*4); // Second page in the row (TBW 4 = 256 pixels).
+    }
+    {
+        // PSMT8 textured sprite with a 256-entry CT32 CLUT (16x16, index bits 3 and 4 swapped).
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        auto ad=[&](std::vector<std::pair<unsigned,std::uint64_t>> w,bool eop=false){q(0x1000000000000000ULL|(eop?0x8000:0)|w.size(),0xE);for(auto [r,v]:w)q(v,r);};
+        auto color=[](unsigned i){return 0x80000000u|i;};
+        ad({{0x1A,1},{0x01,0x80808080},{0x4C,0x10000},{0x4E,0x101000020ULL},{0x18,0},{0x40,0x0007000000070000ULL},{0x47,0x30000},{0x46,1},{0x45,0},{0x14,0},{0x08,0},
+            {0x50,(0x100ULL|(1ULL<<16))<<32},{0x51,0},{0x52,0x0000001000000010ULL},{0x53,0}});
+        q(0x0800000000000000ULL|64,0);
+        for(unsigned s=0;s<256;s+=4) {
+            auto entry=[&](unsigned k){const unsigned p=s+k;return color((p&~0x18u)|((p&0x08u)<<1)|((p&0x10u)>>1));};
+            q((std::uint64_t(entry(1))<<32)|entry(0),(std::uint64_t(entry(3))<<32)|entry(2));
+        }
+        // Texture: one PSMT8 page (one CT32 page of words) at block 0x200 whose bytes are 0x10..0x40.
+        ad({{0x50,(std::uint64_t(0x200)|(2ULL<<16))<<32},{0x52,0x0000002000000040ULL},{0x53,0}});
+        q(0x0800000000000000ULL|512,0);for(unsigned k=0;k<512;++k)q(0x4030201040302010ULL,0x4030201040302010ULL);
+        const std::uint64_t tex0=0x200|(2ULL<<14)|(0x13ULL<<20)|(7ULL<<26)|(6ULL<<30)|(1ULL<<34)|(0x100ULL<<37)|(1ULL<<61);
+        ad({{0x06,tex0},{0x00,0x156&~0x40},{0x03,0},{0x05,0},{0x03,(8ULL<<4)<<16|(8ULL<<4)},{0x05,0x00800080}},true);
+        GsCommandSink gs;gs.transfer(t);
+        check(gs.clut_loads==1 && gs.image_pixels==256+2048 && gs.frame_sprites==1 && gs.frame_pixels==64);
+        for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x)
+            check(gs.word(GsCommandSink::ct32Word(0,1,x,y)).value==color((unsigned(GsCommandSink::t8Byte(0x200,2,x,y)%4)+1)*16));
+    }
+    {
         // Textured sprite: a 16-entry CT32 CLUT and a PSMT4 texture uploaded as CT32 words, drawn
         // 1:1 with nearest filtering, then blended; and a refused group leaves nothing behind.
         std::vector<std::uint8_t> t;

@@ -188,6 +188,16 @@ int main() {
             check(pad.mode==DualShock2::Pressure && pressure.size()==21 && pressure[1]==0x79 && pressure[3]==0xFF && pressure[5]==0x80 && pressure[20]==0);
             bool refused=false;try{pad.transfer(B{1,0x44,0,1,3,0,0,0,0});}catch(const std::runtime_error&){refused=true;}check(refused); // Not in config.
             check(pad.transfer(B{1,0x42,0,0,0})==B({0xFF,0x79,0x5A,0xFF,0xFF})); // Short poll: truncated reply with the mode ID.
+            // Scripted input: steps take effect at their field and hold; pressed buttons report full pressure.
+            pad.script=PadScript::parse("2:left+cross,4:-");
+            pad.advanceField();check(pad.buttons==0xFFFF);
+            pad.advanceField();check(pad.buttons==std::uint16_t(~((1u<<7)|(1u<<14))) && pad.script_steps==1);
+            const auto pressed=pad.transfer(poll21);
+            check(pressed[3]==0x7F && pressed[4]==0xBF && pressed[10]==0xFF && pressed[15]==0xFF && pressed[9]==0 && pressed[20]==0);
+            pad.advanceField();pad.advanceField();check(pad.buttons==0xFFFF && pad.script_steps==2 && pad.field==4);
+            for(const char* bad:{"0:cross","5:cross,5:-","7:jump","x:cross","3"}) {
+                bool rejected_script=false;try{PadScript::parse(bad);}catch(const std::runtime_error&){rejected_script=true;}check(rejected_script);
+            }
         }
         IopRuntime nested;install_iop_kernel_providers(nested);
         nested.events.emplace(0x10001,IopRuntime::Event{2,0});

@@ -4,12 +4,14 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "pad_script.h"
 
 // Authored DualShock 2 on the SIO2 pad bus: one whole packet in, one reply of the same length out.
 // Protocol facts follow the public pad protocol (adapted from PCSX2's documented DualShock 2
 // behaviour, not copied): reply byte 1 is the mode ID (0x41 digital, 0x73 analog, 0x79 DualShock 2,
 // 0xF3 while in config), byte 2 is 0x5A, data follows. Byte 0 reads 0xFF as in the captured
-// startup reply. Input is neutral: no buttons (active-low 0xFFFF), sticks centred, no pressure.
+// startup reply. Input is neutral (no buttons, sticks centred) unless a pad script presses buttons;
+// pressed buttons report full pressure in DualShock 2 mode.
 class DualShock2 {
 public:
     enum Mode : std::uint8_t {Digital=0x41,Analog=0x73,Pressure=0x79,Config=0xF3};
@@ -20,6 +22,13 @@ public:
     std::uint32_t response_mask=0;
     unsigned packets=0;
     std::vector<std::vector<std::uint8_t>> history; // Recent packets, for refusal diagnostics.
+    PadScript script;unsigned field=0,script_steps=0;
+
+    // One logical field: a script step starting at this field sets the held buttons.
+    void advanceField() {
+        ++field;
+        if(const auto pressed=script.at(field)) {buttons=std::uint16_t(~*pressed);++script_steps;}
+    }
 
     std::vector<std::uint8_t> transfer(const std::vector<std::uint8_t>& tx) {
         history.push_back(tx);if(history.size()>6)history.erase(history.begin());
@@ -43,7 +52,10 @@ private:
             // gets a truncated reply.
             rx[3]=std::uint8_t(buttons&0xFF);rx[4]=std::uint8_t(buttons>>8);
             if(mode!=Digital)for(unsigned i=0;i<4 && 5+i<rx.size();++i)rx[5+i]=sticks[i];
-            // Pressure bytes (DualShock 2 mode) stay 0: no button is pressed.
+            // Pressure bytes (DualShock 2 mode): right, left, up, down, triangle, circle, cross, square,
+            // L1, R1, L2, R2; a pressed button reports full pressure.
+            constexpr std::array<unsigned,12> pressure_bits{5,7,4,6,12,13,14,15,10,11,8,9};
+            if(mode==Pressure)for(unsigned i=0;i<12 && 9+i<rx.size();++i)rx[9+i]=(buttons>>pressure_bits[i])&1?0:0xFF;
             if(command==0x43)config=at(3)!=0;
         } else {
             if(tx.size()!=9)throw std::runtime_error("Pad config packet length differs");

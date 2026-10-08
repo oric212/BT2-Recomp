@@ -38,8 +38,9 @@ private:
         if(next<halflines_)return; // Already at or past this point (a field was delivered first).
         if(counting()) {
             const auto add=next/2-halflines_/2;
-            if(count_+add>0xFFFF)throw std::runtime_error("Timer 1 overflow is not modelled");
-            count_+=static_cast<std::uint32_t>(add);
+            // COUNT is 16 bits and wraps; MODE 3 enables neither the overflow nor the compare
+            // interrupt, so a wrap raises no flag or interrupt.
+            count_=static_cast<std::uint32_t>((count_+add)&0xFFFF);
         }
         halflines_=next;
     }

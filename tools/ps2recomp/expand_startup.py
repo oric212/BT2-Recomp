@@ -4,8 +4,10 @@ Selection, CMake fragment and generated bindings remain under ignored work/.
 This does not implement runtime APIs or permit unmapped/interior targets.
 """
 import argparse
+import collections
 import csv
 import json
+import re
 from pathlib import Path
 from run_pipeline import ROOT, verify_generated
 import overlay_programs
@@ -18,9 +20,16 @@ def render(addresses):
     names = [f'FUN_{address:08X}_0x{address:x}' for address in addresses]
     cmake = 'target_sources(bt2-entry-probe PRIVATE\n' + ''.join(
         f'    "${{BT2_GENERATED_DIR}}/../bt2-runtime/{name}.cpp"\n' for name in names) + ')\n'
-    header = '#pragma once\ninline void registerExtraStartup(PS2Runtime& runtime) {\n' + ''.join(
-        f'    runtime.registerFunction(0x{address:08X}, {name});\n'
-        for address, name in zip(addresses, names)) + '}\n'
+    # Self-contained: declares only the selected functions (no full generated declaration header), so a
+    # new selection recompiles one small binding file.
+    header = '#pragma once\n#include <cstdint>\n' + ''.join(
+        f'void {name}(uint8_t* rdram, R5900Context* ctx, PS2Runtime* runtime);\n' for name in names) + \
+        'inline void registerExtraStartup(PS2Runtime& runtime) {\n' \
+        '    // One table and one call site: registering in order without inlining the call per entry.\n' \
+        '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function;} entries[] = {\n' + ''.join(
+        f'        {{0x{address:08X}, {name}}},\n'
+        for address, name in zip(addresses, names)) + '    };\n' \
+        '    for (const auto& entry : entries) runtime.registerFunction(entry.address, entry.function);\n}\n'
     return cmake, header
 
 
@@ -125,9 +134,35 @@ def select_target(target, rows):
     return target
 
 
+def static_callees(target, rows, selected, limit):
+    """Direct JAL/J targets of `target` and their callees (breadth first, at most `limit`): exact, unique
+    mapped main-ELF entries not yet selected. They are bound before they are reached, so the next run
+    proceeds through them instead of stopping at each one; reached-entry counts are unchanged."""
+    counts = collections.Counter(int(row['Start'], 0) for row in rows) if limit else {}
+    unique = {address for address, count in counts.items() if count == 1}
+    # Entries the entry probe already links and binds itself must not be added twice.
+    bindings = (ROOT / 'runtime/probe/startup_bindings.cpp').read_text(encoding='utf-8')
+    linked = {int(address, 16) for address in re.findall(r'registerFunction\(0x([0-9A-Fa-f]+)', bindings)}
+    found, queue, seen = [], [target], {target}
+    while queue and len(found) < limit:
+        source = ROOT / f'game/generated/bt2/FUN_{queue[0]:08X}_0x{queue[0]:x}.cpp'
+        queue.pop(0)
+        if not source.exists():
+            continue
+        for match in re.finditer(r'\bj(?:al)?\s+func_([0-9A-F]+)\b',source.read_text(encoding='utf-8')):
+            callee = int(match.group(1), 16)
+            if callee in seen or callee not in unique or callee in selected or callee in linked or overlay_programs.program_for(callee):
+                continue
+            seen.add(callee); found.append(callee); queue.append(callee)
+            if len(found) >= limit:
+                break
+    return found
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, default=FOLDER / 'entry-stop.json')
+    parser.add_argument('--callees', type=int, default=0, help='Also bind up to this many static callees of the reached entry.')
     args = parser.parse_args()
     verify_generated()
     addresses = verify_extra()
@@ -137,10 +172,14 @@ def main():
         select_overlay(program, stop['target'])
         return
     with (FOLDER / 'candidates.csv').open(newline='', encoding='utf-8') as stream:
-        target = select_target(stop.get('target'), list(csv.DictReader(stream)))
+        rows = list(csv.DictReader(stream))
+    target = select_target(stop.get('target'), rows)
     if target in addresses:
         raise ValueError('Reached entry was already selected; inspect actual dispatch failure.')
-    addresses.append(target)
+    previous = json.loads((FOLDER / 'extra-startup.json').read_text(encoding='utf-8')) if (FOLDER / 'extra-startup.json').exists() else {}
+    callees = static_callees(target, rows, set(addresses), args.callees)
+    static = [a for a in previous.get('static_callees', []) if a != target] + callees
+    addresses += [target] + callees
     manifest = json.loads((FOLDER / 'generation.manifest.json').read_text(encoding='utf-8'))
     files = {f'FUN_{address:08X}_0x{address:x}.cpp':
              manifest['files'][f'FUN_{address:08X}_0x{address:x}.cpp'] for address in addresses}
@@ -148,10 +187,11 @@ def main():
     (FOLDER / 'extra-startup.cmake').write_text(cmake, encoding='utf-8')
     (FOLDER / 'bt2_extra_startup.h').write_text(header, encoding='utf-8')
     (FOLDER / 'extra-startup.json').write_text(json.dumps({
-        'addresses': addresses, 'files': files, 'map_sha256': manifest['map_sha256'],
-        'limitations': 'Actually reached mapped entries; boundaries remain provisional; no runtime behavior inferred.'
+        'addresses': addresses, 'files': files, 'map_sha256': manifest['map_sha256'], 'static_callees': static,
+        'limitations': 'Actually reached mapped entries plus static_callees (direct calls of reached entries, bound before '
+                       'they are reached); boundaries remain provisional; no runtime behavior inferred.'
     }, indent=2) + '\n', encoding='utf-8')
-    print(f'Selected neutral generated entry FUN_{target:08X}; bindings remain ignored.')
+    print(f'Selected neutral generated entry FUN_{target:08X} and {len(callees)} static callees; bindings remain ignored.')
 
 
 if __name__ == '__main__':

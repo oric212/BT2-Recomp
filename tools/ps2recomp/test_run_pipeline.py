@@ -48,6 +48,16 @@ class GenerationProvenanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_pipeline.verify_generated()
 
+    def test_change_after_cached_verification_rejected(self):
+        # The digest cache must not hide an edit made after a successful (cached) verification,
+        # even one that keeps the file size.
+        run_pipeline.verify_generated()
+        path = self.root / "game/generated/bt2/fixture.cpp"
+        original = path.read_bytes()
+        path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        with self.assertRaises(ValueError):
+            run_pipeline.verify_generated()
+
     def test_stale_extra_source_rejected(self):
         (self.root / "game/generated/bt2/stale.cpp").write_text("stale source")
         with self.assertRaises(ValueError):

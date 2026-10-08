@@ -120,6 +120,9 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"native_iop_access_value\":" << (runtime.native_iop?runtime.native_iop->runtime.access_value:0)
         << ",\"native_iop_access_kind\":\"" << (runtime.native_iop?runtime.native_iop->runtime.access_kind:"") << "\""
         << ",\"spu2_dma_idle_reads\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_dma_idle_reads:0)
+        << ",\"pad_fields\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.field:0)
+        << ",\"pad_script_steps\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.script_steps:0)
+        << ",\"pad_buttons\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.buttons:0xFFFF)
     #endif
         << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
         << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters

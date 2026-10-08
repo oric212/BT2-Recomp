@@ -2,9 +2,12 @@
 import argparse,json,subprocess,os
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+# Default controller input for the measured checkpoint (logical IOP fields): with no memory card the
+# game asks "Continue anyway?" (shown by field 373); select Yes and confirm. Repeatable by construction.
+DEFAULT_PAD_SCRIPT='400:left,408:-,420:cross,428:-'
 INPUTS=('guest-memory.bin','kernel-snapshot.bin','timer3-mode.bin','timer2-mode.bin','intc-mask.bin','timer2-readback.bin','osd-config.bin','osd-readback.bin','dma-status.bin','dma5-control.bin','sif-command.bin','sif-dma.bin','sif-rpc-state.bin','sif-bind.bin','cd-init.bin','scmd-bind.bin','heap-bind.bin','heap-allocation.bin','texture-startup.bin','ee-thread-start.bin','disc-bind.bin','ncmd-bind.bin')
-def command(root,disc):
-    folder=root/'work/bt2-generation';binary=root/'build/probe/Debug/bt2-entry-probe.exe'
+def command(root,disc,config='Debug'):
+    folder=root/'work/bt2-generation';binary=root/'build/probe'/config/'bt2-entry-probe.exe'
     paths=[binary,disc,*[folder/name for name in INPUTS]]
     missing=[str(p) for p in paths if not p.is_file()]
     if missing:raise ValueError('Missing local startup inputs: '+', '.join(missing))
@@ -20,11 +23,12 @@ def summary(report):
             f"boundary selector={report['selector']:#x}, PC={report['pc']:#x}, target={report['target']:#x}.\n"
             "Completion counts are observed invocation returns, not full gameplay correctness or startup completion.")
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--viewer',action='store_true',help='Present each display flip in a window; no frame budget unless --frames is given.');p.add_argument('--frames',type=int,help='Stop after this many display flips (0: no budget).');p.add_argument('--scale',choices=('integer','stretch'),default='integer',help='Viewer scaling.');a=p.parse_args()
-    cmd=command(ROOT,a.disc.resolve());env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--config',choices=('Debug','Release'),default='Debug',help='Probe build configuration; Release runs several times faster for selection loops.');p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--viewer',action='store_true',help='Present each display flip in a window; no frame budget unless --frames is given.');p.add_argument('--frames',type=int,help='Stop after this many display flips (0: no budget).');p.add_argument('--scale',choices=('integer','stretch'),default='integer',help='Viewer scaling.');p.add_argument('--pad-script',default=DEFAULT_PAD_SCRIPT,help='Scripted controller input: FIELD:buttons steps (default: %(default)s; empty for none).');a=p.parse_args()
+    cmd=command(ROOT,a.disc.resolve(),a.config);env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None)
     report=ROOT/'work/bt2-generation'/('sound-worker-stop.json' if a.sound_worker else 'entry-stop.json');cmd[2]=str(report)
     if a.sound_worker:env['BT2_EE_SOUND_DISPATCH_PROBE']='1'
-    env.pop('BT2_VIEWER',None);env.pop('BT2_FRAME_LIMIT',None);env.pop('BT2_VIEWER_SCALE',None)
+    env.pop('BT2_VIEWER',None);env.pop('BT2_FRAME_LIMIT',None);env.pop('BT2_VIEWER_SCALE',None);env.pop('BT2_PAD_SCRIPT',None)
+    if a.pad_script:env['BT2_PAD_SCRIPT']=a.pad_script
     if a.viewer:env['BT2_VIEWER']='1';env['BT2_VIEWER_SCALE']=a.scale
     if a.frames is not None:env['BT2_FRAME_LIMIT']=str(a.frames)
     subprocess.run(cmd,cwd=ROOT,env=env,check=True)

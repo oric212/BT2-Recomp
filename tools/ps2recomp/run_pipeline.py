@@ -5,6 +5,7 @@ Probes execute a real BT2 routine and entry up to a checked unsupported boundary
 
 import argparse
 import hashlib
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -20,6 +21,30 @@ def run(command, log=None, check=True):
         return subprocess.run(command, cwd=ROOT, check=check, stdout=stream, stderr=subprocess.STDOUT)
 
 
+def cached_digests(folder, names, cache_path):
+    """SHA-256 of each named file, re-hashing only files whose size or modification time changed since
+    the cached digest (the same change test incremental builds use). Returns {name: digest}."""
+    try:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    stats = {entry.name: entry.stat() for entry in os.scandir(folder) if entry.name in names}
+    digests, changed = {}, False
+    for name in names:
+        stat = stats.get(name)
+        if stat is None:
+            raise ValueError(f"Generated source missing: {name}")
+        key = [stat.st_size, stat.st_mtime_ns]
+        entry = cache.get(name)
+        if not entry or entry[:2] != key:
+            entry = key + [hashlib.sha256((folder / name).read_bytes()).hexdigest()]
+            cache[name] = entry;changed = True
+        digests[name] = entry[2]
+    if changed:
+        cache_path.write_text(json.dumps(cache), encoding="utf-8")
+    return digests
+
+
 def verify_generated():
     folder = ROOT / "work/bt2-generation"
     manifest = json.loads((folder / "generation.manifest.json").read_text(encoding="utf-8"))
@@ -30,11 +55,14 @@ def verify_generated():
             or manifest["recompiler_sha256"] != hashlib.sha256((ROOT / "build/ps2recomp-tools/ps2xRecomp/Debug/ps2_recomp.exe").read_bytes()).hexdigest()):
         raise ValueError("Generation provenance differs; rerun generation.")
     generated = ROOT / "game/generated/bt2"
-    actual = {path.name for path in generated.iterdir() if path.is_file() and path.suffix in (".cpp", ".h")}
+    actual = {entry.name for entry in os.scandir(generated) if entry.is_file() and Path(entry.name).suffix in (".cpp", ".h")}
     if actual != set(manifest["files"]):
         raise ValueError("Generated source file set changed.")
+    if any(Path(name).name != name for name in manifest["files"]):
+        raise ValueError("Generated source manifest names a path.")
+    digests = cached_digests(generated, list(manifest["files"]), folder / "generated-digests.cache.json")
     for name, expected in manifest["files"].items():
-        if Path(name).name != name or hashlib.sha256((generated / name).read_bytes()).hexdigest() != expected:
+        if digests[name] != expected:
             raise ValueError(f"Generated source changed: {name}")
 
 

@@ -328,7 +328,7 @@ For standalone bundle preparation, `verify_rpc_bind.py` accepts `--call-sema-cap
 
 ### Reached startup expansion and CD-init evidence
 
-`python tools/ps2recomp/expand_startup.py --report work/bt2-generation/entry-stop.json` selects a reached exact map entry, verifies generated provenance and writes ignored `extra-startup.cmake`, `bt2_extra_startup.h` and a hash receipt. Reconfigure/rebuild after selection. It rejects interior, duplicate, kernel or unmapped targets. Runtime behavior still requires evidence.
+`python tools/ps2recomp/expand_startup.py --report work/bt2-generation/entry-stop.json` selects a reached exact map entry, verifies generated provenance and writes ignored `extra-startup.cmake`, `bt2_extra_startup.h` and a hash receipt. Reconfigure/rebuild after selection. It rejects interior, duplicate, kernel or unmapped targets. Runtime behavior still requires evidence. With `--callees N` it also binds up to N static direct callees (`jal`/`j`) of the reached entry, breadth first. These are exact, unique mapped entries that the probe doesn't already bind; they are recorded as `static_callees` in the receipt. Binding before a function is reached has no effect until it is called, and the reached-entry counts still measure only what ran.
 
 The pipeline accepts `--cd-init-capture work/pcsx2-capture/cd-init-after/capture.json` after bind/call-semaphore inputs, and optionally `--cd-semaphores-capture work/pcsx2-capture/cd-semaphores/capture.json`. Capture points of those names are available in capture_ee.py. Validators check request/reply/descriptor effects, instrumentation and matching reference environments. Current full continuation uses three ignored selections (0x00320488, 0x0031F6A8, 0x0032ECB0); omit the semaphore checkpoint to retain the earlier setup boundary. No disc data is supplied by these captures.
 
@@ -723,6 +723,10 @@ The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` st
 **Rendering the frame.** `tools/capture_ee/render_gs_frame.py --native work/bt2-generation/entry-stop.json --output work/frames/frame-latest.png` renders the displayed framebuffer from the probe's owned GS memory dump (`entry-stop.json.gs.bin`: value and known-bit mask per word). It uses the report's DISPFB/DISPLAY registers; pixels the model never wrote show as a magenta checker. The PNG comes from game data, so it stays in ignored `work/`.
 
 **Frame budget.** The entry probe stops after 120 display flips by default, as a checked boundary after a completed flip. `BT2_FRAME_LIMIT=<n>` changes the budget and `0` disables it. Each Timer 1 delay wait is capped separately (100,000 polls) to detect a wait that never ends.
+
+**Faster loops.** `run_startup_probe.py --config Release` runs the optimized probe (build `--config Release`), which is about 7× faster with identical reports. Selection loops should use it; the verification gate uses Debug. `verify_generated` caches per-file digests by size and modification time (`work/bt2-generation/generated-digests.cache.json`), and `prepare_runtime.py` leaves unchanged prepared sources untouched, so incremental builds skip them.
+
+**Scripted input.** `--pad-script` (default: answer the no-memory-card prompt with Yes) presses DualShock 2 buttons at logical IOP fields; see [BUILDING.md](BUILDING.md).
 
 **Viewer mode.** `run_startup_probe.py --viewer [--frames N] [--scale integer|stretch]` presents every flip in a Win32 window (`BT2_VIEWER`, `BT2_VIEWER_SCALE`) and keeps the last frame shown after a stop.
 

@@ -67,12 +67,12 @@
 <circle cx="351" cy="320" r="3.5" fill="#b77912"/>
 <text x="362" y="324" font-size="13" font-weight="600" fill="#1e293b">CRI sound setup</text>
 <text x="347" y="342" font-size="11.5" fill="#64748b">42 calls; AutoDMA half pending</text></g>
-<g><title>Controller and cards: Partial / active. Emulated pad; absent-card checks</title>
+<g><title>Controller and cards: Partial / active. Scripted pad; absent-card checks</title>
 <rect x="334" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="371" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="382" r="3.5" fill="#b77912"/>
 <text x="362" y="386" font-size="13" font-weight="600" fill="#1e293b">Controller and cards</text>
-<text x="347" y="404" font-size="11.5" fill="#64748b">Emulated pad; absent-card checks</text></g>
+<text x="347" y="404" font-size="11.5" fill="#64748b">Scripted pad; absent-card checks</text></g>
 <text x="644" y="100" font-size="15" font-weight="600" fill="#334155">Game</text>
 <g><title>Archive payload loading: Partial / active. AFS table; DBZP.BIN; first asset</title>
 <rect x="644" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -86,12 +86,12 @@
 <circle cx="661" cy="196" r="3.5" fill="#8793a5"/>
 <text x="672" y="200" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
 <text x="657" y="218" font-size="11.5" fill="#64748b">Execution not verified</text></g>
-<g><title>GS rendering: Partial / active. Sprites, triangles; card screen</title>
+<g><title>GS rendering: Partial / active. PSMT4/8 textures; card dialogs</title>
 <rect x="644" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="247" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="661" cy="258" r="3.5" fill="#b77912"/>
 <text x="672" y="262" font-size="13" font-weight="600" fill="#1e293b">GS rendering</text>
-<text x="657" y="280" font-size="11.5" fill="#64748b">Sprites, triangles; card screen</text></g>
+<text x="657" y="280" font-size="11.5" fill="#64748b">PSMT4/8 textures; card dialogs</text></g>
 <g><title>Frame presentation: Partial / active. Live window; ~12 fps Debug</title>
 <rect x="644" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>

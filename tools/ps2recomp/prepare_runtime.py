@@ -12,6 +12,7 @@ from run_pipeline import ROOT, verify_generated
 
 
 def write_prepared(path,text):
+    # Unchanged prepared sources keep their timestamps, so incremental builds skip them.
     if not path.exists() or path.read_text(encoding='utf-8')!=text:
         path.write_text(text,encoding='utf-8')
 
@@ -160,7 +161,7 @@ def main():
     if count != 9 or 'CACHE instruction (ignored)' in text:
         raise ValueError('Unexpected generated data cache instruction shape/count.')
     destination = patched / source.name
-    destination.write_text(text, encoding='utf-8')
+    write_prepared(destination, text)
     prepared_sources.append({'source': source.name,
         'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
         'prepared_sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
@@ -171,7 +172,8 @@ def main():
     data = (ROOT / "rom/SLUS_214.41").read_bytes()
     memory = build_memory(data, inspector.inspect(data))
     image = folder / "guest-memory.bin"
-    image.write_bytes(memory)
+    if not image.exists() or image.read_bytes() != memory:
+        image.write_bytes(memory)
     (folder / "runtime-preparation.json").write_text(json.dumps({
         "prepared_sources": prepared_sources, "memory_size": len(memory),
         "memory_sha256": hashlib.sha256(memory).hexdigest(), "scope": "ELF PT_LOAD image, main RAM only; no BIOS/MMIO/TLB/IOP"}, indent=2) + "\n", encoding="utf-8")

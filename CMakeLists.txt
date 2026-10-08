@@ -141,6 +141,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     # Compile/link entry separately so future blockers do not break the independent host/probe.
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/probe/entry_probe.cpp
         runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
+        runtime/probe/selected_bindings.cpp runtime/probe/overlay_bindings.cpp
         runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"

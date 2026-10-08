@@ -30,10 +30,10 @@ int main(int argc, char** argv) {
         PS2Runtime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
-        // Frame budget: stop after this many display flips (default 120, none in viewer mode;
+        // Frame budget: stop after this many display flips (default 1000, none in viewer mode;
         // BT2_FRAME_LIMIT overrides, 0 disables).
         const bool viewer_mode = std::getenv("BT2_VIEWER") != nullptr;
-        runtime.frame_limit = viewer_mode ? 0 : 120;
+        runtime.frame_limit = viewer_mode ? 0 : 1000;
         if (const char* limit = std::getenv("BT2_FRAME_LIMIT")) runtime.frame_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32
         // Viewer mode: present the displayed framebuffer at each flip; keep the last frame visible after
@@ -107,8 +107,11 @@ int main(int argc, char** argv) {
                     || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1) // VIF1 chain refused at its start.
                     || (stop.address==0x10000800 && context.pc==0x28C798) // Timer 1 delay poll outside the admitted wait.
                     || (stop.address==0x120000E0 && runtime.frame_budget_reached)); // Probe frame budget after a completed flip.
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff || frame_gif_handoff) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            // Frame-phase GS reset (the GS library's CSR reset during the frame loop; next subsystem).
+            const bool frame_gs_reset=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && runtime.display_reset_phase==13
+                && stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44;
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff || frame_gif_handoff || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)

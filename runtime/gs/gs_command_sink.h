@@ -71,6 +71,18 @@ public:
         const std::size_t nibble=std::size_t(column)*128+n;
         return ((std::size_t(bp)+std::size_t(page)*32+block)*64*8+nibble)%(std::size_t(1024)*1024*8);
     }
+    // PSMT8 byte: 128x64 pages, 16x16 blocks (PSMCT32 block order), four 16x4 columns per block
+    // (64 bytes each). Within a column, x's bits 0-3 sit at byte strides 4, 16, 32 and 2; odd rows add
+    // 8, rows 2-3 add 1 and flip the 32 stride, as do odd columns (public GS layout, expressed as bit
+    // placement and checked against the reference layout). Returns word*4+byte.
+    static std::size_t t8Byte(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+        const unsigned page=(y/64)*(bw/2)+x/128;
+        const unsigned bx=(x%128)/16,by=(y%64)/16;
+        const unsigned block=(bx&1)|((by&1)<<1)|((bx&2)<<1)|((by&2)<<2)|((bx&4)<<2);
+        const unsigned cx=x%16,cy=y%16,column=cy/4,row=cy%4;
+        const unsigned b=column*64+4*(cx&1)+16*((cx>>1)&1)+32*(((cx>>2)&1)^(row>>1)^(column&1))+2*((cx>>3)&1)+8*(row&1)+(row>>1);
+        return ((std::size_t(bp)+std::size_t(page)*32+block)*64*4+b)%(std::size_t(1024)*1024*4);
+    }
 private:
     struct Clut {std::array<std::uint32_t,256> color{};std::array<bool,256> known{};};
     Clut clut_;
@@ -82,9 +94,9 @@ private:
     void write(unsigned reg,std::uint64_t value,bool apply);
     struct Rgba;
     static Rgba unpack(std::uint32_t c);
-    std::uint32_t texel(std::uint64_t texture0,int u,int v) const;
-    // Draw state validated once per primitive (shared by sprites and triangles).
     struct Draw;
+    std::uint32_t texel(const Draw& d,int u,int v) const;
+    // Draw state validated once per primitive (shared by sprites and triangles).
     Draw prepare(std::uint64_t prim) const;
     Rgba sample(const Draw& d,int u,int v) const;
     // One pixel: texture function, alpha blend, masked framebuffer write and optional Z write.
@@ -104,4 +116,26 @@ public:
 private:
     bool drawing_reset_=false;
     std::vector<Word> vram_;
+    // Transaction rollback (transferAll): copy-on-write of 512-word VRAM pages. The first write to a
+    // page while logging saves the whole page; a refused group restores the saved pages.
+    static constexpr std::size_t undo_page_words=512;
+    std::vector<std::uint8_t> undo_saved_=std::vector<std::uint8_t>(1024*1024/undo_page_words);
+    std::vector<std::size_t> undo_pages_;std::vector<Word> undo_words_;bool logging_=false;
+    Word& writable(std::size_t index) {
+        if(logging_) {
+            const auto page=index/undo_page_words;
+            if(!undo_saved_[page]) {
+                undo_saved_[page]=1;undo_pages_.push_back(page);
+                undo_words_.insert(undo_words_.end(),vram_.begin()+std::ptrdiff_t(page*undo_page_words),vram_.begin()+std::ptrdiff_t((page+1)*undo_page_words));
+            }
+        }
+        return vram_[index];
+    }
+    void endTransaction(bool rollback) {
+        for(std::size_t k=0;k<undo_pages_.size();++k) {
+            if(rollback)std::copy_n(undo_words_.begin()+std::ptrdiff_t(k*undo_page_words),undo_page_words,vram_.begin()+std::ptrdiff_t(undo_pages_[k]*undo_page_words));
+            undo_saved_[undo_pages_[k]]=0;
+        }
+        undo_pages_.clear();undo_words_.clear();logging_=false;
+    }
 };

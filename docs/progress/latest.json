@@ -3,24 +3,24 @@
   "measured_on": "2026-10-08",
   "scope": "bounded native startup probe with local ISO and prepared inputs",
   "code_state": "bounded startup verified by build/tests and capture comparison",
-  "source_report_sha256": "de2833e550715eec65a527258016c8745123ee0c09e031f048a9dac3e7ed5cc9",
+  "source_report_sha256": "f14c98de6c71caaa001138b4cd10dd2fe963162b1b2f8e52a88686226a92481a",
   "metrics": {
-    "distinct_ee_entered": 772,
-    "distinct_ee_completed": 763,
+    "distinct_ee_entered": 801,
+    "distinct_ee_completed": 791,
     "distinct_kernel_entered": 2,
     "distinct_kernel_completed": 2,
-    "calls": 331851,
-    "returns": 331738,
-    "native_iop_steps": 2002504,
+    "calls": 7657836,
+    "returns": 7657373,
+    "native_iop_steps": 10866546,
     "native_module_loads": 15,
     "ee_thread_count": 6,
     "cri_rpc_calls": 42,
     "heap_calls": 9,
-    "disc_read_calls": 59,
-    "disc_read_callbacks": 59,
+    "disc_read_calls": 186,
+    "disc_read_callbacks": 186,
     "disc_rpc_calls": 6,
     "disc_dma_submissions": 6,
-    "disc_read_dma_submissions": 248,
+    "disc_read_dma_submissions": 760,
     "gs_packets": 5,
     "gs_sprites": 4,
     "gs_pixels": 1146880,
@@ -32,7 +32,7 @@
   },
   "boundary": {
     "selector": "0x0",
-    "pc": "0x26F888",
-    "target": "0x26F888"
+    "pc": "0x30FE44",
+    "target": "0x0"
   }
 }

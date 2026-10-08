@@ -41,6 +41,8 @@ void loadScmdEvidence(PS2Runtime& runtime,char** argv);
 // Generated-code bindings (startup_bindings.cpp).
 void registerStartupFunctions(PS2Runtime& runtime);
 void registerKernelPayloads(PS2Runtime& runtime,const ProbeModes& modes);
+void registerSelectedStartup(PS2Runtime& runtime);  // selected_bindings.cpp
+void registerSelectedOverlays(PS2Runtime& runtime); // overlay_bindings.cpp
 
 // Checkpoint validation (checkpoint_checks.cpp): each throws if the reached state differs.
 void checkCdContinuation(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop);

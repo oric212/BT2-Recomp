@@ -8,6 +8,7 @@ NativeIopService::NativeIopService(unsigned epoch,std::vector<NativeIopModule> d
     if(!epoch_)throw std::runtime_error("Native IOP needs a fresh epoch");
     runtime.spu2_playback.enabled=true;
     if(const char* watch=std::getenv("BT2_IOP_WATCH"))runtime.watch_address=static_cast<std::uint32_t>(std::stoul(watch,nullptr,16));
+    if(const char* script=std::getenv("BT2_PAD_SCRIPT"))runtime.pad.script=PadScript::parse(script); // Repeatable input (pad_script.h).
     runtime.map(0x1FF000,std::vector<std::uint8_t>(0x1000));
     runtime.map(0x1FE000,std::vector<std::uint8_t>(0x1000));
     install_iop_library_provider(runtime);install_iop_kernel_providers(runtime);install_iop_ioman_provider(runtime);
@@ -86,6 +87,7 @@ std::vector<std::uint8_t> NativeIopService::executeRegisteredRpc(std::uint32_t s
 
 void NativeIopService::advanceVblank(unsigned epoch,std::span<std::uint8_t> ee_memory) {
     if(epoch!=epoch_ || failed_)return;
+    runtime.pad.advanceField(); // Scripted input changes at field starts, before the pad threads poll.
     // Threads woken at the VBlank edges send to the EE: DBCMAN the pad state, CRI_ADXI its stream
     // buffers. Owned logical transport (copy at submission), scoped to the edges.
     const bool scoped=!runtime.providers.contains({"sifman",7}) && !runtime.providers.contains({"sifman",8}) && !runtime.providers.contains({"sifman",32}) && ee_memory.size()==32u*1024*1024;

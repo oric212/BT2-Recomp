@@ -33,28 +33,11 @@ During investigation, prefer the fastest narrow validation path first: unit test
 
 Every generated unit includes `ps2_runtime.h` (generated IOP modules include `native_runtime.h`). Keep those headers and `gs_command_sink.h` to declarations, state and small hot helpers. Put implementation in the focused `.cpp` files of their folders (`runtime/ee/ps2_runtime_*.cpp`, `runtime/gs/`, `runtime/iop/core/`), where an edit rebuilds one unit in seconds. MSVC targets compile in parallel (`/MP`), and the entry probe precompiles stable standard headers only. Do not use unity builds, and do not merge generated units.
 
+Run selection loops and other long probe runs with the Release configuration (`run_startup_probe.py --config Release`): its output is identical to Debug and it runs about 7× faster. The pre-commit gate still runs Debug.
+
 ## Build artifacts after a pass
 
-When a pass finishes, leave only two build artifacts:
-- **Host build:** `build/` (`bt2-port`).
-- **Probe build:** `build/probe/`, from the final gate.
-
-Delete everything else the pass produced:
-- trial, A/B and scratch builds, and copied binaries;
-- intermediate directories of removed targets;
-- archived build trees;
-- build, run and test logs (keep each folder's `generation.log`);
-- generator `previous-output-*` backups;
-- stale report sidecars, such as GIF mismatch dumps;
-- temp output.
-
-Keep inputs, not artifacts:
-- the pinned recompiler build `build/ps2recomp-tools/` and dependency checkouts;
-- generated code (`game/generated/`, `work/iop/*_native.*`, the `work/` CMake bindings);
-- captures (`work/pcsx2-capture/`);
-- the evidence files the probe reads, and the reports the verifiers read.
-
-Check that the startup probe's inputs are still present after cleaning.
+Keep only intentional build outputs and explicitly required diagnostic artifacts. Delete temporary/intermediate build residue, stale logs, abandoned builds, old comparison dumps, backups, and other disposable pass-generated files. Never delete source inputs, required probe inputs, reference data, or intentional test/diagnostic artifacts without verifying they are unused.
 
 ## Code organization
 

@@ -105,6 +105,10 @@ int main() {
         LogicalTimer1 u;u.configure(3);u.writeMode(0x83);
         while(!u.crossesField(u.nextLine()))u.lineTo(u.nextLine());
         const auto target=u.nextLine();u.field();u.lineTo(target);require(u.halflines()==target && u.count()==target/2);
+        // COUNT wraps at 16 bits without a flag (MODE 3 enables no overflow interrupt).
+        LogicalTimer1 w;w.configure(3);w.writeMode(0x83);
+        for(unsigned f=0;f<250;++f)w.field();
+        require(w.count()==(250*525/2)%0x10000 && w.mode()==0x83);
     }
     {
         // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.

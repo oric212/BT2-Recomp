@@ -97,6 +97,17 @@ The probe executes generated EE and translated IOP code, performs reads against 
 
 Peak memory is about 23 GB with 20 parallel compilers.
 
+**Optimized probe.** For long runs and selection loops, build and run the Release configuration, which is about 7× faster (16 s instead of 112 s for the current checkpoint). Its report and RAM/GS dumps are identical to Debug:
+
+```powershell
+cmake --build build/probe --config Release --target bt2-entry-probe
+python tools/ps2recomp/run_startup_probe.py --config Release --disc rom/BT2-USA.iso
+```
+
+The verification gate uses Debug.
+
+**Controller input.** Runs press the controller buttons from a deterministic script. By default the script answers the no-memory-card prompt with "Yes" (`--pad-script`, steps `FIELD:buttons` in logical IOP fields; an empty value disables input). Runs stop after 1,000 display flips (`--frames` overrides).
+
 The private report is written to `work/bt2-generation/entry-stop.json`. RAM sidecars and generated outputs also stay ignored. A completed entry means at least one invocation returned normally; it does not establish full function correctness or gameplay. See [current progress](PROG.md) and [the active-pass handoff](progress/ACTIVE_PASS.md) for the last verified checkpoint and pending work.
 ### Diagnostic sound-worker path
 

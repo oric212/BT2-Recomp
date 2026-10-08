@@ -9,6 +9,7 @@ struct GsCommandSink::Draw {
     bool zmsk=false,tme=false,abe=false,tcc=false,linear=false,colclamp=false,pabe_on=false;int fix=0;
     int sx0=0,sy0=0,sx1=0,sy1=0; // Scissor and buffer limits: pixels in [sx0,sx1) x [sy0,sy1).
     std::uint32_t mask=0,zmask=0;
+    unsigned tbp=0,tbw=0,csa=0;bool t8=false; // Texture buffer fields decoded once per primitive.
 };
 
 struct GsCommandSink::Rgba {int r,g,b,a;};
@@ -78,11 +79,14 @@ void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
 
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
     for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
-    const auto saved_state=state;const auto saved_clut=clut_;const auto saved_vram=vram_;
+    // Rollback: register state and CLUT are copied; VRAM pages are saved on first write (writable).
+    const auto saved_state=state;const auto saved_clut=clut_;
+    logging_=true;
     const std::array<std::uint64_t,7> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads,frame_triangles};
-    try {for(const auto& data:group){run(data,true);++transfers;}}
+    try {for(const auto& data:group){run(data,true);++transfers;}endTransaction(false);}
     catch(...) {
-        state=saved_state;clut_=saved_clut;vram_=saved_vram;
+        endTransaction(true);
+        state=saved_state;clut_=saved_clut;
         transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
         frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);frame_triangles=unsigned(saved_counts[6]);throw;
     }
@@ -123,7 +127,7 @@ void GsCommandSink::image(std::span<const std::uint8_t> data) {
     for(std::size_t i=0;i<data.size();i+=4) {
         if(t.trx_y>=t.trx_h)throw std::runtime_error("GIF IMAGE data exceeds the transfer region");
         std::uint32_t v;std::memcpy(&v,data.data()+i,4);
-        vram_[ct32Word(t.trx_bp,t.trx_bw,t.trx_x0+t.trx_x,t.trx_y0+t.trx_y)]={v,UINT32_MAX};++image_pixels;
+        writable(ct32Word(t.trx_bp,t.trx_bw,t.trx_x0+t.trx_x,t.trx_y0+t.trx_y))={v,UINT32_MAX};++image_pixels;
         if(++t.trx_x==t.trx_w) {t.trx_x=0;++t.trx_y;}
     }
     if(t.trx_y==t.trx_h)t.trx=false;
@@ -144,13 +148,25 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
 }
 
 void GsCommandSink::loadClut(std::uint64_t texture0) {
-    // CLD 1: load at this TEX0 write. CSM1, CT32 entries, 4-bit indices (16 entries at CSA*16).
+    // CLD 1: load at this TEX0 write. CSM1 with CT32 entries, from a 64-pixel-wide buffer at CBP:
+    // PSMT4 loads 16 entries (8x2) at CSA*16; PSMT8 loads 256 entries (16x16, index bits 3 and 4
+    // swapped in the layout).
     const unsigned psm=unsigned((texture0>>20)&63),cbp=unsigned((texture0>>37)&0x3FFF),cpsm=unsigned((texture0>>51)&15);
     const unsigned csm=unsigned((texture0>>55)&1),csa=unsigned((texture0>>56)&31);
-    if(psm!=0x14 || cpsm!=0 || csm || csa>15)throw std::runtime_error("Unsupported GS CLUT load");
-    for(unsigned i=0;i<16;++i) {
-        const auto& w=vram_[ct32Word(cbp,1,i%8,i/8)];
-        clut_.color[csa*16+i]=w.value;clut_.known[csa*16+i]=w.known==UINT32_MAX;
+    if((psm!=0x14 && psm!=0x13) || cpsm!=0 || csm || csa>15 || (psm==0x13 && csa))
+        throw std::runtime_error("Unsupported GS CLUT load: psm "+std::to_string(psm)+" cpsm "+std::to_string(cpsm)+" csm "+std::to_string(csm)+" csa "+std::to_string(csa)+" cbp "+std::to_string(cbp));
+    if(psm==0x14) {
+        for(unsigned i=0;i<16;++i) {
+            const auto& w=vram_[ct32Word(cbp,1,i%8,i/8)];
+            clut_.color[csa*16+i]=w.value;clut_.known[csa*16+i]=w.known==UINT32_MAX;
+        }
+    } else {
+        // Entry offsets of the 16x16 CT32 layout relative to CBP, computed once.
+        static const auto offsets=[]{std::array<std::size_t,256> o{};for(unsigned i=0;i<256;++i){const unsigned s=(i&~0x18u)|((i&0x08u)<<1)|((i&0x10u)>>1);o[i]=ct32Word(0,1,s%16,s/16);}return o;}();
+        for(unsigned i=0;i<256;++i) {
+            const auto& w=vram_[(std::size_t(cbp)*64+offsets[i])%(1024*1024)];
+            clut_.color[i]=w.value;clut_.known[i]=w.known==UINT32_MAX;
+        }
     }
     ++clut_loads;
 }
@@ -198,16 +214,16 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     else triangle(prim,apply);
 }
 
-GsCommandSink::Rgba GsCommandSink::unpack(std::uint32_t c) {
+inline GsCommandSink::Rgba GsCommandSink::unpack(std::uint32_t c) {
     return {int(c&255),int((c>>8)&255),int((c>>16)&255),int(c>>24)};
 }
 
-std::uint32_t GsCommandSink::texel(std::uint64_t texture0,int u,int v) const {
-    const unsigned tbp=unsigned(texture0&0x3FFF),tbw=unsigned((texture0>>14)&63),csa=unsigned((texture0>>56)&31);
-    const auto n=t4Nibble(tbp,tbw,unsigned(u),unsigned(v));
-    const auto& w=vram_[n/8];const unsigned shift=unsigned(n%8)*4;
-    if(((w.known>>shift)&15)!=15)throw std::runtime_error("GS texture reads unwritten VRAM at texel "+std::to_string(u)+","+std::to_string(v)+" (TBP "+std::to_string(tbp)+", TBW "+std::to_string(tbw)+", word "+std::to_string(n/8)+")");
-    const unsigned index=csa*16+((w.value>>shift)&15);
+inline std::uint32_t GsCommandSink::texel(const Draw& d,int u,int v) const {
+    const unsigned tbp=d.tbp,tbw=d.tbw,csa=d.csa;const bool t8=d.t8;
+    const auto n=t8?t8Byte(tbp,tbw,unsigned(u),unsigned(v)):t4Nibble(tbp,tbw,unsigned(u),unsigned(v));
+    const auto& w=vram_[t8?n/4:n/8];const unsigned shift=t8?unsigned(n%4)*8:unsigned(n%8)*4,mask=t8?255u:15u;
+    if(((w.known>>shift)&mask)!=mask)throw std::runtime_error("GS texture reads unwritten VRAM at texel "+std::to_string(u)+","+std::to_string(v)+" (TBP "+std::to_string(tbp)+", TBW "+std::to_string(tbw)+", word "+std::to_string(t8?n/4:n/8)+")");
+    const unsigned index=t8?((w.value>>shift)&255):csa*16+((w.value>>shift)&15);
     if(!clut_.known[index])throw std::runtime_error("GS texture reads an unloaded CLUT entry");
     return clut_.color[index];
 }
@@ -227,12 +243,13 @@ GsCommandSink::Draw GsCommandSink::prepare(std::uint64_t prim) const {
     d.ox=unsigned(offset&0xFFFF);d.oy=unsigned((offset>>32)&0xFFFF);
     d.sx0=int(scissor&2047);d.sy0=int((scissor>>32)&2047);
     d.sx1=std::min(int((scissor>>16)&2047)+1,int(d.width*64));d.sy1=std::min(int((scissor>>48)&2047)+1,2048);
-    // Texture state: PSMT4 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
+    // Texture state: PSMT4 or PSMT8 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
     // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
     d.texture0=state.regs[0x06+c];const auto tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
     d.tw=unsigned((d.texture0>>26)&15);d.th=unsigned((d.texture0>>30)&15);d.tfx=unsigned((d.texture0>>35)&3);
+    d.tbp=unsigned(d.texture0&0x3FFF);d.tbw=unsigned((d.texture0>>14)&63);d.csa=unsigned((d.texture0>>56)&31);d.t8=((d.texture0>>20)&63)==0x13;
     d.tcc=(d.texture0>>34)&1;d.linear=(tex1>>5)&1;d.wms=unsigned(clamp&3);d.wmt=unsigned((clamp>>2)&3);
-    if(d.tme && (((d.texture0>>20)&63)!=0x14 || d.tw>10 || d.th>10 || d.tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u) || d.wms>1 || d.wmt>1))reject();
+    if(d.tme && ((((d.texture0>>20)&63)!=0x14 && ((d.texture0>>20)&63)!=0x13) || d.tw>10 || d.th>10 || d.tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u) || d.wms>1 || d.wmt>1))reject();
     // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
     const auto alpha=state.regs[0x42+c];
     d.sa=unsigned(alpha&3);d.sb=unsigned((alpha>>2)&3);d.sc=unsigned((alpha>>4)&3);d.sd=unsigned((alpha>>6)&3);
@@ -242,13 +259,13 @@ GsCommandSink::Draw GsCommandSink::prepare(std::uint64_t prim) const {
     return d;
 }
 
-GsCommandSink::Rgba GsCommandSink::sample(const Draw& d,int u,int v) const {
+inline GsCommandSink::Rgba GsCommandSink::sample(const Draw& d,int u,int v) const {
     // u,v in 1/16 texels at the pixel.
     auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
-    if(!d.linear)return unpack(texel(d.texture0,wrap(u>>4,d.tw,d.wms),wrap(v>>4,d.th,d.wmt)));
+    if(!d.linear)return unpack(texel(d,wrap(u>>4,d.tw,d.wms),wrap(v>>4,d.th,d.wmt)));
     const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
-    const auto c00=unpack(texel(d.texture0,wrap(iu,d.tw,d.wms),wrap(iv,d.th,d.wmt))),c10=unpack(texel(d.texture0,wrap(iu+1,d.tw,d.wms),wrap(iv,d.th,d.wmt)));
-    const auto c01=unpack(texel(d.texture0,wrap(iu,d.tw,d.wms),wrap(iv+1,d.th,d.wmt))),c11=unpack(texel(d.texture0,wrap(iu+1,d.tw,d.wms),wrap(iv+1,d.th,d.wmt)));
+    const auto c00=unpack(texel(d,wrap(iu,d.tw,d.wms),wrap(iv,d.th,d.wmt))),c10=unpack(texel(d,wrap(iu+1,d.tw,d.wms),wrap(iv,d.th,d.wmt)));
+    const auto c01=unpack(texel(d,wrap(iu,d.tw,d.wms),wrap(iv+1,d.th,d.wmt))),c11=unpack(texel(d,wrap(iu+1,d.tw,d.wms),wrap(iv+1,d.th,d.wmt)));
     auto mix=[&](int a,int b,int c2,int e){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+e*fu*fv)>>8;};
     return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
 }
@@ -260,19 +277,23 @@ void GsCommandSink::plot(const Draw& d,int px,int py,Rgba vertex,int u,int v,std
         if(d.tfx==0)s={std::min(255,(t.r*vertex.r)>>7),std::min(255,(t.g*vertex.g)>>7),std::min(255,(t.b*vertex.b)>>7),d.tcc?std::min(255,(t.a*vertex.a)>>7):vertex.a};
         else s={t.r,t.g,t.b,d.tcc?t.a:vertex.a};
     }
-    auto& w=vram_[ct32Word(d.fbp*32,d.width,unsigned(px),unsigned(py))];
+    auto& w=writable(ct32Word(d.fbp*32,d.width,unsigned(px),unsigned(py)));
     if(d.abe && !(d.pabe_on && s.a<0x80)) {
         const std::uint32_t needed=((d.sa==1 || d.sb==1 || d.sd==1)?0xFFFFFFu:0u)|(d.sc==1?0xFF000000u:0u);
         if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
         const auto dst=unpack(w.value);
-        auto pick=[](unsigned sel,int cs,int cd){return sel==0?cs:sel==1?cd:0;};
+        // ((A-B)*C>>7)+D per channel; A, B and D select Cs (0), Cd (1) or 0 (2).
         const int ca=d.sc==0?s.a:d.sc==1?dst.a:d.fix;
-        auto blend=[&](int cs,int cd){const int r=((pick(d.sa,cs,cd)-pick(d.sb,cs,cd))*ca>>7)+pick(d.sd,cs,cd);return d.colclamp?std::clamp(r,0,255):(r&255);};
-        s={blend(s.r,dst.r),blend(s.g,dst.g),blend(s.b,dst.b),s.a};
+        const int cs[3]={s.r,s.g,s.b},cd[3]={dst.r,dst.g,dst.b};int out[3];
+        for(unsigned k=0;k<3;++k) {
+            const int a=d.sa==0?cs[k]:d.sa==1?cd[k]:0,b=d.sb==0?cs[k]:d.sb==1?cd[k]:0,e=d.sd==0?cs[k]:d.sd==1?cd[k]:0;
+            const int r=((a-b)*ca>>7)+e;out[k]=d.colclamp?std::clamp(r,0,255):(r&255);
+        }
+        s={out[0],out[1],out[2],s.a};
     }
     const std::uint32_t color=std::uint32_t(s.r)|(std::uint32_t(s.g)<<8)|(std::uint32_t(s.b)<<16)|(std::uint32_t(s.a&255)<<24);
     w.value=(w.value&d.mask)|(color&~d.mask);w.known|=~d.mask;
-    if(!d.zmsk) {auto& zw=vram_[address(d.zbp,d.width,unsigned(px),unsigned(py),true)];zw.value=(zw.value&~d.zmask)|(z&d.zmask);zw.known|=d.zmask;}
+    if(!d.zmsk) {auto& zw=writable(address(d.zbp,d.width,unsigned(px),unsigned(py),true));zw.value=(zw.value&~d.zmask)|(z&d.zmask);zw.known|=d.zmask;}
     ++frame_pixels;
 }
 
@@ -293,10 +314,12 @@ void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
     if(!apply)return;
     const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
     const std::uint32_t z=std::uint32_t(v1>>32);
-    for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
-        const int u=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
+    // U depends only on the column and V only on the row: each is computed once.
+    std::vector<int> us(std::size_t(std::max(0,x1-x0)));
+    for(int px=x0;px<x1;++px)us[std::size_t(px-x0)]=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
+    for(int py=y0;py<y1;++py) {
         const int v=Y1==Y0?V0:V0+int((std::int64_t(V1-V0)*(py*16-Y0))/(Y1-Y0));
-        plot(d,px,py,vertex,u,v,z);
+        for(int px=x0;px<x1;++px)plot(d,px,py,vertex,us[std::size_t(px-x0)],v,z);
     }
     ++frame_sprites;
 }
@@ -328,6 +351,44 @@ void GsCommandSink::triangle(std::uint64_t prim,bool apply) {
         V[k]=std::int64_t((state.vertex_uv[order[k]]>>16)&0x3FFF);Z[k]=std::int64_t(state.vertex_xyz[order[k]]>>32);
     }
     const auto flat=unpack(std::uint32_t(state.vertex_rgbaq[2]));
+    // Fast path: the edge functions and attribute numerators are linear in px, so each row starts from
+    // the direct formula and steps by constants. Attributes keep exact floor quotient/remainder pairs,
+    // equal to the truncating division below wherever a pixel is inside (numerators are then >= 0).
+    // Used only when no numerator can exceed 2^62; otherwise the direct per-pixel formula runs.
+    std::int64_t max_attribute=0,max_weight=0;
+    for(unsigned k=0;k<3;++k) {
+        max_attribute=std::max({max_attribute,Z[k],U[k],V[k],std::int64_t(255)});
+        for(const int cx:{x0,x1-1})for(const int cy:{y0,y1-1})
+            max_weight=std::max(max_weight,std::abs(edges[k].a*cx*16+edges[k].b*cy*16+edges[k].c));
+        max_weight=std::max(max_weight,std::abs(edges[k].a*16));
+    }
+    if(x0<x1 && y0<y1 && max_weight<=(std::int64_t(1)<<60)/max_attribute) {
+        auto floor_div=[&](std::int64_t n){std::int64_t q=n/area;if(n%area<0)--q;return q;};
+        struct Lerp {std::int64_t q=0,r=0,dq=0,dr=0;};
+        auto start=[&](std::int64_t n,std::int64_t dn){Lerp l;l.q=floor_div(n);l.r=n-l.q*area;l.dq=floor_div(dn);l.dr=dn-l.dq*area;return l;};
+        auto step=[&](Lerp& l){l.q+=l.dq;l.r+=l.dr;if(l.r>=area){l.r-=area;++l.q;}};
+        const unsigned attributes=gouraud?7u:3u; // Z, U, V, then R, G, B, A when Gouraud.
+        std::array<std::array<std::int64_t,3>,7> value{};value[0]=Z;value[1]=U;value[2]=V;
+        for(unsigned k=0;k<3;++k){value[3][k]=col[k].r;value[4][k]=col[k].g;value[5][k]=col[k].b;value[6][k]=col[k].a;}
+        for(int py=y0;py<y1;++py) {
+            std::array<std::int64_t,3> w{},dw{};
+            for(unsigned k=0;k<3;++k){w[k]=edges[k].a*x0*16+edges[k].b*py*16+edges[k].c;dw[k]=edges[k].a*16;}
+            std::array<Lerp,7> l{};
+            for(unsigned n=0;n<attributes;++n)
+                l[n]=start(value[n][0]*w[0]+value[n][1]*w[1]+value[n][2]*w[2],value[n][0]*dw[0]+value[n][1]*dw[1]+value[n][2]*dw[2]);
+            for(int px=x0;px<x1;++px) {
+                bool inside=true;
+                for(unsigned k=0;k<3;++k)if(w[k]<0 || (w[k]==0 && !edges[k].inclusive)){inside=false;break;}
+                if(inside) {
+                    const Rgba vertex=gouraud?Rgba{int(l[3].q),int(l[4].q),int(l[5].q),int(l[6].q)}:flat;
+                    plot(d,px,py,vertex,int(l[1].q),int(l[2].q),std::uint32_t(std::clamp<std::int64_t>(l[0].q,0,0xFFFFFFFFll)));
+                }
+                for(unsigned k=0;k<3;++k)w[k]+=dw[k];
+                for(unsigned n=0;n<attributes;++n)step(l[n]);
+            }
+        }
+        ++frame_triangles;return;
+    }
     for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
         std::array<std::int64_t,3> w{};bool inside=true;
         for(unsigned k=0;k<3;++k) {

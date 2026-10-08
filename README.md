@@ -29,13 +29,13 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — first screens rendered and shown in a live window; an emulated DualShock 2 takes the game past the controller check; the memory card check runs through the original modules (106 frames) |
+| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt (649 frames) |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Verified blocker (commit `6adf795`, verified 2026-10-08):** the frame-phase memory card query runs through the original IOP modules with absent cards, matching an original capture. The game shows its memory card check screen and draws textured triangle strips, then stops at the next unselected function (`FUN_0026F888`).
+**Verified blocker (2026-10-08):** with no memory card, the game asks "Continue anyway?". Scripted controller input answers Yes, and the game continues through its next scene setup. It then resets the GS in the frame phase (`0x30FE44`), a new subsystem kept as a checked boundary.
 
-**Last measured, 2026-10-08:** **772 EE entries entered / 763 completed**, **106 rendered frames**, **42 CRI calls**, **59 original IOP disc reads**, **229 logical VBlanks**, **2 memory card queries**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **801 EE entries entered / 791 completed**, **649 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
@@ -57,38 +57,31 @@ The foundation host prints its startup message. Before recompiling or testing BT
 
 ## Architecture
 
-BT2 Recomp translates the game's original code to C++ ahead of time and runs it natively on Windows. It does not interpret or emulate PS2 code at run time. What it adds is a small handwritten compatibility runtime.
+The game's code is recompiled ahead of time into native C++. A small handwritten runtime stands in for the PS2 hardware.
 
-```text
- your disc image ──► tools/ (validate, analyse, map functions)
-                         │
-                         ▼
-             PS2Recomp + local IOP translator ──► generated C++ (ignored, never committed)
-                         │
-                         ▼
-native executable (MSVC, x64)
-  ├─ generated EE game code ──► EE runtime ............ runtime/ee
-  │                              ├─ GS / GIF / VIF1 ... runtime/gs
-  │                              └─ SIF RPC bridge .... runtime/iop/ee_bridge
-  │                                       │
-  ├─ generated original IOP modules ◄── IOP runtime ... runtime/iop
-  │   (SIO2MAN, MCMAN, LIBSD, CDVD, CRI, ...)   kernel providers, devices, services
-  └─ host presentation (window, framebuffer) ......... runtime/host
+```mermaid
+flowchart LR
+    disc[("Your disc image")] --> tools["tools/<br/>validate · map · generate"]
+    tools --> ee["Generated EE code"]
+    tools --> iop["Generated IOP modules"]
+    subgraph runtime["Native runtime · runtime/"]
+        eert["EE runtime<br/>ee/"] --- gs["GS · GIF · VIF1<br/>gs/"]
+        eert --- bridge["SIF RPC bridge<br/>iop/ee_bridge/"]
+        bridge --- ioprt["IOP runtime<br/>iop/"]
+    end
+    ee --> eert
+    iop --> ioprt
+    gs --> host["Window<br/>host/"]
 ```
 
-- **EE (main CPU):** each recompiled game function calls into `PS2Runtime`, which provides guest memory, syscalls, the kernel, threads, timers, DMA and memory-mapped I/O. Code from overlays loaded at run time is generated separately. It runs only while RAM holds the exact bytes it was generated from.
-- **IOP (I/O processor):** the game's own IOP modules are translated and run, not replaced. They cover controllers, memory cards, sound, disc and CRI streaming. `IopRuntime` supplies:
-  - the IOP kernel and library services they import;
-  - device models: SPU2, SIO2 with an emulated DualShock 2, and the CDVD drive reading your local ISO.
+| Part | Role |
+| --- | --- |
+| **EE runtime** | Memory, kernel, threads, timers, DMA |
+| **IOP runtime** | Runs the game's own IOP modules: SPU2, pad, memory card, disc |
+| **GS** | Software rasterizer for the game's draw packets |
+| **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
 
-  EE requests reach these modules over a SIF RPC bridge.
-- **Graphics:** GIF and VIF1 transfers feed a GS model that keeps GS memory and draws sprites and triangles. The displayed framebuffer is decoded and presented in a window.
-- **Time and checking:**
-  - **Logical time:** time is logical, one NTSC field per VBlank, so runs are deterministic.
-  - **Unknown hardware access:** hardware use that is not yet supported stops the run at a checked boundary instead of guessing.
-  - **Verification:** behavior is verified against captures from the original game running in an emulator.
-
-Source layout and conventions: [runtime layout](docs/RUNTIME_LAYOUT.md). Design references: [reference architecture](docs/REFERENCE_ARCHITECTURE.md) and [implementation plan](docs/IMPLEMENTATION_PLAN.md).
+Details: [runtime layout](docs/RUNTIME_LAYOUT.md) · [reference architecture](docs/REFERENCE_ARCHITECTURE.md)
 
 ## Repository layout
 

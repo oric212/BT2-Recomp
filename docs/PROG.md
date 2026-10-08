@@ -14,13 +14,13 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-08
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — first screens rendered and shown in a live window; an emulated DualShock 2 takes the game past the controller check; the memory card check runs through the original modules (106 frames) |
+| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt (649 frames) |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Verified blocker (commit `6adf795`, verified 2026-10-08):** the frame-phase memory card query runs through the original IOP modules with absent cards, matching an original capture. The game shows its memory card check screen and draws textured triangle strips, then stops at the next unselected function (`FUN_0026F888`).
+**Verified blocker (2026-10-08):** with no memory card, the game asks "Continue anyway?". Scripted controller input answers Yes, and the game continues through its next scene setup. It then resets the GS in the frame phase (`0x30FE44`), a new subsystem kept as a checked boundary.
 
-**Last measured, 2026-10-08:** **772 EE entries entered / 763 completed**, **106 rendered frames**, **42 CRI calls**, **59 original IOP disc reads**, **229 logical VBlanks**, **2 memory card queries**. Complete startup is not yet verified.
+**Last measured, 2026-10-08:** **801 EE entries entered / 791 completed**, **649 rendered frames**, **42 CRI calls**, **186 original IOP disc reads**, **1,033 logical VBlanks**, **77 memory card queries**. Complete startup is not yet verified.
 
 Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
 
@@ -30,26 +30,26 @@ Helper 5/6 execution is now part of normal startup; the former separate helper d
 
 | Area | Last verified measurement / scope |
 | --- | --- |
-| EE | 772 distinct entered / 763 completed; kernel 2 / 2; 331,851 call events / 331,738 returns over 106 frames |
+| EE | 801 distinct entered / 791 completed; kernel 2 / 2; 7,657,836 call events / 7,657,373 returns over 649 frames |
 | Mapping | 9,446 provisional EE entries; 608 extra entries selected; overlay map 456 entries, 8 selected |
-| IOP | 2,002,504 instructions; IOP VBlank start/end every field (pad, SIO2D and CRI threads run); emulated DualShock 2 on port 1 (configured into pressure mode, polled each field); 5 DBCMAN and 50 controller-port requests through the original handlers; CRI stream buffers returned to the EE; SPU2 voice positions/ENDX (no samples/ADSR); 132 logical SOUNDS timer ticks; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
+| IOP | 10,866,546 instructions; scripted DualShock 2 input (`--pad-script`); IOP VBlank start/end every field (pad, SIO2D and CRI threads run); emulated DualShock 2 on port 1 (configured into pressure mode, polled each field); 5 DBCMAN and 50 controller-port requests through the original handlers; CRI stream buffers returned to the EE; SPU2 voice positions/ENDX (no samples/ADSR); 132 logical SOUNDS timer ticks; 284 physical entry targets; 15 load paths (embedded module reloaded) / 13 resident modules |
 | Memory / threads | Nine IOP heap allocations / two frees (two sound-bank blocks at captured placements); four EE startup pools; main priority 2 → 24 admitted; 117 logical VBLANK_START deliveries (+2 polled); 234 owned helper wakes/resumes; logical Timer 2 with 16 overflow interrupts |
 | Disc | Directory read plus 56 archive reads (57 total) through original CDVDFSV handlers, including main's first synchronous file load and a 52-sector streamed read (4 ring chunks, bytes equal the ISO); first AFS table (0x6880 bytes) byte-identical to original |
 | Sound | 42 CRI calls (all five second-channel pairs); three EE→IOP sound uploads; two sound-driver commands through the original handlers with owned SPU2 voice transfers (DMA7 + IRQ 40); IOP sound block and bank blocks match the original; SOUNDS worker started with its IOP hardware timer; first 2,048-byte AutoDMA half programmed; two EE→IOP CRI stream-buffer copies; no consumption / completion IRQ / native playback verified |
-| Cards | Two queries (startup and frame phase), each six DMA pairs / five timed FIFO probes; absent cards only; frame-phase reply matches the original |
-| GS | Startup: five packets / four clear draws; frames: 106 flips, 1,195 VIF1 DIRECT transfers, 2,800,880 image pixels uploaded, 67,247 sprites and 158 triangles (86,240,084 pixels); memory card screen rendered; no VU execution |
+| Cards | 77 queries (startup plus one per frame while the card screens run), each six DMA pairs / five timed FIFO probes; absent cards only; frame-phase reply matches the original |
+| GS | Startup: five packets / four clear draws; frames: 649 flips, 23,854 VIF1 DIRECT transfers, PSMT4 and PSMT8 textures with 16- and 256-entry CLUTs, 330,666 sprites and 2,618 triangles (530,581,870 pixels); memory card dialogs rendered; no VU execution |
 
-Previous normal checkpoint → current: distinct EE **682 / 672 → 772 / 763**. The memory card check completes with absent cards and the game runs 106 frames, drawing its card check screen. Counts measure observed execution, not restored gameplay functions or overall completion.
+Previous normal checkpoint → current: distinct EE **772 / 763 → 801 / 791**. The no-card prompt renders (PSMT8 textures), Timer 1 wraps past long frames, and scripted input answers the prompt, so the game runs 649 frames to its next scene setup. Counts measure observed execution, not restored gameplay functions or overall completion.
 
 The numeric snapshot is in [latest.json](progress/latest.json); authored component scopes are in [components.json](progress/components.json). Both retain the last measured checkpoint while pending work remains unverified.
 ## Verification
 
-Verified 2026-10-08, after the runtime reorganization:
-- **Build and unit tests:** serialized MSVC entry/ALL builds and **17/17 CTests**.
-- **Python suites:** **179 capture**, **67 recompilation**, **13 IOP** and 3 Ghidra tests.
-- **Comparisons:** **26 normal-startup comparisons**, including `verify_mc_frame_query` and the per-query `verify_mc_sio2_flow`, and all eight phase-matched comparisons (`BT2_PHASE_STOP`).
-- **Diagnostics:** the sound-worker diagnostic is unchanged at 302/295; the rendered frame was inspected visually.
-- **No behavior change:** the reorganization's probe output is byte-identical to the previous build on the normal and sound-worker paths.
+Verified 2026-10-08:
+- **Build and unit tests:** serialized MSVC entry/ALL builds and **17/17 CTests**, with new PSMT8 layout/CLUT, Timer 1 wrap and pad-script tests.
+- **Python suites:** **179 capture**, **68 recompilation**, **13 IOP** and 3 Ghidra tests.
+- **Comparisons:** **27 normal-startup comparisons** and all eight phase-matched comparisons (`BT2_PHASE_STOP`). The remaining failures are the known phase-scoped and argument cases.
+- **Diagnostics:** the sound-worker diagnostic is unchanged at 302/295; rendered frames were inspected visually.
+- **No behavior change from the performance work:** the GS rasterizer optimizations and the Release build produce reports and RAM/GS dumps byte-identical to Debug and to the previous code.
 
 Proprietary inputs, generated output and rendered frames remain ignored.
 
@@ -62,7 +62,7 @@ All five late CRI `0x408` pairs complete through the original IOP handler; their
 - **Path sync and render kick:** the GS library's path sync sees idle paths, and the game's render kick sends an empty VIF1 chain.
 - **Display setup:** the game's own display writes configure both read circuits.
 
-The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. From the second frame on, each render kick sends VIF1 DIRECT GS work: a PSMT4 texture and CLUT upload and a textured sprite ([GS texture plan](GS_TEXTURE_PLAN.md)). Without a controller, the rendered framebuffer shows the game's "No DUALSHOCK®2 analog controller connected" message; frames can be watched live (`run_startup_probe.py --viewer`, [live window plan](LIVE_WINDOW_PLAN.md)). The native IOP now receives VBlank start/end every field, so the original pad, SIO2 and CRI threads run. An emulated DualShock 2 answers the pad protocol on port 1 ([controller plan](CONTROLLER_PLAN.md)). With it connected, the game leaves that screen and runs its memory card check through the original MCSERV/MCMAN/SIO2MAN modules with absent cards; the next boundary is the unselected function `FUN_0026F888`. The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
+The frame's Timer 1 wait then crosses field boundaries: the IOP SOUNDS timer ticks in logical time, and its worker reads SPU2 ENDX from an owned voice position model ([SPU2 voice plan](SPU2_VOICE_PLAN.md)). The frame's one-shot VSync flag is published as in the original. The overlay then loads its first indexed asset through CRI's file layer: each status poll is a logical idle point, and the read completes through the original disc handlers. Two frame-phase controller-port requests run through the original DBC handlers. From the second frame on, each render kick sends VIF1 DIRECT GS work: a PSMT4 texture and CLUT upload and a textured sprite ([GS texture plan](GS_TEXTURE_PLAN.md)). Without a controller, the rendered framebuffer shows the game's "No DUALSHOCK®2 analog controller connected" message; frames can be watched live (`run_startup_probe.py --viewer`, [live window plan](LIVE_WINDOW_PLAN.md)). The native IOP now receives VBlank start/end every field, so the original pad, SIO2 and CRI threads run. An emulated DualShock 2 answers the pad protocol on port 1 ([controller plan](CONTROLLER_PLAN.md)). With it connected, the game leaves that screen and runs its memory card check through the original MCSERV/MCMAN/SIO2MAN modules with absent cards. Its "Continue anyway?" prompt is answered by scripted input, and the next boundary is a frame-phase GS reset (separate subsystem). The IOP stream consumer acknowledgement is still unmodelled. See the [resume handoff](progress/ACTIVE_PASS.md).
 
 Remaining: IOP stream consumption, sound command processing, general timers, mounted cards, archive decompression/use, audio and presentation. Complete startup and a presented game frame remain unverified.
 
