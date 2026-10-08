@@ -33,3 +33,9 @@ So far SPU2 registers have been answered only as retained parameters, or as one 
 ## Implemented scope for the current pass
 
 The authored position model admits the reached muted startup voices. Their pitch/SSA are captured at KON; active pitch changes and manual loop-address writes remain unsupported by the MMIO adapter. The clock begins at the admitted SOUNDS timer intervals. Initialization-to-timer playback phase, decoder lookahead and exact ENDX sample timing are not compared. Logical sample-clock residue is carried between intervals and fields; each timer handler sees advancement to its own compare boundary. KOFF records release and keeps positions advancing because no ADSR release duration is owned.
+
+## Progress (2026-10-08, unverified)
+
+- **Envelope:** ADSR is modelled per output sample from the public ADSR1/ADSR2 layout (PCSX2's rate-counter scheme as the reference). ENVX reads return the level, a finished envelope stops the voice, and an ADPCM end without repeat zeroes it.
+- **Live registers:** pitch, ADSR and LSA writes apply to a playing voice. An LSA written after key-on overrides block loop-start flags until the next key-on, as in PCSX2. Volumes and routing masks are retained, since mixing is not modelled.
+- **Not claimed:** decoded samples, mixing and VOLX.

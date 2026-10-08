@@ -13,6 +13,15 @@ class CaptureTests(unittest.TestCase):
         early=4+(w[3]&0xFFFF)
         self.assertEqual(w[early:],(0x3C1F0032,0x37FFF1A0,0x08000000|(0x338268>>2),0))
 
+    def test_frame_card_callback_observer_skips_startup_query(self):
+        blob=texture_stub('rpc-mc-frame-callback');w=struct.unpack('<'+str(len(blob)//4)+'I',blob)
+        self.assertEqual(w[:2],(0x3C18003A,0x8F19700C)) # Type-output flag of the GetInfo input.
+        self.assertEqual(w[3]>>16,0x1320) # BEQ t9,zero: startup GetInfo requested no outputs.
+        early=4+(w[3]&0xFFFF)
+        self.assertEqual(w[early:],(0x3C02003A,0x3C032000,0x08000000|(0x31DD68>>2),0))
+        halt=early-2;self.assertEqual(w[halt],0x08000000|((FRESH_BIND_STUB+halt*4)>>2))
+        self.assertIn(0x3419B7B8,w)
+
     def test_reverse_bind_observer_runs_original_api_and_can_resume(self):
         from capture_ee_reverse_bind import hook
         for terminal in (True,False):

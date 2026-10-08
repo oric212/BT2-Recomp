@@ -417,6 +417,16 @@ int main() {
         refuses([&]{timer.delayCurrent(caller,300);});check(timer.current_thread==1 && timer.timed_wait_owner==1 && caller==retained);
         refuses([&]{timer.delayCurrent(caller,300);});check(timer.logical_time_us==300);
         }
+        { IopRuntime clock;install_iop_kernel_providers(clock);clock.map(0x100000,std::vector<std::uint8_t>(16));clock.logical_time_us=1000001;IopContext c;c.set(4,0x100000);
+        // GetSystemTime: 1,000,001 us of logical time = 36,864,036 IOP clocks (36.864 MHz).
+        check(clock.providers.at({"thbase",34})(clock,c)==0 && clock.read(0x100000,4)==36864036 && clock.read(0x100004,4)==0);
+        clock.logical_time_us=200000000;clock.providers.at({"thbase",34})(clock,c);
+        check(clock.read(0x100000,4)==static_cast<std::uint32_t>(7372800000ull) && clock.read(0x100004,4)==1);
+        // SysClock2USec: 200 s exactly; then 36,864,036 clocks = 1 s + 0 us (1,000,000.98 us truncated).
+        c.set(5,0x100008);c.set(6,0x10000C);clock.providers.at({"thbase",40})(clock,c);
+        check(clock.read(0x100008,4)==200 && clock.read(0x10000C,4)==0);
+        clock.write(0x100000,36864036+36864*5,4);clock.write(0x100004,0,4);clock.providers.at({"thbase",40})(clock,c);
+        check(clock.read(0x100008,4)==1 && clock.read(0x10000C,4)==5000); }
         IopRuntime logging;logging.map(0x20000,std::vector<std::uint8_t>{'h','i',0,'%','d',0});install_iop_kernel_providers(logging);
         IopContext log;log.set(4,0x20000);check(logging.import("sysmem",14,log)==0 && logging.kernel_messages==std::vector<std::string>{"hi"});
         log.set(4,0x20003);refuses([&]{logging.import("sysmem",14,log);});check(logging.kernel_messages.size()==1);

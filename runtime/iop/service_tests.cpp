@@ -347,6 +347,26 @@ int main(int argc,char** argv) {
             && !service.runtime.providers.contains({"sifcmd",15}) && !service.runtime.providers.contains({"thbase",24}));
         const auto bind_complete=service.runtime.ram;
         rejected([&]{service.completeEeSoundBind(1,ee_memory);});check(service.runtime.ram==bind_complete);
+        // A later GetInfo (type/free/format requested) repeats the absent-card probe sequence.
+        auto frame_query=mc_query_input;frame_query[3]=frame_query[4]=frame_query[5]=1;
+        auto port_query=frame_query;port_query[0]=1;
+        rejected([&]{service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(port_query.data()),48),ee_memory);});
+        check(service.runtime.ram==bind_complete && service.mc_query_requests==1);
+        // The first query's last timeout alarm is still pending; it fires at the next field.
+        check(service.runtime.card_alarm.callback==0x29F84);
+        service.advanceVblank(1,ee_memory);
+        check(!service.runtime.card_alarm.callback && service.runtime.card_alarm_idle_fires==1 && service.runtime.card_alarm_fires==5);
+        std::fill_n(ee_memory.begin()+0x3A7480,192,0xA5);
+        const auto frame_reply=service.callMcQuery(1,std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(frame_query.data()),48),ee_memory);
+        std::int32_t frame_result;std::memcpy(&frame_result,frame_reply.data(),4);
+        check(frame_reply.size()==4 && frame_result<-1 && service.mc_query_requests==2 && service.runtime.current_thread==0);
+        check(service.runtime.sio2_card_sends==12 && service.runtime.sio2_card_receives==12 && service.runtime.sio2_card_fifo_packets==10);
+        check(service.runtime.timed_wakes==10 && service.runtime.card_alarm_fires==9);
+        check(service.mc_dma_submissions==2 && service.mc_dma_polls==2);
+        check(std::equal(service.mc_dma_payload.begin(),service.mc_dma_payload.end(),ee_memory.begin()+0x3A7480));
+        std::uint32_t card_type,card_free;std::memcpy(&card_type,ee_memory.data()+0x3A7480,4);std::memcpy(&card_free,ee_memory.data()+0x3A7484,4);
+        check(card_type==0 && card_free==0);
+        check(!service.runtime.providers.contains({"sifman",7}) && !service.runtime.providers.contains({"sifman",8}) && !service.runtime.providers.contains({"sifcmd",15}));
         NativeIopService early(1,bt2_compiled_iop_modules());
         rejected([&]{early.ownEeSoundServer(2,ee_memory);});check(!early.ee_sound_server_owned);
         auto bad_registration=ee_memory;std::fill_n(bad_registration.begin()+0x3A6D1C,4,0);

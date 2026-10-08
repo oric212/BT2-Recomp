@@ -80,8 +80,8 @@ def cop_control(ins):
 def bounded_word_switch(address,start,end,spans,metadata,data,word):
     """Prove the reached sltiu/beq/sll/lui/addu/lw/jr table idiom.
 
-    Safety rests on the SLTIU v0,v1,N bound and its guard branch; the instruction producing v1
-    only has to be non-control. With BEQ, SLL is its delay slot, or a non-control delay slot that
+    Safety rests on the SLTIU c,i,N bound and its guard branch on c; the instruction producing the
+    index i only has to be non-control. With BEQ, SLL is its delay slot, or a non-control delay slot that
     leaves the index register intact precedes SLL (it runs on both paths). With BEQL, the delay slot
     runs only on the out-of-range branch, so it may be any non-control instruction and SLL follows it."""
     def control(ins):
@@ -89,23 +89,35 @@ def bounded_word_switch(address,start,end,spans,metadata,data,word):
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
     sign=lambda v:v-65536 if v&32768 else v
     if address-start<28 or address+8>end or word(address+4)!=0:return False
-    if word(address)==0x00600008:
-        tail=[word(address+n) for n in (-16,-12,-8,-4)]
-        if tail[0]!=0x00031080 or (tail[1]&0xFFFF0000)!=0x3C030000 or tail[2]!=0x00621821 or (tail[3]&0xFFFF0000)!=0x8C630000:return False
+    jr=word(address)
+    tail=[word(address+n) for n in (-16,-12,-8,-4)] if address-start>=16 else [0]*4
+    # First layout: SLTIU c,i,N / BEQ(L) c,zero / [delay] / SLL s,i,2 / LUI b / ADDU b,b,s / LW j,d(b) / JR j.
+    # Registers are decoded (seen with index v1 -> v0 and index v0 -> v1 roles).
+    sll,lui,addu,load=tail
+    first=(jr&0xFC1FFFFF==8 and sll&0xFFE0003F==0 and (sll>>6)&31==2 and lui&0xFFE00000==0x3C000000
+        and addu&0xFC0007FF==0x21 and (addu>>11)&31==(lui>>16)&31 and {(addu>>21)&31,(addu>>16)&31}=={(lui>>16)&31,(sll>>11)&31}
+        and load>>26==35 and (load>>21)&31==(lui>>16)&31 and (load>>16)&31==(jr>>21)&31)
+    if first:
+        i,sreg,b=(sll>>16)&31,(sll>>11)&31,(lui>>16)&31
+        if 0 in (i,sreg,b) or b==sreg:return False
         def keeps_index(ins):
-            # A delay slot that runs on both paths must not write the index (v1): I-type ALU/load
-            # write rt, R-type ALU writes rd. Anything else is not proven.
+            # A delay slot that runs on both paths must not write the index: I-type ALU/load
+            # write rt, R-type ALU writes rd, stores (SB/SH/SW/SD/SQ) write no register. Anything
+            # else is not proven.
             op=ins>>26
-            if op==0:return ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03) and (ins>>11)&31!=3
-            return op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37) and (ins>>16)&31!=3
-        if (word(address-20)&0xFFFF0000)==0x10400000:branch=address-20
-        elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x50400000 and not control(word(address-20)):branch=address-24
-        elif address-start>=32 and (word(address-24)&0xFFFF0000)==0x10400000 and not control(word(address-20)) and keeps_index(word(address-20)):
+            if op==0:return ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03) and (ins>>11)&31!=i
+            if op in (0x28,0x29,0x2B,0x3F,0x1F):return True
+            return op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37) and (ins>>16)&31!=i
+        def beq_zero(ins,opcode):return ins>>26==opcode and (ins>>16)&31==0
+        if beq_zero(word(address-20),4):branch=address-20
+        elif address-start>=32 and beq_zero(word(address-24),20) and not control(word(address-20)):branch=address-24
+        elif address-start>=32 and beq_zero(word(address-24),4) and not control(word(address-20)) and keeps_index(word(address-20)):
             branch=address-24 # BEQ whose delay slot (both paths) leaves the index intact; SLL follows it.
         else:return False
         index,bound=word(branch-8),word(branch-4)
-        if control(index) or (bound&0xFFFF0000)!=0x2C620000:return False
-        hi,disp=tail[1]&65535,sign(tail[3]&65535)
+        c=(word(branch)>>21)&31
+        if control(index) or bound>>26!=11 or (bound>>21)&31!=i or (bound>>16)&31!=c or c in (0,i):return False
+        hi,disp=lui&65535,sign(load&65535)
     else:
         # Second layout: SLTIU c,i,N / BEQ c,zero / LUI b (delay) / SLL s,i,2 / ADDIU b,b,lo /
         # ADDU a,s,b / LW j,0(a) / JR j. Registers are decoded and must keep the index intact.

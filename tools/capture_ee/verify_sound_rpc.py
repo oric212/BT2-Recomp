@@ -42,10 +42,16 @@ def queued_sound_bind_completed(r):
         and r['sound_iop_context']==[0xA1304,0xA0F24,0xA94E0,0x1E7588,0])
 
 def completed_card_query(r):
-    return (r.get('mc_query_requests')==1 and r.get('mc_dma_submissions')==1 and r.get('mc_dma_polls')==1
-        and r.get('timed_waits')==5 and r.get('timed_wakes')==5 and r.get('timed_dispatches')==1
-        and r.get('logical_time_us')==1900 and r.get('card_alarm_fires')==4 and r.get('card_alarm_sets')==5
-        and r.get('sio2_card_fifo_packets')==5 and r.get('sio2_card_transfer_counts')==[6,6]
+    # The startup query plus any frame-phase queries: each repeats the absent-card probe sequence
+    # (5 timed waits, 4 alarm waits, 5 FIFO and 6+6 DMA packets, 1.9 ms of logical time). Between
+    # queries logical time advances one field (16,683 us) per VBlank and the previous query's pending
+    # timeout alarm fires idle.
+    q=r.get('mc_query_requests',0);frames=r.get('mc_frame_queries',0);idle=r.get('card_alarm_idle_fires',0);time=r.get('logical_time_us',-1)
+    return (q==1+frames and r.get('mc_dma_submissions')==q and r.get('mc_dma_polls')==q
+        and r.get('timed_waits')==5*q and r.get('timed_wakes')==5*q and r.get('timed_dispatches')==1
+        and time>=1900*q and (time-1900*q)%16683==0 and idle in (frames,frames+1)
+        and r.get('card_alarm_fires')==4*q+idle and r.get('card_alarm_sets')==5*q
+        and r.get('sio2_card_fifo_packets')==5*q and r.get('sio2_card_transfer_counts')==[6*q,6*q]
         and ((r.get('pending_ee_bind')==[0x2000E,0xA1CA0,0x80000704,0x1FF400,2]
             and not r.get('queued_sound_submissions',0) and not r.get('queued_sound_completions',0))
             or queued_sound_bind_completed(r)))

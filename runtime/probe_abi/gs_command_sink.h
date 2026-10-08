@@ -100,12 +100,12 @@ public:
     void transferAll(std::span<const std::span<const std::uint8_t>> group) {
         for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
         const auto saved_state=state;const auto saved_clut=clut_;const auto saved_vram=vram_;
-        const std::array<std::uint64_t,6> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads};
+        const std::array<std::uint64_t,7> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads,frame_triangles};
         try {for(const auto& data:group){run(data,true);++transfers;}}
         catch(...) {
             state=saved_state;clut_=saved_clut;vram_=saved_vram;
             transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
-            frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);throw;
+            frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);frame_triangles=unsigned(saved_counts[6]);throw;
         }
     }
     struct State {
@@ -116,7 +116,7 @@ public:
         bool trx=false;unsigned trx_bp=0,trx_bw=0,trx_x0=0,trx_y0=0,trx_w=0,trx_h=0,trx_x=0,trx_y=0;
     };
     State state;
-    unsigned transfers=0,frame_sprites=0,register_writes=0,clut_loads=0;
+    unsigned transfers=0,frame_sprites=0,frame_triangles=0,register_writes=0,clut_loads=0;
     std::uint64_t frame_pixels=0,image_pixels=0;
     // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
@@ -233,13 +233,19 @@ private:
         if(reg==0x00)state.vertices=0;
         if(reg!=0x04 && reg!=0x05 && reg!=0x0C && reg!=0x0D)return;
         const auto prim=(state.regs[0x1A]&1)?state.regs[0x00]:state.regs[0x1B];
-        const unsigned type=unsigned(state.regs[0x00]&7),needed=type==6?2:type==3?3:0;
-        if(!needed)throw std::runtime_error("Unsupported GS primitive type");
-        if(state.vertices>=needed)state.vertices=0;
+        // Vertex queue: sprites and triangles restart after each primitive; a triangle strip keeps the
+        // last two vertices and a fan keeps the first and the last. XYZ3/XYZF3 queue without drawing.
+        const unsigned type=unsigned(state.regs[0x00]&7),needed=type==6?2:(type>=3 && type<=5)?3:0;
+        if(!needed)throw std::runtime_error("Unsupported GS primitive type "+std::to_string(type));
+        if(state.vertices>=needed) {
+            if(type==4) {for(unsigned k=0;k<2;++k){state.vertex_xyz[k]=state.vertex_xyz[k+1];state.vertex_rgbaq[k]=state.vertex_rgbaq[k+1];state.vertex_uv[k]=state.vertex_uv[k+1];}state.vertices=2;}
+            else if(type==5) {state.vertex_xyz[1]=state.vertex_xyz[2];state.vertex_rgbaq[1]=state.vertex_rgbaq[2];state.vertex_uv[1]=state.vertex_uv[2];state.vertices=2;}
+            else state.vertices=0;
+        }
         state.vertex_xyz[state.vertices]=value;state.vertex_rgbaq[state.vertices]=state.regs[0x01];state.vertex_uv[state.vertices]=state.regs[0x03];++state.vertices;
         if(state.vertices<needed || reg==0x0C || reg==0x0D)return;
-        if(type!=6)throw std::runtime_error("Unsupported GS triangle drawing");
-        sprite(prim,apply);state.vertices=0;
+        if(type==6) {sprite(prim,apply);state.vertices=0;}
+        else triangle(prim,apply);
     }
     struct Rgba {int r,g,b,a;};
     static Rgba unpack(std::uint32_t c) {return {int(c&255),int((c>>8)&255),int((c>>16)&255),int(c>>24)};}
@@ -252,79 +258,141 @@ private:
         if(!clut_.known[index])throw std::runtime_error("GS texture reads an unloaded CLUT entry");
         return clut_.color[index];
     }
-    void sprite(std::uint64_t prim,bool apply) {
-        auto reject=[](){throw std::runtime_error("Unsupported GS sprite state");};
-        // IIP is irrelevant for sprites; TME (with FST UVs) and ABE are supported; FGE/AA1 are not.
-        const bool tme=(prim>>4)&1,abe=(prim>>6)&1,fst=(prim>>8)&1;
-        if((prim&0xA0) || (tme && !fst))reject();
+    // Draw state validated once per primitive (shared by sprites and triangles).
+    struct Draw {
+        std::uint64_t frame=0,texture0=0;unsigned fbp=0,width=0,psm=0,zbp=0,zpsm=0,ox=0,oy=0,tw=0,th=0,tfx=0,wms=0,wmt=0,sa=0,sb=0,sc=0,sd=0;
+        bool zmsk=false,tme=false,abe=false,tcc=false,linear=false,colclamp=false,pabe_on=false;int fix=0;
+        int sx0=0,sy0=0,sx1=0,sy1=0; // Scissor and buffer limits: pixels in [sx0,sx1) x [sy0,sy1).
+        std::uint32_t mask=0,zmask=0;
+    };
+    Draw prepare(std::uint64_t prim) const {
+        auto reject=[](){throw std::runtime_error("Unsupported GS drawing state");};
+        // TME (with FST UVs) and ABE are supported; FGE/AA1 are not.
+        Draw d;d.tme=(prim>>4)&1;d.abe=(prim>>6)&1;const bool fst=(prim>>8)&1;
+        if((prim&0xA0) || (d.tme && !fst))reject();
         const unsigned c=unsigned((prim>>9)&1);
-        const auto frame=state.regs[0x4C+c],zbuf=state.regs[0x4E+c],offset=state.regs[0x18+c],scissor=state.regs[0x40+c],test=state.regs[0x47+c];
-        const unsigned fbp=unsigned(frame&511),width=unsigned((frame>>16)&63),psm=unsigned((frame>>24)&63);
-        const unsigned zbp=unsigned(zbuf&511),zpsm=unsigned((zbuf>>24)&15);const bool zmsk=(zbuf>>32)&1;
+        d.frame=state.regs[0x4C+c];const auto zbuf=state.regs[0x4E+c],offset=state.regs[0x18+c],scissor=state.regs[0x40+c],test=state.regs[0x47+c];
+        d.fbp=unsigned(d.frame&511);d.width=unsigned((d.frame>>16)&63);d.psm=unsigned((d.frame>>24)&63);
+        d.zbp=unsigned(zbuf&511);d.zpsm=unsigned((zbuf>>24)&15);d.zmsk=(zbuf>>32)&1;
         // Alpha and destination-alpha tests off; depth test off or ALWAYS; no dither or FBA.
-        if(!width || (psm!=0 && psm!=1) || (test&1) || (test&0x4000) || ((test>>16)&1 && ((test>>17)&3)!=1) || (!zmsk && zpsm!=0 && zpsm!=1)
+        if(!d.width || (d.psm!=0 && d.psm!=1) || (test&1) || (test&0x4000) || ((test>>16)&1 && ((test>>17)&3)!=1) || (!d.zmsk && d.zpsm!=0 && d.zpsm!=1)
             || (state.regs[0x45]&1) || (state.regs[0x4A+c]&1))reject();
-        const unsigned ox=unsigned(offset&0xFFFF),oy=unsigned((offset>>32)&0xFFFF);
-        auto x=[&](unsigned v){return int(v&0xFFFF)-int(ox);};auto y=[&](unsigned v){return int((v>>16)&0xFFFF)-int(oy);};
+        d.ox=unsigned(offset&0xFFFF);d.oy=unsigned((offset>>32)&0xFFFF);
+        d.sx0=int(scissor&2047);d.sy0=int((scissor>>32)&2047);
+        d.sx1=std::min(int((scissor>>16)&2047)+1,int(d.width*64));d.sy1=std::min(int((scissor>>48)&2047)+1,2048);
+        // Texture state: PSMT4 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
+        // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
+        d.texture0=state.regs[0x06+c];const auto tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
+        d.tw=unsigned((d.texture0>>26)&15);d.th=unsigned((d.texture0>>30)&15);d.tfx=unsigned((d.texture0>>35)&3);
+        d.tcc=(d.texture0>>34)&1;d.linear=(tex1>>5)&1;d.wms=unsigned(clamp&3);d.wmt=unsigned((clamp>>2)&3);
+        if(d.tme && (((d.texture0>>20)&63)!=0x14 || d.tw>10 || d.th>10 || d.tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u) || d.wms>1 || d.wmt>1))reject();
+        // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
+        const auto alpha=state.regs[0x42+c];
+        d.sa=unsigned(alpha&3);d.sb=unsigned((alpha>>2)&3);d.sc=unsigned((alpha>>4)&3);d.sd=unsigned((alpha>>6)&3);
+        d.fix=int((alpha>>32)&255);d.colclamp=state.regs[0x46]&1;d.pabe_on=state.regs[0x49]&1;
+        if(d.abe && (d.sa==3 || d.sb==3 || d.sc==3 || d.sd==3))reject();
+        d.mask=std::uint32_t(d.frame>>32)|(d.psm==1?0xFF000000u:0u);d.zmask=d.zpsm==1?0xFFFFFFu:0xFFFFFFFFu;
+        return d;
+    }
+    Rgba sample(const Draw& d,int u,int v) const { // u,v in 1/16 texels at the pixel.
+        auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
+        if(!d.linear)return unpack(texel(d.texture0,wrap(u>>4,d.tw,d.wms),wrap(v>>4,d.th,d.wmt)));
+        const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
+        const auto c00=unpack(texel(d.texture0,wrap(iu,d.tw,d.wms),wrap(iv,d.th,d.wmt))),c10=unpack(texel(d.texture0,wrap(iu+1,d.tw,d.wms),wrap(iv,d.th,d.wmt)));
+        const auto c01=unpack(texel(d.texture0,wrap(iu,d.tw,d.wms),wrap(iv+1,d.th,d.wmt))),c11=unpack(texel(d.texture0,wrap(iu+1,d.tw,d.wms),wrap(iv+1,d.th,d.wmt)));
+        auto mix=[&](int a,int b,int c2,int e){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+e*fu*fv)>>8;};
+        return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
+    }
+    // One pixel: texture function, alpha blend, masked framebuffer write and optional Z write.
+    void plot(const Draw& d,int px,int py,Rgba vertex,int u,int v,std::uint32_t z) {
+        Rgba s=vertex;
+        if(d.tme) {
+            const auto t=sample(d,u,v);
+            if(d.tfx==0)s={std::min(255,(t.r*vertex.r)>>7),std::min(255,(t.g*vertex.g)>>7),std::min(255,(t.b*vertex.b)>>7),d.tcc?std::min(255,(t.a*vertex.a)>>7):vertex.a};
+            else s={t.r,t.g,t.b,d.tcc?t.a:vertex.a};
+        }
+        auto& w=vram_[ct32Word(d.fbp*32,d.width,unsigned(px),unsigned(py))];
+        if(d.abe && !(d.pabe_on && s.a<0x80)) {
+            const std::uint32_t needed=((d.sa==1 || d.sb==1 || d.sd==1)?0xFFFFFFu:0u)|(d.sc==1?0xFF000000u:0u);
+            if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
+            const auto dst=unpack(w.value);
+            auto pick=[](unsigned sel,int cs,int cd){return sel==0?cs:sel==1?cd:0;};
+            const int ca=d.sc==0?s.a:d.sc==1?dst.a:d.fix;
+            auto blend=[&](int cs,int cd){const int r=((pick(d.sa,cs,cd)-pick(d.sb,cs,cd))*ca>>7)+pick(d.sd,cs,cd);return d.colclamp?std::clamp(r,0,255):(r&255);};
+            s={blend(s.r,dst.r),blend(s.g,dst.g),blend(s.b,dst.b),s.a};
+        }
+        const std::uint32_t color=std::uint32_t(s.r)|(std::uint32_t(s.g)<<8)|(std::uint32_t(s.b)<<16)|(std::uint32_t(s.a&255)<<24);
+        w.value=(w.value&d.mask)|(color&~d.mask);w.known|=~d.mask;
+        if(!d.zmsk) {auto& zw=vram_[address(d.zbp,d.width,unsigned(px),unsigned(py),true)];zw.value=(zw.value&~d.zmask)|(z&d.zmask);zw.known|=d.zmask;}
+        ++frame_pixels;
+    }
+    void sprite(std::uint64_t prim,bool apply) {
+        const auto d=prepare(prim);
+        auto x=[&](unsigned v){return int(v&0xFFFF)-int(d.ox);};auto y=[&](unsigned v){return int((v>>16)&0xFFFF)-int(d.oy);};
         const auto v0=state.vertex_xyz[0],v1=state.vertex_xyz[1];
         const int X0=x(unsigned(v0)),X1=x(unsigned(v1)),Y0=y(unsigned(v0)),Y1=y(unsigned(v1));
         int x0=(std::min(X0,X1)+15)>>4,x1=(std::max(X0,X1)+15)>>4;
         int y0=(std::min(Y0,Y1)+15)>>4,y1=(std::max(Y0,Y1)+15)>>4;
-        x0=std::max(x0,int(scissor&2047));y0=std::max(y0,int((scissor>>32)&2047));
-        x1=std::min(x1,int((scissor>>16)&2047)+1);y1=std::min(y1,int((scissor>>48)&2047)+1);
-        if(x1>int(width*64) || y1>2048)reject();
-        // Texture state: PSMT4 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
-        // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
-        const auto texture0=state.regs[0x06+c],tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
-        const unsigned tw=unsigned((texture0>>26)&15),th=unsigned((texture0>>30)&15),tfx=unsigned((texture0>>35)&3);
-        const bool tcc=(texture0>>34)&1,linear=(tex1>>5)&1;
-        const unsigned wms=unsigned(clamp&3),wmt=unsigned((clamp>>2)&3);
-        if(tme && (((texture0>>20)&63)!=0x14 || tw>10 || th>10 || tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(linear?1u:0u) || wms>1 || wmt>1))reject();
-        // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
-        const auto alpha=state.regs[0x42+c];
-        const unsigned sa=unsigned(alpha&3),sb=unsigned((alpha>>2)&3),sc=unsigned((alpha>>4)&3),sd=unsigned((alpha>>6)&3);
-        const int fix=int((alpha>>32)&255);const bool colclamp=state.regs[0x46]&1,pabe_on=state.regs[0x49]&1;
-        if(abe && (sa==3 || sb==3 || sc==3 || sd==3))reject();
+        // A sprite reaching past the scissored buffer is refused, as before (not clipped silently).
+        const auto scissor=state.regs[0x40+unsigned((prim>>9)&1)];
+        if(std::min(int((scissor>>16)&2047)+1,x1)>int(d.width*64) || std::min(int((scissor>>48)&2047)+1,y1)>2048)
+            throw std::runtime_error("Unsupported GS drawing state");
+        x0=std::max(x0,d.sx0);y0=std::max(y0,d.sy0);x1=std::min(x1,d.sx1);y1=std::min(y1,d.sy1);
         const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
         const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
-        auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
-        auto sample=[&](int u,int v)->Rgba { // u,v in 1/16 texels at the pixel.
-            if(!linear)return unpack(texel(texture0,wrap(u>>4,tw,wms),wrap(v>>4,th,wmt)));
-            const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
-            const auto c00=unpack(texel(texture0,wrap(iu,tw,wms),wrap(iv,th,wmt))),c10=unpack(texel(texture0,wrap(iu+1,tw,wms),wrap(iv,th,wmt)));
-            const auto c01=unpack(texel(texture0,wrap(iu,tw,wms),wrap(iv+1,th,wmt))),c11=unpack(texel(texture0,wrap(iu+1,tw,wms),wrap(iv+1,th,wmt)));
-            auto mix=[&](int a,int b,int c2,int d){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+d*fu*fv)>>8;};
-            return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
-        };
         if(!apply)return;
         const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
-        const std::uint32_t mask=std::uint32_t(frame>>32)|(psm==1?0xFF000000u:0u);
-        const std::uint32_t z=std::uint32_t(v1>>32)&(zpsm==1?0xFFFFFFu:0xFFFFFFFFu),zmask=zpsm==1?0xFFFFFFu:0xFFFFFFFFu;
+        const std::uint32_t z=std::uint32_t(v1>>32);
         for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
-            Rgba s=vertex;
-            if(tme) {
-                const int u=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
-                const int v=Y1==Y0?V0:V0+int((std::int64_t(V1-V0)*(py*16-Y0))/(Y1-Y0));
-                const auto t=sample(u,v);
-                if(tfx==0)s={std::min(255,(t.r*vertex.r)>>7),std::min(255,(t.g*vertex.g)>>7),std::min(255,(t.b*vertex.b)>>7),tcc?std::min(255,(t.a*vertex.a)>>7):vertex.a};
-                else s={t.r,t.g,t.b,tcc?t.a:vertex.a};
-            }
-            auto& w=vram_[ct32Word(fbp*32,width,unsigned(px),unsigned(py))];
-            if(abe && !(pabe_on && s.a<0x80)) {
-                const std::uint32_t needed=((sa==1 || sb==1 || sd==1)?0xFFFFFFu:0u)|(sc==1?0xFF000000u:0u);
-                if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
-                const auto d=unpack(w.value);
-                auto pick=[](unsigned sel,int cs,int cd){return sel==0?cs:sel==1?cd:0;};
-                const int ca=sc==0?s.a:sc==1?d.a:fix;
-                auto blend=[&](int cs,int cd){const int r=((pick(sa,cs,cd)-pick(sb,cs,cd))*ca>>7)+pick(sd,cs,cd);return colclamp?std::clamp(r,0,255):(r&255);};
-                s={blend(s.r,d.r),blend(s.g,d.g),blend(s.b,d.b),s.a};
-            }
-            const std::uint32_t color=std::uint32_t(s.r)|(std::uint32_t(s.g)<<8)|(std::uint32_t(s.b)<<16)|(std::uint32_t(s.a&255)<<24);
-            w.value=(w.value&mask)|(color&~mask);w.known|=~mask;
-            if(!zmsk) {auto& d=vram_[address(zbp,width,unsigned(px),unsigned(py),true)];d.value=(d.value&~zmask)|z;d.known|=zmask;}
-            ++frame_pixels;
+            const int u=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
+            const int v=Y1==Y0?V0:V0+int((std::int64_t(V1-V0)*(py*16-Y0))/(Y1-Y0));
+            plot(d,px,py,vertex,u,v,z);
         }
         ++frame_sprites;
+    }
+    // Triangle (also each strip/fan step): pixels whose integer position lies inside the 12.4 vertex
+    // triangle, with a top-left fill rule on shared edges. Gouraud (IIP) interpolates RGBA, otherwise the
+    // last vertex's color is used; FST UVs and Z are interpolated linearly (affine).
+    void triangle(std::uint64_t prim,bool apply) {
+        const auto d=prepare(prim);
+        const bool gouraud=(prim>>3)&1;
+        std::array<std::int64_t,3> X{},Y{};
+        for(unsigned k=0;k<3;++k){X[k]=std::int64_t(state.vertex_xyz[k]&0xFFFF)-d.ox;Y[k]=std::int64_t((state.vertex_xyz[k]>>16)&0xFFFF)-d.oy;}
+        std::int64_t area=(X[1]-X[0])*(Y[2]-Y[0])-(Y[1]-Y[0])*(X[2]-X[0]);
+        if(!area){if(apply)++frame_triangles;return;} // Degenerate: no pixels.
+        std::array<unsigned,3> order{0,1,2};if(area<0){std::swap(order[1],order[2]);area=-area;}
+        const auto minx=std::min({X[0],X[1],X[2]}),maxx=std::max({X[0],X[1],X[2]}),miny=std::min({Y[0],Y[1],Y[2]}),maxy=std::max({Y[0],Y[1],Y[2]});
+        const int x0=std::max(int((minx+15)>>4),d.sx0),x1=std::min(int((maxx>>4)+1),d.sx1);
+        const int y0=std::max(int((miny+15)>>4),d.sy0),y1=std::min(int((maxy>>4)+1),d.sy1);
+        if(!apply)return;
+        // Edge k is opposite vertex order[k]. With positive area (y down), a point is inside when every
+        // edge function is >= 0; on an edge (== 0) only top edges (horizontal, above the triangle) and
+        // left edges own the pixel, so pixels shared by neighbouring triangles are drawn once.
+        struct Edge {std::int64_t a,b,c;bool inclusive;};std::array<Edge,3> edges{};
+        for(unsigned k=0;k<3;++k) {
+            const auto i=order[(k+1)%3],j=order[(k+2)%3];
+            const auto a=Y[i]-Y[j],b=X[j]-X[i];
+            edges[k]={a,b,-(a*X[i]+b*Y[i]),(a>0) || (a==0 && b>0)};
+        }
+        std::array<Rgba,3> col{};std::array<std::int64_t,3> U{},V{},Z{};
+        for(unsigned k=0;k<3;++k) {
+            col[k]=unpack(std::uint32_t(state.vertex_rgbaq[order[k]]));U[k]=std::int64_t(state.vertex_uv[order[k]]&0x3FFF);
+            V[k]=std::int64_t((state.vertex_uv[order[k]]>>16)&0x3FFF);Z[k]=std::int64_t(state.vertex_xyz[order[k]]>>32);
+        }
+        const auto flat=unpack(std::uint32_t(state.vertex_rgbaq[2]));
+        for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
+            std::array<std::int64_t,3> w{};bool inside=true;
+            for(unsigned k=0;k<3;++k) {
+                w[k]=edges[k].a*px*16+edges[k].b*py*16+edges[k].c;
+                if(w[k]<0 || (w[k]==0 && !edges[k].inclusive)){inside=false;break;}
+            }
+            if(!inside)continue;
+            auto lerp=[&](std::int64_t a,std::int64_t b,std::int64_t c){return (a*w[0]+b*w[1]+c*w[2])/area;};
+            const Rgba vertex=gouraud?Rgba{int(lerp(col[0].r,col[1].r,col[2].r)),int(lerp(col[0].g,col[1].g,col[2].g)),int(lerp(col[0].b,col[1].b,col[2].b)),int(lerp(col[0].a,col[1].a,col[2].a))}:flat;
+            const auto z=std::uint32_t(std::clamp<std::int64_t>(lerp(Z[0],Z[1],Z[2]),0,0xFFFFFFFFll));
+            plot(d,px,py,vertex,int(lerp(U[0],U[1],U[2])),int(lerp(V[0],V[1],V[2])),z);
+        }
+        ++frame_triangles;
     }
 public:
     std::array<std::uint64_t,2> tex0{};

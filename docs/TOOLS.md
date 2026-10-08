@@ -732,3 +732,7 @@ The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` st
 - `prepare_map.py` proves BEQ-guarded switch tables whose delay slot keeps the index register intact.
 - For overlay programs, the padding proof accepts J targets in the main executable's .text.
 - `prepare_runtime.py` routes inline DirectJump dispatches (J to another program's function) as tail jumps.
+
+### Frame-phase memory card query
+
+`capture_ee.py --absent-cards --capture-point rpc-mc-frame-callback` halts at the first MCSERV end callback whose GetInfo requested outputs (type flag `0x3A700C` set); startup callbacks continue. `python tools/capture_ee/verify_mc_frame_query.py --native work/bt2-generation/entry-stop.json` compares the original input, endpoint and absent-card result (−11, type 0, free 0) with the native frame query. A capture that times out keeps `ee-ram-timeout.bin` for diagnosis. All outputs stay ignored.

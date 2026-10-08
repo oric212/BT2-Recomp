@@ -14,11 +14,13 @@ Target: SLUS-21441, native Windows x64 static recompilation. Updated: 2026-10-07
 | Initial disc read and metadata lookups | ✅ Verified |
 | First archive (AFS) table load | ✅ Verified — byte-identical to original |
 | Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — first screen rendered and shown in a live window; an emulated DualShock 2 takes the game past the controller check; memory card check next |
+| Game asset loading and first presented frame | 🔧 In progress — first screen rendered and shown in a live window; an emulated DualShock 2 takes the game past the controller check; unverified pass reaches 105 frames past the memory card check |
 | Title screen, menu and playable versus battle | ⏳ Pending |
 | Native audio playback and full match | ⏳ Pending |
 
-**Current blocker:** with the emulated controller connected, the game leaves the controller-missing screen and starts a memory card check. Its frame-phase card query is only admitted in the captured startup profile, so it stops as a checked boundary (frame 27).
+**Verified blocker (commit `66d9745`):** with the emulated controller connected, the game leaves the controller-missing screen and starts a memory card check (frame 27).
+
+**Unverified pass (2026-10-08, committed with testing pending):** the frame-phase card query now runs through the original modules and matches a new original capture. The game then continues with SPU2 envelopes, live voice registers and GS triangles. An exploratory run reached **771 entered / 762 completed** over **105 frames**, stopping at the next unselected function (`FUN_0026CD98`). These numbers are not a verified checkpoint; see `docs/progress/ACTIVE_PASS.md`.
 
 **Last measured, 2026-10-08:** **682 EE entries entered / 672 completed**, **27 rendered frames**, **42 CRI calls**, **59 original IOP disc reads**, **150 logical VBlanks**, **22 Timer 2 overflows**. Complete startup is not yet verified.
 
@@ -45,6 +47,15 @@ The numeric snapshot is in [latest.json](progress/latest.json); authored compone
 ## Verification
 
 Verified this pass: serialized MSVC entry/ALL builds, **17/17 CTests**, **178 capture**, **66 recompilation**, **13 IOP** and 3 Ghidra Python tests, **25 normal-startup comparisons**, ten phase-matched comparisons (`BT2_PHASE_STOP`) and the unchanged sound-worker diagnostic (302/295). The live window was checked by the user, and rendered frames were inspected visually. Proprietary inputs, generated output and rendered frames remain ignored.
+
+**Unverified pass (this commit).** Passed before the gate was stopped at the user's request:
+- the serialized ALL/entry build;
+- **17/17 CTests**;
+- **179 capture** and **67 recompilation** Python tests;
+- the IOP unit, service and bridge tests and the GS command tests;
+- `verify_mc_frame_query.py` against an intermediate report.
+
+Not yet run on the final build: the IOP and Ghidra Python suites, the normal and sound-worker probe runs, the normal-startup and phase-matched comparisons, and the PNG render.
 
 ## Current blocker and next step
 

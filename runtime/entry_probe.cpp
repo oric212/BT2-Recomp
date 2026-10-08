@@ -808,7 +808,7 @@ int main(int argc, char** argv) {
                 << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
                 << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_directs\":" << runtime.frame_vif1.directs << ",\"vif1_direct_qwords\":" << runtime.frame_vif1.direct_qwords << ",\"gs_image_pixels\":" << runtime.gif_dma.gs.image_pixels << ",\"gs_clut_loads\":" << runtime.gif_dma.gs.clut_loads << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
                 << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
-                << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
+                << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_triangles\":" << runtime.gif_dma.gs.frame_triangles << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
                 << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10] << ",\"gs_dispfb1\":" << runtime.gs_privileged[7] << ",\"gs_display1\":" << runtime.gs_privileged[8]
                 << ",\"execution_budget_exhausted\":" << (execution_budget_exhausted?1:0)
@@ -857,6 +857,7 @@ int main(int argc, char** argv) {
                 << ",\"dbc_rpc_binds\":" << runtime.dbc_rpc_binds
                 << ",\"mc_rpc_binds\":" << runtime.mc_rpc_binds
                 << ",\"mc_rpc_calls\":" << runtime.mc_rpc_calls
+                << ",\"mc_frame_queries\":" << runtime.mc_frame_queries
                 << ",\"dbc_rpc_calls\":" << runtime.dbc_rpc_calls
                 << ",\"dbc_lock_waits\":" << runtime.dbc_lock_waits
                 << ",\"dbc_lock_signals\":" << runtime.dbc_lock_signals
@@ -877,6 +878,7 @@ int main(int argc, char** argv) {
                 << ",\"card_alarm_fires\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_fires:0)
                 << ",\"card_alarm_sets\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_sets:0)
                 << ",\"card_alarm_waits\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_waits:0)
+                << ",\"card_alarm_idle_fires\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_idle_fires:0)
                 << ",\"sio2_card_fifo_packets\":" << (runtime.native_iop?runtime.native_iop->runtime.sio2_card_fifo_packets:0)
 #endif
                 << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds

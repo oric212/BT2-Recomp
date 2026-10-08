@@ -42,3 +42,7 @@ Steps 0–3 are implemented:
 The game now leaves the controller-missing screen and proceeds to a memory card check.
 
 **Not done yet.** A comparison with an original capture with a controller connected, and host input (step 4).
+
+## Next (2026-10-08)
+
+Without a memory card, the game shows a notice that waits for a button press (user note). Add a deterministic frame-indexed button script to the DualShock 2 model, for example `BT2_PAD_SCRIPT="300:cross,310:-"`, so probes stay repeatable. Then add host input (XInput/SDL, keyboard) for the live window.

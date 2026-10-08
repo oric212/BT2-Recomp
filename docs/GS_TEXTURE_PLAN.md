@@ -64,3 +64,12 @@ Steps 1–5 are implemented for the reached state:
 **Not yet verified.** Bilinear rounding against GS output, and a framebuffer comparison with an original GS dump.
 
 The next blocker is controller input: [CONTROLLER_PLAN.md](CONTROLLER_PLAN.md).
+
+## Progress (2026-10-08, unverified)
+
+- **Triangles:** the first gameplay-phase packet draws a textured, blended triangle strip (PRIM `0x154`). The GS model now rasterizes triangles, strips and fans:
+  - pixels whose integer position lies inside the 12.4 triangle;
+  - a top-left rule on shared edges;
+  - flat or Gouraud color, affine FST UVs and Z.
+- **Shared path:** sprites and triangles share validation (`prepare`) and per-pixel shading (`plot`).
+- **Not modelled yet:** STQ (perspective) texturing, lines and points, and depth tests other than ALWAYS.

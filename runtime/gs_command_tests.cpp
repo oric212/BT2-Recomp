@@ -3,7 +3,9 @@
 #include "host/display_frame.h"
 #include <iostream>
 #include <set>
-void check(bool value) {if(!value)throw std::runtime_error("GS assertion failed");}
+#include <source_location>
+#include <cstdlib>
+void check(bool value,std::source_location at=std::source_location::current()) {if(!value){std::cerr<<"GS assertion failed at line "<<at.line()<<'\n';std::exit(1);}}
 int main() {
     {
         // General GIF transfer: PACKED A+D environment, PACKED RGBAQ/XYZ2 sprite kick (synthetic values).
@@ -26,12 +28,41 @@ int main() {
         const auto inside=GsCommandSink::address(0,1,2,2,false),outside=GsCommandSink::address(0,1,4,4,false);
         check(gs.word(inside).value==0x04030201 && gs.word(inside).known==UINT32_MAX && gs.word(outside).known==0);
         // A later unsupported kick rejects the whole transfer: no register or VRAM effect.
-        auto bad=t;const std::uint64_t tri=0x3000000000008002ULL|(1ULL<<46)|(3ULL<<47);std::memcpy(bad.data()+8*16,&tri,8); // PRE triangle.
+        auto bad=t;const std::uint64_t tri=0x3000000000008002ULL|(1ULL<<46)|(1ULL<<47);std::memcpy(bad.data()+8*16,&tri,8); // PRE line (unsupported).
         const auto regs=gs.state.regs;gs.seedForTest(inside,0xDEADBEEF);
         bool rejected=false;try{gs.transfer(bad);}catch(const std::runtime_error&){rejected=true;}
         check(rejected && gs.transfers==1 && gs.state.regs==regs && gs.word(inside).value==0xDEADBEEF);
         bool odd=false;try{gs.transfer(std::span<const std::uint8_t>(t.data(),8));}catch(const std::runtime_error&){odd=true;}
         check(odd);
+    }
+    {
+        // Triangles. An 8x8 square drawn as a two-triangle strip, then as a two-triangle fan, covers each
+        // pixel exactly once (top-left fill rule on the shared diagonal); Gouraud interpolates color and a
+        // flat triangle takes its last vertex's color.
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        auto ad=[&](std::vector<std::pair<unsigned,std::uint64_t>> w){q(0x1000000000000000ULL|w.size(),0xE);for(auto [r,v]:w)q(v,r);};
+        auto xyz=[](unsigned x,unsigned y){return std::uint64_t(x*16)|(std::uint64_t(y*16)<<16);};
+        ad({{0x1A,1},{0x4C,0x10000},{0x4E,0x101000020ULL},{0x18,0},{0x40,0x003F0000003F0000ULL},{0x47,0x30000},{0x01,0x80402010}});
+        ad({{0x00,4},{0x05,xyz(0,0)},{0x05,xyz(8,0)},{0x05,xyz(0,8)},{0x05,xyz(8,8)}}); // TRISTRIP.
+        GsCommandSink gs;gs.transfer(t);
+        check(gs.frame_triangles==2 && gs.frame_pixels==64);
+        check(gs.word(GsCommandSink::ct32Word(0,1,0,0)).value==0x80402010 && gs.word(GsCommandSink::ct32Word(0,1,7,7)).known==UINT32_MAX);
+        check(!gs.word(GsCommandSink::ct32Word(0,1,8,0)).known && !gs.word(GsCommandSink::ct32Word(0,1,0,8)).known); // Right/bottom edges excluded.
+        t.clear();
+        ad({{0x00,5},{0x05,xyz(16,0)},{0x05,xyz(24,0)},{0x05,xyz(24,8)},{0x05,xyz(16,8)}}); // TRIFAN around (16,0).
+        gs.transfer(t);check(gs.frame_triangles==4 && gs.frame_pixels==128);
+        t.clear();
+        // Gouraud (PRIM TRIANGLE | IIP): red 0 -> 160 along the top edge; pixel (5,0) is halfway.
+        ad({{0x00,3|8},{0x01,0x80000000},{0x05,xyz(0,16)},{0x01,0x800000A0},{0x05,xyz(10,16)},{0x01,0x80000000},{0x05,xyz(0,26)}});
+        gs.transfer(t);check(gs.frame_triangles==5 && (gs.word(GsCommandSink::ct32Word(0,1,5,16)).value&0xFF)==80);
+        t.clear();
+        // Flat: the last (kicking) vertex's color fills the triangle.
+        ad({{0x00,3},{0x01,0x11},{0x05,xyz(32,16)},{0x01,0x22},{0x05,xyz(42,16)},{0x01,0x80000033},{0x05,xyz(32,26)}});
+        gs.transfer(t);check(gs.word(GsCommandSink::ct32Word(0,1,33,17)).value==0x80000033);
+        // XYZ3 queues a vertex without drawing.
+        t.clear();ad({{0x00,3},{0x05,xyz(48,0)},{0x05,xyz(56,0)},{0x0D,xyz(48,8)}});
+        const auto pixels=gs.frame_pixels;gs.transfer(t);check(gs.frame_pixels==pixels && gs.frame_triangles==6);
     }
     {
         // PSMT4 layout: explicit entries from the public column/block layout, then a bijection check

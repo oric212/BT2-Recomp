@@ -136,6 +136,18 @@ public:
     // Pad bus: a neutral DualShock 2 on port 1 (SIO2 port 0); port 2 stays absent.
     DualShock2 pad;bool sio2_pad_reply=false;
     unsigned sio2_card_sends=0,sio2_card_receives=0,sio2_card_fifo_packets=0;
+    // Each absent-card query repeats MCMAN's PS2 then PS1 probe sequence (the card type stays "no card"),
+    // so the card path is validated against counters relative to the start of the current query.
+    struct CardQueryBase {unsigned sends=0,receives=0,fifo=0,waits=0,wakes=0,alarm_sets=0,alarm_fires=0,alarm_waits=0;} card_base;
+    void beginCardQuery() {card_base={sio2_card_sends,sio2_card_receives,sio2_card_fifo_packets,timed_waits,timed_wakes,card_alarm_sets,card_alarm_fires,card_alarm_waits};}
+    unsigned cardSends() const {return sio2_card_sends-card_base.sends;}
+    unsigned cardReceives() const {return sio2_card_receives-card_base.receives;}
+    unsigned cardFifo() const {return sio2_card_fifo_packets-card_base.fifo;}
+    unsigned cardWaits() const {return timed_waits-card_base.waits;}
+    unsigned cardWakes() const {return timed_wakes-card_base.wakes;}
+    unsigned cardAlarmSets() const {return card_alarm_sets-card_base.alarm_sets;}
+    unsigned cardAlarmFires() const {return card_alarm_fires-card_base.alarm_fires;}
+    unsigned cardAlarmWaits() const {return card_alarm_waits-card_base.alarm_waits;}
     std::vector<std::uint32_t> sio2_card_controls;
     std::uint32_t sio2_command_status=0;
     // One captured command-14 readiness profile; disabled outside that owned request.
@@ -203,6 +215,17 @@ public:
         }
         if(size==2 && spu2_playback.enabled && (p==0x1F900340 || p==0x1F900342 || p==0x1F900740 || p==0x1F900742))
             return (spu2_playback.endx[p>=0x1F900400]>>((p&2)?16:0))&0xFFFF;
+        if(size==2 && spu2_playback.enabled && p>=0x1F900000 && p<0x1F900800 && ((p-0x1F900000)&0x3FF)<0x180 && (p&0xF)==0xA)
+            return static_cast<std::uint32_t>(spu2_playback.voices[p>=0x1F900400][((p-0x1F900000)&0x3FF)/16].envelope.level); // ENVX.
+        if(size==2 && spu2_playback.enabled && p>=0x1F900000 && p<0x1F900800) {
+            // LSA reads return the live loop address (block loop-start flags update it while a voice plays).
+            const auto offset=(p-0x1F900000)&0x3FF;
+            if(offset>=0x1C0 && offset<0x2E0 && ((offset-0x1C0)%12==4 || (offset-0x1C0)%12==6)) {
+                const auto& v=spu2_playback.voices[p>=0x1F900400][(offset-0x1C0)/12];
+                if(v.loop_known)return (offset-0x1C0)%12==4?(v.loop>>16)&0xF:v.loop&0xFFF8;
+                if(spu2_configuration.contains(p))return spu2_configuration.at(p);
+            }
+        }
         if(size==2 && spu2_command_readbacks.contains(p)) {
             const auto record=spu2_command_readbacks.at(p);
             if(steps>record.instruction+1) {blocked_address=p;throw std::runtime_error("Late SPU2 dynamic register readback unsupported");}
@@ -236,6 +259,7 @@ public:
     }
     void write(std::uint32_t address,std::uint32_t value,unsigned size) {
         if(size!=1 && size!=2 && size!=4)throw std::runtime_error("Invalid IOP access width");
+        if(size<4)value&=(1u<<(size*8))-1; // SB/SH store only the low byte/halfword of the register.
         access_width=size;access_kind="write";access_value=value;
         // Diagnostic write watchpoint (BT2_IOP_WATCH): stops on the first nonzero store touching that address.
         if(watch_address && value && physical(address)<=watch_address && watch_address<physical(address)+size)
@@ -281,7 +305,8 @@ public:
         }
         if(size==2 && p>=0x1F900000 && p<0x1F900800 && spu2_io_transfer_completed) {
             const auto offset=(p-0x1F900000)&0x3FF;
-            const bool routing=offset>=0x188 && offset<=0x196 && !(offset&1) && value==((offset&2)?0xFFu:0xFFFFu);
+            // Voice routing masks (VMIXL/VMIXEL/VMIXR/VMIXER; 24 voice bits over two halves). Retained only.
+            const bool routing=offset>=0x188 && offset<=0x196 && !(offset&1) && !(value&~((offset&2)?0xFFu:0xFFFFu));
             const bool core_parameter=(offset==0x19A && (value==0xC000 || value==0xC001));
             const bool effects_end=offset==0x33C && value==(p<0x1F900400?0xEu:0xFu);
             if((p==0x1F90076C || p==0x1F90076E) && value==0x7FFF && executing_pc==0x936E8
@@ -292,20 +317,22 @@ public:
                 && (value==0 || ((p==0x1F900760 || p==0x1F900762 || p==0x1F900788 || p==0x1F90078A) && value==0x3FFF) || ((p==0x1F900790 || p==0x1F900792) && value==0x7FFF));
             if(routing || core_parameter || effects_end || volume || (p==0x1F9007C0 && value==0xC032)
                 || (offset==0x198 && value==(p<0x1F900400?0xFF0u:0xFFCu))) {spu2_configuration[p]=value;return;}
-            const bool parameter=offset<0x180 && !(offset&1) && ((offset%16==4 && value==0x3FFF)
-                || ((offset%16==0 || offset%16==2 || offset%16==6 || offset%16==8) && value==0));
-            const bool start=offset>=0x1C0 && offset<0x2E0 && (((offset-0x1C0)%12==0 && value==0)
-                || ((offset-0x1C0)%12==2 && value==0x2800));
+            // Voice volumes, pitch, ADSR1/2 and start/loop addresses take any value. No mixing is modeled, so
+            // volumes are retained only; a playing voice follows its pitch, ADSR and loop address.
+            const bool parameter=offset<0x180 && !(offset&1) && offset%16<=8;
+            const bool start=offset>=0x1C0 && offset<0x2E0 && !(offset&1) && (offset-0x1C0)%12<=6;
             if(parameter || start || ((offset==0x340 || offset==0x342) && value==0)) {
-                spu2_configuration[p]=value;if(offset==0x340 || offset==0x342)spu2_command_readbacks[p]={0,steps};return;
+                spu2_configuration[p]=value;if(offset==0x340 || offset==0x342)spu2_command_readbacks[p]={0,steps};
+                if((parameter || start) && spu2_playback.enabled)spu2_playback.registerWritten(p>=0x1F900400,offset,spu2_configuration);
+                return;
             }
             if(offset==0x1A0 || offset==0x1A2) {
                 const unsigned core=p>=0x1F900400,shift=(offset&2)?16:0;
-                // Admit key-on only for initialized zero-volume voices. Position/ENDX advance; no samples or ADSR.
-                for(unsigned voice=0;voice<24;++voice)for(unsigned side=0;side<2;++side)
-                    if(!spu2_configuration.contains(0x1F900000+core*0x400+voice*16+side*2)
-                        || spu2_configuration.at(0x1F900000+core*0x400+voice*16+side*2)!=0)
-                        throw std::runtime_error("SPU2 voice activation without muted initialization unsupported");
+                // Key-on requires the keyed voices' volumes to be owned (pitch, ADSR and start address are checked
+                // by the playback model). Position, ENDX and the envelope advance; no samples are mixed.
+                for(unsigned voice=0;voice<24;++voice)if(((value<<shift)>>voice)&1)for(unsigned side=0;side<2;++side)
+                    if(!spu2_configuration.contains(0x1F900000+core*0x400+voice*16+side*2))
+                        throw std::runtime_error("SPU2 voice activation without owned volumes");
                 if(spu2_playback.enabled)spu2_playback.keyOn(core,(value<<shift)&0xFFFFFF,spu2_configuration);
                 spu2_pending_key_on[core]|=(value<<shift)&0xFFFFFF;spu2_command_readbacks[p]={static_cast<std::uint16_t>(value),steps};return;
             }
@@ -357,7 +384,7 @@ public:
             sio2_transmit.push_back(static_cast<std::uint8_t>(value));
             if(sio2_transmit.size()==length) {
                 if(sio2_card_absent && command->second==0xC0342 && sio2_transmit==std::vector<std::uint8_t>({0x81,0x52,0})
-                    && timed_wakes==sio2_card_fifo_packets+1 && sio2_card_fifo_packets<5 && sio2_card_sends==6 && sio2_card_receives==6
+                    && cardWakes()==cardFifo()+1 && cardFifo()<5 && cardSends()==6 && cardReceives()==6
                     && sio2_parameters.at(0x1F808250)==0xFFC00505 && sio2_parameters.at(0x1F808254)==0x201F4) {
                     sio2_receive.assign(3,0xFF);sio2_command_status=0x1D100;sio2_receive_cursor=0;++sio2_card_fifo_packets;
                 } else {
@@ -390,7 +417,9 @@ public:
         if(p==0x1F808268 && size==4 && value==0x3BD) {
             const auto irq=interrupts.find(17);
             if((!sio2_pad_reply && sio2_receive.size()!=144 && !(sio2_receive.size()==3 && sio2_card_fifo_packets)) || !current_thread || !execute || irq==interrupts.end() || !irq->second.enabled || in_interrupt || !cpu_interrupts_enabled)
-                throw std::runtime_error("Unsupported SIO2 transfer completion state");
+                throw std::runtime_error("Unsupported SIO2 transfer completion state: receive="+std::to_string(sio2_receive.size())+" pad="+std::to_string(sio2_pad_reply)
+                    +" fifo="+std::to_string(cardFifo())+" thread="+std::to_string(current_thread)+" irq="+std::to_string(irq!=interrupts.end() && irq->second.enabled)
+                    +" in_interrupt="+std::to_string(in_interrupt)+" enabled="+std::to_string(cpu_interrupts_enabled));
             if(sio2_receive.size()==144) {
                 if(sio2_transmit.size()!=144 || sio2_receive_cursor!=144
                     || (dma_channels.at(11).chcr!=0x1000201 && dma_channels.at(11).chcr!=0x201)
@@ -504,6 +533,23 @@ public:
                 || !cpu_interrupts_enabled || in_interrupt)throw std::runtime_error("Suspended IOP timed CPU/context changed");
             timed_wait_owner=0;++timed_wakes;current_thread=owner;return 0u;
         } catch(...) {current_thread=owner;throw;} // Keep the pending snapshot/deadline for diagnosis.
+    }
+    // Logical IOP time also advances by one NTSC field (16,683 us) at each VBlank, outside service calls.
+    // A card timeout alarm still pending when its query returned then fires once its deadline passes:
+    // the callback runs in interrupt context on the owned interrupt stack and signals the card
+    // semaphore, so the next query's wait on it completes at once, as on hardware.
+    unsigned card_alarm_idle_fires=0;
+    void advanceLogicalField() {
+        if(in_interrupt || current_thread || timed_wait_owner || !cpu_interrupts_enabled)throw std::runtime_error("IOP field advance outside an idle point");
+        logical_time_us+=16683;
+        if(!card_alarm.callback || card_alarm.deadline>logical_time_us)return;
+        if(!execute)throw std::runtime_error("IOP card alarm needs dispatch");
+        IopContext handler;handler.pc=card_alarm.callback;handler.set(4,card_alarm.argument);handler.set(28,card_alarm.gp);handler.set(29,0x1FFE00);handler.set(31,sentinel);
+        in_interrupt=true;cpu_interrupts_enabled=false;
+        try {execute(*this,handler);in_interrupt=false;cpu_interrupts_enabled=true;}
+        catch(...) {in_interrupt=false;cpu_interrupts_enabled=true;throw;}
+        if(handler.pc!=sentinel || handler.get(2))throw std::runtime_error("Idle card alarm callback/completion differs");
+        card_alarm={};++card_alarm_fires;++card_alarm_idle_fires;
     }
     // Lifetime runaway guard; repeated owned disc requests legitimately accumulate steps.
     IopContext* live_context=nullptr; // The context currently executing instructions.

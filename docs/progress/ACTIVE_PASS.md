@@ -1,34 +1,52 @@
-# Resume handoff: memory card check
+# Resume handoff: unverified pass after the memory card check
 
-Updated: 2026-10-08. **Pass verified and committed; next blocker identified, not started.**
+Updated: 2026-10-08. **Committed at the user's request with final testing pending.** The verified checkpoint remains **682 entered / 672 completed** at commit `66d9745`. Do not promote the numbers below into verified progress until the gate passes.
 
-Normal checkpoint: **682 entered / 672 completed**, kernel 2/2. The run covers 27 frames: 133,549 calls / 133,468 returns, 1,096,021 IOP instructions, 150 logical VBlanks.
+## Implemented, unverified
 
-**What runs now.**
-- **IOP VBlank:** start and end edges are delivered every logical field, as the public vblank module signals its event flag.
-- **Pad:** DS2U_D configures the emulated DualShock 2 on port 1 (analog, then pressure mode), and SIO2D rescans ports.
-- **DBCMAN:** pad state is copied to the game's registered socket buffers.
-- **CRI:** stream buffers are returned to the EE.
-- **Game:** with a controller present it leaves the controller-missing screen. After DBCMAN socket and device requests it starts a memory card check.
+- **Frame-phase memory card queries** (`compiled_modules.cpp`, `ee_loadfile_bridge.cpp`, `native_runtime.h`, `kernel_provider.h`).
+  - **Request:** later no-wait GetInfo queries (port 0, slot 0, type/free/format requested) run through the original MCSERV/MCMAN handlers.
+  - **Card path:** counters are checked relative to the start of each query (`beginCardQuery`), since each absent-card detection repeats the PS2 then PS1 probe sequence.
+  - **RPC worker:** the borrowed worker's wait fields are restored after a registered RPC returns.
+  - **Pending alarm:** a card timeout alarm left pending fires at the next field, as logical IOP time now advances one field per VBlank.
+  - **SIO2 restart:** a `ctrl|0xC` restart write over a consumed 3-byte reply is accepted cumulatively.
+  - **EE side:** frame queries are counted separately (`mc_frame_queries`), outside the startup service accounting.
+- **Original comparison.** New capture point `rpc-mc-frame-callback`, taken at the first frame-phase MC end callback (absent cards): reply −11, type 0, free 0, end parameter `0x3A7480`. `verify_mc_frame_query.py` passed against an intermediate native report. `completed_card_query` now accepts repeated queries (counters scale per query; logical time is 1.9 ms per query plus whole fields).
+- **SPU2** (`spu2_playback.h`, `native_runtime.h`).
+  - **Envelopes:** ADSR from the public ADSR1/ADSR2 layout, PCSX2-style per-sample rate counter. ENVX reads return the level, a finished envelope stops the voice, and an ADPCM end zeroes it.
+  - **Voice registers:** volume, pitch, ADSR, SSA and LSA writes take any value. Pitch, ADSR and LSA apply to a playing voice, and an LSA written after key-on overrides the block loop flags. LSA reads return the live loop address. Routing masks take any voice bits.
+  - **Key-on:** requires only the keyed voices' volumes to be owned.
+- **IOP kernel.** `GetSystemTime` (thbase 34) and `SysClock2USec` (thbase 40), both from logical time. SB/SH stores now pass only the stored byte or halfword to hardware handlers.
+- **GS** (`gs_command_sink.h`).
+  - **Split:** drawing is split into a validated draw state (`prepare`) and a per-pixel `plot`.
+  - **Triangles:** triangles, strips and fans with a top-left fill rule, flat or Gouraud color, affine FST UVs and Z. Report counter `gs_frame_triangles`.
+- **Probe.** The EE runaway budget now applies per presented frame (each flip restarts it); run length is bounded by the frame limit.
+- **Map tooling** (`prepare_map.py`, unit-tested).
+  - **Registers:** the first switch layout decodes its registers (the index/condition swap seen at 0x26DD30).
+  - **Delay slot:** stores are accepted in a BEQ guard delay slot (0x2A1AB4).
+  - **Result:** main map 9,470 entries (89 quarantined).
 
-**Boundary.** At frame 27 the game sends a no-wait MCSERV query (client `0x3A6F80`, function 1, 48 bytes in, 4 out, end callback `0x31DD60`). Card queries are only admitted in the captured startup profile, so the native IOP card machinery needs generalizing: MCSERV, MCMAN, the absent-card SIO2 probes and the card alarm.
+## Exploratory result (not verified)
+
+The last normal run before the final selection reached **771 entered / 762 completed** over **105 frames**:
+- 328,838 calls / 328,726 returns, 1,992,980 IOP instructions, 228 logical VBlanks;
+- 156 GS triangles, no IOP error, one frame-phase card query.
+
+The game passes the memory card check and draws textured triangle strips. The selection loop then selected the next mapped function, `FUN_0026CD98`, and the final ALL/entry build includes it. That build has not been run.
+
+## Remaining verification
+
+Before promoting anything:
+1. Run the IOP and Ghidra Python suites.
+2. Run the normal probe, after CTest, which overwrites `entry-stop.json`. Then run the sound-worker diagnostic.
+3. Run all `verify_*.py` normal comparisons, including `verify_mc_frame_query.py`, and the phase-matched ones (311860, 310518, 28b218).
+4. Render the latest frame to PNG and inspect it.
+5. Only then export counters (`sync_progress`) and update the dashboard.
 
 ## Next implementation
 
-1. **Memory card check.** Generalize the frame-phase MCSERV queries through the original handlers with absent cards, reusing the verified absent-card SIO2/alarm path. Capture the original at the same point for comparison. Expect a "no memory card" notice or the next screen.
-2. **Optimized build.** The live window runs at about 12 fps in Debug, so real-time speed needs an optimized probe build.
-3. **Host input.** Feed the emulated pad from host controllers (XInput / SDL) once screens wait for a button press.
-
-## Verification and evidence
-
-Reports are the ignored `work/bt2-generation/entry-stop.json` (+ `.ee.bin`, `.iop.bin`, `.gs.bin`).
-- **Viewer:** `run_startup_probe.py --viewer` shows frames live.
-- **Watchpoint:** `BT2_IOP_WATCH=<hex>` stops on the first nonzero IOP store to an address.
-- **Note:** CTest overwrites `entry-stop.json`, so rerun the normal probe afterwards.
-
-**Phase-matched comparisons.** Set `BT2_PHASE_STOP=<hex>` and copy the report before the next run.
-- `311860`: `verify_dbzp_load.py`;
-- `310518`: `verify_frame_vsync.py`;
-- `28b218`: `verify_overlay_dispenv.py`, `verify_display_reset.py`, `verify_cri_autodma.py`, `verify_dbc_rpc.py`, `verify_mc_rpc.py`, `verify_sound_bank.py`.
-
-**Earlier-phase-only verifiers:** `verify_disc_read.py`, `verify_spu2_initialization.py`, `verify_cri_rpc.py`, `verify_cri_preemption.py`, `verify_second_heap.py`.
+1. **Selection loop:** continue from `FUN_0026CD98`.
+2. **Scripted pad input:** without a memory card, the game shows a notice that waits for a button press (user note). Add a deterministic frame-indexed button script to the DualShock 2 model (for example `BT2_PAD_SCRIPT`), and confirm the screen with a PNG first.
+3. **Host input:** XInput/SDL and keyboard for the live window.
+4. **Optimized build:** for real-time viewer speed.
+5. **Later (requested):** save import from emulator card images, real-console exports and internet formats ([memory card plan](../MEMORY_CARD_PLAN.md)); 16:9.

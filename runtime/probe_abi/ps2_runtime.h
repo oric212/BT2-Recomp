@@ -253,7 +253,7 @@ public:
         if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
             && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
 #ifdef BT2_NATIVE_IOP
-        if(code==0 && selector==0x77 && dbc_rpc_calls==4 && mc_rpc_calls<=1 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
+        if(code==0 && selector==0x77 && dbc_rpc_calls==4 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && (read32(rdram,0x3A97DC)==0x3A0460 || read32(rdram,0x3A97DC)==0x3A0438)) {receiveDbcPort(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_calls==4 && read32(rdram,0x3A97DC)==0x3A03C0 && frameGifContext()) {receiveDbcMain(rdram,context);return;}
         if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
@@ -1499,6 +1499,7 @@ public:
             throw std::runtime_error("EE sound thread-start evidence differs/repeated");
         sound_thread_start_supplied=true;
     }
+    unsigned mc_frame_queries=0; // Frame-phase GetInfo queries; kept out of the startup service accounting.
     unsigned mc_rpc_binds=0,mc_rpc_calls=0,mc_lock_waits=0,mc_lock_signals=0,mc_lock_polls=0;
     unsigned sound_rpc_binds=0,sound_rpc_calls=0,sounds_rpc_binds=0,sounds_rpc_calls=0,dbc_rpc_binds=0,dbc_rpc_calls=0,dbc_lock_waits=0,dbc_lock_signals=0;
     std::vector<std::string> ee_console_messages;
@@ -1977,10 +1978,13 @@ public:
     }
 
     bool eeCheckpointDue() {
-        // One observed null-bind retry executes a 2^20+1-iteration guest loop.
+        // Runaway guard. One observed null-bind retry executes a 2^20+1-iteration guest loop. Once frames
+        // are presented the guard applies per frame (each display flip restarts the count): run length is
+        // bounded by the frame limit, and a loop that never reaches the next frame still stops.
+        if (gs_display_flips != checkpoint_flips_) {checkpoint_flips_ = gs_display_flips; checkpoints_ = 0;}
         if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u))
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
-                +", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
+                +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
     }
 
@@ -2417,7 +2421,7 @@ private:
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;
-    unsigned checkpoints_ = 0, dispatch_depth_ = 0;
+    unsigned checkpoints_ = 0, checkpoint_flips_ = 0, dispatch_depth_ = 0;
     std::uint32_t last_branch_source_ = 0, last_branch_target_ = 0;
     bool timer3_mode_supplied_ = false;
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;

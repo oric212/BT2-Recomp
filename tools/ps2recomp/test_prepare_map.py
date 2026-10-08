@@ -99,6 +99,21 @@ class BoundedSwitchTests(unittest.TestCase):
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
+    def test_beql_switch_with_swapped_index_and_condition_registers(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # Index in v0, bound condition in v1: SLTIU v1,v0,2 / BEQL v1,zero / annulled LW v0 / SLL v0,v0,2 /
+        # LUI v1 / ADDU v1,v1,v0 / LW v1 / JR v1 (seen at 0x26DD30).
+        words=[0,0x0060102D,0x2C430002,0x50600008,0x8FA20004,0x00021080,0x3C030000,0x00621821,0x8C631048,0x00600008,0,0,
+               0x10000002,0,0x03E00008,0,0,0,0x1030,0x1038]
+        candidate={'start':0x1000,'end_exclusive':0x1040,'body_size':60,'contiguous_aligned':False,'body_ranges':['1000-102b','1030-103f']}
+        pack=lambda w:struct.pack('<20I',*w)
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(words)))
+        # SLL of a register other than the bounded index, a bound whose condition is the index, or a
+        # guard branch on another register stay unproven.
+        for index,value in [(5,0x00031080),(2,0x2C420002),(3,0x50400008)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
+
     def test_beq_switch_with_index_preserving_delay_slot(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
         # As the BEQL layout, but a plain BEQ whose delay slot (LW v0, both paths) precedes the SLL.
@@ -108,6 +123,9 @@ class BoundedSwitchTests(unittest.TestCase):
         pack=lambda w:struct.pack('<20I',*w)
         self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(words)))
         # Delay slot writing the index (LW v1 / ADDU v1), a control delay slot, or a wrong bound stay unproven.
+        # A store in the delay slot writes no register (SW zero,0(sp), seen at 0x2A1AB4).
+        stored=words.copy();stored[4]=0xAFA00000
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(stored)))
         for index,value in [(4,0x8E431C00),(4,0x00431821),(4,0x03E00008),(2,0x2C620000)]:
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
