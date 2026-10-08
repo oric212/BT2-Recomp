@@ -22,28 +22,32 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 <!-- progress-summary:start -->
 ![BT2 port status](docs/progress/dashboard.svg)
 
-| Stage | Status |
+| Functional milestone | Status |
 | --- | --- |
-| Recompilation pipeline | ✅ Verified — validation, function map, code generation, native host |
-| Startup | ✅ Verified — boots to the main frame loop; key states match original captures |
+| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading |
+| Main frame loop | ✅ Verified — key startup states match original captures |
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
 | Controller check | ✅ Verified — passed with an emulated DualShock 2 |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
-| Opening movie | 🔧 In progress — decoder set up; stops before the first movie frame |
+| Opening movie | 🔧 Current — decoder set up; stops before the first movie frame |
 | Title screen | ⏳ Pending — waits for Start |
 | Demo fight (no input) | ⏳ Pending |
-| Menus and versus battle | ⏳ Pending |
-| Audio output | ⏳ Pending — sound driver set up; no sound yet |
-| Memory card saves | ⏳ Pending |
+| Gameplay (menus, versus battle) | ⏳ Pending |
+| Audio | ⏳ Pending — sound driver set up; no sound output |
+| Saves | ⏳ Pending — no memory card image yet |
 
-**Last measured, 2026-10-08:** **1,254 game functions entered / 1,243 completed**, **650 presented frames**, **1,034 logical VBlanks**, **186 original IOP disc reads**, **43 CRI sound calls**, **77 memory card queries**.
+**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** (structural only) · verification **18/18 tests, 35 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
-### What runs today
+### How progress is measured
 
-- **Startup:** the game's recompiled code and its original IOP modules run natively, from boot to the main frame loop.
-- **Frames:** controller check and memory card screens, drawn by the GS model and shown in a live window.
-- **Toward the movie:** decoder setup and frame-pacing threads run; the run stops at GIF DMA chain mode, before the first movie frame.
+There is no completion percentage. Function counts don't say how much of the game works, so progress is tracked in five separate categories:
+
+- **Functional milestones:** how far the game gets through its own sequence (the table above).
+- **Static coverage:** code mapped and generated ahead of time. This is structural only, not a measure of what works.
+- **Runtime coverage:** unique functions actually run in the verified startup run.
+- **Subsystem status:** which PS2 parts (EE, IOP, GS, GIF/VIF, IPU, audio, input, memory card, disc) work, and within what scope.
+- **Verification:** tests, and comparisons of recompiled state against the original game running in PCSX2.
 
 ### Next steps
 

@@ -1,35 +1,35 @@
 {
   "updated": "2026-10-08",
   "flow": [
-    {"name": "Startup", "status": "verified", "note": "To main frame loop"},
+    {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
     {"name": "Controller check", "status": "verified", "note": "Emulated DS2"},
     {"name": "Memory card", "status": "verified", "note": "No-card prompt"},
     {"name": "Opening movie", "status": "partial", "note": "Current: setup", "current": true},
     {"name": "Title screen", "status": "pending", "note": "Waits for Start"},
     {"name": "Demo fight", "status": "pending", "note": "If no Start"},
-    {"name": "Versus battle", "status": "pending", "note": ""}
+    {"name": "Gameplay", "status": "pending", "note": "Menus, battle"}
   ],
   "groups": [
-    {"name": "Foundation", "items": [
+    {"name": "Core subsystems", "items": [
+      {"name": "EE CPU and kernel services", "status": "partial", "note": "Threads, interrupts as reached"},
+      {"name": "IOP modules", "status": "partial", "note": "Original modules run natively"},
+      {"name": "Disc / filesystem", "status": "verified", "note": "Reached reads byte-identical"},
+      {"name": "Input", "status": "partial", "note": "Emulated DS2; scripted input"},
+      {"name": "Memory card", "status": "partial", "note": "No card image; no saves"}
+    ]},
+    {"name": "Graphics and media", "items": [
+      {"name": "GS", "status": "partial", "note": "Sprites, triangles, PSMT4/8"},
+      {"name": "GIF / VIF / VU", "status": "partial", "note": "GIF chain mode next; VU not reached"},
+      {"name": "IPU / video", "status": "partial", "note": "Setup only; no MPEG decoding"},
+      {"name": "Audio", "status": "partial", "note": "Driver set up; no sound output"},
+      {"name": "Presentation", "status": "verified", "note": "650 frames in a live window"}
+    ]},
+    {"name": "Pipeline and verification", "items": [
       {"name": "Native Windows host", "status": "verified", "note": "MSVC x64; Debug and Release"},
       {"name": "Retail validation", "status": "verified", "note": "Disc and embedded ELF confirmed"},
-      {"name": "Map and generation", "status": "verified", "note": "~9,500 provisional functions"},
-      {"name": "Startup to frame loop", "status": "verified", "note": "Compared with original captures"},
-      {"name": "Disc and file loading", "status": "verified", "note": "Streamed reads; DBZP.BIN overlay"}
-    ]},
-    {"name": "Runtime", "items": [
-      {"name": "EE threads and scheduling", "status": "partial", "note": "Workers, sleep/wake, priorities"},
-      {"name": "Original IOP modules", "status": "partial", "note": "13 resident; run natively"},
-      {"name": "SIF / RPC / DMA", "status": "partial", "note": "GIF chain mode is next"},
-      {"name": "Timers and interrupts", "status": "partial", "note": "VBlank, Timer 1/2; logical time"},
-      {"name": "Controller and cards", "status": "partial", "note": "Scripted pad; no card mounted"}
-    ]},
-    {"name": "Game", "items": [
-      {"name": "First presented frame", "status": "verified", "note": "650 frames in a live window"},
-      {"name": "GS rendering", "status": "partial", "note": "PSMT4/8 textures, sprites"},
-      {"name": "Movie decoding (IPU)", "status": "partial", "note": "Setup only; MPEG decode pending"},
-      {"name": "VU microprograms", "status": "pending", "note": "Not reached yet"},
-      {"name": "Audio output", "status": "pending", "note": "Driver set up; no sound output"}
+      {"name": "Static coverage", "status": "verified", "note": "9,493 EE functions generated"},
+      {"name": "Tests", "status": "verified", "note": "18/18 CTests; Python suites pass"},
+      {"name": "Original comparisons", "status": "partial", "note": "35 of 46 pass at this checkpoint"}
     ]}
   ]
 }
