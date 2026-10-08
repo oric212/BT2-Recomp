@@ -1,26 +1,35 @@
 {
   "updated": "2026-10-08",
+  "flow": [
+    {"name": "Startup", "status": "verified", "note": "To main frame loop"},
+    {"name": "Controller check", "status": "verified", "note": "Emulated DS2"},
+    {"name": "Memory card", "status": "verified", "note": "No-card prompt"},
+    {"name": "Opening movie", "status": "partial", "note": "Current: setup", "current": true},
+    {"name": "Title screen", "status": "pending", "note": "Waits for Start"},
+    {"name": "Demo fight", "status": "pending", "note": "If no Start"},
+    {"name": "Versus battle", "status": "pending", "note": ""}
+  ],
   "groups": [
     {"name": "Foundation", "items": [
-      {"name": "Native Windows host", "status": "verified", "note": "CMake / MSVC executable builds"},
+      {"name": "Native Windows host", "status": "verified", "note": "MSVC x64; Debug and Release"},
       {"name": "Retail validation", "status": "verified", "note": "Disc and embedded ELF confirmed"},
-      {"name": "Map and generation", "status": "verified", "note": "Provisional map; pipeline works"},
-      {"name": "Generated startup", "status": "partial", "note": "Executes to a checked boundary"},
-      {"name": "Disc metadata", "status": "verified", "note": "Directory + 53 archive reads"}
+      {"name": "Map and generation", "status": "verified", "note": "~9,500 provisional functions"},
+      {"name": "Startup to frame loop", "status": "verified", "note": "Compared with original captures"},
+      {"name": "Disc and file loading", "status": "verified", "note": "Streamed reads; DBZP.BIN overlay"}
     ]},
     {"name": "Runtime", "items": [
-      {"name": "EE threads and scheduling", "status": "partial", "note": "Admission, VBlank wakes"},
-      {"name": "Original IOP modules", "status": "partial", "note": "13 resident; bounded execution"},
-      {"name": "SIF / RPC / DMA", "status": "partial", "note": "NCMD/SCMD calls; IOP ack pending"},
-      {"name": "CRI sound setup", "status": "partial", "note": "42 calls; AutoDMA half pending"},
-      {"name": "Controller and cards", "status": "partial", "note": "Scripted pad; absent-card checks"}
+      {"name": "EE threads and scheduling", "status": "partial", "note": "Workers, sleep/wake, priorities"},
+      {"name": "Original IOP modules", "status": "partial", "note": "13 resident; run natively"},
+      {"name": "SIF / RPC / DMA", "status": "partial", "note": "GIF chain mode is next"},
+      {"name": "Timers and interrupts", "status": "partial", "note": "VBlank, Timer 1/2; logical time"},
+      {"name": "Controller and cards", "status": "partial", "note": "Scripted pad; no card mounted"}
     ]},
     {"name": "Game", "items": [
-      {"name": "Archive payload loading", "status": "partial", "note": "AFS table; DBZP.BIN; first asset"},
-      {"name": "VU microprograms", "status": "pending", "note": "Execution not verified"},
-      {"name": "GS rendering", "status": "partial", "note": "PSMT4/8 textures; card dialogs"},
-      {"name": "Frame presentation", "status": "partial", "note": "Live window; ~12 fps Debug"},
-      {"name": "Menu, battle and audio", "status": "pending", "note": "End-to-end behavior unverified"}
+      {"name": "First presented frame", "status": "verified", "note": "650 frames in a live window"},
+      {"name": "GS rendering", "status": "partial", "note": "PSMT4/8 textures, sprites"},
+      {"name": "Movie decoding (IPU)", "status": "partial", "note": "Setup only; MPEG decode pending"},
+      {"name": "VU microprograms", "status": "pending", "note": "Not reached yet"},
+      {"name": "Audio output", "status": "pending", "note": "Driver set up; no sound output"}
     ]}
   ]
 }

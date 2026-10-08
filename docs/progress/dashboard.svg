@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title desc">
-<title id="title">BT2 component status map</title>
-<desc id="desc">Foundation, runtime and game status. Verified scopes are bounded; startup and game presentation remain incomplete.</desc>
-<rect x="1" y="1" width="958" height="478" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="566" viewBox="0 0 960 566" role="img" aria-labelledby="title desc">
+<title id="title">BT2 port status</title>
+<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status. Verified scopes are bounded.</desc>
+<rect x="1" y="1" width="958" height="564" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
 <text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-08 · last measured checkpoint</text>
@@ -11,98 +11,134 @@
 <text x="216" y="63" font-size="12" fill="#475569">Partial / active</text>
 <circle cx="379" cy="59" r="4" fill="#8793a5"/>
 <text x="391" y="63" font-size="12" fill="#475569">Pending</text>
-<text x="24" y="100" font-size="15" font-weight="600" fill="#334155">Foundation</text>
-<g><title>Native Windows host: Verified scope. CMake / MSVC executable builds</title>
-<rect x="24" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="123" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="41" cy="134" r="3.5" fill="#16835d"/>
-<text x="52" y="138" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
-<text x="37" y="156" font-size="11.5" fill="#64748b">CMake / MSVC executable builds</text></g>
+<text x="24" y="92" font-size="15" font-weight="600" fill="#334155">Game flow</text>
+<line x1="84.0" y1="128" x2="876.0" y2="128" stroke="#cbd5e1" stroke-width="2"/>
+<g><title>Startup: Verified scope. To main frame loop</title>
+<rect x="24.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="84.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
+<text x="84.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">To main frame loop</text>
+</g>
+<g><title>Controller check: Verified scope. Emulated DS2</title>
+<rect x="156.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="216.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Controller check</text>
+<text x="216.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Emulated DS2</text>
+</g>
+<g><title>Memory card: Verified scope. No-card prompt</title>
+<rect x="288.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Memory card</text>
+<text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">No-card prompt</text>
+</g>
+<g><title>Opening movie: Partial / active. Current: setup</title>
+<rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#fff7e6" stroke="#b77912" stroke-width="2"/>
+<text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Opening movie</text>
+<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#b77912">Current: setup</text>
+</g>
+<g><title>Title screen: Pending. Waits for Start</title>
+<rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
+<text x="612.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title screen</text>
+<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Waits for Start</text>
+</g>
+<g><title>Demo fight: Pending. If no Start</title>
+<rect x="684.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
+<text x="744.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Demo fight</text>
+<text x="744.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">If no Start</text>
+</g>
+<g><title>Versus battle: Pending. </title>
+<rect x="816.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
+<text x="876.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
+</g>
+<text x="24" y="196" font-size="15" font-weight="600" fill="#334155">Foundation</text>
+<g><title>Native Windows host: Verified scope. MSVC x64; Debug and Release</title>
+<rect x="24" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24" y="219" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41" cy="230" r="3.5" fill="#16835d"/>
+<text x="52" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
+<text x="37" y="252" font-size="11.5" fill="#64748b">MSVC x64; Debug and Release</text></g>
 <g><title>Retail validation: Verified scope. Disc and embedded ELF confirmed</title>
-<rect x="24" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="185" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="41" cy="196" r="3.5" fill="#16835d"/>
-<text x="52" y="200" font-size="13" font-weight="600" fill="#1e293b">Retail validation</text>
-<text x="37" y="218" font-size="11.5" fill="#64748b">Disc and embedded ELF confirmed</text></g>
-<g><title>Map and generation: Verified scope. Provisional map; pipeline works</title>
-<rect x="24" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="247" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="41" cy="258" r="3.5" fill="#16835d"/>
-<text x="52" y="262" font-size="13" font-weight="600" fill="#1e293b">Map and generation</text>
-<text x="37" y="280" font-size="11.5" fill="#64748b">Provisional map; pipeline works</text></g>
-<g><title>Generated startup: Partial / active. Executes to a checked boundary</title>
-<rect x="24" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="41" cy="320" r="3.5" fill="#b77912"/>
-<text x="52" y="324" font-size="13" font-weight="600" fill="#1e293b">Generated startup</text>
-<text x="37" y="342" font-size="11.5" fill="#64748b">Executes to a checked boundary</text></g>
-<g><title>Disc metadata: Verified scope. Directory + 53 archive reads</title>
-<rect x="24" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="371" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="41" cy="382" r="3.5" fill="#16835d"/>
-<text x="52" y="386" font-size="13" font-weight="600" fill="#1e293b">Disc metadata</text>
-<text x="37" y="404" font-size="11.5" fill="#64748b">Directory + 53 archive reads</text></g>
-<text x="334" y="100" font-size="15" font-weight="600" fill="#334155">Runtime</text>
-<g><title>EE threads and scheduling: Partial / active. Admission, VBlank wakes</title>
-<rect x="334" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="123" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="134" r="3.5" fill="#b77912"/>
-<text x="362" y="138" font-size="13" font-weight="600" fill="#1e293b">EE threads and scheduling</text>
-<text x="347" y="156" font-size="11.5" fill="#64748b">Admission, VBlank wakes</text></g>
-<g><title>Original IOP modules: Partial / active. 13 resident; bounded execution</title>
-<rect x="334" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="185" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="196" r="3.5" fill="#b77912"/>
-<text x="362" y="200" font-size="13" font-weight="600" fill="#1e293b">Original IOP modules</text>
-<text x="347" y="218" font-size="11.5" fill="#64748b">13 resident; bounded execution</text></g>
-<g><title>SIF / RPC / DMA: Partial / active. NCMD/SCMD calls; IOP ack pending</title>
-<rect x="334" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="247" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="258" r="3.5" fill="#b77912"/>
-<text x="362" y="262" font-size="13" font-weight="600" fill="#1e293b">SIF / RPC / DMA</text>
-<text x="347" y="280" font-size="11.5" fill="#64748b">NCMD/SCMD calls; IOP ack pending</text></g>
-<g><title>CRI sound setup: Partial / active. 42 calls; AutoDMA half pending</title>
-<rect x="334" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="320" r="3.5" fill="#b77912"/>
-<text x="362" y="324" font-size="13" font-weight="600" fill="#1e293b">CRI sound setup</text>
-<text x="347" y="342" font-size="11.5" fill="#64748b">42 calls; AutoDMA half pending</text></g>
-<g><title>Controller and cards: Partial / active. Scripted pad; absent-card checks</title>
-<rect x="334" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="371" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="382" r="3.5" fill="#b77912"/>
-<text x="362" y="386" font-size="13" font-weight="600" fill="#1e293b">Controller and cards</text>
-<text x="347" y="404" font-size="11.5" fill="#64748b">Scripted pad; absent-card checks</text></g>
-<text x="644" y="100" font-size="15" font-weight="600" fill="#334155">Game</text>
-<g><title>Archive payload loading: Partial / active. AFS table; DBZP.BIN; first asset</title>
-<rect x="644" y="114" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="123" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="661" cy="134" r="3.5" fill="#b77912"/>
-<text x="672" y="138" font-size="13" font-weight="600" fill="#1e293b">Archive payload loading</text>
-<text x="657" y="156" font-size="11.5" fill="#64748b">AFS table; DBZP.BIN; first asset</text></g>
-<g><title>VU microprograms: Pending. Execution not verified</title>
-<rect x="644" y="176" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="185" width="3" height="36" rx="1.5" fill="#8793a5"/>
-<circle cx="661" cy="196" r="3.5" fill="#8793a5"/>
-<text x="672" y="200" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
-<text x="657" y="218" font-size="11.5" fill="#64748b">Execution not verified</text></g>
-<g><title>GS rendering: Partial / active. PSMT4/8 textures; card dialogs</title>
-<rect x="644" y="238" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="247" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="661" cy="258" r="3.5" fill="#b77912"/>
-<text x="672" y="262" font-size="13" font-weight="600" fill="#1e293b">GS rendering</text>
-<text x="657" y="280" font-size="11.5" fill="#64748b">PSMT4/8 textures; card dialogs</text></g>
-<g><title>Frame presentation: Partial / active. Live window; ~12 fps Debug</title>
-<rect x="644" y="300" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="309" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="661" cy="320" r="3.5" fill="#b77912"/>
-<text x="672" y="324" font-size="13" font-weight="600" fill="#1e293b">Frame presentation</text>
-<text x="657" y="342" font-size="11.5" fill="#64748b">Live window; ~12 fps Debug</text></g>
-<g><title>Menu, battle and audio: Pending. End-to-end behavior unverified</title>
-<rect x="644" y="362" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="371" width="3" height="36" rx="1.5" fill="#8793a5"/>
-<circle cx="661" cy="382" r="3.5" fill="#8793a5"/>
-<text x="672" y="386" font-size="13" font-weight="600" fill="#1e293b">Menu, battle and audio</text>
-<text x="657" y="404" font-size="11.5" fill="#64748b">End-to-end behavior unverified</text></g>
-<text x="24" y="453" font-size="12" fill="#64748b">Verified scope means the stated bounded behavior works. It does not imply the entire subsystem is complete.</text>
+<rect x="24" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41" cy="292" r="3.5" fill="#16835d"/>
+<text x="52" y="296" font-size="13" font-weight="600" fill="#1e293b">Retail validation</text>
+<text x="37" y="314" font-size="11.5" fill="#64748b">Disc and embedded ELF confirmed</text></g>
+<g><title>Map and generation: Verified scope. ~9,500 provisional functions</title>
+<rect x="24" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41" cy="354" r="3.5" fill="#16835d"/>
+<text x="52" y="358" font-size="13" font-weight="600" fill="#1e293b">Map and generation</text>
+<text x="37" y="376" font-size="11.5" fill="#64748b">~9,500 provisional functions</text></g>
+<g><title>Startup to frame loop: Verified scope. Compared with original captures</title>
+<rect x="24" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41" cy="416" r="3.5" fill="#16835d"/>
+<text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Startup to frame loop</text>
+<text x="37" y="438" font-size="11.5" fill="#64748b">Compared with original captures</text></g>
+<g><title>Disc and file loading: Verified scope. Streamed reads; DBZP.BIN overlay</title>
+<rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24" y="467" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41" cy="478" r="3.5" fill="#16835d"/>
+<text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Disc and file loading</text>
+<text x="37" y="500" font-size="11.5" fill="#64748b">Streamed reads; DBZP.BIN overlay</text></g>
+<text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Runtime</text>
+<g><title>EE threads and scheduling: Partial / active. Workers, sleep/wake, priorities</title>
+<rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="334" y="219" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="351" cy="230" r="3.5" fill="#b77912"/>
+<text x="362" y="234" font-size="13" font-weight="600" fill="#1e293b">EE threads and scheduling</text>
+<text x="347" y="252" font-size="11.5" fill="#64748b">Workers, sleep/wake, priorities</text></g>
+<g><title>Original IOP modules: Partial / active. 13 resident; run natively</title>
+<rect x="334" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="334" y="281" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="351" cy="292" r="3.5" fill="#b77912"/>
+<text x="362" y="296" font-size="13" font-weight="600" fill="#1e293b">Original IOP modules</text>
+<text x="347" y="314" font-size="11.5" fill="#64748b">13 resident; run natively</text></g>
+<g><title>SIF / RPC / DMA: Partial / active. GIF chain mode is next</title>
+<rect x="334" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="351" cy="354" r="3.5" fill="#b77912"/>
+<text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">SIF / RPC / DMA</text>
+<text x="347" y="376" font-size="11.5" fill="#64748b">GIF chain mode is next</text></g>
+<g><title>Timers and interrupts: Partial / active. VBlank, Timer 1/2; logical time</title>
+<rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="334" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="351" cy="416" r="3.5" fill="#b77912"/>
+<text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Timers and interrupts</text>
+<text x="347" y="438" font-size="11.5" fill="#64748b">VBlank, Timer 1/2; logical time</text></g>
+<g><title>Controller and cards: Partial / active. Scripted pad; no card mounted</title>
+<rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="334" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="351" cy="478" r="3.5" fill="#b77912"/>
+<text x="362" y="482" font-size="13" font-weight="600" fill="#1e293b">Controller and cards</text>
+<text x="347" y="500" font-size="11.5" fill="#64748b">Scripted pad; no card mounted</text></g>
+<text x="644" y="196" font-size="15" font-weight="600" fill="#334155">Game</text>
+<g><title>First presented frame: Verified scope. 650 frames in a live window</title>
+<rect x="644" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="644" y="219" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="661" cy="230" r="3.5" fill="#16835d"/>
+<text x="672" y="234" font-size="13" font-weight="600" fill="#1e293b">First presented frame</text>
+<text x="657" y="252" font-size="11.5" fill="#64748b">650 frames in a live window</text></g>
+<g><title>GS rendering: Partial / active. PSMT4/8 textures, sprites</title>
+<rect x="644" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="644" y="281" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="661" cy="292" r="3.5" fill="#b77912"/>
+<text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">GS rendering</text>
+<text x="657" y="314" font-size="11.5" fill="#64748b">PSMT4/8 textures, sprites</text></g>
+<g><title>Movie decoding (IPU): Partial / active. Setup only; MPEG decode pending</title>
+<rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="644" y="343" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="661" cy="354" r="3.5" fill="#b77912"/>
+<text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Movie decoding (IPU)</text>
+<text x="657" y="376" font-size="11.5" fill="#64748b">Setup only; MPEG decode pending</text></g>
+<g><title>VU microprograms: Pending. Not reached yet</title>
+<rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="644" y="405" width="3" height="36" rx="1.5" fill="#8793a5"/>
+<circle cx="661" cy="416" r="3.5" fill="#8793a5"/>
+<text x="672" y="420" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
+<text x="657" y="438" font-size="11.5" fill="#64748b">Not reached yet</text></g>
+<g><title>Audio output: Pending. Driver set up; no sound output</title>
+<rect x="644" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="644" y="467" width="3" height="36" rx="1.5" fill="#8793a5"/>
+<circle cx="661" cy="478" r="3.5" fill="#8793a5"/>
+<text x="672" y="482" font-size="13" font-weight="600" fill="#1e293b">Audio output</text>
+<text x="657" y="500" font-size="11.5" fill="#64748b">Driver set up; no sound output</text></g>
+<text x="24" y="546" font-size="12" fill="#64748b">Verified scope means the stated bounded behavior works. It does not imply the entire subsystem is complete.</text>
 </g></svg>

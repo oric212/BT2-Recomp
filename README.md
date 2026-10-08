@@ -20,25 +20,23 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 
 ## Progress
 <!-- progress-summary:start -->
-![BT2 component status map](docs/progress/dashboard.svg)
+![BT2 port status](docs/progress/dashboard.svg)
+
+**Where the port is:** the recompiled game boots, completes its startup and runs its own frame loop. It has presented **650 frames** in a live window: the controller check and the memory card screens, up to the transition into the opening movie. It then prepares the movie and stops at the next unimplemented hardware feature. Playing the movie needs MPEG decoding, which is not implemented yet.
 
 | Milestone | Status |
 | --- | --- |
-| Native host, retail validation and recompilation pipeline | ✅ Verified |
-| Generated BT2 startup execution | 🔧 Partial — reaches a checked runtime boundary |
-| Initial disc read and metadata lookups | ✅ Verified |
-| First archive (AFS) table load | ✅ Verified — byte-identical to original |
-| Complete startup and thread scheduling | 🔧 In progress — startup reaches main's frame loop; VBlank, display setup, Timer 2, streamed reads, sound bank verified |
-| Game asset loading and first presented frame | 🔧 In progress — boot screens rendered and shown in a live window; controller and memory card checks pass; scripted input answers the no-card prompt; the frame-pacing threads run (650 frames) |
-| Title screen, menu and playable versus battle | ⏳ Pending |
-| Native audio playback and full match | ⏳ Pending |
+| Recompilation pipeline (validation, map, code generation, native host) | ✅ Verified |
+| Startup: kernel services, original IOP modules, disc reads, threads | ✅ Verified — reaches the main frame loop; key states match original captures |
+| First presented frame | ✅ Verified — boot screens drawn by the GS model and shown in a live window |
+| Controller and memory card checks | ✅ Verified — emulated DualShock 2; no card mounted, prompt answered by scripted input |
+| Opening movie | 🔧 In progress — decoder setup done; graphics DMA chain mode next, then MPEG decoding |
+| Title screen and attract-mode demo fight | ⏳ Pending |
+| Menus and playable versus battle | ⏳ Pending |
+| Audio output | ⏳ Pending — sound driver set up; no sound produced |
+| Memory card saves | ⏳ Pending |
 
-**Verified blocker (2026-10-08):** after the frame-phase GS reset, the game sets up the IPU and saves the scratchpad for the opening movie. It then runs its frame-pacing threads: worker 7 serves the frame callbacks, main sleeps at frame end, and worker 4 wakes it. The run stops at the next subsystem, a GIF DMA chain-mode transfer (`0x1000A030`).
-
-**Last measured, 2026-10-08:** **1,254 EE entries entered / 1,243 completed**, **650 rendered frames**, **43 CRI calls**, **186 original IOP disc reads**, **1,034 logical VBlanks**, **76 memory card queries**. Complete startup is not yet verified.
-
-Helper 5/6 execution is now part of normal startup; the former separate helper diagnostic was retired.
-
+**Last measured, 2026-10-08:** **1,254 game functions entered / 1,243 completed**, **650 presented frames**, **1,034 logical VBlanks**, **186 original IOP disc reads**, **43 CRI sound calls**, **77 memory card queries**.
 <!-- progress-summary:end -->
 
 [Detailed measurements](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
