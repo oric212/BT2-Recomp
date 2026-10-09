@@ -6,7 +6,13 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames). The r
 
 ## Next implementation
 
-Follow "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy), in this order. Steps 1 and 2 change no game-visible behavior.
+Follow "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy), in this order: profiling → handler audit → GIF DMA investigation. Steps 1 and 2 change no game-visible behavior.
+
+**Goal for this work: a smaller PS2 layer.** The runtime should hold one implementation of each piece of hardware behavior BT2 uses, not one per call site. In every step:
+- **Simplify duplicated logic.** GIF channel 2 has four separate models today: `gif_dma` and `clear_repeat_gif` (`GifDmaStaging`), `texture_gif` (`TextureGifStartup`) and `frame_gif`. VIF1 has two (`vif_startup`, `frame_vif1`).
+- **Generalize verified special cases**, and reuse existing implementations instead of adding blocker-specific patches.
+- **Every change keeps behavior:** unit or regression tests, and the PCSX2 original comparisons passing with no new failures.
+- **No speculative features or rewrites.** Merge or generalize only behavior that is understood and verified; leave the rest as checked boundaries.
 
 ### 1. Release profiling baseline
 
@@ -19,13 +25,15 @@ Follow "Current next step" in [the implementation plan](../project/IMPLEMENTATIO
 
 - **List** the handlers in `runtime/ee/` and `runtime/iop/` gated on a guest PC, stack offset or call count. Examples: the startup GIF paths at `0x28B96C`/`0x28B978`/`0x28B98C` and `0x3101A8`/`0x310148`/`0x310194` in `ps2_runtime_memory.cpp`, and the phase-locked thread syscalls in `ps2_runtime_syscalls.cpp`.
 - **Classify each one:** general hardware or kernel behavior verified at more than one site; behavior understood at only one site; or not yet understood.
-- **Generalize only the first group.** Each generalization gets a regression test and keeps the comparisons passing. Leave the others as checked boundaries, and record why in the audit.
+- **Generalize only the first group.** Each generalization gets a regression test and keeps the PCSX2 comparisons passing. Leave the others as checked boundaries, and record why in the audit.
+- **Merge duplicates into one model.** Where several handlers model the same channel or register (the four GIF channel-2 models, the two VIF1 models), fold the verified behavior into one implementation. Each removed path must be covered by tests and comparisons first.
+- **Measure the result:** record the handlers removed or generalized, and those deliberately kept gated, so the layer visibly shrinks.
 - Record the audit list and its outcome in the monthly history.
 
 ### 3. GIF DMA chain mode (current blocker)
 
 - **Evidence first.** The routine at `0x312060` reads TADR (`lw` at `0x312084`), rewrites it unless it reads `0xFFFFFFFF`, then reads CHCR, clears its MOD bits (mask `0xFFFFFFF3`) and zeroes QWC. The transfer mode it finally starts is not confirmed yet. Follow the routine to its CHCR start and record the final CHCR (MOD, TTE, TIE), TADR, MADR/QWC and, for chain mode, the tag chain in RAM (tag IDs, QWC, addresses, any tag IRQ bit). Capture the original at the same point if the ordering or completion behavior is unclear. Implement chain mode only if that start uses it.
-- **One chain walker.** VIF1 already walks chains inside `frameVif1Start` (`ps2_runtime_memory.cpp`): refe/cnt/next/ref/refs/end, tag transfer, and call/ret and tag IRQs refused. Extract it into a shared walker used by both channels; do not write a second one. GIF differs only in where the payload goes (the GS packet path) and in tag transfer.
+- **Reuse, do not add.** Extend the GIF channel-2 model that results from step 2; do not add a fifth one. For chain mode, VIF1 already walks chains inside `frameVif1Start` (`ps2_runtime_memory.cpp`): refe/cnt/next/ref/refs/end, tag transfer, and call/ret and tag IRQs refused. Extract it into a shared walker used by both channels; do not write a second one. GIF differs only in where the payload goes (the GS packet path) and in tag transfer.
 - **Behavior to keep or add:**
   - tag IDs as reached, with call/ret (ASR stack) only if reached;
   - transfer ordering, with PATH3 after the preceding VIF1 PATH2 work;
@@ -34,7 +42,7 @@ Follow "Current next step" in [the implementation plan](../project/IMPLEMENTATIO
   - interrupts (tag IRQ and TIE, CIS) only if the game enables them.
 
   Data with the scratchpad bit (bit 31) is not handled today, since tag addresses are masked with `0x7FFFFFF0`. Handle it if the chain uses it.
-- **Tests:** a unit test per reached tag type, a register state check after each transfer, and VIF1's existing tests still passing through the shared walker.
+- **Tests and comparisons:** a unit test per reached tag type, a register state check after each transfer, VIF1's existing tests still passing through the shared walker, and the PCSX2 comparisons unchanged. Compare the new transfer against an original capture before calling it verified.
 - **References:** PCSX2 `Dmac.cpp`/`Gif.cpp`; PS2Recomp's GIF arbiter for path ordering; [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference) for the GS side of the packets.
 
 ### 4. Opening movie
