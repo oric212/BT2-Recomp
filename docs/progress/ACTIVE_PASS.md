@@ -6,11 +6,15 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames). Histo
 
 ## Next implementation
 
-1. **GIF DMA chain mode:** the run stops at a GIF channel 2 TADR access (`0x1000A030`, pc `0x312084`), probably the movie scene's first chain-mode GIF transfer. Compare with [FRAME_GIF_PLAN.md](../plans/graphics/FRAME_GIF_PLAN.md); PS2Recomp's GIF arbiter and PCSX2 `Gif.cpp`/`Dmac.cpp` are the references.
-2. **Opening movie (FMV):** needs real IPU MPEG-2 decoding (IPU commands beyond setup, IPU DMA 3/4). This is a new major subsystem: write `docs/IPU_PLAN.md` before implementing it.
-3. **After the movie:** the title screen waits for Start. Without input, the menu runs an attract-mode CPU-vs-CPU fight (user report), a good no-input target.
-4. **Frame field:** handler-delivered VBlanks while main sleeps do not toggle `display_field` (only polled VBlanks and VSync-flag deliveries do). Check this against an original capture if a field-dependent path diverges.
-5. **Memory card, host input (XInput/SDL, keyboard), 16:9:** unchanged from the previous handoff.
+Strategy change (2026-10-09): follow "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy).
+
+1. **Profile** the 650-frame Release startup run per subsystem and record the baseline in the monthly history.
+2. **Audit and generalize** address-gated handlers in `runtime/ee/` and `runtime/iop/`, starting with behavior verified at more than one site; add a regression test for each.
+3. **GIF DMA chain mode** (current blocker: `0x1000A030`, pc `0x312084`) as a general DMA chain walker shared with VIF1. References: PCSX2 `Dmac.cpp`/`Gif.cpp`, PS2Recomp's GIF arbiter, paraLLEl-GS for the GS side.
+4. **Opening movie:** IPU MPEG-2 decoding needs `docs/plans/video/IPU_PLAN.md` first.
+5. **After the movie:** the title screen waits for Start; without input the game runs a CPU-vs-CPU demo fight (user report).
+6. **Frame field:** handler-delivered VBlanks while main sleeps do not toggle `display_field`; check against an original capture if a field-dependent path diverges.
+7. **Memory card, host input (XInput/SDL, keyboard), 16:9:** unchanged.
 
 ## Comparisons outside the gate script
 

@@ -25,7 +25,20 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 
 Use a blocker-driven approach, but work at subsystem scale whenever possible. When several blockers belong to the same subsystem, trace and implement the bounded set needed to complete that subsystem instead of stopping after each individual function/syscall.
 
-Use docs/reference/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is completing startup subsystems far enough to reach game asset loading, real draw submission and presentation. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
+Use docs/reference/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is the strategy step in docs/project/IMPLEMENTATION_PLAN.md ("Current next step"): profile the startup workload, generalize verified address-gated handlers, then implement GIF DMA chain mode as general behavior. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
+
+## Architecture and performance
+
+BT2-Recomp is a lightweight native Windows x64 port, not a general-purpose PS2 emulator. Details, profiling criteria and verification requirements: docs/project/IMPLEMENTATION_PLAN.md.
+
+- **Static recompilation stays the core.** EE code runs as generated native C++. No EE interpreter, full-system emulation, duplicate subsystem implementations or needless abstraction.
+- **Only what BT2 requires.** Add kernel, hardware and device behavior when BT2 reaches it, with evidence; prefer the simplest native implementation that meets the demonstrated requirement.
+- **General behavior over workarounds.** Implement verified hardware behavior generally instead of adding handlers gated on guest PCs, stack offsets or call counts. Generalize an existing gate when the same behavior is reached again.
+- **Preserve semantics; fail explicitly.** Keep DMA ordering, interrupts, synchronization and memory semantics correct. Unsupported behavior stops at a checked boundary; never fake success.
+- **Measure before optimizing.** The software GS renderer and the IOP execution engine are the first investigation targets. Profile Release builds on representative workloads before optimizing or redesigning. GPU-backed rendering or leaner native IOP hot paths need profiling evidence and their own plan.
+- **Correctness first.** Validate with the existing tests and original-game comparisons; add a regression test for every generalized behavior.
+- **Honest status.** Keep Verified separate from Operational or untested behavior. Never infer gameplay performance from startup progress or a first-frame milestone.
+- **No speculative rewrites.** Apply these rules to new work; change architecture only on measured evidence.
 
 ## Build efficiency
 

@@ -53,9 +53,9 @@ Statuses: ✅ Verified · 🟢 Operational (working on exercised paths, not yet 
 
 ### Next steps
 
-1. GIF DMA chain mode (current blocker).
-2. MPEG movie decoding (IPU).
-3. Title screen and the attract-mode demo fight.
+1. Profile the startup run per subsystem (GS renderer, IOP, EE) in Release.
+2. Generalize verified address-specific handlers into general hardware behavior.
+3. GIF DMA chain mode (current blocker), then MPEG movie decoding (IPU).
 
 [Full progress](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
 

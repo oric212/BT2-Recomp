@@ -103,10 +103,13 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 ## Next steps
 
-1. **GIF DMA chain mode:** the current blocker ([frame GIF plan](plans/graphics/FRAME_GIF_PLAN.md)).
-2. **Movie decoding:** real IPU MPEG-2 decoding, a new subsystem that needs its own plan.
-3. **Title screen and demo fight:** the title screen waits for Start; without input the game runs a CPU-vs-CPU demo fight.
-4. **Later:** VU microprograms, audio output, a memory card image with save import, host controller input.
+The work shifts from per-blocker workarounds to general, measured implementations ([implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy)):
+
+1. **Profile** the 650-frame Release startup run per subsystem (GS, IOP, EE, GIF/VIF, scheduler) and record the baseline.
+2. **Generalize** verified handlers that are gated on guest addresses, with regression tests and comparisons kept passing.
+3. **GIF DMA chain mode** as a general DMA chain walker shared with VIF1, the current blocker ([frame GIF plan](plans/graphics/FRAME_GIF_PLAN.md)).
+4. **Movie decoding:** plan IPU MPEG decoding in `docs/plans/video/` before implementing it.
+5. **Then:** title screen and demo fight, VU microprograms, audio output, memory card image, host controller input.
 
 Resume details: [active-pass handoff](progress/ACTIVE_PASS.md). Numeric snapshot: [latest.json](progress/latest.json); dashboard scopes: [components.json](progress/components.json).
 
