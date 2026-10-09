@@ -74,21 +74,23 @@ Steps 1 and 2 are bounded: they change no game-visible behavior and are not an a
 
 ## Working method
 
-### Continue through multiple blockers
+### What "continue" means
 
-A plain "continue" (including spelling/case variants) runs a pass through multiple blockers, as AGENTS.md defines: generate/link → run → inspect the blocker → gather evidence → fix → rerun → repeat. If a reached subsystem has an actionable plan, follow it and continue. Stop only when a genuinely new major subsystem needs a plan, when required information or access is unavailable, or when the next change would be speculative.
+A plain "continue" (including spelling/case variants) runs a goal-driven pass, as AGENTS.md defines. Work through "Current next step" above, in order, toward the next functional milestone. Each item follows: measure or inspect → gather evidence → implement the general behavior under the architecture rules → regression tests and original comparisons → Release rerun → next item. Finishing one item is not the end of a pass; advance to the next one.
+
+When execution reaches a new boundary, it is input to the plan, not a target for a narrow fix: identify the hardware or kernel behavior behind it and implement that generally at subsystem scale. If the boundary opens a new major subsystem, write its plan first (in `docs/plans/<subsystem>/`) and continue when it is actionable. Stop only when required information or access is unavailable, or when the next change would be speculative or would change architecture without profiling evidence.
 
 When more evidence is needed, use local captures, the tooling, [the reference architecture](../reference/REFERENCE_ARCHITECTURE.md) and its linked repositories. Adapt reference behavior to BT2's observed behavior; never copy implementations 1:1, game-specific patches, symbols or unsupported success defaults.
 
 ### Work at subsystem scale
 
-When several blockers belong to one subsystem, implement the bounded general behavior that subsystem needs, rather than one handler per blocker. Apply the architecture rules above to every new implementation.
+Implement the bounded general behavior a subsystem needs, shared by every caller, rather than one handler per blocker. Apply the architecture rules above to every new implementation.
 
 ### Evidence and content rules
 
 - Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored `work/` or `research/`, and generated code in ignored `game/generated/`. Never download or commit proprietary content.
 - Record confirmed facts, hypotheses and unknowns separately. Keep unknown function names neutral until evidence supports renaming.
-- Use the scalable loop: provisional function discovery/map → generation → compile/link → execution → actual blocker → runtime fix → repeat. Neutral naming and provenance remain required.
+- Mapping and generation stay incremental: provisional function discovery/map → generation → compile/link → execution. New functions are selected when execution reaches them. Neutral naming and provenance remain required.
 
 ### End of a pass
 

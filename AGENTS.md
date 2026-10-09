@@ -4,17 +4,17 @@ Use this repository as the project root. Before continuing development, read doc
 
 ## Permanent meaning of "continue"
 
-A plain "continue", including spelling/case variants, requests an aggressive pass through multiple execution blockers. Apply this automatically across sessions; never require the user to repeat the instruction. Resolving one function or blocker is not a stopping point.
+A plain "continue", including spelling/case variants, requests an aggressive, goal-driven pass. Apply this automatically across sessions; never require the user to repeat the instruction. The pass works through the "Current next step" in docs/project/IMPLEMENTATION_PLAN.md, in order, toward the next functional milestone in docs/PROG.md. It does not chase the latest blocker with a narrow fix.
 
-Follow: generate/link -> run -> inspect -> gather evidence -> fix -> rerun -> repeat. Gather available evidence from local captures/tooling and reference repositories, then continue whenever a safe evidence-based change is possible. Adapt reference implementations; do not copy them 1:1. Keep unknown function names neutral.
+Each item follows: measure or inspect -> gather evidence -> implement the general behavior (under the architecture rules below) -> regression tests and original comparisons -> Release rerun -> next item. When execution reaches a new boundary, treat it as a hardware or kernel behavior to implement generally at subsystem scale, not as a call site to patch. Gather evidence from local captures/tooling and reference repositories; adapt reference implementations, do not copy them 1:1. Keep unknown function names neutral.
 
-Stop only when:
+Finishing one item, one fix or one plan step is not a stopping point: advance to the next item in the plan and continue. Stop only when:
 
-- A genuinely new major subsystem requires a separate implementation plan. If an actionable plan already exists, follow it and continue.
+- A genuinely new major subsystem needs a separate implementation plan. Write it in the matching docs/plans/ folder; if it is actionable, follow it and continue.
 - Required information or access cannot be obtained in the current session.
-- The next change would be speculative after consulting available evidence.
+- The next change would be speculative after consulting available evidence, or would change architecture without the profiling evidence the plan requires.
 
-When stopping, identify the actual condition and evidence. Do not stop merely because one fix succeeded or a convenient number of functions was completed.
+When stopping, identify the actual condition and evidence.
 
 Build/test meaningful changes. At the end of each pass, update concise docs/PROG.md and detailed docs/progress/ history, review the diff/staged files, commit and push to the existing remote.
 
@@ -23,7 +23,7 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 
 ### Work at subsystem scale
 
-Use a blocker-driven approach, but work at subsystem scale whenever possible. When several blockers belong to the same subsystem, trace and implement the bounded set needed to complete that subsystem instead of stopping after each individual function/syscall.
+Work at subsystem scale. When execution reaches a subsystem boundary, implement the bounded general behavior that subsystem needs (shared by every caller), rather than one handler per function, syscall or call site.
 
 Use docs/reference/REFERENCE_ARCHITECTURE.md and its linked repositories to avoid rediscovering standard PS2 behavior. Verify BT2's reached behavior and adapt patterns; do not copy implementations 1:1. Current priority is the strategy step in docs/project/IMPLEMENTATION_PLAN.md ("Current next step"): profile the startup workload, generalize verified address-gated handlers, then implement GIF DMA chain mode as general behavior. Preserve the evidence and stop conditions above; a newly written actionable plan should guide continued implementation when safe.
 

@@ -25,7 +25,7 @@ Only verified evidence updates verified counters or checks a milestone. Include 
 ## Every pass, including an interrupted pass
 
 1. Read `PROG.md` and the active handoff. Record the pass goal and starting checkpoint.
-2. Follow the permanent subsystem-scale implementation rule. Update pending changes and remaining gates as work progresses.
+2. Follow the "continue" rule in AGENTS.md: work through the implementation plan's current next step. Update pending changes and remaining gates as work progresses.
 3. Before interruption, record enough file paths, evidence and commands to resume. Do not rely on chat history or transient terminal session IDs. A question during implementation does not close the pass.
 4. Run required checks; record what passed and what remains. Keep last-known-good counts if the latest changes have not been run successfully.
 5. After verification, refresh `PROG.md`, append the monthly outcome and clear or replace the active handoff. Record the source commit/report used to measure results; the documentation commit can follow that measurement.

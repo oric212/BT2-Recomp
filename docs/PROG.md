@@ -118,4 +118,4 @@ Resume details: [active-pass handoff](progress/ACTIVE_PASS.md). Numeric snapshot
 - [October 2026 history](progress/2026-10.md): every pass's evidence and earlier checkpoints.
 - [Implementation plan](project/IMPLEMENTATION_PLAN.md), [reference architecture](reference/REFERENCE_ARCHITECTURE.md), [runtime layout](guides/RUNTIME_LAYOUT.md), [tools](guides/TOOLS.md), [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md), [tracking rules](project/PROGRESS_TRACKING.md).
 
-A plain "continue" runs the permanent subsystem-scale pass rule (AGENTS.md). Keep this page short; detailed pass results belong in the monthly history.
+A plain "continue" runs a goal-driven pass through the implementation plan's current next step (AGENTS.md). Keep this page short; detailed pass results belong in the monthly history.
