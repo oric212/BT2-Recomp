@@ -25,3 +25,7 @@ After verification, update PROG.md/history, review staging, commit and push.
 The reached GS reset/readback, interrupt-mask and CRT calls now return with explicit matching local reference checkpoints. Several generated RAM helpers run, using bounded halfword access and 128-bit OR. Every selected extra entry now receives deterministic tail-call routing and source/prepared hash provenance. This permits the next missing entry to become a checked execution boundary without a native linker stub.
 
 The next actual stop is INTC_STAT acknowledgement/event waiting in FUN_0032F0F0. Follow [the separate interrupt/video-timing plan](GS_INTERRUPT_TIMING_PLAN.md). Acknowledging an event and waiting for the next one requires more than storing the written value. No GIF transfers or renderer introduced.
+
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): reference for GS privileged register state (CSR, PMODE, SMODE, DISPFB, DISPLAY) reached by this setup. Adapt its behavior; do not copy code.

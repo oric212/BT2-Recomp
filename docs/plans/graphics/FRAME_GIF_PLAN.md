@@ -24,6 +24,10 @@ Every GIF transfer so far was a startup request checked against captured packets
 4. **Verification.** Compare each packet's source bytes with an original capture at the send. Compare register outcomes with the packet contents.
 5. **Follow the frame.** Further frame work (chain DMA, VIF1/PATH2, VU1 microprograms, PATH3 images, presentation of DISPFB2) gets its own plan when it becomes the blocker.
 
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): reference for the GS side of this plan: GIF packet parsing per path (`gif_transfer`), the GS context register file and primitive kicks. The DMA channel itself (normal and chain mode) follows PCSX2 `Dmac.cpp`/`Gif.cpp`, which paraLLEl-GS does not cover. Adapt its behavior; do not copy code.
+
 ## Limits and stop conditions
 
 - No presentation or window output is claimed until a flip presents real VRAM contents.

@@ -22,3 +22,7 @@ This is a new GS packet/texture-state scope. Full GS emulation, VU execution, te
 The third packet completes against independent source, original idle/busy/clear-STR loads and unique caller return captures. Native retains PABE/TEX0 for both contexts; no texture sampling, CLUT transaction or added pixels occur. A separate configuration consumer leaves the prior sprite validator intact. Unsupported register effects and malformed packets reject transactionally.
 
 Continued through disabled Timer 1 configuration, main-thread priority change, generated EE allocator/map-gap discovery and four pool allocations. Pool pointers match a unique retail return capture. The actual next native stop is CreateSema in the second IOP heap RPC path; the retail allocation range conflicts with translated FILEIO. Follow [memory-layout scope](../iop/IOP_HEAP_CAPACITY_PLAN.md). Earlier wording in this plan describes the original handoff.
+
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): reference for the GS context register state (TEX0, TEX1, TEXCLUT, TEXA, PABE) that this plan retains. Adapt its behavior; do not copy code.

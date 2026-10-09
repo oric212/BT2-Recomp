@@ -35,6 +35,7 @@ Snapshot: `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc`. These are source observati
 
 | Area | paraLLEl-GS | BT2 use |
 | --- | --- | --- |
+| GIF and register state | GIF payloads consumed per path (`gs_interface`: `gif_transfer`); context registers (TEX0/TEX1, TEXCLUT, TEXA) and privileged registers (PMODE, SMODE, DISPFB, DISPLAY, CSR). | Reference for our GIF parser and GS register file as new packet forms and registers are reached. |
 | Rendering accuracy | Software-renderer accuracy as the target; varying interpolation not bit-exact with hardware. | Check our CPU rasterizer's primitive, texture and blending rules against it as GS features are reached. |
 | GPU renderer | GS emulation in Vulkan compute (`gs/`, `ubershader.comp`), with Granite as its Vulkan layer. | Architecture reference if the CPU rasterizer (about 75% of a Release run) is replaced by a GPU path. |
 | Presentation | Weave de-interlacer, CRTC field blending, FFMD progressive promotion, optional FSR1 upscaling. | Reference for the live window's interlaced presentation and later scaling. |

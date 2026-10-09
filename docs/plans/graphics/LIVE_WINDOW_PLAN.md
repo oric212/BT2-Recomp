@@ -21,6 +21,10 @@ Startup now draws real screens: the controller-missing message is rendered every
 - **Speed:** the Debug probe build runs slower than real time. Real-time speed needs an optimized build, which is a separate step.
 - **Input:** no host input yet (see [CONTROLLER_PLAN.md](../input/CONTROLLER_PLAN.md)).
 
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): reference for presentation beyond the current limits: privileged display registers, CRTC offsets, interlaced scanout with weave de-interlacing and field blending, and scaling. Adapt its behavior; do not copy code.
+
 ## Progress (2026-10-08)
 
 Steps 1–5 are implemented, with integer scaling by default. The user confirmed the window shows the controller-missing screen. The Debug build presents about 12–13 frames per second; real time needs an optimized build.

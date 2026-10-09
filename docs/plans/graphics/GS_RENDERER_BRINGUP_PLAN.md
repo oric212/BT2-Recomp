@@ -18,3 +18,7 @@ The complete source packet has one PACKED A+D tag and 14 register writes, includ
 Implemented scope: transactional software consumption of the two observed PACKED A+D sprite packets, PSMCT32 color and PSMZ24 depth writes, clipping/masks and explicit unknown VRAM bits. Five new independent checkpoints establish first synchronization and the second source packet. A bounded logical completion sequence is reused for the second same-form transfer, with no intervening VIF/VU submissions; its elapsed timing is not established. The idle VU status checkpoint is read-only and does not implement VU execution.
 
 Both clear helpers now return. The next reached boundary is [post-reset SIF transport initialization](../iop/POST_RESET_SIF_PLAN.md). No display register setup, presented frame, textures, blending, general GS packet handling or native video clock is implemented. Build/test meaningful steps, update PROG.md and history, then commit/push once at the end.
+
+## References
+
+- **[paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs)** (see [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)): GS rendering reference for the primitive, depth, test and mask rules of the software rasterizer this plan introduced. Adapt its behavior; do not copy code.
