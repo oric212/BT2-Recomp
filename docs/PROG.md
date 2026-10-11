@@ -42,7 +42,7 @@ The run stops at a checked boundary: a GIF DMA transfer in chain mode (`0x1000A0
 | --- | --- | --- |
 | EE CPU and kernel | 🟢 Operational | Recompiled game code; threads, semaphores, interrupts and priorities as reached; startup states match captures |
 | IOP services | 🟢 Operational | Native services for disc, files, IOP heap, LOADFILE, controller, memory card, sound driver, SOUNDS and CRI ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)); EE state identical to the former emulated IOP |
-| GS | 🔧 Incomplete | CPU GS model (sprites, triangles, palettized textures, both circuits); GPU path via paraLLEl-GS planned |
+| GS | 🔧 Incomplete | CPU GS model (sprites, triangles, palettized textures, both circuits); paraLLEl-GS GPU backend (mirror, presentation, GPU-only; opt-in) |
 | GIF / VIF | ⛔ Blocking | GIF normal-mode DMA and VIF1 DIRECT work; GIF chain mode stops the run |
 | VU | ⏳ Not Reached | |
 | IPU / video | 🔧 Incomplete | Decoder setup only; native Sofdec playback planned |
@@ -64,7 +64,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step):
 
-1. **GPU rendering:** integrate paraLLEl-GS and match it against the CPU renderer on the startup frames.
+1. **GPU rendering:** paraLLEl-GS draws and presents the startup frames (GPU-only run 2.3 s vs 19.1 s); one-step rounding differences from frame 30 need a PCSX2 GS dump to decide before the GPU becomes the default.
 2. **GIF DMA chain mode** (current blocker), with the GIF channel models consolidated into one.
 3. **Opening movie:** plan native Sofdec (SFD) playback, then implement it.
 4. **Native audio output:** ADX decoding and sound bank playback behind the sound and CRI services.

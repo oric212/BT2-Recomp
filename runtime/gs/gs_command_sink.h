@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -49,6 +50,10 @@ public:
     State state;
     unsigned transfers=0,frame_sprites=0,frame_triangles=0,register_writes=0,clut_loads=0;
     std::uint64_t frame_pixels=0,image_pixels=0;
+    // Accepted GIF data in order, after validation (GPU mirror, docs/plans/graphics/GPU_RENDERING_PLAN.md).
+    std::function<void(std::span<const std::uint8_t>)> on_accepted;
+    // false (GPU-only mode): packets are still validated and tracked, but no pixels are drawn here.
+    bool rasterize=true;
     // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
         unsigned bx=(x%64)/8,by=(y%32)/8;

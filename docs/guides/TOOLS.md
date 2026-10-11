@@ -64,6 +64,10 @@ The build checks immutable revisions from `config/ps2recomp.lock.json`, stores c
 
 The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` and our own function map, then checks the emitted C++. It does not compile or execute that output and establishes no BT2 function boundaries.
 
+## GPU GS (paraLLEl-GS)
+
+`python tools/graphics/fetch_parallel_gs.py` checks out the revision pinned in `config/parallel_gs.lock.json` (and the Granite submodules it needs) into ignored `work/dependencies/`. Configure with `-DBT2_GPU_GS=ON` to build `bt2-gpu-gs-tests` and link the backend into the probe; `BT2_GPU_GS=mirror` then renders every accepted GIF transfer on the GPU as well and compares VRAM at each flip; `BT2_GPU_GS=on` draws on the GPU only (the CPU model just validates). With either, `--viewer` shows the GPU scanout and `BT2_GPU_GS_SNAPSHOT=<flip>:<path>` saves one flip as PPM ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)).
+
 ## Local BT2 generation
 
 Automatically prepare a provisional map from our local Ghidra export with `tools/ps2recomp/prepare_map.py`. It retains contiguous aligned file-backed `.text` candidates, neutralizes names, and quarantines overlapping, oversized, noncontiguous or out-of-section candidates. It does not treat VU code as EE code or certify boundaries. Keep maps and exclusion/provenance manifests under ignored `work/`. Manual investigation follows actual build/execution blockers.

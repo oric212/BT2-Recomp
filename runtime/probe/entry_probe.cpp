@@ -1,10 +1,14 @@
 #include "host/display_frame.h"
+#ifdef BT2_GPU_GS
+#include "gs/gpu_gs_mirror.h"
+#endif
 #ifdef _WIN32
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 
@@ -47,6 +51,34 @@ int main(int argc, char** argv) {
             viewer.present(decodeDisplay(runtime.gif_dma.gs, dispfb, display), runtime.gs_display_flips);
             if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
         };
+#endif
+#ifdef BT2_GPU_GS
+        // BT2_GPU_GS=mirror: render on paraLLEl-GS as well and compare VRAM at each flip.
+        // BT2_GPU_GS=on: paraLLEl-GS draws alone; the CPU model only validates packets.
+        static GpuGsMirror gpu_mirror;
+        const char* gpu_mode = std::getenv("BT2_GPU_GS");
+        if (gpu_mode && std::string_view(gpu_mode) != "mirror" && std::string_view(gpu_mode) != "on")
+            throw std::runtime_error("BT2_GPU_GS must be mirror or on");
+        if (gpu_mode) {
+            const bool gpu_only = std::string_view(gpu_mode) == "on";
+            gpu_mirror.attach(runtime.gif_dma.gs);
+            runtime.gif_dma.gs.rasterize = !gpu_only;
+            // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
+            // BT2_GPU_GS_SNAPSHOT=<flip>:<path> writes that flip's GPU scanout as a binary PPM.
+            const char* snapshot = std::getenv("BT2_GPU_GS_SNAPSHOT");
+            const unsigned snapshot_flip = snapshot ? static_cast<unsigned>(std::stoul(snapshot)) : 0;
+            const std::string snapshot_path = snapshot && std::strchr(snapshot, ':') ? std::strchr(snapshot, ':') + 1 : "";
+            runtime.on_display_flip = [&runtime, viewer_mode, gpu_only, snapshot_flip, snapshot_path] {
+                const auto flip = runtime.gs_display_flips;
+                if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
+                if (!viewer_mode && flip != snapshot_flip) return;
+                const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
+                if (flip == snapshot_flip && !snapshot_path.empty()) writePpm(snapshot_path, frame);
+                if (!viewer_mode || !frame.width) return;
+                viewer.present(frame, flip);
+                if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
+            };
+        }
 #endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);

@@ -6,14 +6,11 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames), now o
 
 ## Goal of the next pass
 
-GPU rendering through paraLLEl-GS, step 3 of "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step):
+GPU rendering through paraLLEl-GS ([plan](../plans/graphics/GPU_RENDERING_PLAN.md#progress-2026-10-11)). Mirror mode runs: frames 1–29 match the CPU renderer exactly; from frame 30 a few hundred words per frame differ by one step in a color channel.
 
-1. Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`.
-2. Build paraLLEl-GS (Vulkan, Granite) with MSVC; it already builds standalone in ignored `work/dependencies`.
-3. Feed it the existing GIF/VIF1 output and privileged display registers; present its scanout in the window.
-4. Match it against the CPU renderer on the 650 startup frames.
-
-Then GIF DMA chain mode (the current blocker) and the opening movie plan.
+1. **Needs the user:** a PCSX2 GS dump of the startup frames (through frame ~40), kept in ignored `work/`, to decide which renderer is right for those words.
+2. Then: make the GPU the default (move the verifiers that read CPU VRAM to GPU readback) and retire CPU rasterization. Presentation and GPU-only mode (2.3 s startup run) are done.
+3. Then GIF DMA chain mode (the current blocker) and the opening movie plan.
 
 ## Notes
 

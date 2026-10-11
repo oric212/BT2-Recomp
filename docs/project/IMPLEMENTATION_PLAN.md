@@ -55,7 +55,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 
 1. **Native services** — done 2026-10-11: every reached IOP service is answered natively and the emulated IOP is removed ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)).
 2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
-3. **GPU rendering plan and integration.** Evidence so far (2026-10-11): the pinned paraLLEl-GS builds as a static library with MSVC in standalone mode (Vulkan SDK 1.4.363 and an AMD RX 6800 XT on the development machine), and its GS dump parser reads PCSX2's dump format, so the startup frames can be replayed offline first. Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`, then build paraLLEl-GS (Vulkan, Granite) with MSVC, feed it the existing GIF/VIF1 output and privileged display registers, and present its scanout in the window. Match it against the CPU renderer on the 650 startup frames.
+3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default and retire CPU rasterization.
 4. **GIF DMA chain mode**, the current blocker: consolidate the GIF channel-2 models into one and add chain mode by sharing the VIF1 chain walker.
 5. **Opening movie:** write `docs/plans/video/SOFDEC_PLAN.md` (native SFD video plus ADX audio) before implementing it.
 

@@ -55,6 +55,7 @@ void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
         ++pixels;
     }
     registers=v;++packets;++sprites;
+    if(on_accepted)on_accepted(packet);
 }
 
 void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
@@ -75,6 +76,7 @@ void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
         } else reject();
     }
     tex0=next_tex0;pabe=next_pabe;++packets;++configuration_packets;
+    if(on_accepted)on_accepted(packet);
 }
 
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
@@ -90,6 +92,7 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
         transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
         frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);frame_triangles=unsigned(saved_counts[6]);throw;
     }
+    if(on_accepted)for(const auto& data:group)on_accepted(data);
 }
 
 void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
@@ -312,6 +315,7 @@ void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
     const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
     const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
     if(!apply)return;
+    if(!rasterize){++frame_sprites;return;}
     const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
     const std::uint32_t z=std::uint32_t(v1>>32);
     // U depends only on the column and V only on the row: each is computed once.
@@ -336,6 +340,7 @@ void GsCommandSink::triangle(std::uint64_t prim,bool apply) {
     const int x0=std::max(int((minx+15)>>4),d.sx0),x1=std::min(int((maxx>>4)+1),d.sx1);
     const int y0=std::max(int((miny+15)>>4),d.sy0),y1=std::min(int((maxy>>4)+1),d.sy1);
     if(!apply)return;
+    if(!rasterize){++frame_triangles;return;}
     // Edge k is opposite vertex order[k]. With positive area (y down), a point is inside when every
     // edge function is >= 0; on an edge (== 0) only top edges (horizontal, above the triangle) and
     // left edges own the pixel, so pixels shared by neighbouring triangles are drawn once.
