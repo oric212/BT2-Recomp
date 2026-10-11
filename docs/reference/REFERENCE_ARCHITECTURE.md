@@ -17,6 +17,18 @@ Snapshot: `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc`. These are source observati
 | GS/rendering | GPU renderer records commands on GIF/DMA side and replays on the presentation thread. Native engine-seam rendering is a separate evolving path. | Rendering is a later compatibility boundary; no graphics dependency needed for the first generated execution. [GPU interface](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/ps2xRuntime/include/runtime/ps2_gs_gpu_renderer.h), [native seam design](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/docs/NATIVE-RENDER-SEAM.md). |
 | Patches/build | Authored post-generation patches use anchors and report missing matches; Windows setup delegates to Python and selects ClangCL. | Keep any future BT2 patch deterministic, evidence-based and checked. Retain our MSVC/C++20 target. [Patches](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/games/bt3/apply_patches.py), [Windows workflow](https://github.com/z3xox/BT3-Recomp/blob/e22a34beb564e2d0f32bd60b02f0a95d9645ddcc/scripts/build-windows.ps1). |
 
+## Tenkaichi3Decomp (native port reference)
+
+[Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp) (snapshot `80e0dd42f751f26214843c7c0f4a281ea0b66cfb`) is a native PC port of *Budokai Tenkaichi 3* (SLUS-21678), built from the BT3-Decompiled matching decompilation: "the game's own code compiled for PC, with a new renderer, sound and input layer underneath; it is not an emulator." Its port code (`port/`) is MIT; the decompiled game code (`src/`, `include/`) belongs to the game's rights holders and must not be copied. BT3 shares BT2's engine lineage, so its notes are the closest available evidence for how this engine uses the hardware.
+
+| Area | Tenkaichi3Decomp approach | BT2 use |
+| --- | --- | --- |
+| Graphics | A software interpreter decodes the DMA chain, VIF1, GIF packets and GS registers, feeding an SDL3 GPU back end (Vulkan, OpenGL 3.3 fallback). The nine VU1 vertex programs ran in an interpreter first; most were then replaced by shaders. Some full-screen effects are native passes placed by a display-list marker. | Confirms that GS packet consumption plus a GPU back end works for this engine, and that VU1 programs are few enough to replace one by one. |
+| Sound | `SOUNDS.IRX` is replaced, not emulated: a native sampler for effects and ADX players for music and voices on SDL audio streams. | Candidate for replacing the emulated IOP sound path with native playback. |
+| Movies | A port-specific MPEG-2 decoder (`plat_mpeg2.c`) for the opening and ending movies; intra pictures only, checked against ffmpeg. | Evidence for the video plan: a small native decoder instead of IPU emulation. |
+| Kernel, SIF, CD, files, memory card | Stubbed by `plat_sys.c`, `plat_stub.c` and `plat_mc.c`; files are read from the extracted disc. | Model for a minimal service layer in place of emulated IOP modules. |
+| Memory model | Pointers stay 32-bit: first a `-m32` build, later 64-bit with clang `__ptr32` pointer members and game memory below 4 GB. | Not needed for recompiled code, which already addresses guest RAM by offset; relevant only if decompiled C is introduced. |
+
 ## PS2Recomp runtime (architectural reference)
 
 [PS2Recomp](https://github.com/ran-j/PS2Recomp) is our pinned recompiler (`config/ps2recomp.lock.json`). Its runtime, `ps2xRuntime`, is the architectural reference for runtime structure (local checkout: `work/dependencies/ps2recomp-<revision>`). PS2SDK and PCSX2 remain the behavioral references. Each pattern is reused where a BT2 blocker needs it, without replacing working, verified BT2 code.
