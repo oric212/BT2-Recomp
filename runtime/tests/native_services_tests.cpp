@@ -1,5 +1,7 @@
 #include "services/iop_heap.h"
 #include "services/pad_block.h"
+#include "services/cri_stream.h"
+#include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -41,5 +43,17 @@ int main() {
     block=nativePadBlock(pad,3);
     require(block[7]==0x8080BFFF && block[8]==0x8080 && block[10]==0xFF,"cross block");
 
-    std::cout<<"Native IOP heap and pad block checks passed."<<std::endl;
+    // CRI stream: the captured command pair (8 and 5 on one object) comes back with the count cleared
+    // and the records unchanged; an empty buffer stays empty; unknown codes are refused.
+    std::vector<std::uint8_t> stream(cri_stream_size);
+    const auto put=[&](std::size_t offset,std::uint32_t value){std::memcpy(stream.data()+offset,&value,4);};
+    put(0,2);put(0x10,8);put(0x14,0xC6D5C);put(0x18,1);put(0x20,5);put(0x24,0xC6D5C);put(0x2C,0x65);
+    auto before=stream;before[0]=0;
+    require(consumeCriStreamCommands(stream)==2 && stream==before,"CRI commands consumed");
+    require(consumeCriStreamCommands(stream)==0 && stream==before,"CRI empty buffer");
+    put(0,1);put(0x10,9);bool refused=false;
+    try{consumeCriStreamCommands(stream);}catch(const std::runtime_error&){refused=true;}
+    require(refused,"unknown CRI command refused");
+
+    std::cout<<"Native IOP heap, pad block and CRI stream checks passed."<<std::endl;
 }

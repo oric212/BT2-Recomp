@@ -66,7 +66,8 @@ def verify(root,native):
         'Original sixteen-pair batch/next channel handoff differs')
     require(words(b,0x3AC8C0,1)==(0x8D0,) and words(b,0x3AC880,1)==(0x191700,),'Next retail heap differs')
     r=json.loads(native.read_text(encoding='utf-8'));ne=Path(str(native)+'.ee.bin').read_bytes()
-    require(r['cri_rpc_calls']>=3 and r['indexed_cache_operations']==r['indexed_cache_tag_reads'] and (r['indexed_cache_operations']==(512+256*r.get('cri_stream_transfers',0) if r['cri_rpc_calls']>=36 else 256) or (r.get('load_poll_idles',0) and r['indexed_cache_operations']>=512 and r['indexed_cache_operations']%256==0)),'Native prior commands incomplete')
+    # Later phases add the game's own cache scans (whole 128-line passes, one or both ways).
+    require(r['cri_rpc_calls']>=3 and r['indexed_cache_operations']==r['indexed_cache_tag_reads'] and (r['indexed_cache_operations']==(512+256*r.get('cri_stream_transfers',0) if r['cri_rpc_calls']>=36 else 256) or (r.get('load_poll_idles',0) and r['indexed_cache_operations']>=512 and r['indexed_cache_operations']%128==0)),'Native prior commands incomplete')
     base=0x1A7000 # Native CRI module base; its server handles are fixed host constants (no IOP module state).
     require(words(ne,0x355C84,1)==(base+0xE7C0,) and words(ne,0x355C94,1)==(base+0xED30,),'Native CRI client ownership differs')
     if r['cri_rpc_calls']==3:require(words(ne,0x39DD80,3)==(0,1,0) and words(ne,0x355C70,1)==(0,),'Native original 0x40C result/cleanup differs')

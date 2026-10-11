@@ -14,13 +14,19 @@ Play the game's Sofdec movies natively. Step 5 of the [implementation plan](../.
   | `+0x10` | `8`, `0x1B5E2C`, `1` |
   | `+0x20` | `5`, `0x1B5E2C`, …, `0x65` (at `+0x2C`) |
 
-  Until now every returned stream buffer was empty (sequence counter only). The IOP's answer to these commands is unknown.
+  Until then every returned stream buffer was empty (sequence counter only). The IOP's answer was captured on 2026-10-12 (see Progress).
 - **Capture:** PCSX2 and the BIOS used by the existing captures are available locally, so the original's answer can be captured with `capture_ee.py`.
+
+## Progress (2026-10-12)
+
+- **CRI stream replies:** captured in PCSX2 (`capture_ee.py --capture-point rpc-cri-stream-reply`, unattended: scripted LEFT/CROSS presses answer the absent-card prompt). The IOP returns the buffer with the command count cleared and the records unchanged; the native CRI service now does the same for commands 8 and 5 (`runtime/services/cri_stream.h`) and refuses other codes.
+- **Movie path:** the run then reaches 1,590 functions and stops at the first **toIPU DMA** (channel 4, `0x1000B400`, pc `0x2CB384`): the game's own Sofdec library feeds the IPU. Step 3's choice is therefore **native IPU commands** (the game code stays unchanged).
+- **Next:** write `docs/plans/video/IPU_PLAN.md` (toIPU/fromIPU DMA, the IPU commands the movie issues, MPEG-1/2 macroblock decoding and CSC), then implement it.
 
 ## Approach
 
-1. **CRI stream replies (next):** capture EE and IOP RAM in PCSX2 at the first VBlank after these commands are uploaded, and at the next point the EE reads the returned buffer. Derive what the returned buffer holds for commands 8 and 5 (object state, play position, status). Implement those replies in `runtime/services/cri_service.cpp`, one test per command, and keep unknown commands at the checked boundary.
-2. **Find the movie path:** run to the next boundary and record whether the movie reaches IPU commands (EE-side Sofdec decoding through the IPU) and which EE library functions drive it (neutral names).
+1. **CRI stream replies (done 2026-10-12):** capture EE and IOP RAM in PCSX2 at the first VBlank after these commands are uploaded, and at the next point the EE reads the returned buffer. Derive what the returned buffer holds for commands 8 and 5 (object state, play position, status). Implement those replies in `runtime/services/cri_service.cpp`, one test per command, and keep unknown commands at the checked boundary.
+2. **Find the movie path (done: the IPU):** run to the next boundary and record whether the movie reaches IPU commands (EE-side Sofdec decoding through the IPU) and which EE library functions drive it (neutral names).
 3. **Choose the boundary** from that evidence:
    - **IPU commands natively** (MPEG-1/2 macroblock decoding, CSC) if the game's own Sofdec library drives the IPU directly: smallest change, game code unchanged.
    - **Replace the Sofdec library entry points** through the function table with a native SFD demuxer and decoder, if that boundary is clear and the IPU path is costly.

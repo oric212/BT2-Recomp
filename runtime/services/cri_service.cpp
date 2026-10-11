@@ -1,4 +1,5 @@
 #include "ee/ps2_runtime.h"
+#include "services/cri_stream.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -11,8 +12,8 @@
 // - 0x422 {1, IOP buffer, 0x100}: handle 0x1BBA40 + n*0x30. 0x400 {..., handle, 1, ...}: 0x1BC580 + n*0x14.
 // - 0x408 {2, 0, handle, handle}: 0x1B5DA0 + n*0x1C.
 // Stream channels: the EE uploads each channel's 0x880-byte buffer, and at the next VBlank the IOP
-// returns it with the last word (the EE's sequence counter) advanced by one. Buffers carrying stream
-// commands (any other non-zero word) stop at the next VBlank, where their answer would be needed.
+// returns it with the last word (the EE's sequence counter) advanced by one and its commands consumed
+// (cri_stream.h); unknown command codes stop at that VBlank.
 
 namespace {
 constexpr std::uint32_t cri_create=2,cri_403=0x403,cri_40a=0x40A,cri_40c=0x40C,cri_422=0x422,cri_400=0x400,cri_408=0x408;
@@ -61,17 +62,9 @@ void PS2Runtime::nativeCriVblank(const R5900Context* interrupted) {
     // The IOP consumes each uploaded buffer and returns it with the sequence counter advanced.
     for(auto& c:native_cri_channels_) {
         if(!c.pending)continue;
-        // A buffer carrying stream commands (ADX playback) needs the IOP's answer: not implemented yet.
-        if(std::any_of(native_iop_ram_.begin()+c.iop,native_iop_ram_.begin()+c.iop+stream_size-4,[](std::uint8_t b){return b!=0;})) {
-            // Name the refused commands: the nonzero words of the buffer (offset: value).
-            std::cerr<<"CRI stream commands not answered (channel at IOP 0x"<<std::hex<<c.iop<<"):";
-            for(std::size_t k=0;k+4<=stream_size-4;k+=4) {
-                std::uint32_t w;std::memcpy(&w,native_iop_ram_.data()+c.iop+k,4);
-                if(w)std::cerr<<" +"<<k<<":"<<w;
-            }
-            std::cerr<<std::dec<<std::endl;
-            throw UnsupportedSyscall(0x14,interrupted->pc);
-        }
+        // Commands are consumed (count cleared); unknown command codes stop at this VBlank.
+        try {native_cri_commands+=consumeCriStreamCommands(std::span<std::uint8_t>(native_iop_ram_.data()+c.iop,stream_size));}
+        catch(const std::runtime_error& e) {std::cerr<<e.what()<<std::endl;throw UnsupportedSyscall(0x14,interrupted->pc);}
         std::copy_n(native_iop_ram_.begin()+c.iop,stream_size,memory_.begin()+c.ee);
         std::uint32_t counter;std::memcpy(&counter,memory_.data()+c.ee+stream_size-4,4);++counter;
         std::memcpy(memory_.data()+c.ee+stream_size-4,&counter,4);

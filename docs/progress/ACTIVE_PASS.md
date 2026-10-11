@@ -6,10 +6,10 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames), now o
 
 ## Goal of the next pass
 
-Opening movie ([plan](../plans/video/SOFDEC_PLAN.md)). GIF chain mode is done; the run stops at the first CRI ADX stream commands (commands 8 and 5 on object `0x1B5E2C`, IOP buffer `0x191740`).
+Opening movie: native IPU decoding ([plan](../plans/video/SOFDEC_PLAN.md#progress-2026-10-12)). The run stops at the movie's first toIPU DMA (channel 4 CHCR `0x1000B400`, pc `0x2CB384`) after 1,590 functions.
 
-1. Capture the original's reply in PCSX2 (installed locally, with the BIOS the earlier captures used) with a new `capture_ee.py` point after the commands are uploaded and answered.
-2. Implement the replies in the CRI service with tests; run to the next boundary and record the movie path (IPU or library).
+1. Write `docs/plans/video/IPU_PLAN.md`: the IPU commands and DMA the movie issues (capture them in PCSX2 with the unattended pad injection if needed), MPEG decoding and CSC output.
+2. Implement it as general IPU behavior with tests; compare decoded frames with PCSX2.
 3. GPU rendering: a PCSX2 GS dump still decides the one-step rounding differences (user).
 
 ## Notes

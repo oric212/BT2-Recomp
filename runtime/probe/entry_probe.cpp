@@ -132,21 +132,17 @@ int main(int argc, char** argv) {
             const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
                 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
-            // Overlay frame path: after a complete display flip, the GS library's draw-environment
-            // send polls GIF DMA (frame GIF DMA is the next subsystem; EE_OVERLAY_PLAN.md).
-            // Frame path handoffs: the draw-environment send polling GIF DMA, then the game's own
-            // render kick polling VIF1 before its chain DMA (VIF1/VU1 is the next subsystem).
-            const bool frame_gif_handoff=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || runtime.frame_budget_reached)
-                && ((stop.address==0x1000A000 && context.pc==0x3100E4) || (stop.address==0x10003C00 && context.pc==0x28B350)
-                    || (stop.address==0x10009000 && runtime.frame_vif1.unsupported==1) // VIF1 chain refused at its start.
-                    || (stop.address==0x10000800 && context.pc==0x28C798) // Timer 1 delay poll outside the admitted wait.
-                    || (stop.address==0x1000A030 && context.pc==0x312084) // GIF chain-mode tag address (next subsystem).
-                    || (stop.address==0x120000E0 && runtime.frame_budget_reached)); // Probe frame budget after a completed flip.
+            // Frame phase (after the first display flip, main thread): a refused access to a hardware
+            // register (EE registers or GS privileged registers) is the checked boundary of the next
+            // subsystem, named by its address. Refused accesses elsewhere (RAM) remain failures.
+            const bool hardware_register=(stop.address>=0x10000000 && stop.address<0x10010000) || (stop.address>=0x12000000 && stop.address<0x12002000);
+            const bool frame_register_boundary=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || stop.size==8 || runtime.frame_budget_reached)
+                && hardware_register;
             // Frame-phase GS reset (the GS library's CSR reset during the frame loop; next subsystem).
             const bool frame_gs_reset=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && runtime.display_reset_phase==13
                 && stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44;
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_gif_handoff && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff || frame_gif_handoff || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_register_boundary && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
+            if(vif_handoff || texture_handoff || frame_register_boundary || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)

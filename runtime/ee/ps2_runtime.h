@@ -764,7 +764,7 @@ private:
     std::array<std::uint32_t,2> native_fileio_buffers_{};std::uint32_t native_fileio_next_buffer_=0;
 public:
     unsigned native_disc_requests=0,native_fileio_requests=0,native_card_requests=0,native_pad_requests=0,native_pad_transfers=0,native_other_binds=0;
-    unsigned native_cri_requests=0,native_cri_returns=0;
+    unsigned native_cri_requests=0,native_cri_returns=0,native_cri_commands=0;
     void nativePadVblank(std::uint8_t* rdram);
     void nativeCriVblank(const R5900Context* interrupted);
     bool handleNativeDmaStat(R5900Context* context);
