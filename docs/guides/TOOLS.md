@@ -66,7 +66,7 @@ The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` a
 
 ## GPU GS (paraLLEl-GS)
 
-`python tools/graphics/fetch_parallel_gs.py` checks out the revision pinned in `config/parallel_gs.lock.json` (and the Granite submodules it needs) into ignored `work/dependencies/`. Configure with `-DBT2_GPU_GS=ON` to build `bt2-gpu-gs-tests` and link the backend into the probe; `BT2_GPU_GS=mirror` then renders every accepted GIF transfer on the GPU as well and compares VRAM at each flip; `BT2_GPU_GS=on` draws on the GPU only (the CPU model just validates). With either, `--viewer` shows the GPU scanout and `BT2_GPU_GS_SNAPSHOT=<flip>:<path>` saves one flip as PPM ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)).
+`python tools/graphics/gpu/fetch_parallel_gs.py` checks out the revision pinned in `config/parallel_gs.lock.json` (and the Granite submodules it needs) into ignored `work/dependencies/`. Configure with `-DBT2_GPU_GS=ON` to build `bt2-gpu-gs-tests` and link the backend into the probe; `BT2_GPU_GS=mirror` then renders every accepted GIF transfer on the GPU as well and compares VRAM at each flip; `BT2_GPU_GS=on` draws on the GPU only (the CPU model just validates). `run_startup_probe.py --gs auto|gpu|cpu|mirror` picks the mode; `auto` (default) uses the GPU when the build has `BT2_GPU_GS`. `render_gs_frame.py` (in `tools/graphics/cpu/`) needs a `--gs cpu` run. Tools are split by renderer: `tools/graphics/cpu/` and `tools/graphics/gpu/`. With either, `--viewer` shows the GPU scanout and `BT2_GPU_GS_SNAPSHOT=<flip>:<path>` saves one flip as PPM ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)).
 
 ## Local BT2 generation
 
@@ -607,7 +607,7 @@ New capture point: `rpc-overlay-dispenv` (`0x311860`, the overlay frame's first 
 
 The entry probe takes a diagnostic phase stop: `BT2_PHASE_STOP=<hex address>` stops at the first entry to, or return to, that address, as a branch boundary with a normal report. Use it to compare earlier-phase capture verifiers against a later checkpoint. Copy the report before the next run; it does not change guest behavior. Reports also list the live guest return stack at a stop (`stop_returns`).
 
-**Rendering the frame.** `tools/capture_ee/render_gs_frame.py --native work/bt2-generation/entry-stop.json --output work/frames/frame-latest.png` renders the displayed framebuffer from the probe's owned GS memory dump (`entry-stop.json.gs.bin`: value and known-bit mask per word). It uses the report's DISPFB/DISPLAY registers; pixels the model never wrote show as a magenta checker. The PNG comes from game data, so it stays in ignored `work/`.
+**Rendering the frame.** `tools/graphics/cpu/render_gs_frame.py --native work/bt2-generation/entry-stop.json --output work/frames/frame-latest.png` renders the displayed framebuffer from the probe's owned GS memory dump (`entry-stop.json.gs.bin`: value and known-bit mask per word). It uses the report's DISPFB/DISPLAY registers; pixels the model never wrote show as a magenta checker. The PNG comes from game data, so it stays in ignored `work/`.
 
 **Frame budget.** The entry probe stops after 120 display flips by default, as a checked boundary after a completed flip. `BT2_FRAME_LIMIT=<n>` changes the budget and `0` disables it. Each Timer 1 delay wait is capped separately (100,000 polls) to detect a wait that never ends.
 

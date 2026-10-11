@@ -1,6 +1,6 @@
 // paraLLEl-GS backend against the CPU GS model on synthetic GIF packets (no game data).
-#include "gs/gpu_gs_backend.h"
-#include "gs/gs_command_sink.h"
+#include "gs/gpu/gpu_gs_backend.h"
+#include "gs/cpu/gs_command_sink.h"
 #include <cstring>
 #include <iostream>
 #include <stdexcept>

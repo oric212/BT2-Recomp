@@ -5,7 +5,7 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
-#include "gs_command_sink.h"
+#include "cpu/gs_command_sink.h"
 
 class GifPacketMismatch : public std::runtime_error {
 public:

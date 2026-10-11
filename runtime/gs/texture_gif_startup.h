@@ -4,7 +4,7 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
-#include "gs_command_sink.h"
+#include "cpu/gs_command_sink.h"
 
 // One evidence-backed normal GIF configuration request. No hardware timing model.
 class TextureGifStartup {

@@ -1,8 +1,8 @@
 // Mirror mode: every GIF transfer the CPU GS model accepts also goes to paraLLEl-GS; at each flip,
 // every VRAM word the CPU model knows is compared (docs/plans/graphics/GPU_RENDERING_PLAN.md).
 #pragma once
-#include "gs/gpu_gs_backend.h"
-#include "gs/gs_command_sink.h"
+#include "gs/gpu/gpu_gs_backend.h"
+#include "gs/cpu/gs_command_sink.h"
 #include "host/display_frame.h"
 #include <array>
 

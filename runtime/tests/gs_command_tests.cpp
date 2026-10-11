@@ -1,6 +1,6 @@
 #include "gs/gif_dma_staging.h"
 #include "gs/texture_gif_startup.h"
-#include "host/display_frame.h"
+#include "gs/cpu/cpu_display.h"
 #include <iostream>
 #include <set>
 #include <source_location>

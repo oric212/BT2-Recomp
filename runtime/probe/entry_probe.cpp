@@ -1,6 +1,6 @@
-#include "host/display_frame.h"
+#include "gs/cpu/cpu_display.h"
 #ifdef BT2_GPU_GS
-#include "gs/gpu_gs_mirror.h"
+#include "gs/gpu/gpu_gs_mirror.h"
 #endif
 #ifdef _WIN32
 #include "host/viewer_window.h"
@@ -79,6 +79,8 @@ int main(int argc, char** argv) {
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
             };
         }
+#else
+        if (std::getenv("BT2_GPU_GS")) throw std::runtime_error("BT2_GPU_GS needs a probe built with -DBT2_GPU_GS=ON");
 #endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);

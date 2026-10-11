@@ -9,7 +9,7 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 # Shared settings for every handwritten target. Handwritten code includes its headers by path from
-# runtime/ (for example "gs/gs_command_sink.h"); generated code includes ps2_runtime.h or
+# runtime/ (for example "gs/cpu/gs_command_sink.h"); generated code includes ps2_runtime.h or
 # native_runtime.h by name through the per-target include directories below.
 function(bt2_target_defaults target)
     target_compile_features(${target} PRIVATE cxx_std_20)
@@ -41,7 +41,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/services/cri_service.cpp
     runtime/ee/retained_ee_stack.cpp
     runtime/ee/ps2_fpu.cpp
-    runtime/gs/gs_command_sink.cpp
+    runtime/gs/cpu/gs_command_sink.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
     runtime/ee/ps2_runtime_services.cpp
@@ -84,20 +84,20 @@ if(BT2_BUILD_GENERATED_PROBE)
     bt2_target_defaults(bt2-native-services-tests)
     add_test(NAME native-services COMMAND bt2-native-services-tests)
     # GPU GS through paraLLEl-GS (docs/plans/graphics/GPU_RENDERING_PLAN.md); fetch it with
-    # tools/graphics/fetch_parallel_gs.py. Off until it matches the CPU model.
+    # tools/graphics/gpu/fetch_parallel_gs.py. Off until it matches the CPU model.
     option(BT2_GPU_GS "Build the paraLLEl-GS backend and its tests" OFF)
     if(BT2_GPU_GS)
         set(BT2_PARALLEL_GS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/work/dependencies/parallel-gs-cc6184af7e0c" CACHE PATH "Pinned paraLLEl-GS checkout")
         if(NOT EXISTS "${BT2_PARALLEL_GS_DIR}/gs/gs_interface.hpp")
-            message(FATAL_ERROR "Run tools/graphics/fetch_parallel_gs.py first.")
+            message(FATAL_ERROR "Run tools/graphics/gpu/fetch_parallel_gs.py first.")
         endif()
         set(PARALLEL_GS_STANDALONE ON CACHE BOOL "" FORCE)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL") # Match our targets.
         add_subdirectory("${BT2_PARALLEL_GS_DIR}" parallel-gs EXCLUDE_FROM_ALL)
-        add_library(bt2-gpu-gs STATIC runtime/gs/gpu_gs_backend.cpp runtime/gs/gpu_gs_mirror.cpp)
+        add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp)
         bt2_target_defaults(bt2-gpu-gs)
         target_link_libraries(bt2-gpu-gs PRIVATE parallel-gs)
-        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/gs_command_sink.cpp)
+        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp)
         bt2_ee_target(bt2-gpu-gs-tests)
         target_link_libraries(bt2-gpu-gs-tests PRIVATE bt2-gpu-gs)
         add_test(NAME gpu-gs COMMAND bt2-gpu-gs-tests)

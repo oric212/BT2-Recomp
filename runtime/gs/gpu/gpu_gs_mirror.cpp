@@ -1,4 +1,4 @@
-#include "gs/gpu_gs_mirror.h"
+#include "gs/gpu/gpu_gs_mirror.h"
 #include <iostream>
 
 void GpuGsMirror::attach(GsCommandSink& cpu) {

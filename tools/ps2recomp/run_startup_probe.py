@@ -23,7 +23,7 @@ def summary(report):
             f"boundary selector={report['selector']:#x}, PC={report['pc']:#x}, target={report['target']:#x}.\n"
             "Completion counts are observed invocation returns, not full gameplay correctness or startup completion.")
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--config',choices=('Debug','Release'),default='Debug',help='Probe build configuration; Release runs several times faster for selection loops.');p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--viewer',action='store_true',help='Present each display flip in a window; no frame budget unless --frames is given.');p.add_argument('--frames',type=int,help='Stop after this many display flips (0: no budget).');p.add_argument('--scale',choices=('integer','stretch'),default='integer',help='Viewer scaling.');p.add_argument('--pad-script',default=DEFAULT_PAD_SCRIPT,help='Scripted controller input: FIELD:buttons steps (default: %(default)s; empty for none).');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--disc',type=Path,required=True);p.add_argument('--config',choices=('Debug','Release'),default='Debug',help='Probe build configuration; Release runs several times faster for selection loops.');p.add_argument('--sound-worker',action='store_true',help='Diagnostic retained sound-worker/reverse-bind path; main priority remains pending.');p.add_argument('--viewer',action='store_true',help='Present each display flip in a window; no frame budget unless --frames is given.');p.add_argument('--frames',type=int,help='Stop after this many display flips (0: no budget).');p.add_argument('--scale',choices=('integer','stretch'),default='integer',help='Viewer scaling.');p.add_argument('--gs',choices=('auto','gpu','cpu','mirror'),default='auto',help='GS renderer: gpu (paraLLEl-GS only), cpu (CPU model draws; needed for render_gs_frame.py), mirror (both, compared per flip); auto: gpu when the build has BT2_GPU_GS, else cpu.');p.add_argument('--pad-script',default=DEFAULT_PAD_SCRIPT,help='Scripted controller input: FIELD:buttons steps (default: %(default)s; empty for none).');a=p.parse_args()
     cmd=command(ROOT,a.disc.resolve(),a.config);env=dict(os.environ);env.pop('BT2_EE_SOUND_DISPATCH_PROBE',None)
     report=ROOT/'work/bt2-generation'/('sound-worker-stop.json' if a.sound_worker else 'entry-stop.json');cmd[2]=str(report)
     if a.sound_worker:env['BT2_EE_SOUND_DISPATCH_PROBE']='1'
@@ -31,7 +31,13 @@ def main():
     if a.pad_script:env['BT2_PAD_SCRIPT']=a.pad_script
     if a.viewer:env['BT2_VIEWER']='1';env['BT2_VIEWER_SCALE']=a.scale
     if a.frames is not None:env['BT2_FRAME_LIMIT']=str(a.frames)
+    env.pop('BT2_GPU_GS',None);gs=a.gs if a.gs!='auto' else ('gpu' if gpu_build(a.config) else 'cpu')
+    if gs!='cpu':env['BT2_GPU_GS']='on' if gs=='gpu' else 'mirror'
     subprocess.run(cmd,cwd=ROOT,env=env,check=True)
     print(summary(json.loads(report.read_text(encoding='utf-8'))))
     if a.sound_worker:print('Diagnostic sound-worker scope only: main priority request is pending; the EE stack is cancelled after the checked wait.')
+def gpu_build(config):
+    # The probe build links paraLLEl-GS when configured with BT2_GPU_GS (build/probe/CMakeCache.txt).
+    cache=ROOT/'build/probe/CMakeCache.txt'
+    return cache.is_file() and 'BT2_GPU_GS:BOOL=ON' in cache.read_text(encoding='utf-8',errors='replace')
 if __name__=='__main__':main()
