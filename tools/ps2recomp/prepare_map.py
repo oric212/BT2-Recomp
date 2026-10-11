@@ -204,9 +204,9 @@ def has_switch_case_gaps(candidate, metadata, data):
 
     The body must contain exactly one bounded switch (switch_targets, with every table target inside
     the candidate). Each hole must contain at least one table target; its words are NOP padding before
-    the first target, then straight-line case blocks, each starting exactly at a table target and ending
-    in JR RA or an unconditional branch to the candidate, with a non-control delay slot, all inside the
-    hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
+    the first target, then straight-line case blocks (calls included), each starting exactly at a table
+    target and ending in JR RA or an unconditional branch to the candidate, with a non-control delay slot,
+    all inside the hole; the last block may instead fall through into the span after the hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
     start,end=candidate['start'],candidate['end_exclusive']
     try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
     except (ValueError,TypeError):return False
@@ -237,9 +237,13 @@ def has_switch_case_gaps(candidate, metadata, data):
             if any(word(a)!=0 for a in range(address,target,4)):return False # Only padding before a block.
             address=target
             while True:
-                if address+4>=h1:return False
+                if address==h1:break # Falls through into the span after the hole.
                 ins=word(address)
+                if control(ins) and address+4>=h1:return False # Its delay slot would leave the hole.
                 if not control(ins):address+=4;continue
+                # A call (JAL, or JALR rd=ra) returns after its delay slot: straight-line within the block.
+                call=ins>>26==3 or (ins>>26==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0)
+                if call and not control(word(address+4)):address+=8;continue
                 if ins==0x03E00008:pass
                 elif ins&0xFFFF0000==0x10000000:
                     immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate

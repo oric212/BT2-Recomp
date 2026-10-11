@@ -19,6 +19,15 @@ inline std::uint32_t ADD32(std::uint32_t left, std::uint32_t right) {
     return left + right;
 }
 
+// HI:LO as one 64-bit accumulator (low words of each) and its 32-bit sign-extended halves, for the
+// R5900 multiply-accumulate instructions (MADD/MADDU/MSUB and pipeline-1 forms).
+inline std::uint64_t Ps2HiLoToU64(std::uint64_t hi, std::uint64_t lo) {
+    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(hi)) << 32) | static_cast<std::uint32_t>(lo);
+}
+inline std::uint64_t Ps2SignExt32ToU64(std::uint32_t value) {
+    return static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(value)));
+}
+
 inline void SET_GPR_S32(R5900Context* context, unsigned index, std::int32_t value) {
     if (index != 0) context->r.at(index).low = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
 }

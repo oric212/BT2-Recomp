@@ -47,7 +47,8 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/dma_chain.cpp
     runtime/ee/ps2_runtime_services.cpp
     runtime/ee/ps2_runtime_syscalls.cpp
-    runtime/ee/ipu_device.cpp)
+    runtime/ee/ipu_device.cpp
+    runtime/ee/ipu_input.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -78,7 +79,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-gs-command-tests runtime/tests/gs_command_tests.cpp)
     bt2_ee_target(bt2-gs-command-tests)
     add_test(NAME gs-command-consumption COMMAND bt2-gs-command-tests)
-    add_executable(bt2-ipu-tests runtime/tests/ipu_tests.cpp runtime/ee/ipu_device.cpp)
+    add_executable(bt2-ipu-tests runtime/tests/ipu_tests.cpp runtime/ee/ipu_device.cpp runtime/ee/ipu_input.cpp)
     bt2_target_defaults(bt2-ipu-tests)
     add_test(NAME ipu-setup COMMAND bt2-ipu-tests)
     add_executable(bt2-native-services-tests runtime/tests/native_services_tests.cpp)

@@ -176,6 +176,11 @@ void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32
 
 std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
     checkMemory(rdram,0,0);
+    // IPU registers are 64-bit (IPU_CMD/IPU_TOP carry BUSY in bit 63): low word, then high word.
+    if(address>=0x10002000 && address<0x10002040 && !(address&15)) {
+        std::uint32_t low=0,high=0;
+        if(ipuRead(address,low) && ipuRead(address+4,high))return low|(std::uint64_t(high)<<32);
+    }
     if(address==0x12001000 && graph_startup_phase==1 && context->pc==0x30FE50 && context->r[29].low==initial_sp-112) {
         graph_startup_phase=2;return 0x551B4000; // Independently captured second original CSR load; no native video clock.
     }
@@ -457,6 +462,7 @@ bool PS2Runtime::ipuWrite(std::uint32_t address,std::uint32_t value) {
         dmac_enabler=value;return true; // D_ENABLEW mirrors into D_ENABLER; no channel is running.
     }
     if((address==0x1000D000 || address==0x1000D400) && (value&0x100u)) {scratchpadTransfer(address,value);return true;}
+    ipu.ram=std::span<const std::uint8_t>(memory_.data(),ram_size);
     try {return scratchpad_dma.write32(address,value) || ipu.write32(address,value);}
     catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,4);}
 }

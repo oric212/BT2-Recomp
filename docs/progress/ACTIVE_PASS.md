@@ -6,10 +6,10 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames), now o
 
 ## Goal of the next pass
 
-Opening movie: native IPU decoding ([plan](../plans/video/SOFDEC_PLAN.md#progress-2026-10-12)). The run stops at the movie's first toIPU DMA (channel 4 CHCR `0x1000B400`, pc `0x2CB384`) after 1,590 functions.
+Opening movie: native IPU decoding ([IPU plan](../plans/video/IPU_PLAN.md#progress-2026-10-12)). The movie's bitstream reaches the native IPU and its sequence header is parsed with FDEC; the decoder thread (7) then waits in the loop at `0x31A3C8` without issuing another command, until the execution budget ends.
 
-1. Write `docs/plans/video/IPU_PLAN.md`: the IPU commands and DMA the movie issues (capture them in PCSX2 with the unattended pad injection if needed), MPEG decoding and CSC output.
-2. Implement it as general IPU behavior with tests; compare decoded frames with PCSX2.
+1. Read the wait loop at `0x31A3C8` (it polls IPU_BP, IPU_CMD BUSY and IPU_CTRL bit 14) and find the condition it expects after the header.
+2. Implement VDEC and the macroblock commands as the movie reaches them, with tests; compare decoded frames with PCSX2.
 3. GPU rendering: a PCSX2 GS dump still decides the one-step rounding differences (user).
 
 ## Notes

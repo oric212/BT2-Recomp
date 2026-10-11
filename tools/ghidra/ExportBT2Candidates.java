@@ -3,6 +3,7 @@
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
@@ -61,6 +62,16 @@ public class ExportBT2Candidates extends GhidraScript {
             }
             boolean contiguous = function.getBody().getMinAddress().equals(function.getEntryPoint())
                 && size == end - start && start % 4 == 0 && end % 4 == 0;
+            // A body with holes that no other function owns is exported as its whole span: the holes are
+            // code Ghidra did not reach (for example jump-table cases), still filtered by prepare_map.
+            boolean spansUnownedGaps = false;
+            if (!contiguous && function.getBody().getMinAddress().equals(function.getEntryPoint()) && start % 4 == 0 && end % 4 == 0) {
+                AddressSet span = new AddressSet(function.getEntryPoint(), toAddr(end - 1));
+                spansUnownedGaps = true;
+                var overlapping = currentProgram.getFunctionManager().getFunctionsOverlapping(span);
+                while (overlapping.hasNext())
+                    if (!overlapping.next().equals(function)) spansUnownedGaps = false;
+            }
             Map<String, Object> record = new LinkedHashMap<>();
             record.put("name", name);
             record.put("ghidra_name", function.getName());
@@ -69,10 +80,11 @@ public class ExportBT2Candidates extends GhidraScript {
             record.put("body_size", size);
             record.put("body_ranges", ranges);
             record.put("contiguous_aligned", contiguous);
+            record.put("spans_unowned_gaps", spansUnownedGaps);
             record.put("status", "unreviewed analysis candidate");
             functions.add(record);
-            if (contiguous) {
-                csv.append(String.format("%s,0x%08X,0x%08X,%d%n", name, start, end, size));
+            if (contiguous || spansUnownedGaps) {
+                csv.append(String.format("%s,0x%08X,0x%08X,%d%n", name, start, end, end - start));
                 contiguousCount++;
             }
         }

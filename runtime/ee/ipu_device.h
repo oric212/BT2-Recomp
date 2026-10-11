@@ -1,15 +1,15 @@
 #pragma once
+#include "ipu_input.h"
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <optional>
+#include <span>
 
-// IPU (MPEG decoder) register model, scoped to setup: the public register layout (IPU_CMD 0x10002000,
-// IPU_CTRL 0x10002010, IPU_BP 0x10002020, IPU_TOP 0x10002030, IN_FIFO 0x10007010) and the commands
-// sceIpuInit issues: BCLR, SETIQ, SETVQ and SETTH, which complete immediately (never BUSY). Decode
-// commands (IDEC, BDEC, VDEC, FDEC, CSC, PACK) and IPU DMA starts are not modelled: they are refused.
-// IPU DMA channels 3 (IPU_FROM, 0x1000B000) and 4 (IPU_TO, 0x1000B400) accept register writes only
-// while stopped.
+// IPU (MPEG decoder) register model (docs/plans/video/IPU_PLAN.md): the public register layout
+// (IPU_CMD 0x10002000, IPU_CTRL 0x10002010, IPU_BP 0x10002020, IPU_TOP 0x10002030, IN_FIFO 0x10007010),
+// the setup commands (BCLR, SETIQ, SETVQ, SETTH), FDEC, and the toIPU DMA channel (4) feeding the
+// input on demand (ipu_input.h). A command waiting for input stays pending with BUSY set and completes
+// when data arrives. Other decode commands and fromIPU DMA (channel 3) starts are refused by name.
 class IpuDevice {
 public:
     std::array<std::uint8_t,64> intra_iq{},nonintra_iq{}; // SETIQ tables (zigzag order as written).
@@ -20,17 +20,20 @@ public:
     static constexpr std::uint32_t decode_parameter_mask=0x07F30000u;
     unsigned resets=0,commands=0;
     struct Channel {std::uint32_t chcr=0,madr=0,qwc=0,tadr=0;};
-    Channel from_ipu,to_ipu; // DMA channel 3 (IPU_FROM) and 4 (IPU_TO).
+    Channel from_ipu;  // DMA channel 3 (IPU_FROM).
+    IpuInput input;    // Input FIFO, bit pointer and DMA channel 4 (IPU_TO).
+    std::span<const std::uint8_t> ram; // Main RAM for toIPU transfers (set by the runtime).
 
     // Register access; nullopt/false means the address is not an IPU or IPU DMA register.
-    std::optional<std::uint32_t> read32(std::uint32_t address) const;
+    std::optional<std::uint32_t> read32(std::uint32_t address);
     bool write32(std::uint32_t address,std::uint32_t value);
     bool writeFifo(std::uint32_t address,const std::array<std::uint32_t,4>& qword);
+    bool busy() const {return pending_!=0;}
 
 private:
-    std::deque<std::array<std::uint32_t,4>> in_fifo_; // At most 8 quadwords.
-    std::uint32_t command_result_=0,bit_pointer_=0;
+    std::uint32_t command_result_=0,pending_=0; // pending_: command word waiting for input (0: none).
     void reset();
     void command(std::uint32_t value);
-    void take(std::uint8_t* out,unsigned qwords);
+    bool execute(std::uint32_t value); // False when the command needs more input.
+    void retry() {if(pending_ && execute(pending_)){pending_=0;++commands;}}
 };
