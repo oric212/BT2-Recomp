@@ -8,7 +8,7 @@ BT2-Recomp is a native Windows x64 port with a minimal compatibility layer, not 
 
 - **Recompiled game code is the base.** EE code runs as generated native C++. Replace individual functions with hand-written C++ only where it pays off. No full decompilation, EE interpreter or full-system emulation.
 - **Native services over emulation.** Replace PS2 services with host code at the highest boundary BT2's evidence supports: SIF RPC services (disc, files, sound, controller, memory card, CRI) instead of emulated IOP modules and hardware. Emulate only what the game drives directly (EE DMA to the GS, VIF packets, the EE kernel).
-- **GPU rendering through paraLLEl-GS**, fed with the game's GIF/VIF output. The CPU rasterizer stays only as a test reference until the GPU path matches.
+- **GPU rendering through paraLLEl-GS**, fed with the game's GIF/VIF output. The CPU renderer stays as the fallback for systems without a suitable Vulkan GPU (for example some integrated graphics) and as the test reference.
 - **Smallest layer.** Implement only what BT2 reaches, in the simplest native form. One implementation per behavior; generalize verified special cases instead of adding handlers gated on guest PCs, stack offsets or call counts; remove code a replacement makes obsolete.
 - **Fail explicitly.** Unsupported requests stop at a checked boundary; never fake success.
 - **Correctness first.** Game-visible results (EE memory, files, replies, frames) must match the original. Validate with tests and PCSX2 comparisons, and add a test for each service request type and generalized behavior.

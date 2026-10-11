@@ -10,7 +10,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | --- | --- |
 | Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. |
 | IOP side | **Native RPC services** answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Done 2026-10-11; the emulated IOP is removed. |
-| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU rasterizer stays only as a test reference until the GPU path matches it. VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
+| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU renderer stays as the fallback for systems without a suitable Vulkan GPU (for example some integrated graphics) and as the test reference. VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
 | Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
 
 ## Architecture rules
@@ -55,7 +55,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 
 1. **Native services** — done 2026-10-11: every reached IOP service is answered natively and the emulated IOP is removed ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)).
 2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
-3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default and retire CPU rasterization.
+3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default, with the CPU renderer as fallback.
 4. **GIF DMA chain mode**, the current blocker: consolidate the GIF channel-2 models into one and add chain mode by sharing the VIF1 chain walker.
 5. **Opening movie:** write `docs/plans/video/SOFDEC_PLAN.md` (native SFD video plus ADX audio) before implementing it.
 

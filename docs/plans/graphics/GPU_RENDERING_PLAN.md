@@ -1,6 +1,6 @@
 # GPU rendering through paraLLEl-GS
 
-Render the game's GS output on the GPU with [paraLLEl-GS](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference) (Vulkan compute, LGPL-3.0, snapshot `cc6184af`) instead of the CPU GS model. Step 3 of the [implementation plan](../../project/IMPLEMENTATION_PLAN.md#current-next-step). The CPU model stays as the test reference until the GPU path matches it.
+Render the game's GS output on the GPU with [paraLLEl-GS](../../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference) (Vulkan compute, LGPL-3.0, snapshot `cc6184af`) as the default renderer. The CPU GS model stays as the fallback for systems without a suitable Vulkan GPU (decided 2026-10-11) and as the test reference. Step 3 of the [implementation plan](../../project/IMPLEMENTATION_PLAN.md#current-next-step). The CPU model stays as the test reference until the GPU path matches it.
 
 ## Evidence (2026-10-11)
 
@@ -19,7 +19,7 @@ Render the game's GS output on the GPU with [paraLLEl-GS](../../reference/REFERE
 3. **Validation stays:** GIF packets keep passing the existing tag/register validation before either backend sees them, so unsupported features still stop at a checked boundary. Only rasterization moves to the GPU.
 4. **Mirror mode first:** with `BT2_GPU_GS=mirror`, both backends receive every transfer. At each flip, read the displayed framebuffer back from paraLLEl-GS (`map_vram_read`) and compare it with the CPU model's. Record mismatches per frame.
 5. **Presentation:** the viewer presents the `ScanoutResult` image (Granite swapchain, or a readback into the existing window at first). Interlace handling follows paraLLEl-GS's CRTC model.
-6. **GPU only:** once the 650 startup frames match, `BT2_GPU_GS=on` drops the CPU model from the runtime path. The CPU model stays for unit tests.
+6. **GPU only:** once the 650 startup frames match, `BT2_GPU_GS=on` keeps the CPU model as validator only; the CPU renderer remains selectable as the fallback.
 
 ## Verification
 
@@ -40,7 +40,7 @@ Render the game's GS output on the GPU with [paraLLEl-GS](../../reference/REFERE
 - **Open:** which renderer is right for those words. The pattern fits interpolation rounding (Gouraud or bilinear), which paraLLEl-GS documents as not bit-exact. Deciding needs a reference: a PCSX2 GS dump of the startup frames (paraLLEl-GS's dump parser reads PCSX2's format), not available locally.
 - **Presentation:** at each flip the privileged registers the game wrote, plus SMODE1 derived from its `SetGsCrt` request (NTSC/PAL, analog), go to paraLLEl-GS; its scanout is read back and shown in the viewer (`--viewer` with `BT2_GPU_GS`), or saved with `BT2_GPU_GS_SNAPSHOT=<flip>:<path>`. The GPU scanout of flips 120 and 400 matches the CPU frames visually.
 - **GPU-only mode** (`BT2_GPU_GS=on`): the CPU model still validates every packet and keeps its counters (`rasterize=false`) but draws nothing; paraLLEl-GS flushes at each flip. Same stop and counters; flip 400 is pixel-identical to mirror mode. Release startup run: **2.3 s instead of 19.1 s**.
-- **Not yet:** GPU as the default (needs the rounding question settled and the verifiers that read CPU VRAM moved to GPU readback); CSR reset forwarding (not needed so far).
+- **Not yet:** automatic fallback to the CPU renderer when no suitable Vulkan device exists; GPU as the default everywhere once the rounding question is settled; CSR reset forwarding (not needed so far).
 
 ## Licensing
 
