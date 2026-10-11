@@ -9,7 +9,7 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames), now o
 GPU rendering through paraLLEl-GS ([plan](../plans/graphics/GPU_RENDERING_PLAN.md#progress-2026-10-11)). Mirror mode runs: frames 1–29 match the CPU renderer exactly; from frame 30 a few hundred words per frame differ by one step in a color channel.
 
 1. **Needs the user:** a PCSX2 GS dump of the startup frames (through frame ~40), kept in ignored `work/`, to decide which renderer is right for those words.
-2. Then: make the GPU the default (move the verifiers that read CPU VRAM to GPU readback) and fall back to the CPU renderer when no suitable Vulkan device exists. Presentation and GPU-only mode (2.3 s startup run) are done.
+2. Then: make the GPU the default (move the verifiers that read CPU VRAM to GPU readback); the automatic CPU fallback waits until the port is done. Presentation and GPU-only mode (2.3 s startup run) are done.
 3. Then GIF DMA chain mode (the current blocker) and the opening movie plan.
 
 ## Notes
