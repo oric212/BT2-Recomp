@@ -89,8 +89,8 @@ def main():
     if disc_image(args.disc)!=data:raise ValueError('Local image differs from embedded disc image.')
     report=inspect(data)
     with args.disc.open('rb') as stream:report['disc_sha256']=hashlib.file_digest(stream,'sha256').hexdigest()
-    folder=ROOT/'work/iop';folder.mkdir(parents=True,exist_ok=True)
-    (folder/'image.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    folder=ROOT/'work/bt2-generation';folder.mkdir(parents=True,exist_ok=True)
+    (folder/'iop-image.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(f"Validated local/embedded image: {len(report['entries'])-3} payloads; metadata remains ignored.")
 
 if __name__=='__main__':main()

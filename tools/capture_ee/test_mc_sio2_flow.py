@@ -1,7 +1,6 @@
 """Observers must retain real DMA execution and bounded scratch ownership."""
 import struct,unittest
 from capture_sio2_flow import hook,send_hook,control_hook
-from verify_sound_rpc import later_mc_dma_boundary
 
 def words(b):return struct.unpack('<'+str(len(b)//4)+'I',b)
 class CardFlowTests(unittest.TestCase):
@@ -16,9 +15,4 @@ class CardFlowTests(unittest.TestCase):
         self.assertEqual(7+1+(w[7]&0xFFFF),len(w)-2)
         self.assertIn(0x2F230020,w) # No overlap with the send observer region.
         self.assertEqual(words(hook(0))[-2:],(0x1000FFFF,0))
-    def test_later_boundary_requires_completed_transfer_pair_count(self):
-        r={'dbc_rpc_binds':4,'dbc_rpc_calls':4,'mc_rpc_binds':1,'mc_rpc_calls':1,'mc_query_requests':0,
-           'native_iop_error':'Unresolved IOP import: thbase:33','native_iop_pc':0x31B40,
-           'selector':0x77,'pc':0x32F028,'packet_words':[0]*6+[41,0x3A6F80,1,48],'sio2_card_transfer_counts':[6,6],'native_iop_import_arguments':[300,1,1,0]}
-        self.assertTrue(later_mc_dma_boundary(r));r['sio2_card_transfer_counts']=[6,5];self.assertFalse(later_mc_dma_boundary(r))
 if __name__=='__main__':unittest.main()

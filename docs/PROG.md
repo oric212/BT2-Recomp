@@ -1,121 +1,74 @@
 # Current progress
 
-Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), native Windows x64 static recompilation. Baseline: verified checkpoint of 2026-10-08.
+Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 port: recompiled game code on a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md)). Baseline: verified checkpoint of 2026-10-11.
 
 <!-- progress-summary:start -->
 ![BT2 port status](progress/dashboard.svg)
 
 | Functional milestone | Status |
 | --- | --- |
-| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading |
+| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
 | Main frame loop | ✅ Verified — key startup states match original captures |
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
-| Controller check | ✅ Verified — passed with an emulated DualShock 2 |
+| Controller check | ✅ Verified — passed with the native controller service |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
 | Opening movie | ⛔ Blocking — decoder set up; GIF DMA chain mode stops the run before the first movie frame |
 | Title screen | ⏳ Not Reached — waits for Start |
 | Demo fight (no input) | ⏳ Not Reached |
 | Gameplay (menus, versus battle) | ⏳ Not Reached |
-| Audio | 🔧 Incomplete — sound driver set up; no sound output |
+| Audio | 🔧 Incomplete — sound requests answered natively; no sound output |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-11:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **15/15 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
-## How progress is measured
+Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
 
-| Category | What it counts |
-| --- | --- |
-| **Functional milestones** | How far the game gets through its own sequence, from boot to saves |
-| **Static coverage** | Code mapped, generated and compiled ahead of time |
-| **Runtime coverage** | Unique functions entered and completed in the verified run |
-| **Subsystem status** | Which PS2 parts are implemented, and their scope |
-| **Verification** | Tests, and comparisons of recompiled state with the original game in PCSX2 |
-
-| Status | Meaning |
-| --- | --- |
-| ✅ **Verified** | Implemented and verified against expected/original behavior for the relevant scope. |
-| 🟢 **Operational** | Implemented and demonstrably working on the paths currently exercised, but broader behavior is not yet validated. |
-| 🔧 **Incomplete** | Some required functionality is still missing, but the implemented portion works. |
-| ⛔ **Blocking** | Missing/incorrect functionality currently prevents the game from progressing. |
-| ⏳ **Not Reached** | The game has not yet exercised enough of this subsystem to assess it. |
-
-## Static coverage
+## Measurements (verified run, 2026-10-11)
 
 | Item | Count |
 | --- | --- |
-| EE functions in the provisional map, generated as C++ | 9,493 (2.16 MB of code; 83 more quarantined for review) |
-| Overlay (`DBZP.BIN`) functions mapped | 456 |
-| EE entries compiled into the startup probe | 1,361 main executable + 12 overlay |
-| IOP modules recompiled into the native IOP runtime | 15 module units (disc, file I/O, sound, controller, memory card, CRI) |
-
-Map boundaries are provisional; functions are compiled when execution reaches them.
-
-## Runtime coverage (verified run, 2026-10-08)
-
-| Item | Count |
-| --- | --- |
+| EE functions mapped and generated | 9,493 (456 in the `DBZP.BIN` overlay; 1,361 + 12 compiled into the probe) |
 | EE functions entered / completed | 1,254 / 1,243 (kernel stubs 2 / 2) |
-| EE calls / returns | 7,660,652 / 7,660,189 |
-| IOP instructions executed | 10,880,397 (15 module loads) |
-| Presented frames | 650 |
-| Logical VBlanks / Timer 2 interrupts | 1,034 / 151 |
-| Disc reads (original IOP handlers) | 186 |
-| CRI sound calls / memory card queries | 43 / 77 |
+| Presented frames / logical VBlanks | 650 / 1,034 |
+| Native service requests | 186 disc reads, 43 CRI calls, 77 memory card queries; 1,008 pad blocks (no IOP code runs) |
+| Release run time | about 19 s, dominated by the CPU GS rasterizer |
 
 The run stops at a checked boundary: a GIF DMA transfer in chain mode (`0x1000A030`, pc `0x312084`), before the first movie frame.
 
-## Subsystem status
+## Subsystems
 
 | Subsystem | Status | Scope |
 | --- | --- | --- |
-| EE CPU and kernel services | 🟢 Operational | Recompiled game code; threads, semaphores, interrupts, sleep/wake and priorities as the game reaches them; startup states match captures, frame-phase scheduling not yet compared |
-| IOP | 🟢 Operational | Original modules run natively; SIF RPC to disc, file I/O, sound, controller, memory card and CRI services; the CRI lifecycle comparison fails |
-| GS | 🔧 Incomplete | Software GS model: sprites, triangles, PSMT4/PSMT8 textures with palettes, both display circuits, reset |
-| GIF / VIF | ⛔ Blocking | GIF normal-mode DMA and VIF1 DIRECT work; GIF chain mode stops the run; VIF unpack not reached |
-| VU | ⏳ Not Reached | No VU microprogram has run yet |
-| IPU / video | 🔧 Incomplete | Decoder tables, thresholds and reset; no MPEG decoding |
-| Audio | 🔧 Incomplete | Sound driver, sound banks and SPU2 voice setup through the original modules; no sample playback or output |
-| Input | 🔧 Incomplete | Emulated DualShock 2 with scripted input; no host controller or keyboard yet |
-| Memory card | 🔧 Incomplete | Card queries through the original modules with no card inserted; no card image or saves |
-| Disc / filesystem | ✅ Verified | ISO-backed CDVD reads, streaming and file I/O; archive table and overlay byte-identical to the original |
+| EE CPU and kernel | 🟢 Operational | Recompiled game code; threads, semaphores, interrupts and priorities as reached; startup states match captures |
+| IOP services | 🟢 Operational | Native services for disc, files, IOP heap, LOADFILE, controller, memory card, sound driver, SOUNDS and CRI ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)); EE state identical to the former emulated IOP |
+| GS | 🔧 Incomplete | CPU GS model (sprites, triangles, palettized textures, both circuits); GPU path via paraLLEl-GS planned |
+| GIF / VIF | ⛔ Blocking | GIF normal-mode DMA and VIF1 DIRECT work; GIF chain mode stops the run |
+| VU | ⏳ Not Reached | |
+| IPU / video | 🔧 Incomplete | Decoder setup only; native Sofdec playback planned |
+| Audio | 🔧 Incomplete | Requests answered; no output; ADX stream commands are a checked boundary |
+| Input | 🔧 Incomplete | Native controller service with scripted input; no host input yet |
+| Memory card | 🔧 Incomplete | No card inserted; no card image or saves |
+| Disc / filesystem | ✅ Verified | ISO-backed reads and file I/O; archive table and overlay byte-identical to the original |
 
-## Verification
+## Verification (2026-10-11)
 
-Verified 2026-10-08:
-- **Tests:** MSVC Debug and Release builds, **18/18 CTests**, and the Python suites (180 capture, 69 recompilation, 13 IOP, 3 Ghidra). Release and Debug reach the same checkpoint.
-- **Original comparisons:** 46 comparison scripts check recompiled state against PCSX2 captures of the original game.
-  - 23 pass on the full run.
-  - 12 startup-scoped checks pass at captured phase stops (`BT2_PHASE_STOP`, four phases).
-  - 7 pass with their own inputs: six capture checks (`cd_init`, `rpc_bind`, `heap_bind`, `heap_allocation`, `heap_copy`, `spu2_transfer`), whose regenerated probe inputs are byte-identical, and `disc_read` against the early-stop sound-worker run.
-  - 4 fail: `cri_rpc` and `second_heap` (native lifecycle differs), `cri_preemption` (checks a former blocker) and `spu2_initialization` (no current IOP-module-probe report).
+- **Tests:** MSVC Debug and Release builds, **15/15 CTests**, Python suites (177 capture, 69 recompilation, 11 IOP inspection, 3 Ghidra). Release and Debug reach the same checkpoint.
+- **Native services A/B:** same stop and identical EE memory as the emulated IOP, except two regions of stale IOP bytes ([details](plans/iop/NATIVE_SERVICES_PLAN.md#progress-2026-10-11)).
+- **Original comparisons** (46 scripts against PCSX2 captures): 23 pass on the full run, 12 at captured phase stops, 7 with their own capture inputs (not rerun this pass); 4 fail (`cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization`), as before.
 - **Frames:** inspected visually.
 
 Proprietary inputs, generated code, captures and rendered frames stay local and ignored.
 
-## What runs today
-
-**Startup.** The game's own code, from its entry point and C library on, runs recompiled; kernel services are provided by the runtime. The original IOP modules run natively with SIF RPC between the two processors. The first archive table and the `DBZP.BIN` overlay load byte-identical to the original.
-
-**Frames.** The overlay's frame loop sends its graphics through GIF and VIF1 DMA into the GS model, shown live with `run_startup_probe.py --viewer` (see [BUILDING.md](guides/BUILDING.md)). The emulated DualShock 2 passes the controller check. The memory card check runs with no card, and scripted input answers its "Continue anyway?" prompt. The GS reset for the next scene matches the original.
-
-**Toward the opening movie (current).** The game sets up the movie decoder (IPU), copies its scratchpad memory to main RAM and starts its frame-pacing threads: worker 7 serves per-frame callbacks, main sleeps at frame end, worker 4 wakes it. Nothing new is drawn after frame 650 yet.
-
 ## Next steps
 
-The port moves from emulating PS2 hardware to a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step)):
+Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step):
 
-1. **Native services plan:** every RPC service the game uses, the requests it sends and the results it must get.
-2. **Replace the emulated IOP service by service:** disc and files from the ISO, controller, memory card, then sound and CRI ADX audio.
-3. **GPU rendering:** integrate paraLLEl-GS and match it against the CPU renderer on the startup frames.
-4. **GIF DMA chain mode** (current blocker), with the GIF channel models consolidated into one.
-5. **Opening movie:** plan native Sofdec (SFD) playback, then implement it.
+1. **GPU rendering:** integrate paraLLEl-GS and match it against the CPU renderer on the startup frames.
+2. **GIF DMA chain mode** (current blocker), with the GIF channel models consolidated into one.
+3. **Opening movie:** plan native Sofdec (SFD) playback, then implement it.
+4. **Native audio output:** ADX decoding and sound bank playback behind the sound and CRI services.
 
-Resume details: [active-pass handoff](progress/ACTIVE_PASS.md). Numeric snapshot: [latest.json](progress/latest.json); dashboard scopes: [components.json](progress/components.json).
+## Links
 
-## History and working rules
-
-- [October 2026 history](progress/2026-10.md): every pass's evidence and earlier checkpoints.
-- [Implementation plan](project/IMPLEMENTATION_PLAN.md), [reference architecture](reference/REFERENCE_ARCHITECTURE.md), [runtime layout](guides/RUNTIME_LAYOUT.md), [tools](guides/TOOLS.md), [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md), [tracking rules](project/PROGRESS_TRACKING.md).
-
-A plain "continue" runs a goal-driven pass through the implementation plan's current next step (AGENTS.md). Keep this page short; detailed pass results belong in the monthly history.
+[Active handoff](progress/ACTIVE_PASS.md) · [October 2026 history](progress/2026-10.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)

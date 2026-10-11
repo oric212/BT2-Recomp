@@ -55,11 +55,8 @@ def verify(root,native,disc):
         require(m['kind']==kind and m['result']==result and words(i,0x1D0000,1)==(1,) and words(i,0x1D0008,1)==(result,) and list(words(i,0x1D0020,4))==m['arguments'],'Actual API return differs')
     r=json.loads(native.read_text(encoding='utf-8'));require(disc_search_completed(r) and r.get('ncmd_rpc_binds')==1 and r.get('ncmd_bind_semaphores')==1,'Native NCMD bind differs')
     if r.get('ncmd_ready_calls'):
-        require(ready_completed(r),'Native readiness completion differs');i=Path(str(native)+'.iop.bin').read_bytes()
-        if r.get('disc_read_calls')==1:
-            ee=Path(str(native)+'.ee.bin').read_bytes();require(words(i,0x1A5830,1)==(4096,) and words(ee,0x368440,1)==(2,),'Original readiness result retention/read result reuse differs')
-        elif not r.get('disc_read_calls'):require(words(i,0x1A5830,1)==(2,),'Native original readiness result differs')
-        # Later reads reuse the handler's result slot; their transfers are compared by verify_vblank_wake.py.
+        require(ready_completed(r),'Native readiness completion differs')
+        ee=Path(str(native)+'.ee.bin').read_bytes();require(words(ee,0x368440,1)==(2,),'Native readiness result (EE) differs')
     print('NCMD bind, readiness hardware/API/result and actual two-sector readback independently verified. Native sector completion is not claimed.')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path,default=Path('work/bt2-generation/entry-stop.json'));p.add_argument('--disc',type=Path,required=True);a=p.parse_args();verify(a.root,a.native,a.disc)

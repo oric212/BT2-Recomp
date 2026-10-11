@@ -26,7 +26,7 @@ def verify(root,native):
     require(snapshots[0][0x365BC0:0x366440]==snapshots[1][0x365BC0:0x366440],'Original cache helpers changed range')
     r=json.loads(native.read_text(encoding='utf-8'))
     require(r['indexed_cache_operations']>=256 and r['indexed_cache_tag_reads']==r['indexed_cache_operations'] and r['indexed_cache_tag_reads']%128==0,'Native indexed scan incomplete')
-    require(r['cri_rpc_calls']>=2 and not r['native_iop_error'],'Native cache caller/control cleanup incomplete')
+    require(r['cri_rpc_calls']>=2 and not r.get('native_iop_error'),'Native cache caller/control cleanup incomplete')
     owned=Path(str(native)+'.ee.bin').read_bytes()
     if r.get('cri_stream_transfers',0):
         # Later helper fills reuse this exact 0x880-byte stream buffer; its owned IOP copy must match.

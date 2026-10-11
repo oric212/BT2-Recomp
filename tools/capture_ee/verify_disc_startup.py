@@ -10,12 +10,12 @@ def words(data,address,count):return struct.unpack_from('<'+str(count)+'I',data,
 
 def disc_bind_boundary(r):
     return (r.get('disc_bind_semaphores')==1 and r.get('selector')==0x77 and r.get('pc')==0x32F028
-        and r.get('target')==0 and r.get('native_iop_error')==''
+        and r.get('target')==0 and r.get('native_iop_error','')==''
         and r.get('packet_words',[])[6:9]==[42,0x3A8780,0x80000597])
 
 def disc_search_completed(r):
-    return (r.get('disc_rpc_binds')==1 and r.get('disc_rpc_calls') in range(1,7) and r.get('disc_dma_submissions')==r.get('disc_rpc_calls')
-        and r.get('disc_dma_polls')==0 and r.get('disc_result')==1 and r.get('native_iop_error')=='')
+    return (r.get('disc_rpc_binds')==1 and r.get('disc_rpc_calls') in range(1,7)
+        and r.get('disc_result')==1 and r.get('native_iop_error','')=='')
 
 def verify(root,native):
     baseline=json.loads((root/'work/pcsx2-capture/rpc-mc-callback-before-absent-cards/capture.json').read_text(encoding='utf-8'))
@@ -39,7 +39,7 @@ def verify(root,native):
     require(words(b,MARKER+8,2)==(0,0) and words(b,0x3A8780,10)==(0,42,10,0,0,0x441C8,0,0,0,0x433D0),'Actual disc-search bind client differs')
     r=json.loads(native.read_text(encoding='utf-8'))
     require(completed_card_query(r) and r.get('disc_bind_semaphores')==1,'Native prior query/disc semaphore lifecycle differs')
-    require(disc_bind_boundary(r) or (r.get('disc_rpc_binds')==1 and r.get('native_iop_error')==''),'Native disc bind transition differs')
+    require(disc_bind_boundary(r) or (r.get('disc_rpc_binds')==1 and r.get('native_iop_error','')==''),'Native disc bind transition differs')
     reply=b[0x3A94C0:0x3A9500]
     (root/'work/bt2-generation/disc-bind.bin').write_bytes(reply)
     before=observations['rpc-disc-command-before'];after=observations['rpc-disc-command-after']
@@ -57,15 +57,14 @@ def verify(root,native):
     require(i[0x1D0300:0x1D0300+len(submit_hook(m['targets'][0]))]==submit_hook(m['targets'][0]),'DMA observer differs')
     if r.get('disc_rpc_calls'):
         require(disc_search_completed(r),'Native original handler/transport differs')
-        nr=Path(str(native)+'.iop.bin').read_bytes()
-        require(len(nr)==2*1024*1024 and words(nr,0x1A5808,1)==(1,),'Native handler result/IOP image differs')
+        ne=Path(str(native)+'.ee.bin').read_bytes()
         if r.get('disc_rpc_calls',0)>1:
             kind=['search-afs','search-afs2','search-op','search-ed','search-logo'][r['disc_rpc_calls']-2]
             f=root/('work/pcsx2-capture/rpc-ncmd-before-absent-cards-disc-api-'+kind);m=json.loads((f/'disc-api.json').read_text(encoding='utf-8'));b=(f/'disc-api-iop.bin').read_bytes()
             require(hashlib.sha256(b).hexdigest()==m['iop_sha256'] and m['result']==1,'Repeated metadata evidence differs')
             source=b[0x441C8:0x441EC]
         for lo,hi in ((0,8),(8,20),(24,36)):
-            require(nr[0x1A6498+lo:0x1A6498+hi]==source[lo:hi],'Native defined search metadata differs')
+            require(ne[0x3A8600+lo:0x3A8600+hi]==source[lo:hi],'Native defined search metadata (EE copy) differs')
     print('Actual disc initialization/semaphore/bind evidence verified. First search request/result verified independently; native completion is checked when present. No sector success claimed.')
 
 if __name__=='__main__':

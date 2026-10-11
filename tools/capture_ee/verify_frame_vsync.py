@@ -11,7 +11,7 @@ def verify(root,native):
     flag,csr=struct.unpack_from('<I4xQ',after,0x1FFECA0)
     require(flag==1 and csr==struct.unpack_from('<Q',after,0x387E88)[0],'Original delivery differs')
     r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes()
-    require(r['frame_vsync_deliveries']>=1 and r['timer1_stops']>=1 and r['spu2_playback_samples']>0,'Native frame/timer scope differs')
+    require(r['frame_vsync_deliveries']>=1 and r['timer1_stops']>=1,'Native frame/timer scope differs')
     native_flag,native_csr=struct.unpack_from('<I4xQ',ee,0x1FFECA0)
     require(native_flag==1 and (native_csr&~0x2000)==(csr&~0x2000),'Native one-shot publication differs')
     print('Verified first-frame VSync flag/CSR publication (FIELD phase and physical timing excluded).')

@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <array>
+#include <map>
 #include <bit>
 #include <cstdint>
 #include <stdexcept>
@@ -25,13 +26,11 @@
 #include "gs/vif_startup.h"
 #include "gs/texture_gif_startup.h"
 #include "ipu_device.h"
+#include "services/sif_rpc.h"
+#include "services/iop_heap.h"
 #include "stopped_dma_channels.h"
 #include <memory>
 struct EeExecutionOwner;
-#ifdef BT2_NATIVE_IOP
-#include <memory>
-class NativeIopService;
-#endif
 
 struct alignas(16) ProbeGpr {
     std::uint64_t low = 0;
@@ -426,9 +425,6 @@ public:
     std::string native_module_request,native_iop_error;
     unsigned native_iop_steps=0,native_iop_targets=0,native_iop_waiters=0;
     std::uint32_t native_iop_pc=0;
-#ifdef BT2_NATIVE_IOP
-    std::shared_ptr<NativeIopService> native_iop;
-#endif
     unsigned heap_binds=0,heap_calls=0,heap_frees=0;
     bool sound_thread_start_supplied=false,sound_thread_checkpoint=false;
     unsigned sound_thread_queries=0,sound_thread_starts=0;
@@ -658,18 +654,14 @@ public:
     unsigned startup_ready_queries=0,startup_worker_suspends=0;
     unsigned disc_bind_semaphores=0,disc_rpc_binds=0,disc_rpc_calls=0;
     std::string local_disc_path;
-    void receiveDiscSearch(std::uint8_t*,R5900Context*);
     unsigned cri_rpc_binds=0,cri_rpc_calls=0;
     unsigned ncmd_bind_semaphores=0,ncmd_rpc_binds=0,ncmd_ready_calls=0,ncmd_read_calls=0;
-    void receiveNcmdRead(std::uint8_t*,R5900Context*);
-    void receiveNcmdReady(std::uint8_t* rdram,R5900Context* context);
     bool ncmd_bind_supplied=false;
     void supplyNcmdBind(std::span<const std::uint8_t> b) {
         const std::array<unsigned,16> expected={0,0,0x80000008,0,0,0x203A97C0,0,0x369590,0x80000009,0x43418,0x43DB8,0,0,0,0,0};
         if(ncmd_bind_supplied || b.size()!=sizeof(expected) || std::memcmp(b.data(),expected.data(),sizeof(expected)))throw std::runtime_error("Invalid command bind evidence");
         ncmd_bind_supplied=true;
     }
-    void receiveNcmdBind(std::uint8_t* rdram,R5900Context* context);
     bool disc_bind_supplied=false;
     void supplyDiscBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A8780,0x80000009,0x433D0,0x441C8,0,0,0,0,0};
@@ -677,7 +669,6 @@ public:
             throw std::runtime_error("Invalid disc-search bind evidence");
         disc_bind_supplied=true;
     }
-    void receiveDiscBind(std::uint8_t* rdram,R5900Context* context);
     struct Semaphore { std::uint32_t count, maximum, option; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
@@ -720,29 +711,67 @@ private:
     void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
                        std::uint32_t client = 0x3A87A8, unsigned semaphore = 3,
                        std::uint32_t server = 0x3F570, std::uint32_t buffer = 0x3FB20);
-#ifdef BT2_NATIVE_IOP
-    void receiveNativeModule(std::uint8_t* rdram,R5900Context* context);
-    void receiveMcRpc(std::uint8_t*,R5900Context*);
-    void receiveCriControl(std::uint8_t*,R5900Context*);
-    void receiveCriStream(std::uint8_t*,R5900Context*);
-    void receiveScmdCall(std::uint8_t*,R5900Context*);
-    bool isCriStreamSubmission(std::uint8_t*,const R5900Context*);
-    void receiveCriCreate(std::uint8_t*,R5900Context*);
-    void receiveCriBind(std::uint8_t*,R5900Context*);
-    void receiveDbcBind(std::uint8_t* rdram,R5900Context* context);
-    void receiveDbcPort(std::uint8_t* rdram,R5900Context* context);
-    void receiveDbcMain(std::uint8_t* rdram,R5900Context* context);
-
-    void receiveSoundRpc(std::uint8_t* rdram,R5900Context* context);
-    void receiveHeapFree(std::uint8_t* rdram,R5900Context* context);
-#endif
+    // Native SIF RPC services (runtime/services/). A server's handles are the opaque IOP addresses
+    // the EE stores at bind time; calls route by the handle in the client (client+36).
+    struct NativeServer {
+        std::uint32_t id,server,buffer,bind_token;bool native_bind;
+    };
+    static constexpr std::uint32_t sif_receive_buffer=0x3A94C0; // EE SIF command receive buffer.
+    std::array<NativeServer,14> native_servers_{{
+        {0x80000597,0x433D0,0x441C8,0x740001,true},  // CDVD file search
+        {0x80000595,0x43418,0x43DB8,0x760001,true},  // CDVD N-commands
+        {0x80000593,0x434F0,0x439A8,0,false},        // CDVD S-commands (bound with CD init)
+        {0x80000001,0x47788,0x477D0,0x70001,true}, // FILEIO file server
+        {0x80000400,0x536F8,0x532B0,0x70001,true},   // MCSERV memory card
+        {0x80001300,0x62DE0,0x62F08,0,true},          // DBCMAN main
+        {0x8000131C,0x62E28,0x62F98,0,true},          // DBCMAN (bound, unused)
+        {0x8000131E,0x62E70,0x65028,0,true},          // DBCMAN port 1
+        {0x8000131F,0x62EB4,0x650B8,0,true},          // DBCMAN port 0
+        {0x80000003,0x48438,0x48480,0x40001,true},    // IOP heap
+        {0x80000006,0x22568,0x225B0,0,false},         // LOADFILE (bound with the captured replay)
+        {0x80000701,0xA15E0,0xA1C30,0x60001,true},    // SDRDRV sound driver
+        {0x02000004,0x1E5D90,0x1D16E0,0x60003,true},  // SOUNDS
+        {0x90000200,0x1B5D30,0x1B57C0,0x780001,true}, // CRI ADX
+    }};
+    const NativeServer* nativeServerById(std::uint32_t id) const;
+    const NativeServer* nativeServerByHandle(std::uint32_t handle) const;
+    bool decodeSifRpc(std::uint8_t* rdram,const R5900Context* context,SifRpcRequest& out);
+    void completeNativeRpc(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server,
+                           const std::array<std::uint32_t,16>& reply);
+    void completeNativeCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    unsigned& nativeBindCounter(const NativeServer& server);
+    bool callNativeService(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeDiscCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    void finishNativeFileio(R5900Context* context);
+    bool nativeCardCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativePadCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    NativePadState& nativePadState();
+    std::shared_ptr<NativePadState> native_pad_;
+    bool nativeHeapCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool handleNativeRawDma(std::uint8_t* rdram,R5900Context* context);
+    bool nativeModuleCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeSoundDriverCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeCriCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server);
+    bool nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,std::uint32_t source,std::uint32_t destination,std::uint32_t size);
+    std::vector<std::uint8_t> native_iop_ram_=std::vector<std::uint8_t>(2u*1024*1024); // Uploaded IOP data (no IOP code runs).
+    IopHeap native_heap_;
+    std::map<std::uint32_t,unsigned PS2Runtime::*> native_dma_tokens_;                 // Transfer token -> poll counter.
+    std::vector<NativeCriChannel> native_cri_channels_;
+    unsigned native_cri_422s_=0,native_cri_400s_=0,native_cri_408s_=0;bool native_sounds_started_=false;
+    std::map<std::uint32_t,NativeFile> native_files_;std::uint32_t native_next_fd_=1;
+    std::array<std::uint32_t,2> native_fileio_buffers_{};std::uint32_t native_fileio_next_buffer_=0;
+public:
+    unsigned native_disc_requests=0,native_fileio_requests=0,native_card_requests=0,native_pad_requests=0,native_pad_transfers=0,native_other_binds=0;
+    unsigned native_cri_requests=0,native_cri_returns=0;
+    void nativePadVblank(std::uint8_t* rdram);
+    void nativeCriVblank(const R5900Context* interrupted);
+    bool handleNativeDmaStat(R5900Context* context);
+    const std::vector<std::uint8_t>& nativeIopMemory() const {return native_iop_ram_;}
+    bool handleNativeSifDma(std::uint8_t* rdram,R5900Context* context);
+private:
     void receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context);
-    void receiveHeapBind(std::uint8_t* rdram,R5900Context* context);
-    void receiveHeapAllocation(std::uint8_t* rdram,R5900Context* context);
-    void receiveHeapCopy(std::uint8_t* rdram,R5900Context* context);
-    void receiveIopUpload(std::uint8_t* rdram,R5900Context* context);
-    void receiveFileioBind(std::uint8_t* rdram,R5900Context* context);
-    void receiveFileioCall(std::uint8_t* rdram,R5900Context* context);
     void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context);
     void receiveFreshCd(std::uint8_t* rdram,R5900Context* context);
     void receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context);

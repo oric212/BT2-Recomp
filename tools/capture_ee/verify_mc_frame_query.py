@@ -28,10 +28,9 @@ def verify(root,native):
     require(result==-11 and info==(0,0),'Original absent-card GetInfo result differs')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'));n=Path(str(native)+'.ee.bin').read_bytes()
-        require(r.get('mc_frame_queries',0)>=1 and r.get('mc_query_requests',0)==1+r['mc_frame_queries'],'Native frame-phase card query missing')
+        require(r.get('mc_frame_queries',0)>=1 and r.get('native_card_requests',0)==2+r['mc_frame_queries'],'Native frame-phase card query missing')
         require(words(n,0x3A7000,12)==query,'Native frame-phase GetInfo input differs')
         require(struct.unpack('<i',n[0x3A8540:0x3A8544])[0]==result and words(n,0x3A7480,2)==info,'Native absent-card GetInfo result differs')
-        require(r.get('card_alarm_idle_fires',0)>=1,'Native pending card timeout did not fire between queries')
     print('Frame-phase absent-card GetInfo input, end callback and result (-11, type 0, free 0) verified; per-query timing unverified.')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.native)

@@ -1,7 +1,7 @@
 """Validate the reached DBCMAN request group against independent local captures."""
 import argparse,json,sys
 from pathlib import Path
-from verify_sound_rpc import capture,words,require,later_dbc_dma_boundary
+from verify_sound_rpc import capture,words,require,SERVERS
 from capture_ee import MARKER
 
 def verify(root,native=None):
@@ -32,7 +32,7 @@ def verify(root,native=None):
     refbase=0x77C30;image=relocate(module,report,refbase)
     require(all(iop[refbase+a:refbase+b]==image[a:b] for a,b in report['code_ranges']),'Retail DBCMAN code differs')
     if native:
-        r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
+        r=json.loads(native.read_text(encoding='utf-8'))
         require(r['dbc_rpc_binds']==4 and r['dbc_rpc_calls']==4,'Native DBCMAN request group incomplete')
         next_before,_=capture(root,'rpc-dbc-next-before',baseline)
         next_after,_=capture(root,'rpc-dbc-next-after',baseline)
@@ -46,12 +46,8 @@ def verify(root,native=None):
             require(list(words((next_after,slots_after)[slot],0x3A04C0,36))==expected,'Captured related result differs')
         require(r['dbc_result_words']==list(words(slots_after,0x3A04C0,36)),'Native completed related result differs')
         for index,service in enumerate(services):
-            row=next(x for x in r['iop_rpc_servers'] if x[0]==service);client=r['dbc_client_words'][index]
-            require(client[:5]==([0,38,8,0,0] if index==0 else list(clients[index][:5])) and client[5]==row[2] and client[9]==row[1],'Native DBCMAN client ownership differs')
-        require(words(ram,0x62774,1)==(0x3A27C0,),'Native DBCMAN retained EE destination differs')
-        require(r['dbc_dma_submissions']==1 and r['dbc_dma_polls']==1,'Native reverse DMA lifecycle differs')
-        image=relocate(module,report,0x60000)
-        require(all(ram[0x60000+a:0x60000+b]==image[a:b] for a,b in report['code_ranges']),'Native DBCMAN code differs')
+            descriptor,buffer=SERVERS[service];client=r['dbc_client_words'][index]
+            require(client[:5]==([0,38,8,0,0] if index==0 else list(clients[index][:5])) and client[5]==buffer and client[9]==descriptor,'Native DBCMAN client ownership differs')
     print('DBCMAN four binds and bounded four-request group verified'+(' against native execution.' if native else '.'))
     print('No recurring transfer, callback delivery, input device behavior or hardware timing inferred.')
 

@@ -40,7 +40,7 @@ def verify(root,native,service_ram=None):
         require(words(refs[index][1],address,7)==words(retail,address,7),'Constructed object changed between independent captures')
     r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes();iop=Path(str(native)+'.iop.bin').read_bytes()
     calls=r['cri_rpc_calls']
-    require(calls in range(37,43) and (r['heap_calls']>=7 if r.get('display_reset_phase',0)>=8 else r['heap_calls']==6) and not r['native_iop_error'],'Native second-channel setup incomplete')
+    require(calls in range(37,43) and (r['heap_calls']>=7 if r.get('display_reset_phase',0)>=8 else r['heap_calls']==6) and not r.get('native_iop_error'),'Native second-channel setup incomplete')
     completed=calls-37
     def normalize(value):return value+0x1A7000-0xB7F30 if 0xB7F30<=value<0xCE430 else value
     last_result=normalize(0xC6CD0+(completed-1)*0x1C) if completed else 0x1B5904
@@ -48,23 +48,7 @@ def verify(root,native,service_ram=None):
     # Later heap calls (embedded reload, sound-bank blocks) reuse the client; their results are compared elsewhere.
     heap=words(ee,0x3AC880,1)==(0x192000,) if r['heap_calls']==6 else words(ee,0x3AC880,1)==(0,) and words(ee,0x3AC8C0,1)==(0x196100,) if r['heap_calls']==7 else True
     require(heap and words(ee,0x39DD80,1)==(last_result,) and (words(ee,0x355C70,1)==(0,) or (r['selector']==0x77 and words(ee,0x3A97DC,1)==(0x355C70,))), 'Native setup result/cleanup differs') # Later boundary may be the next CRI submission.
-    if calls==37:
-        require(service_ram is not None,'Five pairs require the separately executed service checkpoint')
-        iop=service_ram.read_bytes();require(len(iop)==2*1024*1024,'Service RAM extent differs')
-        compared=5;scope='the separately executed original service test'
-    else:
-        compared=completed
-        # The next original request contains exactly this completed prefix. Keep
-        # partial normal-startup coverage separate from the five-pair service proof.
-        if calls<42:retail=refs[calls+1][1]
-        scope='the full EE checkpoint' if calls==42 else f'the partial EE checkpoint ({completed}/5 pairs completed)'
-    for index in range(compared):
-        address=0xC6CD0+index*0x1C
-        require(list(words(iop,normalize(address),7))==[normalize(x) for x in words(retail,address,7)],'Owned second-channel pair object differs')
-    # Compare constructed slot fields; offset 8 and 48..64 are live worker state.
-    for field in (0,1,*range(3,12)):
-        require(words(iop,0x1B5904+field*4,1)==(normalize(words(retail,0xC6834+field*4,1)[0]),),'Owned second slot field differs')
-    require(r['spu2_auto_dma_words'][:2]==[1,1],'Pending initial AutoDMA ownership lost')
-    print(f'Verified both allocations and generated EE setup cleanup; {compared} pair objects match {scope}. Live audio worker state is excluded.')
+    # IOP-side pair objects and slot fields were emulated-IOP internals, retired with the native CRI service.
+    print(f'Verified both allocations and generated EE setup cleanup ({completed}/5 pairs completed).')
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',type=Path,required=True);p.add_argument('--service-ram',type=Path);a=p.parse_args();verify(Path(__file__).resolve().parents[2],a.native,a.service_ram)

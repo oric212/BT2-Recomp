@@ -30,6 +30,15 @@ target_compile_options(bt2-port PRIVATE /W4 /permissive- /utf-8)
 set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ee_sound_dispatch.cpp
     runtime/ee/ee_thread_scheduler.cpp
+    runtime/services/sif_rpc.cpp
+    runtime/services/disc_service.cpp
+    runtime/services/fileio_service.cpp
+    runtime/services/memory_card_service.cpp
+    runtime/services/pad_service.cpp
+    runtime/services/iop_memory_service.cpp
+    runtime/services/module_service.cpp
+    runtime/services/sound_service.cpp
+    runtime/services/cri_service.cpp
     runtime/ee/retained_ee_stack.cpp
     runtime/ee/ps2_fpu.cpp
     runtime/gs/gs_command_sink.cpp
@@ -38,49 +47,6 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ps2_runtime_services.cpp
     runtime/ee/ps2_runtime_syscalls.cpp
     runtime/ee/ipu_device.cpp)
-
-# Native IOP: the locally generated (ignored) original modules; the handwritten IOP runtime (CPU state,
-# memory-mapped hardware, logical time and the high-level kernel/library providers); and the module
-# service that loads the modules and runs their RPC services.
-set(BT2_IOP_WORK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/work/iop")
-set(BT2_IOP_GENERATED_MODULES)
-foreach(bt2_module sio2man mcman mcserv dbcman sio2d ds2ud libsd sdrdrv modhsyn modsesq2 cdvdstm sounds cri_adxi fileio_boot embedded disc)
-    list(APPEND BT2_IOP_GENERATED_MODULES "${BT2_IOP_WORK_DIR}/${bt2_module}_native.cpp")
-endforeach()
-set(BT2_IOP_RUNTIME_SOURCES
-    runtime/iop/core/native_runtime.cpp
-    runtime/iop/core/native_runtime_io.cpp
-    runtime/iop/core/native_runtime_timing.cpp
-    runtime/iop/providers/kernel_system.cpp
-    runtime/iop/providers/kernel_interrupts.cpp
-    runtime/iop/providers/kernel_dma.cpp
-    runtime/iop/providers/kernel_sync.cpp
-    runtime/iop/providers/kernel_time.cpp
-    runtime/iop/providers/kernel_threads.cpp
-    runtime/iop/providers/sound_scope_providers.cpp
-    runtime/iop/providers/library_provider.cpp
-    runtime/iop/providers/ioman_provider.cpp
-    runtime/iop/providers/sif_rpc_provider.cpp
-    runtime/iop/providers/vblank_provider.cpp
-    runtime/iop/providers/cdvd_provider.cpp)
-set(BT2_IOP_SERVICE_SOURCES
-    runtime/iop/services/compiled_modules.cpp
-    runtime/iop/services/native_iop_service.cpp
-    runtime/iop/services/boot_heap_service.cpp
-    runtime/iop/services/fileio_service.cpp
-    runtime/iop/services/sound_service.cpp
-    runtime/iop/services/pad_service.cpp
-    runtime/iop/services/memory_card_service.cpp
-    runtime/iop/services/disc_service.cpp
-    runtime/iop/services/cri_service.cpp)
-set(BT2_EE_IOP_BRIDGE_SOURCES
-    runtime/iop/ee_bridge/ee_bridge_modules.cpp
-    runtime/iop/ee_bridge/ee_bridge_fileio.cpp
-    runtime/iop/ee_bridge/ee_bridge_sound.cpp
-    runtime/iop/ee_bridge/ee_bridge_pad.cpp
-    runtime/iop/ee_bridge/ee_bridge_memory_card.cpp
-    runtime/iop/ee_bridge/ee_bridge_disc.cpp
-    runtime/iop/ee_bridge/ee_bridge_cri.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -99,7 +65,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     bt2_ee_target(bt2-generated-probe)
     target_compile_definitions(bt2-generated-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
     add_test(NAME generated-bt2-probe COMMAND bt2-generated-probe)
-    add_executable(bt2-disc-metadata-tests runtime/tests/iop/disc_metadata_tests.cpp)
+    add_executable(bt2-disc-metadata-tests runtime/tests/disc_metadata_tests.cpp)
     bt2_target_defaults(bt2-disc-metadata-tests)
     add_test(NAME disc-metadata COMMAND bt2-disc-metadata-tests)
     add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp)
@@ -114,6 +80,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-ipu-tests runtime/tests/ipu_tests.cpp runtime/ee/ipu_device.cpp)
     bt2_target_defaults(bt2-ipu-tests)
     add_test(NAME ipu-setup COMMAND bt2-ipu-tests)
+    add_executable(bt2-native-services-tests runtime/tests/native_services_tests.cpp)
+    bt2_target_defaults(bt2-native-services-tests)
+    add_test(NAME native-services COMMAND bt2-native-services-tests)
     add_executable(bt2-post-sif-tests runtime/tests/post_reset_sif_tests.cpp)
     bt2_ee_target(bt2-post-sif-tests)
     add_test(NAME post-reset-sif COMMAND bt2-post-sif-tests)
@@ -262,56 +231,13 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/entry-stop.json")
 endif()
 
-option(BT2_BUILD_IOP_PROBE "Build isolated locally generated MIPS-I module probe" OFF)
-# IOP targets: generated modules include native_runtime.h through runtime/iop/core.
-function(bt2_iop_target target)
-    bt2_target_defaults(${target})
-    target_include_directories(${target} PRIVATE runtime/iop/core "${BT2_IOP_WORK_DIR}")
-endfunction()
-if(BT2_BUILD_IOP_PROBE)
-    enable_testing()
-    foreach(bt2_module_source IN LISTS BT2_IOP_GENERATED_MODULES)
-        if(NOT EXISTS "${bt2_module_source}")
-            message(FATAL_ERROR "Generate local modules with tools/iop/generate_native.py, tools/iop/generate_boot_heap.py and tools/iop/generate_embedded.py first; see docs/guides/TOOLS.md.")
-        endif()
-    endforeach()
-    add_custom_command(OUTPUT "${BT2_IOP_WORK_DIR}/synthetic_native.cpp"
-        COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/iop/make_synthetic.py"
-        DEPENDS tools/iop/make_synthetic.py tools/iop/generate_native.py)
-    add_executable(bt2-iop-tests runtime/tests/iop/native_tests.cpp "${BT2_IOP_WORK_DIR}/synthetic_native.cpp" ${BT2_IOP_RUNTIME_SOURCES})
-    add_executable(bt2-iop-rpc-tests runtime/tests/iop/rpc_tests.cpp ${BT2_IOP_RUNTIME_SOURCES})
-    add_executable(bt2-iop-probe runtime/probe/iop_module_probe.cpp ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
-    add_executable(bt2-iop-service-tests runtime/tests/iop/service_tests.cpp ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
-    foreach(bt2_iop_test bt2-iop-tests bt2-iop-probe bt2-iop-service-tests bt2-iop-rpc-tests)
-        bt2_iop_target(${bt2_iop_test})
-    endforeach()
-    add_test(NAME native-iop-synthetic COMMAND bt2-iop-tests)
-    add_test(NAME native-iop-rpc COMMAND bt2-iop-rpc-tests)
-    add_test(NAME native-iop-service COMMAND bt2-iop-service-tests)
-endif()
-
-option(BT2_LINK_NATIVE_IOP "Connect compiled owned IOP modules to the EE LOADFILE probe" OFF)
-if(BT2_LINK_NATIVE_IOP)
-    if(NOT TARGET bt2-entry-probe)
-        message(FATAL_ERROR "Native IOP bridge requires the generated entry probe")
-    endif()
-    target_sources(bt2-entry-probe PRIVATE ${BT2_EE_IOP_BRIDGE_SOURCES} ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
-    target_include_directories(bt2-entry-probe PRIVATE runtime/iop/core "${BT2_IOP_WORK_DIR}")
-    target_compile_definitions(bt2-entry-probe PRIVATE BT2_NATIVE_IOP=1)
-    add_executable(bt2-ee-iop-tests runtime/tests/iop/ee_bridge_tests.cpp ${BT2_EE_IOP_BRIDGE_SOURCES} ${BT2_IOP_RUNTIME_SOURCES} ${BT2_IOP_SERVICE_SOURCES} ${BT2_IOP_GENERATED_MODULES})
-    bt2_target_defaults(bt2-ee-iop-tests)
-    target_include_directories(bt2-ee-iop-tests PRIVATE runtime/ee runtime/iop/core "${BT2_IOP_WORK_DIR}")
-    target_compile_definitions(bt2-ee-iop-tests PRIVATE BT2_NATIVE_IOP=1)
-    add_test(NAME ee-native-iop-failure COMMAND bt2-ee-iop-tests)
-endif()
-
 if(BT2_BUILD_GENERATED_PROBE)
-    add_executable(bt2-disc-sector-tests runtime/tests/iop/disc_sector_tests.cpp)
+    add_executable(bt2-disc-sector-tests runtime/tests/disc_sector_tests.cpp)
     bt2_target_defaults(bt2-disc-sector-tests)
     add_test(NAME disc-sector-bounds COMMAND bt2-disc-sector-tests)
 endif()
 
-foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe bt2-ee-iop-tests)
+foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
     if(TARGET ${bt2_ee_runtime_target})
         target_sources(${bt2_ee_runtime_target} PRIVATE ${BT2_EE_RUNTIME_SOURCES})
     endif()

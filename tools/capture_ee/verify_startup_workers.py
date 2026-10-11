@@ -40,7 +40,9 @@ def native_scope(r):
     # Later owned VBlank wakes resume the parked helpers; each resume ends in another first-site sleep.
     # A boundary at a helper's pending NCMD read leaves that helper resumed but not yet re-parked.
     pending=r.get('selector')==0x77 and r.get('ncmd_ready_calls',0)==r.get('ncmd_read_calls',0)+1
-    require(r['startup_worker_dispatches']==2 and r['startup_worker_waits']==2+r.get('worker_resumes',0)-pending,'Helper dispatch/wait count differs')
+    # In the frame phase main resumes worker 7 once (third dispatch); it then parks in its first sleep.
+    worker7=r['startup_worker_dispatches']==3
+    require(r['startup_worker_dispatches'] in (2,3) and r['startup_worker_waits']==r['startup_worker_dispatches']+r.get('worker_resumes',0)-pending,'Helper dispatch/wait count differs')
     # Every critical enter has its restore and every resume of helper 4 its suspend.
     # A later boundary may fall inside main's critical section: one resume/raise not yet undone.
     open_section=r['scheduled_resumes']-r['scheduled_suspends']
@@ -48,7 +50,8 @@ def native_scope(r):
         and (not open_section or (r['main_thread_priority']==1 and r.get('load_poll_idles',0))),'Critical-section ownership is unbalanced')
     require(r['cri_stream_transfers']>=2,'Helper stream submissions differ')
     state={t[0]:t for t in r['startup_worker_state']}
-    require(state[4][2:5]==([1,0,8] if open_section else [0,1,8]) and state[7][2:5]==[0,1,25],'Suspended helper state differs') # ID 4 is resumed inside an open section.
+    require(state[4][2:5]==([1,0,8] if open_section else [0,1,8]) and (state[7][2:5]==[0,0,25] and state[7][8]==1 if worker7 else state[7][2:5]==[0,1,25]),
+        'Suspended helper state differs') # ID 4 is resumed inside an open section; worker 7 waits once dispatched.
     require(state[5]==[5,0x2EDF48,0,0,16,0x38BDF0,0x34E430,0x2EE00C,1],'Helper 5 first wait differs')
     # At a pending NCMD read helper 6 is the running owned stack (ready, not waiting).
     require(state[6]==[6,0x2EE050,0,0,18,0x38BDF0,0x34F430,0x2EE100,1] or (pending and state[6][:6]==[6,0x2EE050,1,0,18,0x38BDF0] and state[6][8]==0),

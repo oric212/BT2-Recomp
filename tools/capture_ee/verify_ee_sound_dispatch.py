@@ -22,20 +22,17 @@ def verify(root,native,queued=False):
     require(m['source_elf_sha256']==EXPECTED_SHA and hashlib.sha256(b).hexdigest()==m['capture_sha256'] and [m[k] for k in ('pcsx2_sha256','bios_sha256','disc_sha256')]==env,'EE first-wait capture identity differs')
     address,trap,marker=capture_trap('rpc-ee-server-wait');stub=texture_stub('rpc-ee-server-wait')
     require(b[address:address+8]==trap and b[FRESH_BIND_STUB:FRESH_BIND_STUB+len(stub)]==stub and words(b,MARKER,1)==(marker,),'EE first-wait observer differs')
-    r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes();iop=Path(str(native)+'.iop.bin').read_bytes()
+    r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes()
     if queued:
         require(queued_sound_bind_completed(r),'Queued earlier bind/retained sound ownership differs')
     else:
         require(not r.get('queued_sound_submissions',0) and not r.get('queued_sound_completions',0),'Queued execution supplied to diagnostic scope')
-        require(r['ee_sound_probe_attempted']==1 and r['ee_sound_probe_waits']==1 and r['ee_sound_bind_returns']==1 and not r['native_iop_error'],'Native sound handoff incomplete')
+        require(r['ee_sound_probe_attempted']==1 and r['ee_sound_probe_waits']==1 and not r.get('native_iop_error',''),'Native sound handoff incomplete')
         require(r['selector']==0x32 and r['pc']==0x32EB88 and r['ee_sound_probe_parent_pc']==0x32EAF8 and r['main_thread_priority']==2,'Diagnostic parent/wait boundary differs')
     require(r['ee_sound_probe_frontier']==[0x32EB88,0x38BDF0,0x3A6C80,0x333098,0x3A6D00,0x10001],'Native first-wait context differs')
     for address,count in [(0x3A6D00,3),(0x3A6D18,3)]:require(words(ee,address,count)==words(b,address,count),'Generated queue/server registration differs')
     require(words(ee,0x3A6C90,1)==words(b,0x3A6C90,1)==(0x100250,),'Owned child saved exit differs')
-    require(words(iop,0xA1CA0,10)==(0,2,0,0,0,0x3A6CC0,0,0,0,0x3A6D18) and r['pending_ee_bind']==[0]*5,'Native reverse bind ownership differs')
-    require(r['sound_thread_words'][7:9]==[1,0] and (queued or r['native_iop_pc']==0xA1304),'Native SDRDRV first sleep differs')
-    if queued:require(words(iop,0x1FF400,9)==(64,0,0x80000009,0,4,0x1FF400,0,0xA1CA0,0x80000704),'Queued reverse bind packet release differs')
-    print('Verified '+('queued earlier bind/retained' if queued else 'diagnostic')+' generated sound registration/EE first wait, actual reverse bind return/client and native IOP first sleep. Main scheduling/wake/callback completion remain unverified.')
+    print('Verified '+('queued earlier bind/retained' if queued else 'diagnostic')+' generated sound registration/EE first wait, actual reverse bind return/client. The native sound service has no IOP thread; main scheduling/wake/callback completion remain unverified.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',type=Path,required=True);p.add_argument('--queued',action='store_true',help='Validate earlier queued bind scope instead of late diagnostic');a=p.parse_args();verify(Path(__file__).resolve().parents[2],a.native,a.queued)

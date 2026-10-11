@@ -13,7 +13,7 @@ class DiscBoundaryTests(unittest.TestCase):
             with self.subTest(key=key,value=value):self.assertFalse(disc_bind_boundary(dict(r,**{key:value})))
 
     def test_completed_search_does_not_hide_transport_or_runtime_failure(self):
-        r={'disc_rpc_binds':1,'disc_rpc_calls':1,'disc_dma_submissions':1,'disc_dma_polls':0,'disc_result':1,'native_iop_error':''}
+        r={'disc_rpc_binds':1,'disc_rpc_calls':1,'disc_result':1}
         self.assertTrue(disc_search_completed(r))
-        for key,value in [('disc_rpc_binds',0),('disc_rpc_calls',0),('disc_rpc_calls',2),('disc_dma_submissions',0),('disc_dma_polls',1),('disc_result',0),('native_iop_error','failed')]:
+        for key,value in [('disc_rpc_binds',0),('disc_rpc_calls',0),('disc_rpc_calls',7),('disc_result',0),('native_iop_error','failed')]:
             with self.subTest(key=key,value=value):self.assertFalse(disc_search_completed(dict(r,**{key:value})))

@@ -3,9 +3,6 @@
 #include <utility>
 #include <cstdlib>
 #include <algorithm>
-#ifdef BT2_NATIVE_IOP
-#include "iop/services/module_service.h"
-#endif
 
 void PS2Runtime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent) {
     if(ee_sound_probe_attempted || !thread_initialized || current_thread_id!=1 || main_thread_priority!=2
@@ -38,17 +35,6 @@ void PS2Runtime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent
         stack.resume();
         if(stack.state()!=RetainedEeStack::State::Waiting || ee_sound_probe_waits!=1)
             throw std::runtime_error("Sound child did not retain first wait");
-#ifdef BT2_NATIVE_IOP
-        if(native_iop) {
-            try {native_iop->completeEeSoundBind(iop_epoch,memory());}
-            catch(const std::exception& error) {
-                native_iop_error=error.what();native_iop_pc=native_iop->runtime.executing_pc;
-            }
-            native_iop_pc=native_iop->runtime.executing_pc;
-            native_iop_steps=native_iop->runtime.steps;
-            native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());
-        }
-#endif
         // Destructor resumes only to unwind cancellation, while child return ownership
         // is still selected. Parent invocation guards remain live and unchanged.
     } catch (...) {restore();throw;}
@@ -79,10 +65,6 @@ void PS2Runtime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* contex
     if(!sound_thread_waiting || sound_execution_->stack->state()!=RetainedEeStack::State::Waiting
         || std::memcmp(&saved,context,sizeof(saved)) || current_thread_id!=1)
         throw std::runtime_error("Queued bind lost retained main/child ownership");
-#ifdef BT2_NATIVE_IOP
-    if(!native_iop) throw UnsupportedSyscall(0x44,context->pc);
-    native_iop->ownEeSoundServer(iop_epoch,memory());
-#endif
     const auto reply=queued_sounds_bind.reply;
     for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
     deliverRpcEnd(rdram,context,0x6351C0,7,reply[9],reply[10]);
@@ -177,11 +159,6 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     constexpr std::uint32_t cause=2;
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);
-#ifdef BT2_NATIVE_IOP
-    if(native_iop && native_iop->runtime.sound_timer.started && !sounds_timer_ticks_supported && !native_iop->runtime.spu2_playback.enabled) {
-        ++sound_tick_boundaries;throw UnsupportedSyscall(0x14,interrupted->pc); // Before any field or IOP effect.
-    }
-#endif
     advanceLogicalField();
     // A Timer 2 event inside the elapsed field precedes this VBLANK_START. The library handler
     // only services its alarm list (empty here; callbacks are not modelled) and overflow count.
@@ -196,15 +173,8 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
         vsync_flag=vsync_csr=0;++frame_vsync_deliveries;
     }
     ++vblank_deliveries;
-#ifdef BT2_NATIVE_IOP
-    // The IOP's own timer ticks for this field run before EE handlers observe the VBlank.
-    if(native_iop) {
-        try {native_iop->advanceVblank(iop_epoch,memory());native_iop->advanceSoundTimer(iop_epoch);}
-        catch(const std::exception& e) {native_iop_error=e.what();native_iop_pc=native_iop->runtime.executing_pc;
-            native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());throw UnsupportedSyscall(0x14,interrupted->pc);}
-        native_iop_steps=native_iop->runtime.steps;native_iop_targets=static_cast<unsigned>(native_iop->runtime.entries.size());native_iop_pc=native_iop->runtime.executing_pc;
-    }
-#endif
+    nativePadVblank(rdram);       // Pad state for this field, before EE handlers run.
+    nativeCriVblank(interrupted); // CRI stream buffers returned for this field.
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");
     runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
 }

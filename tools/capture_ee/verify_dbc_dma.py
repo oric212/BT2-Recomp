@@ -1,9 +1,11 @@
-"""Verify explicitly redirected diagnostic transport and the native owned copy."""
+"""Verify explicitly redirected diagnostic transport and the native EE socket table."""
 import argparse,hashlib,json,struct
 from pathlib import Path
 from capture_ee import EXPECTED_SHA
 from capture_dbc_dma import BASE,SCRATCH,SUBMIT,POLL,submit_hook,poll_hook
 from verify_sound_rpc import require,words
+
+DETECTED=[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,0,0x82640,0,0,0xFFFFFF00,0xFFFFFFFF,0x82290,1,1,1,0,0x82640]
 
 def verify(root,native=None):
     folder=root/'work/pcsx2-capture/rpc-dbc-setup-before-dbc-dma'
@@ -17,12 +19,10 @@ def verify(root,native=None):
     require(e[0x3A27C0:0x3A2840]==source and words(i,SCRATCH+192,1)==(0xFFFFFFFF,),'Actual transport readback differs')
     for address,blob in ((SUBMIT,submit_hook(m['targets'][0])),(POLL,poll_hook(m['targets'][1]))):require(i[address:address+len(blob)]==blob,'DMA hook differs')
     if native:
-        r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
-        require(r['dbc_rpc_calls']>=2 and r['dbc_dma_submissions']==1 and r['dbc_dma_polls']==1,'Native DMA lifecycle differs')
-        # Transport: the EE destination right after the transfer equals the IOP payload (the game's pad
-        # library updates this block later once a controller is configured).
-        require(r.get('dbc_dma_ee_at_transfer_words',r['dbc_dma_ee_words'])==r['dbc_dma_payload_words'],'Native owned source/destination differ')
-    print('Actual redirected diagnostic SIF transfer/readback and completion poll verified'+('; native owned 128-byte copy and second RPC cleanup verified.' if native else '.'))
+        r=json.loads(native.read_text(encoding='utf-8'));ee=Path(str(native)+'.ee.bin').read_bytes()
+        # The native pad service writes the detected-controller socket table into the EE block once the pad is detected.
+        require(r['dbc_rpc_calls']>=2 and list(words(ee,0x3A27C0,32))==DETECTED,'Native detected socket table differs')
+    print('Actual redirected diagnostic SIF transfer/readback and completion poll verified'+('; native detected socket table in the EE block verified.' if native else '.'))
     print('Diagnostic source is an immutable copy; live retail controller-buffer bytes and scheduling are not equated.')
 
 if __name__=='__main__':

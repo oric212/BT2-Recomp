@@ -39,72 +39,14 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         && handleScheduledThreadSyscall(rdram,selector,context)) return;
     if(code==0 && main_priority_admissions && !startup_scheduler_active && current_thread_id==1
         && handleAdmittedIntcSyscall(rdram,selector,context)) return;
-#ifdef BT2_NATIVE_IOP
-    if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7
-        && isCriStreamSubmission(rdram,context)) {receiveCriStream(rdram,context);return;}
-    if(code==0 && selector==0x77 && startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7
-        && read32(rdram,0x3A97DC)==0x369F40) {receiveScmdCall(rdram,context);return;}
-    if(code==0 && selector==0x77 && disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && !local_disc_path.empty() && read32(rdram,0x3A97DC)==0x3A8780) {receiveDiscSearch(rdram,context);return;}
-#endif
-#ifdef BT2_NATIVE_IOP
-    if(code==0 && selector==0x77 && cri_rpc_binds==1 && ((cri_rpc_calls>=1 && cri_rpc_calls<=41 && cri_rpc_calls!=35) || (cri_rpc_calls>=42 && gs_display_flips>=1)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriControl(rdram,context);return;}
-    if(code==0 && selector==0x77 && cri_rpc_binds==1 && (!cri_rpc_calls || (cri_rpc_calls==35 && heap_calls==5)) && read32(rdram,0x3A97DC)==0x355C70) {receiveCriCreate(rdram,context);return;}
-    if(code==0 && selector==0x77 && disc_rpc_calls==6 && ncmd_read_calls==1 && !cri_rpc_binds && read32(rdram,0x3A97DC)==0x355C70) {receiveCriBind(rdram,context);return;}
-    if(code==0 && selector==0x77 && ((ncmd_ready_calls==1 && !ncmd_read_calls) || (ncmd_read_calls && startup_scheduler_active))
-        && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==1){receiveNcmdRead(rdram,context);return;}
-    if(code==0 && selector==0x77 && ncmd_rpc_binds==1 && (!ncmd_ready_calls || (ncmd_read_calls && startup_scheduler_active))
-        && read32(rdram,0x3A97DC)==0x369590 && read32(rdram,0x3A97E0)==14){receiveNcmdReady(rdram,context);return;}
-#endif
-    if(code==0 && selector==0x77 && ncmd_bind_supplied && disc_rpc_calls==1 && !ncmd_rpc_binds && read32(rdram,0x3A97DC)==0x369590) {receiveNcmdBind(rdram,context);return;}
-    if(code==0 && selector==0x77 && disc_bind_supplied && mc_rpc_calls==2 && disc_bind_semaphores==1
-        && read32(rdram,0x3A97DC)==0x3A8780 && !disc_rpc_binds) {receiveDiscBind(rdram,context);return;}
+    // Native SIF RPC services (runtime/services/) answer the game's requests and DMA status polls.
+    if(code==0 && selector==0x77 && handleNativeSifDma(rdram,context))return;
+    if(code==0 && selector==0x76 && handleNativeDmaStat(context))return;
+    // Captured replies for the CD and LOADFILE requests around the IOP reset.
     if(code==0 && selector==0x77 && post_cd.supplied && post_sif.rpc_initialized && iop_epoch==1
         && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
     if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
         && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
-#ifdef BT2_NATIVE_IOP
-    if(code==0 && selector==0x77 && dbc_rpc_calls==4 && read32(rdram,0x3A97DC)==0x3A6F80) {receiveMcRpc(rdram,context);return;}
-    if(code==0 && selector==0x77 && dbc_rpc_calls==4 && (read32(rdram,0x3A97DC)==0x3A0460 || read32(rdram,0x3A97DC)==0x3A0438)) {receiveDbcPort(rdram,context);return;}
-    if(code==0 && selector==0x77 && dbc_rpc_calls==4 && read32(rdram,0x3A97DC)==0x3A03C0 && frameGifContext()) {receiveDbcMain(rdram,context);return;}
-    if(code==0 && selector==0x77 && dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && read32(rdram,0x3A97DC)==0x3A03C0) {receiveDbcBind(rdram,context);return;}
-    if(code==0 && selector==0x77 && sounds_rpc_calls==1 && read32(rdram,0x3A97DC)==(dbc_rpc_binds<2?(dbc_rpc_calls?0x3A0410u:0x3A03C0u):(dbc_rpc_binds==2?0x3A0438u:0x3A0460u)) && dbc_rpc_binds<4) {receiveDbcBind(rdram,context);return;}
-    if(code==0 && selector==0x77 && display_reset_phase==13 && sounds_rpc_calls>=1 && read32(rdram,0x3A97DC)==0x6351C0
-        && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {receiveSoundRpc(rdram,context);return;}
-    if(code==0 && selector==0x77 && display_reset_phase==13 && sound_rpc_calls>=1 && read32(rdram,0x3A97DC)==0x3A5C80
-        && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {receiveSoundRpc(rdram,context);return;}
-    if(code==0 && selector==0x77 && heap_calls==2 && native_module_loads==14 && (read32(rdram,0x3A97DC)==0x3A5C80 || (sound_thread_starts==1 && read32(rdram,0x3A97DC)==0x6351C0))) {receiveSoundRpc(rdram,context);return;}
-#ifdef BT2_NATIVE_IOP
-    if(code==0 && selector==0x77 && display_reset_phase==13 && current_thread_id==1 && main_priority_admissions
-        && !startup_scheduler_active && !in_interrupt_ && context->r[31].low==0x28BA48) {receiveIopUpload(rdram,context);return;}
-    if(code==0 && selector==0x77 && display_reset_phase==13 && current_thread_id==1 && main_priority_admissions
-        && !startup_scheduler_active && !in_interrupt_ && read32(rdram,0x3A97DC)==0x3AC740) {
-        if(!fileio_binds)receiveFileioBind(rdram,context);else receiveFileioCall(rdram,context);
-        return;
-    }
-    if(code==0 && selector==0x76 && iop_uploads && context->r[4].low==0x5A0000+iop_uploads && context->pc==0x32F008
-        && context->r[31].low==0x28BA58 && current_thread_id==1 && !startup_scheduler_active) {
-        ++iop_upload_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no DMA timing.
-    }
-#endif
-    if(code==0 && selector==0x77 && heap_copy_supplied && ((heap_calls==1 && !heap_transfers
-        && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0xCE500) || (embeddedReload() && heap_calls==7 && heap_transfers==1
-        && read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+4)==0x196100))) {receiveHeapCopy(rdram,context);return;}
-    if(code==0 && selector==0x77 && ((native_module_loads==14 && heap_calls==1 && !heap_frees)
-            || (embeddedReload() && native_module_loads==15 && heap_calls==7 && heap_frees==1))
-        && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97E0)==2) {receiveHeapFree(rdram,context);return;}
-    if(code==0 && selector==0x76 && heap_copy_supplied && heap_transfers==heap_dma_polls+1 && (!heap_dma_polls || (embeddedReload() && heap_dma_polls==1))) {
-        if(iop_epoch!=1 || context->pc!=0x32F008 || context->r[4].low!=0x50001+heap_dma_polls || context->r[29].low!=initial_sp-144)
-            throw UnsupportedSyscall(selector,context->pc);
-        ++heap_dma_polls;context->r[2].low=UINT64_MAX;return; // Owned synchronous copy is complete; no physical DMA timing.
-    }
-    if(code==0 && selector==0x77 && heap_allocation_supplied && heap_binds==1 && (!heap_calls || (heap_calls==1 && heap_frees==1 && texture_gif.phase==8) || (heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==3 && cri_rpc_calls==3 && disc_rpc_calls==6 && ncmd_read_calls==1) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36) || (heap_calls==6 && embeddedReload()) || ((heap_calls==7 || heap_calls==8) && display_reset_phase==13 && sound_rpc_calls>=3))
-        && read32(rdram,0x3A97DC)==0x3AC840 && read32(rdram,0x3A97C8)==0x8000000A) {receiveHeapAllocation(rdram,context);return;}
-    if(code==0 && selector==0x77 && heap_bind_supplied && native_module_loads==13 && !heap_binds
-        && read32(rdram,0x3A97E0)==0x80000003) {receiveHeapBind(rdram,context);return;}
-    if(code==0 && selector==0x77 && post_loadfile.versions==1 && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1) {
-        receiveNativeModule(rdram,context);return;
-    }
-#endif
     if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
         && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
     if(code==0 && post_sif.supplied && gif_dma.completions==2 && iop_epoch==1) {
@@ -159,9 +101,6 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         // old service lifetime; no receive, image execution or ready flag invented.
         std::copy_n(memory_.data()+0x3ACC40,104,reset_request_.data());
         iop_reset_pending=true; prior_iop_services_valid=false; ++iop_epoch;
-#ifdef BT2_NATIVE_IOP
-        native_iop.reset();native_module_loads=0;
-#endif
         ++sif_dma_submissions;context->r[2].low=0xE01;return;
     }
     if (code == 0 && selector == 0x77) {

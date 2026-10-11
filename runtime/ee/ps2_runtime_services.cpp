@@ -133,39 +133,6 @@ void PS2Runtime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
     std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
 }
 
-void PS2Runtime::receiveNcmdBind(std::uint8_t* rdram,R5900Context* context) {
-    const auto d=static_cast<unsigned>(context->r[4].low);
-    if(iop_epoch!=1 || prior_iop_services_valid || context->pc!=0x32F028 || context->r[29].low!=d || d!=initial_sp-752 || context->r[5].low!=1
-        || semaphores.size()!=11 || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838D8 || ncmd_bind_semaphores!=1)throw UnsupportedSyscall(0x77,context->pc);
-    const std::array<unsigned,4> descriptor={0x203A97C0,0x1E640,64,0x44};
-    const std::array<unsigned,9> packet={64,0,0x80000009,0,5,0x203A97C0,44,0x369590,0x80000595};
-    for(unsigned n=0;n<4;++n)if(read32(rdram,d+n*4)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
-    for(unsigned n=0;n<9;++n)if(read32(rdram,0x3A97C0+n*4)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
-    if(read32(rdram,0x369590)!=0x203A97C0 || read32(rdram,0x369598)!=10 || read32(rdram,0x3695A4) || read32(rdram,0x3695B4))throw UnsupportedSyscall(0x77,context->pc);
-    const std::array<unsigned,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x369590,0x80000009,0x43418,0x43DB8,0,0,0,0,0};
-    for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+n*4,reply[n]);
-    deliverRpcEnd(rdram,context,0x369590,10,0x43418,0x43DB8);++ncmd_rpc_binds;++sif_dma_submissions;context->r[2].low=0x760001;
-}
-
-void PS2Runtime::receiveDiscBind(std::uint8_t* rdram,R5900Context* context) {
-    const auto d=static_cast<std::uint32_t>(context->r[4].low);
-    if(iop_epoch!=1 || !post_sif.rpc_initialized || prior_iop_services_valid || context->pc!=0x32F028
-        || d!=initial_sp-736 || context->r[29].low!=d || context->r[5].low!=1 || semaphores.size()!=11
-        || semaphores[10].count || semaphores[10].maximum!=1 || semaphores[10].option!=0x3838D8)
-        throw UnsupportedSyscall(0x77,context->pc);
-    const std::array<std::uint32_t,4> descriptor={0x203A97C0,0x1E640,64,0x44};
-    const std::array<std::uint32_t,9> packet={64,0,0x80000009,0,5,0x203A97C0,42,0x3A8780,0x80000597};
-    for(unsigned n=0;n<4;++n)if(read32(rdram,d+4*n)!=descriptor[n])throw UnsupportedSyscall(0x77,context->pc);
-    for(unsigned n=0;n<9;++n)if(read32(rdram,0x3A97C0+4*n)!=packet[n])throw UnsupportedSyscall(0x77,context->pc);
-    if(read32(rdram,0x3A8780)!=0x203A97C0 || read32(rdram,0x3A8784)!=42 || read32(rdram,0x3A8788)!=10
-        || read32(rdram,0x3A87A4) || read32(rdram,0x3A8794))throw UnsupportedSyscall(0x77,context->pc);
-    // Validated boot-service lookup only. CDVDFSV boot entry/request is not executed here.
-    const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A8780,0x80000009,0x433D0,0x441C8,0,0,0,0,0};
-    for(unsigned n=0;n<16;++n)write32(rdram,0x3A94C0+4*n,reply[n]);
-    deliverRpcEnd(rdram,context,0x3A8780,10,0x433D0,0x441C8);
-    ++disc_rpc_binds;++sif_dma_submissions;context->r[2].low=0x740001;
-}
-
 void PS2Runtime::receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
     if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2
             || context->r[4].low != initial_sp - 464 || context->r[5].low != 1
@@ -243,7 +210,7 @@ void PS2Runtime::deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
     rpc_end_callback_active_ = false;
     std::copy(saved_stack.begin(), saved_stack.end(), memory_.begin() + scratch);
     if (callback.r[29].low != context->r[29].low || (semaphore ? semaphores[semaphore].count != 1 :
-                ((client != 0x3A6F80 && client != 0x369590 && client != 0x3A0460 && client != 0x3A0438) || read32(rdram,client+8) != UINT32_MAX))
+                read32(rdram,client+8) != UINT32_MAX)
             || read32(rdram, client) != 0 || read32(rdram, client + 36) != server
             || read32(rdram, client + 20) != buffer || read32(rdram, 0x3A97D0) != 4
             || read32(rdram, 0x3A97D8) != 0)

@@ -342,7 +342,7 @@ Reset preparation adds `--sif-stop-capture`, then `--sif-reset-subaddr-capture`,
 python tools/iop/inspect_image.py --disc rom/BT2-USA.iso
 ```
 
-The tool compares the existing local `rom/IRX/IOPRP300.IMG` with its exact ISO9660 path and writes bounded ROMDIR/ELF-header inventory to ignored `work/iop/image.json`. It does not extract, load or execute modules.
+The tool compares the existing local `rom/IRX/IOPRP300.IMG` with its exact ISO9660 path and writes bounded ROMDIR/ELF-header inventory to ignored `work/bt2-generation/iop-image.json`. It does not extract, load or execute modules.
 
 Use `capture_ee.py --disc rom/BT2-USA.iso` with existing PCSX2/BIOS arguments for each capture point: `reset-submit-after`, `reset-cmd-clear`, `reset-flags-after`, `reset-rpc-clear`, `reset-subaddr-clear`. Each launches an independently instrumented local ELF with that local disc mounted. Publications record the submission return and subsequent register clears; they are EE evidence, not post-reset IOP snapshots.
 
@@ -396,6 +396,10 @@ Capture `post-cd-bind-after`, `post-cd-bind-success`, `post-cd-after`, `post-scm
 
 Append `--post-cd-captures work/pcsx2-capture` after `--post-sif-captures` and its prerequisites. `verify_post_cd.py` validates identities, trap/stub/prefix, RAM hashes, reference environment, fresh service/client/queue ownership and returned values. A 208-byte CD extension yields a 1332-byte diagnostic prefix; adding 132 SCMD bytes yields the full 1464-byte bundle. Epoch-owned callbacks deliver the verified replies; no native IOP boot, module execution or general disc access is implemented.
 
+## Native IOP services
+
+The emulated IOP (IOP module translation, the IOP runtime, its probes and native-versus-reference checkers) was removed on 2026-10-11. The game's IOP services are answered natively in `runtime/services/` ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)). The capture points and capture checkers below still describe the original game; comparisons of emulated IOP internals no longer apply.
+
 ## LOADFILE and local IRX inspection
 
 `tools/capture_ee/capture_ee.py` provides disc-backed `loadfile-bind-after`, `loadfile-version-after`, `loadfile-module-before` and `loadfile-module-after` checkpoints. Short traps preserve the earlier execution and do not overlap the module caller. `tools/capture_ee/verify_loadfile.py` validates the bind/version reply bundle and the first module path. Add `--loadfile-captures work/pcsx2-capture` to the checkpoint pipeline after `--post-cd-captures`.
@@ -408,113 +412,11 @@ python tools/iop/inspect_irx.py rom/IRX/SIO2MAN.IRX --disc rom/BT2-USA.iso --out
 
 Optional `--base 0x4BF30 --iop-capture work/pcsx2-capture/loadfile-module-after/capture.json` prepares a private relocated image and compares module ownership, relocation words and code ranges against that recorded scenario. The explicit base is reference evidence for this capture, not a native allocator address. Output/maps/images must stay in ignored `work/` or `game_data/`. No imports or module entries are executed.
 
-## Isolated native IOP diagnostic
-
-With your local disc/module already provided:
-
-```powershell
-python tools/iop/generate_native.py rom/IRX/SIO2MAN.IRX --disc rom/BT2-USA.iso --output work/iop/sio2man_native.cpp
-python tools/iop/generate_native.py rom/IRX/MCMAN.IRX --disc rom/BT2-USA.iso --base 0x20000 --symbol bt2_iop_mcman --prefix iop_mcman --output work/iop/mcman_native.cpp
-python tools/iop/generate_native.py rom/IRX/MCSERV.IRX --disc rom/BT2-USA.iso --base 0x50000 --symbol bt2_iop_mcserv --prefix iop_mcserv --output work/iop/mcserv_native.cpp
-python tools/iop/generate_native.py rom/IRX/DBCMAN.IRX --disc rom/BT2-USA.iso --base 0x60000 --symbol bt2_iop_dbcman --prefix iop_dbcman --output work/iop/dbcman_native.cpp
-python tools/iop/generate_native.py rom/IRX/SIO2D.IRX --disc rom/BT2-USA.iso --base 0x70000 --symbol bt2_iop_sio2d --prefix iop_sio2d --output work/iop/sio2d_native.cpp
-cmake -S . -B build/probe -DBT2_BUILD_IOP_PROBE=ON
-cmake --build build/probe --config Debug --target bt2-iop-tests bt2-iop-probe
-build/probe/Debug/bt2-iop-tests.exe
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/native-stop.json
-```
-
-The authored standalone MIPS-I translator emits native instruction expressions and checked import dispatch. It is separate from the pinned EE PS2Recomp pipeline. Outputs, relocation images and provenance remain under ignored work/iop/. CMake also generates authored synthetic programs locally. No game code is needed in the repository.
-
-The module probe validates its image against compiled generation, owns separate RAM/stack/arguments and reports a diagnostic stop. Exit zero means a report was produced, **not module-load or game success**; inspect its PC/import/memory fields. Bad input/report paths fail nonzero. Current expected report: entry returned with result 0 after 151 instructions, six entry targets entered and one native worker waiting for event bits 0x4155. Reports and companion private RAM output must be directly under work/iop; run from the project root. The isolated probe and optional EE adapter now share NativeIopService. Enable BT2_LINK_NATIVE_IOP with the existing generated-entry probe configuration to execute the compiled modules through the persistent EE loader. The ordinary host remains independent of private code.
-
-Validate scoped native initialization against your recorded local checkpoint:
-
-```powershell
-python tools/iop/verify_native.py --native work/iop/native-stop.json --reference work/pcsx2-capture/loadfile-module-after/capture.json --module rom/IRX/SIO2MAN.IRX --output work/iop/startup-validation.json
-```
-
-The checker validates capture hashes/trap, module ownership/code, normalized BSS, semaphore/event state and native thread parameters/wait. It checks reached reset/DMA/IRQ state against the public behavior consulted. It does not equate opaque options or capture hardware MMIO, and does not complete EE LOADFILE. Runtime handles use separate event/semaphore/thread namespaces. Kernel record offsets are specific to this reference scenario.
-
-Generated IOP functions are partitioned into 4 KiB address buckets to bound MSVC switch compilation. Synthetic tests exercise branch delay slots across bucket boundaries. `--symbol` and `--prefix` give separately linked modules distinct generated names.
-
-## Scoped MCMAN resident comparison
-
-Capture `--capture-point mcman-module-after` with the existing explicit local PCSX2/BIOS/disc arguments. The authored trap is at unique main caller return 0x100434, so the preceding SIO2MAN load completes normally. Result/SP, LOADFILE buffers/service windows are checked stable; full IOP RAM remains a live diagnostic.
-
-```powershell
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/mcman-stop.json --mcman
-python tools/iop/verify_mcman.py --native work/iop/mcman-stop.json --reference work/pcsx2-capture/mcman-module-after/capture.json --module rom/IRX/MCMAN.IRX --output work/iop/mcman-validation.json
-```
-
-The checker guards capture/source hashes, trap, scenario-specific module record/base/text extent, result 2, relocated code and full initialized data/BSS. Only unequal module-local address values and two owned semaphore handles are normalized; equal scalar words stay unchanged. Semaphore record tags/attributes/count/max are guarded. Kernel offsets are observed for this scenario, not a portable ABI. Opaque options, authentication and card transfer behavior remain unverified. Generated entry-target counts now use physical addresses so different modules cannot collide through identical local offsets.
-
-## Native RPC worker startup comparisons
-
-Capture `mcserv-module-after` / `dbcman-module-after` with the explicit local PCSX2/BIOS/disc arguments. Unique EE main return traps 0x100454 / 0x100474 preserve preceding module loads. Full IOP RAM remains live; stable service/publication windows are checked separately.
-
-```powershell
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/mcserv-stop.json --mcserv
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/dbcman-stop.json --dbcman
-python tools/iop/verify_rpc_startup.py --profile mcserv --native work/iop/mcserv-stop.json --reference work/pcsx2-capture/mcserv-module-after/capture.json --module rom/IRX/MCSERV.IRX --output work/iop/mcserv-validation.json
-python tools/iop/verify_rpc_startup.py --profile dbcman --native work/iop/dbcman-stop.json --reference work/pcsx2-capture/dbcman-module-after/capture.json --module rom/IRX/DBCMAN.IRX --output work/iop/dbcman-validation.json
-```
-
-The checker guards identity/hash/trap, resident result, module ownership/text extent, relocated code, full normalized data/BSS, queue thread identity and reference worker sleep/parameters. Native kernel handles and module-local address values are normalized. Opaque options, physical timing/DMA and real RPC requests remain unvalidated. The four completed module entries do not represent complete device functionality.
-
-## SIO2D startup and DS2U_D native generation
-
-Capture `sio2d-module-after` with the explicit local PCSX2/BIOS/disc arguments. The unique EE caller trap is 0x100494, marker B73E. Compare the scoped startup and generate the next supplied IRX locally:
-
-```powershell
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/sio2d-stop.json --sio2d
-python tools/iop/verify_rpc_startup.py --profile sio2d --native work/iop/sio2d-stop.json --reference work/pcsx2-capture/sio2d-module-after/capture.json --module rom/IRX/SIO2D.IRX --output work/iop/sio2d-validation.json
-python tools/iop/generate_native.py rom/IRX/DS2U_D.IRX --disc rom/BT2-USA.iso --base 0x80000 --symbol bt2_iop_ds2ud --prefix iop_ds2ud --output work/iop/ds2ud_native.cpp
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/ds2ud-stop.json --ds2ud
-```
-
-The SIO2D checker guards identity, trap, result, relocated code, normalized data/BSS, Vblank waiter and semaphore ownership. Offset 0x1BD8 is an explicitly unvalidated live counter, reported separately; non-end Vblank phase bits are not compared. DS2U_D generation has 40 provisional ranges / 25 imports and is linked into the optional native targets. Its resident entry and two initial polls now complete; later controller packets remain unsupported. All generated code, captures, images and reports stay ignored.
-
 ## Direct first-controller poll capture
 
 Use the existing explicit local PCSX2/BIOS/disc capture command with `--capture-point sio2d-module-after --capture-first-pad-poll --pad-poll-read-count 10`. This uses a separate isolated interpreter profile under `work/pcsx2-capture/sio2d-module-after-pad-poll-10/`. Count 5 captures only the first port. The transient process hook resumes the restored EE setup, reads real FIFO bytes once, publishes reply/control/status and halts the IOP worker after the requested read count. It does not freeze other workers or validate physical timing. Regular `ds2ud-module-after` captures the unique EE caller return at 0x1004B4 / marker B73F.
 
-```powershell
-python tools/iop/verify_ds2ud_startup.py --native work/iop/ds2ud-stop.json --reference work/pcsx2-capture/ds2ud-module-after/capture.json --module rom/IRX/DS2U_D.IRX --poll work/pcsx2-capture/sio2d-module-after-pad-poll-10/pad-poll.json --output work/iop/ds2ud-validation.json
-```
 
-The verifier compares the resident return, relocated code, worker ownership/parameters/Vblank-start wait/dormant state and guarded direct first two poll publications. It does not equate live DS2U_D data/BSS across Vblank phases. Regenerate each local native IRX after the backend update: generated module dispatch now returns to the owned service on cross-module jumps, which preserves the actual callback PC/RA/context rather than treating the other module as an unmapped local target.
-
-
-## Sound-module startup probes
-
-The optional native targets now require these additional locally generated sources before configuration/build:
-
-```powershell
-python tools/iop/generate_native.py rom/IRX/LIBSD.IRX --disc rom/BT2-USA.iso --base 0x90000 --symbol bt2_iop_libsd --prefix iop_libsd --output work/iop/libsd_native.cpp
-python tools/iop/generate_native.py rom/IRX/SDRDRV.IRX --disc rom/BT2-USA.iso --base 0xA0000 --symbol bt2_iop_sdrdrv --prefix iop_sdrdrv --output work/iop/sdrdrv_native.cpp
-python tools/iop/generate_native.py rom/IRX/MODHSYN.IRX --disc rom/BT2-USA.iso --base 0xB0000 --symbol bt2_iop_modhsyn --prefix iop_modhsyn --output work/iop/modhsyn_native.cpp
-python tools/iop/generate_native.py rom/IRX/MODSESQ2.IRX --disc rom/BT2-USA.iso --base 0x180000 --symbol bt2_iop_modsesq2 --prefix iop_modsesq2 --output work/iop/modsesq2_native.cpp
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/modsesq2-stop.json --modsesq2
-```
-
-Stages `--libsd`, `--sdrdrv`, `--modhsyn`, `--modsesq2` load all earlier modules in observed order. Capture points and `verify_rpc_startup.py --profile` names are respectively `libsd-module-after`/`libsd`, `sdrdrv-module-after`/`sdrdrv`, `modhsyn-module-after`/`modhsyn`, `modsesq2-module-after`/`modsesq2`. Use the explicit local PCSX2/BIOS/disc capture command and the checker's existing native/reference/module/output arguments. Resident validation does not establish playback or successful sound RPC requests. MODHSYN's final two untouched allocator-fill bytes are explicitly guarded/excluded in the comparison.
-
-The direct initial poll publication now includes DPCR1/2, using BF80 for their positive 16-bit offsets. Regenerate that scoped capture after the hook update before running the DS2U_D comparison; its hook/hash and seven published register words must match.
-
-
-## Disc-streaming and sound-service startup probes
-
-Generate these supplied local sources before building the optional native targets:
-
-```powershell
-python tools/iop/generate_native.py rom/IRX/CDVDSTM.IRX --disc rom/BT2-USA.iso --base 0x188000 --symbol bt2_iop_cdvdstm --prefix iop_cdvdstm --output work/iop/cdvdstm_native.cpp
-python tools/iop/generate_native.py rom/IRX/SOUNDS.IRX --disc rom/BT2-USA.iso --base 0x150000 --symbol bt2_iop_sounds --prefix iop_sounds --output work/iop/sounds_native.cpp
-python tools/iop/generate_native.py rom/IRX/CRI_ADXI.IRX --disc rom/BT2-USA.iso --base 0x168000 --symbol bt2_iop_cri_adxi --prefix iop_cri_adxi --output work/iop/cri_adxi_native.cpp
-build/probe/Debug/bt2-iop-probe.exe work/iop/sio2man_native.bin work/iop/cri-adxi-stop.json --cri-adxi
-```
-
-Ordered stages `--cdvdstm` and `--sounds` complete residency; `--cri-adxi` completes validated resident startup. Local capture points `cdvdstm-module-after` and `sounds-module-after` have generalized checker profiles `cdvdstm` and `sounds`. Reports now include each thread's owned stack base. The CDVDSTM check normalizes its external event after guarded object-state comparison; SOUNDS checks the stack-owned queue/server and tagged reference worker. These checks do not establish successful sectors, sound RPC requests or playback.
 
 
 ## Bounded LIBSD transfer and CRI residency checks
@@ -525,7 +427,6 @@ Capture `cri-adxi-module-after` separately for the resident return, then run:
 
 ```powershell
 python tools/capture_ee/verify_spu2_transfer.py --disc rom/BT2-USA.iso
-python tools/iop/verify_rpc_startup.py --profile cri-adxi --native work/iop/cri-adxi-stop.json --reference work/pcsx2-capture/cri-adxi-module-after/capture.json --module rom/IRX/CRI_ADXI.IRX --output work/iop/cri-adxi-validation.json
 ```
 
 The first comparison uses ignored `work/iop/libsd-initialized-native.json` at the post-init/pre-master-volume boundary plus the final native module report. It verifies provenance/hook/publication, eight transferred halfwords, 394 stable configuration values, immediate key readbacks and the three read-only low ABI words. Four dynamic ENDX registers are excluded; playback/general DMA is not verified. The CRI comparison includes all normalized module data/BSS without exclusions and both workers.
@@ -534,14 +435,6 @@ After `expand_startup.py` selects a newly reached EE entry, run `python tools/ps
 
 
 ## Boot IOP heap handler and transfer
-
-Generate FILEIO from the supplied, disc-matched IOPRP image before configuring optional native targets:
-
-```powershell
-python tools/iop/generate_boot_heap.py --disc rom/BT2-USA.iso
-```
-
-The boot heap handler is translated at 0x140000 and invoked only for the checked first allocation. Its boot entry/worker is not executed or counted as resident. Generated files and receipts stay under ignored work/iop/.
 
 Use the existing explicit local PCSX2/BIOS/disc command with capture points `fileio-bind-after` (heap service despite its historical name), `heap-alloc-after`, and `heap-copy-after`. Each traps its unique caller after completion. Heap client/service buffer stability uses the correct client 0x3AC840 rather than LOADFILE's client. Validate and prepare the private checkpoint bundles:
 
@@ -559,11 +452,9 @@ The pipeline now accepts `--heap-bind-capture`, `--heap-allocation-capture`, `--
 Use the existing capture command with `--capture-point module-buffer-after`, `heap-free-after` and `dmac-startup-after`. These unique return checkpoints require the user's explicit local disc and produce ignored capture directories. Then run:
 
 ```powershell
-python tools/iop/generate_embedded.py --disc rom/BT2-USA.iso
 python tools/capture_ee/verify_module_buffer.py
 ```
 
-The generator validates the retail ELF hash/file-backed source segment, full transferred IRX, relocated entry, independent loader return/metadata, local disc hash and disc-matched CDVDMAN version. Its `.cpp`, `.h` and receipts remain in ignored `work/iop/`. Optional native targets require this source alongside the thirteen module sources and boot FILEIO source. Regenerate it before building those targets. No additional entry-probe argument is required: the existing heap evidence enables the bounded owned buffer load and free.
 
 After the full native probe, add `--native work/bt2-generation/entry-stop.json` to the verifier. Native IDs are authored and differ from retail IDs; the embedded module returns 1 and is not retained as a resident. Freed code/heap bytes may remain as diagnostic residue, but native ownership checks reject accesses. The verifier compares code/returns and bounded DMAC setup; it does not establish full boot, VIF execution or presentation.
 
@@ -591,13 +482,6 @@ Append the ignored 224-byte texture bundle after heap-allocation.bin in the opti
 Map preparation additionally admits one-word zero gaps after BEQ zero,zero and its non-control delay slot, with no checked direct edge into a gap and no unknown indirect/coprocessor branch. File-backed extent, size, range accounting and overlap quarantine remain required. The map records padding provenance and remains provisional. Regeneration preserved all previously selected raw-function hashes; selection provenance was refreshed only after that equality check.
 
 Use `--capture-point heap-second-after` and `python tools/capture_ee/verify_second_heap.py` to inspect the second IOP request. The verifier checks return/size/client/source identity and the conflicting FILEIO placement. It intentionally supplies no allocation success bundle. See IOP_HEAP_CAPACITY_PLAN.md before changing ownership.
-
-
-## Checked second heap layout
-
-`config/iop_layout.json` records authored translation placements for the five images moved out of the captured second heap. The native generator uses those defaults when `--base` is omitted; explicit overrides remain available for experiments. Regenerate moved images, then run `python tools/iop/verify_layout.py` before building. The checker verifies image/source hashes, all fourteen translated images, the reserved heap interval and worker/call/argument stack region for overlap and RAM bounds. The embedded nonresident image is released before heap reuse and is not a persistent placement.
-
-`python tools/capture_ee/verify_second_heap.py --native work/bt2-generation/entry-stop.json` compares the real translated handler result and lifecycle. The earlier embedded-module checker compares residual freed code only before heap reuse: after reuse, its bytes are undefined and are not historical completion evidence. Native lifecycle tests still independently verify its earlier execution/release. Arbitrary allocator requests remain rejected.
 
 
 ### Bounded sound delivery verification
@@ -641,7 +525,7 @@ Use `capture_ee.py --capture-point rpc-disc-init-after`, `rpc-disc-bind-sema`, o
 
 Capture `rpc-disc-command-before` and `rpc-disc-command-after` with the existing local PCSX2/BIOS/disc arguments and `--absent-cards`. `--capture-point rpc-disc-command-before --capture-disc-dma --absent-cards` stops immediately after the original first metadata submission, without redirecting its source; it does not observe a completion poll or handler return. The separate after-return capture provides that result evidence.
 
-Run `python tools/capture_ee/verify_disc_startup.py` to check identity/profile, hooks, bind, first request/result and submission bytes and produce ignored `work/bt2-generation/disc-bind.bin`. Run `python tools/iop/generate_disc_service.py --disc rom/BT2-USA.iso` before rebuilding optional IOP targets. This generates only ignored translated CDVDFSV files after checking local-disc and retail code/GP ownership. Append `disc-bind.bin` and the explicit local ISO path after `ee-thread-start.bin` in the full entry-probe arguments. Run the full checkpoint again after CTest and then the verifier. No proprietary payload is committed; the ordinary host still requires no game data.
+Run `python tools/capture_ee/verify_disc_startup.py` to check identity/profile, hooks, bind, first request/result and submission bytes and produce ignored `work/bt2-generation/disc-bind.bin`. Append `disc-bind.bin` and the explicit local ISO path after `ee-thread-start.bin` in the full entry-probe arguments. Run the full checkpoint again after CTest and then the verifier. No proprietary payload is committed; the ordinary host still requires no game data.
 
 ## First disc command evidence
 
@@ -654,9 +538,8 @@ New checkpoints: `rpc-ncmd-bind-sema`, `rpc-ncmd-bind-after`, `rpc-ncmd-call-sem
 
 `capture_ee.py --capture-point rpc-ncmd-before --capture-disc-api KIND --absent-cards` supports original read/import observers: `read-rv`, `read-callback`, `read-callback-after`, `sync`, `sync-after`, `error`, `read-alarm`, `read-alarm-cancel`, `read-disable`, `read-transfer`, `read-transfer-poll`, `read-tail`, `read-completion`, `read-final`, `search-afs`, `search-afs2`, `search-op`, `search-ed`, and `search-logo`. Supply the existing explicit local PCSX2/BIOS/disc paths. Observers invoke original imports; callback-after executes displaced original words through a checked trampoline. Callback-entry observation publishes no completion result. Captures and their hashes remain ignored.
 
-Run `python tools/capture_ee/verify_disc_read.py --disc rom/BT2-USA.iso --native work/bt2-generation/entry-stop.json` after the full entry run. It checks independent read framing, callback, timeout/sync/transport observations, directory tokenization, all five file lookups, owned source bytes, progress and generated EE cleanup. The full probe writes ignored `.ee.bin` and `.iop.bin` evidence sidecars after native sector execution. Pass `--sector-bytes work/iop/native-disc-sectors.bin` to also check the isolated native read output.
+Run `python tools/capture_ee/verify_disc_read.py --disc rom/BT2-USA.iso --native work/bt2-generation/entry-stop.json` after the full entry run. It checks independent read framing, callback, timeout/sync/transport observations, directory tokenization, all five file lookups, owned source bytes, progress and generated EE cleanup. The full probe writes ignored `.ee.bin` and `.iop.bin` evidence sidecars after native sector execution.
 
-`bt2-iop-service-tests --disc-read ISO OUTPUT` validates the bounded original IOP search/read/readiness path and the five-file metadata batch using the explicitly supplied local ISO. Missing backend data, wrong epoch and repeated completion are rejected without new callback effects. `disc-sector-bounds` uses authored synthetic bytes and requires no game files. Native logical DMA timing is not equated with physical PCSX2 poll counts; full driver residency and arbitrary streaming remain unsupported.
 
 
 Provisional map preparation now recognizes one bounded word-table switch idiom: explicit unsigned index bound, default branch, scaled index, file-backed table load and `jr` with a NOP delay slot. Every table entry must be aligned and land in an existing candidate body span; gaps remain isolated unreachable NOPs. Changed bounds, control words, truncated tables, out-of-body targets and targets in padding remain quarantined. This permits generation of the actually reached formatter path without relaxing arbitrary computed jumps or copying an implementation from a reference project.
@@ -695,9 +578,9 @@ After discovery, regenerate (`prepare_map.py`, `generate_game.py`). Confirm that
 
 ### Interrupt/load captures and comparison
 
-New capture points: `rpc-vblank-first` (first VBLANK_START handler entry), `rpc-load-poll-idle` (main's first idle call in its request poll) and `rpc-load-poll-done` (main leaves the poll). Run them with the existing `capture_ee.py` arguments (`--pcsx2`, `--bios`, `--disc`, `--absent-cards`). `python tools/capture_ee/verify_vblank_wake.py --native work/bt2-generation/entry-stop.json` compares the first delivery phase, the owned helper wakes, the disc request sequence and the loaded archive table. `tools/iop/generate_disc_service.py` now also translates the CDVDFSV S-command handler after checking its original registration.
+New capture points: `rpc-vblank-first` (first VBLANK_START handler entry), `rpc-load-poll-idle` (main's first idle call in its request poll) and `rpc-load-poll-done` (main leaves the poll). Run them with the existing `capture_ee.py` arguments (`--pcsx2`, `--bios`, `--disc`, `--absent-cards`). `python tools/capture_ee/verify_vblank_wake.py --native work/bt2-generation/entry-stop.json` compares the first delivery phase, the owned helper wakes, the disc request sequence and the loaded archive table.
 
-New capture points: `rpc-display-init-after` (main returns from display setup at `0x100658`; its IOP RAM holds the reloaded embedded module) and `rpc-timer-seed-after` (main returns from its system-time read at `0x100660`; the marker's v0 holds the result). Run them with the existing `capture_ee.py` arguments. `python tools/capture_ee/verify_display_reset.py --native work/bt2-generation/entry-stop.json` compares the repeated clear's field sample, the embedded reload placement/result/free, the 512×448 double-buffer environment and GS library state. `tools/iop/generate_embedded.py` now also requires `rpc-display-init-after` and emits a second translation of the embedded module at the original reload placement (`0x196530`). Run the normal startup probe after CTest: the `generated-entry-probe` test rewrites `entry-stop.json` with its reduced report.
+New capture points: `rpc-display-init-after` (main returns from display setup at `0x100658`; its IOP RAM holds the reloaded embedded module) and `rpc-timer-seed-after` (main returns from its system-time read at `0x100660`; the marker's v0 holds the result). Run them with the existing `capture_ee.py` arguments. `python tools/capture_ee/verify_display_reset.py --native work/bt2-generation/entry-stop.json` compares the repeated clear's field sample, the embedded reload placement/result/free, the 512×448 double-buffer environment and GS library state. Run the normal startup probe after CTest: the `generated-entry-probe` test rewrites `entry-stop.json` with its reduced report.
 
 `python tools/capture_ee/verify_timer2.py --native work/bt2-generation/entry-stop.json` compares the EE timer library state and alarm list with `rpc-timer-seed-after`, checks that every logical Timer 2 wrap was delivered and acknowledged, and reports the native and original system-time seeds without equating them.
 

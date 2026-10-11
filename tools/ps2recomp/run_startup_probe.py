@@ -18,7 +18,7 @@ def summary(report):
         if key not in report:raise ValueError('Probe needs rebuilding with distinct-entry reporting')
     return (f"Distinct EE entries: {report['distinct_ee_entered']} entered / {report['distinct_ee_completed']} completed; "
             f"kernel entries: {report['distinct_kernel_entered']} / {report['distinct_kernel_completed']}.\n"
-            f"EE call/return events: {report['calls']} / {report['returns']}; IOP instructions: {report['native_iop_steps']}.\n"
+            f"EE call/return events: {report['calls']} / {report['returns']}.\n"
             f"CRI calls: {report['cri_rpc_calls']}; heaps: {report['heap_calls']}; "
             f"boundary selector={report['selector']:#x}, PC={report['pc']:#x}, target={report['target']:#x}.\n"
             "Completion counts are observed invocation returns, not full gameplay correctness or startup completion.")

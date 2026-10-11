@@ -8,10 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FIELDS = (
     "distinct_ee_entered", "distinct_ee_completed", "distinct_kernel_entered",
-    "distinct_kernel_completed", "calls", "returns", "native_iop_steps",
+    "distinct_kernel_completed", "calls", "returns",
     "native_module_loads", "ee_thread_count", "cri_rpc_calls", "heap_calls",
-    "disc_read_calls", "disc_read_callbacks", "disc_rpc_calls",
-    "disc_dma_submissions", "disc_read_dma_submissions", "gs_packets",
+    "ncmd_read_calls", "native_disc_requests", "disc_rpc_calls",
+    "gs_packets",
     "gs_sprites", "gs_pixels", "startup_worker_queries", "startup_worker_starts",
     "startup_worker_priority_changes", "startup_ready_queries", "startup_worker_suspends",
 )

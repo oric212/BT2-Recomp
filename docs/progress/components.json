@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-08",
+  "updated": "2026-10-11",
   "flow": [
     {
       "name": "Startup",
@@ -48,9 +48,9 @@
           "note": "Frame-phase threads not compared"
         },
         {
-          "name": "IOP modules",
+          "name": "IOP services",
           "status": "working",
-          "note": "Run natively; CRI check fails"
+          "note": "Native; no IOP code runs"
         },
         {
           "name": "Disc / filesystem",
@@ -60,12 +60,12 @@
         {
           "name": "Input",
           "status": "incomplete",
-          "note": "Emulated DS2; no host input yet"
+          "note": "Native pad service; no host input"
         },
         {
           "name": "Memory card",
           "status": "incomplete",
-          "note": "No card image; no saves"
+          "note": "Native, no card image or saves"
         }
       ]
     },
@@ -90,7 +90,7 @@
         {
           "name": "Audio",
           "status": "incomplete",
-          "note": "Driver set up; no sound output"
+          "note": "Requests native; no sound output"
         },
         {
           "name": "VU microprograms",

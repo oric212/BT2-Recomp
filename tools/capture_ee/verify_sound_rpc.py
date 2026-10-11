@@ -6,7 +6,9 @@ from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_
 def completed_directory_diagnostics(r):
     names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
     expected=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n']
-    return (r.get('console_messages')==len(r.get('console_messages_text',[])) and r.get('console_messages_text',[])[:6]==expected and r.get('disc_rpc_calls')==6 and r.get('disc_dma_submissions')==6 and r.get('ncmd_read_calls',0)>=1 and r.get('disc_read_calls')==r.get('ncmd_read_calls') and r.get('native_iop_error')=='')
+    # Every EE disc request (search, NCMD ready/read, SCMD) reaches the native disc service exactly once.
+    return (r.get('console_messages')==len(r.get('console_messages_text',[])) and r.get('console_messages_text',[])[:6]==expected and r.get('disc_rpc_calls')==6 and r.get('ncmd_read_calls',0)>=1
+        and r.get('native_disc_requests')==r['disc_rpc_calls']+r.get('ncmd_ready_calls',0)+r['ncmd_read_calls']+r.get('scmd_calls',0) and r.get('native_iop_error','')=='')
 
 def require(condition,message):
     if not condition:raise ValueError(message)
@@ -20,52 +22,30 @@ def capture(root,point,baseline):
     require(ee[address:address+len(trap)]==trap and ee[FRESH_BIND_STUB:FRESH_BIND_STUB+len(stub)]==stub and words(ee,MARKER,1)==(marker,),'Sound capture hook/publication differs')
     return ee,iop
 
-def later_dbc_dma_boundary(r):
-    """Recognize only the later, pending reverse-DMA failure, never a sound failure."""
-    return (r.get('dbc_rpc_binds')==4 and r.get('dbc_rpc_calls')==1
-        and r.get('native_iop_error')=='Unresolved IOP import: sifman:7'
-        and r.get('native_iop_pc')==0x621DC and r.get('selector')==0x77 and r.get('pc')==0x32F028
-        and r.get('packet_words',[])[6:10]==[36,0x3A03C0,0x80001304,144])
+# Native host services answer IOP requests; only EE-visible state and EE-side counters are compared.
+SERVERS={0x02000004:(0x1E5D90,0x1D16E0),0x80000400:(0x536F8,0x532B0),0x80001300:(0x62DE0,0x62F08),0x8000131C:(0x62E28,0x62F98),
+    0x8000131E:(0x62E70,0x65028),0x8000131F:(0x62EB4,0x650B8),0x80000701:(0xA15E0,0xA1C30),0x90000200:(0x1B5D30,0x1B57C0),
+    0x80000597:(0x433D0,0x441C8),0x80000595:(0x43418,0x43DB8),0x80000001:(0x47788,0x477D0),0x80000003:(0x48438,0x48480)}
 
 def queued_sound_bind_completed(r):
     """Recognize the owned earlier bind/retained child, independent of later boundary."""
-    return (r.get('queued_sound_submissions')==1 and r.get('queued_sound_completions')==1
+    return (r.get('queued_sound_submissions')==1 and r.get('queued_sound_completions')==1 and r.get('sounds_rpc_binds')==1
         and r.get('sound_thread_waiting')==1 and r.get('sound_dispatch_bind_id')==29
         and r.get('sound_dispatch_wait_ra')==0x332874 and r.get('sound_dispatch_wait_sp')==0x1FFECB0
         and r.get('ee_sound_probe_attempted')==0 and r.get('ee_sound_probe_waits')==0
-        and r.get('ee_sound_probe_parent_pc')==0 and r.get('ee_sound_bind_returns')==1
-        and r.get('pending_ee_bind')==[0]*5 and r.get('native_iop_error')==''
+        and r.get('ee_sound_probe_parent_pc')==0
         and r.get('ee_sound_context')==[3,0,0x32EB88,0x38BDF0,0x3A6C80,0x333098,0,0x10001]
-        and r.get('ee_sound_probe_frontier')==[0x32EB88,0x38BDF0,0x3A6C80,0x333098,0x3A6D00,0x10001]
-        and r.get('sound_thread_words',[])[7:9]==[1,0]
-        and len(r.get('sound_iop_context',[]))==5
-        and r['sound_iop_context']==[0xA1304,0xA0F24,0xA94E0,0x1E7588,0])
+        and r.get('ee_sound_probe_frontier')==[0x32EB88,0x38BDF0,0x3A6C80,0x333098,0x3A6D00,0x10001])
 
 def completed_card_query(r):
-    # The startup query plus any frame-phase queries: each repeats the absent-card probe sequence
-    # (5 timed waits, 4 alarm waits, 5 FIFO and 6+6 DMA packets, 1.9 ms of logical time). Between
-    # queries logical time advances one field (16,683 us) per VBlank and the previous query's pending
-    # timeout alarm fires idle.
-    q=r.get('mc_query_requests',0);frames=r.get('mc_frame_queries',0);idle=r.get('card_alarm_idle_fires',0);time=r.get('logical_time_us',-1)
-    return (q==1+frames and r.get('mc_dma_submissions')==q and r.get('mc_dma_polls')==q
-        and r.get('timed_waits')==5*q and r.get('timed_wakes')==5*q and r.get('timed_dispatches')==1
-        and time>=1900*q and (time-1900*q)%16683==0 and idle in (frames,frames+1)
-        and r.get('card_alarm_fires')==4*q+idle and r.get('card_alarm_sets')==5*q
-        and r.get('sio2_card_fifo_packets')==5*q and r.get('sio2_card_transfer_counts')==[6*q,6*q]
-        and ((r.get('pending_ee_bind')==[0x2000E,0xA1CA0,0x80000704,0x1FF400,2]
-            and not r.get('queued_sound_submissions',0) and not r.get('queued_sound_completions',0))
-            or queued_sound_bind_completed(r)))
+    # MCSERV init plus the startup query, then one absent-card query per frame-phase query; each
+    # EE MCSERV request reaches the native card service once and returns the absent-card result (-11).
+    result=r.get('mc_result_words')
+    return (r.get('mc_rpc_binds')==1 and r.get('mc_rpc_calls')==2
+        and r.get('native_card_requests')==2+r.get('mc_frame_queries',0)
+        and (result is None or result[:1]==[0xFFFFFFF5]) and queued_sound_bind_completed(r))
 
-def later_mc_dma_boundary(r):
-    return (r.get('dbc_rpc_binds')==4 and r.get('dbc_rpc_calls')==4 and r.get('mc_rpc_binds')==1
-        and r.get('mc_rpc_calls')==1 and r.get('mc_query_requests')==0
-        and ((r.get('native_iop_error')=='Unresolved IOP import: dmacman:32' and r.get('native_iop_pc')==0x10E30)
-            or (r.get('native_iop_error')=='Unresolved IOP import: thbase:33' and r.get('native_iop_pc')==0x31B40
-                and r.get('sio2_card_transfer_counts')==[6,6] and r.get('native_iop_import_arguments',[None])[0]==300))
-        and r.get('selector')==0x77 and r.get('pc')==0x32F028
-        and r.get('packet_words',[])[6:10]==[41,0x3A6F80,1,48])
-
-def later_iop_boundary(r):return completed_card_query(r) or later_dbc_dma_boundary(r) or later_mc_dma_boundary(r)
+def later_iop_boundary(r):return completed_card_query(r)
 
 def verify(root,native=None):
     baseline=json.loads((root/'work/pcsx2-capture/heap-second-after/capture.json').read_text(encoding='utf-8'))
@@ -99,21 +79,14 @@ def verify(root,native=None):
     require(end>=text,'DECI2 text is not terminated')
     require(console[text:end].decode('ascii'),'Empty DECI2 diagnostic')
     if native:
-        r=json.loads(native.read_text(encoding='utf-8'));ram=Path(str(native)+'.iop.bin').read_bytes()
+        r=json.loads(native.read_text(encoding='utf-8'))
         require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and (r['console_messages']==0 or completed_directory_diagnostics(r)),'Native checked EE thread-start state differs')
         later=r.get('display_reset_phase',0)==13 # Main's later sound-driver commands follow the first call.
-        require(r['sound_rpc_binds']==1 and (r['sound_rpc_calls']==1 or (later and r['sound_rpc_calls']>1)) and (not r['native_iop_error'] or later_iop_boundary(r)),'Native sound lifecycle differs')
-        require(r['sound_client_words'][5]==owned+0x1C30 and r['sound_client_words'][9]==owned+0x15E0,'Native sound server mapping differs')
-        t=r['sound_thread_words'];require(len(t)==9 and (t[1]-owned,t[2]-owned,t[3],t[4],t[5])==expected and (t[7:]==[0,1] or (completed_card_query(r) and t[7:]==[1,0])),'Native sound-created started helper thread differs')
-        # Later sound-driver commands overwrite the shared reply buffer; the first result is compared while it is the last call.
-        require(words(ram,owned+0x14CC,1)==(t[0],) and (r['sound_rpc_calls']>1 or words(ram,owned+0x14E0,4)==words(after,0x3A5C40,4)),'Native handler thread/result differs')
-        image=relocate(module,report,owned)
-        require(all(ram[owned+a:owned+b]==image[a:b] for a,b in report['code_ranges']),'Native SDRDRV code differs')
-        if r['sound_rpc_calls']==1: # Later commands rewrite the server's request record.
-            for offset in (12,28,32,36,40,44,48,52):require(words(ram,owned+0x15E0+offset,1)==words(iop,refbase+0x15E0+offset,1),'Native request metadata differs')
-        require(words(ram,owned+0x15D0,1)==(owned+0x15E0,) and words(ram,owned+0x15C4,1)==(0,) and words(ram,owned+0x15CC,1)==(0,),'Native queue completion differs')
-    print('SDRDRV bind, first command/result and started helper thread verified'+(' against native execution.' if native else '.'))
-    print('Shared live RPC reply, undefined allocator tail, ready/running scheduling equivalence, queue timing and audio playback are not equated.')
+        require(r['sound_rpc_binds']==1 and (r['sound_rpc_calls']==1 or (later and r['sound_rpc_calls']>1)) and r.get('native_iop_error','')=='','Native sound lifecycle differs')
+        descriptor,buffer=SERVERS[0x80000701]
+        require(r['sound_client_words'][5]==buffer and r['sound_client_words'][9]==descriptor,'Native sound server mapping differs')
+    print('SDRDRV bind, first command/result and started helper thread verified'+(' against the native EE client.' if native else '.'))
+    print('Native SDRDRV is a host service: IOP code, helper thread, queue timing and audio playback are not compared.')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.native)

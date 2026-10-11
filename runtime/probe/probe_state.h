@@ -54,9 +54,7 @@ void checkEntryBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeMod
 // Reports (probe_reports.cpp): the private JSON stop report at argv[2] and its evidence sidecars.
 void writeCdReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv);
 void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv);
-#ifdef BT2_NATIVE_IOP
 void writeEvidenceDumps(PS2Runtime& runtime,char** argv);
-#endif
 void writeBindReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv);
 void writeEntryReport(PS2Runtime& runtime,R5900Context& context,const ProbeModes& modes,const ProbeStop& stop,
     const std::array<std::uint32_t,5>& args,char** argv);

@@ -4,7 +4,7 @@ from verify_startup_workers import native_scope
 def report():
     """Synthetic normal-startup scheduler fields; no captured or game data."""
     return {
-        'queued_sound_submissions':1,'queued_sound_completions':1,'sound_thread_waiting':1,'sound_dispatch_bind_id':29,
+        'queued_sound_submissions':1,'queued_sound_completions':1,'sounds_rpc_binds':1,'sound_thread_waiting':1,'sound_dispatch_bind_id':29,
         'sound_dispatch_wait_ra':0x332874,'sound_dispatch_wait_sp':0x1FFECB0,'ee_sound_probe_attempted':0,'ee_sound_probe_waits':0,
         'ee_sound_probe_parent_pc':0,'ee_sound_bind_returns':1,'pending_ee_bind':[0]*5,'native_iop_error':'',
         'ee_sound_context':[3,0,0x32EB88,0x38BDF0,0x3A6C80,0x333098,0,0x10001],
@@ -34,6 +34,12 @@ class StartupWorkerScopeTest(unittest.TestCase):
     def test_rejects_unbalanced_critical_sections(self):
         self.rejects(lambda r:r.update(scheduled_suspends=10))
         self.rejects(lambda r:r.update(scheduled_priority_changes=21))
+
+    def test_accepts_worker7_first_dispatch(self):
+        # Frame phase: main resumes worker 7 once; it serves the callbacks and parks in its first sleep.
+        r=report();r.update(startup_worker_dispatches=3,startup_worker_waits=5)
+        r['startup_worker_state'][3]=[7,0x2EE140,0,0,25,0x38BDF0,0x351420,0x2EE1D8,1]
+        native_scope(r)
 
     def test_rejects_helper_wait_or_state_mismatch(self):
         self.rejects(lambda r:r['startup_worker_state'][1].__setitem__(6,0x34E370))

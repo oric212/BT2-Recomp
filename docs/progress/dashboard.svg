@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-08 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-11 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -59,30 +59,30 @@
 <circle cx="41" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="52" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel services</text>
 <text x="37" y="252" font-size="11.5" fill="#64748b">Frame-phase threads not compared</text></g>
-<g><title>IOP modules: Operational. Run natively; CRI check fails</title>
+<g><title>IOP services: Operational. Native; no IOP code runs</title>
 <rect x="24" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="41" cy="292" r="3.5" fill="#2b78b8"/>
-<text x="52" y="296" font-size="13" font-weight="600" fill="#1e293b">IOP modules</text>
-<text x="37" y="314" font-size="11.5" fill="#64748b">Run natively; CRI check fails</text></g>
+<text x="52" y="296" font-size="13" font-weight="600" fill="#1e293b">IOP services</text>
+<text x="37" y="314" font-size="11.5" fill="#64748b">Native; no IOP code runs</text></g>
 <g><title>Disc / filesystem: Verified. Reached reads byte-identical</title>
 <rect x="24" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="41" cy="354" r="3.5" fill="#16835d"/>
 <text x="52" y="358" font-size="13" font-weight="600" fill="#1e293b">Disc / filesystem</text>
 <text x="37" y="376" font-size="11.5" fill="#64748b">Reached reads byte-identical</text></g>
-<g><title>Input: Incomplete. Emulated DS2; no host input yet</title>
+<g><title>Input: Incomplete. Native pad service; no host input</title>
 <rect x="24" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="41" cy="416" r="3.5" fill="#b77912"/>
 <text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
-<text x="37" y="438" font-size="11.5" fill="#64748b">Emulated DS2; no host input yet</text></g>
-<g><title>Memory card: Incomplete. No card image; no saves</title>
+<text x="37" y="438" font-size="11.5" fill="#64748b">Native pad service; no host input</text></g>
+<g><title>Memory card: Incomplete. Native, no card image or saves</title>
 <rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="41" cy="478" r="3.5" fill="#b77912"/>
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="37" y="500" font-size="11.5" fill="#64748b">No card image; no saves</text></g>
+<text x="37" y="500" font-size="11.5" fill="#64748b">Native, no card image or saves</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
 <g><title>GS: Incomplete. Sprites, triangles, PSMT4/8</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -102,12 +102,12 @@
 <circle cx="351" cy="354" r="3.5" fill="#b77912"/>
 <text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
 <text x="347" y="376" font-size="11.5" fill="#64748b">Setup only; no MPEG decoding</text></g>
-<g><title>Audio: Incomplete. Driver set up; no sound output</title>
+<g><title>Audio: Incomplete. Requests native; no sound output</title>
 <rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="416" r="3.5" fill="#b77912"/>
 <text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">Driver set up; no sound output</text></g>
+<text x="347" y="438" font-size="11.5" fill="#64748b">Requests native; no sound output</text></g>
 <g><title>VU microprograms: Not Reached. Not reached yet</title>
 <rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="467" width="3" height="36" rx="1.5" fill="#8793a5"/>

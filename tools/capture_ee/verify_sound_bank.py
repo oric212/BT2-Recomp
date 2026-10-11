@@ -17,7 +17,7 @@ REQUEST=(0x3B0E00,12);TABLE=0x635080
 
 def native_scope(r):
     require(r['display_reset_phase']==13 and r['iop_uploads']>=3 and r['heap_calls']>=9 and r['sound_rpc_calls']>=3
-        and not r['native_iop_error'],'Native sound-bank scope differs')
+        and not r.get('native_iop_error'),'Native sound-bank scope differs')
 
 def verify(root,native):
     ee=original(root,'rpc-sound-bank-after',BANK)

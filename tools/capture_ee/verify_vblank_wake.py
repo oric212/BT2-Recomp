@@ -38,7 +38,7 @@ def native_scope(r):
     require(r['worker_wakes']==2*v and r['worker_resumes']==r['worker_wakes']==r['worker_sleep_returns'],'Helper wake ownership differs')
     require(r['ncmd_read_calls']>=2 and r['ncmd_ready_calls']==r['ncmd_read_calls']+pending and r['scmd_calls']==r['ncmd_read_calls']-1,
         'Disc readiness/read/error-query sequence differs')
-    require(r['native_iop_error']=='','Native IOP error present')
+    require(not r.get('native_iop_error'),'Native IOP error present')
 
 def verify(root,native):
     first=original(root,'rpc-vblank-first',HANDLER)

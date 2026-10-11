@@ -24,19 +24,19 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 
 | Functional milestone | Status |
 | --- | --- |
-| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading |
+| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
 | Main frame loop | ✅ Verified — key startup states match original captures |
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
-| Controller check | ✅ Verified — passed with an emulated DualShock 2 |
+| Controller check | ✅ Verified — passed with the native controller service |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
 | Opening movie | ⛔ Blocking — decoder set up; GIF DMA chain mode stops the run before the first movie frame |
 | Title screen | ⏳ Not Reached — waits for Start |
 | Demo fight (no input) | ⏳ Not Reached |
 | Gameplay (menus, versus battle) | ⏳ Not Reached |
-| Audio | 🔧 Incomplete — sound driver set up; no sound output |
+| Audio | 🔧 Incomplete — sound requests answered natively; no sound output |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
-**Measured 2026-10-08:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-11:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **15/15 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ### How progress is measured
@@ -53,9 +53,9 @@ Statuses: ✅ Verified · 🟢 Operational (working on exercised paths, not yet 
 
 ### Next steps
 
-1. Replace the emulated IOP with native services: disc and files, controller, memory card, sound.
-2. GPU rendering through paraLLEl-GS.
-3. GIF DMA chain mode (current blocker), then native movie playback.
+1. GPU rendering through paraLLEl-GS.
+2. GIF DMA chain mode (current blocker), then native movie playback.
+3. Native audio output for the sound and CRI services.
 
 [Full progress](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
 
@@ -73,31 +73,27 @@ The foundation host prints its startup message. Before recompiling or testing BT
 
 ## Architecture
 
-The game's code is recompiled ahead of time into native C++. A small handwritten runtime stands in for the PS2 hardware.
+The game's code is recompiled ahead of time into native C++. A small handwritten layer answers what it asks of the PS2: native services replace the IOP, and the EE runtime covers the rest.
 
 ```mermaid
 flowchart LR
     disc[("Your disc image")] --> tools["tools/<br/>validate · map · generate"]
     tools --> ee["Generated EE code"]
-    tools --> iop["Generated IOP modules"]
     subgraph runtime["Native runtime · runtime/"]
         eert["EE runtime<br/>ee/"] --- gs["GS · GIF · VIF1<br/>gs/"]
-        eert --- bridge["SIF RPC bridge<br/>iop/ee_bridge/"]
-        bridge --- ioprt["IOP runtime<br/>iop/"]
+        eert --- services["Native services<br/>services/"]
     end
     ee --> eert
-    iop --> ioprt
+    disc --> services
     gs --> host["Window<br/>host/"]
 ```
 
 | Part | Role |
 | --- | --- |
 | **EE runtime** | Memory, kernel, threads, timers, DMA |
-| **IOP runtime** | Runs the game's own IOP modules: SPU2, pad, memory card, disc |
-| **GS** | Software rasterizer for the game's draw packets |
+| **Native services** | Answer the game's IOP requests on the host: disc and files, controller, memory card, sound and CRI; no IOP code runs |
+| **GS** | Software rasterizer for the game's draw packets (to be replaced by GPU rendering through paraLLEl-GS) |
 | **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
-
-**Direction:** the IOP runtime and the software rasterizer are being replaced by native services and GPU rendering through paraLLEl-GS, leaving a minimal compatibility layer under the recompiled game code ([implementation plan](docs/project/IMPLEMENTATION_PLAN.md)).
 
 Details: [runtime layout](docs/guides/RUNTIME_LAYOUT.md) · [reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md)
 

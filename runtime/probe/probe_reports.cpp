@@ -1,8 +1,5 @@
 #include "probe_state.h"
 #include "ee/ps2_runtime_macros.h"
-#ifdef BT2_NATIVE_IOP
-#include "iop/services/module_service.h"
-#endif
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -114,19 +111,6 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
         << ",\"native_module_loads\":" << runtime.native_module_loads
         << ",\"native_module_request\":" << std::quoted(runtime.native_module_request)
-        << ",\"native_iop_error\":" << std::quoted(runtime.native_iop_error)
-    #ifdef BT2_NATIVE_IOP
-        << ",\"native_iop_blocked_address\":" << (runtime.native_iop?runtime.native_iop->runtime.blocked_address:0)
-        << ",\"native_iop_access_width\":" << (runtime.native_iop?runtime.native_iop->runtime.access_width:0)
-        << ",\"native_iop_access_value\":" << (runtime.native_iop?runtime.native_iop->runtime.access_value:0)
-        << ",\"native_iop_access_kind\":\"" << (runtime.native_iop?runtime.native_iop->runtime.access_kind:"") << "\""
-        << ",\"spu2_dma_idle_reads\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_dma_idle_reads:0)
-        << ",\"pad_fields\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.field:0)
-        << ",\"pad_script_steps\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.script_steps:0)
-        << ",\"pad_buttons\":" << (runtime.native_iop?runtime.native_iop->runtime.pad.buttons:0xFFFF)
-    #endif
-        << ",\"native_iop_pc\":" << runtime.native_iop_pc << ",\"native_iop_steps\":" << runtime.native_iop_steps
-        << ",\"native_iop_targets\":" << runtime.native_iop_targets << ",\"native_iop_waiters\":" << runtime.native_iop_waiters
         << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
         << ",\"console_messages\":" << runtime.ee_console_messages.size()
         << ",\"console_first_message\":" << jsonString(runtime.ee_console_messages.empty()?std::string{}:runtime.ee_console_messages.front());
@@ -145,26 +129,10 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"dbc_rpc_calls\":" << runtime.dbc_rpc_calls
         << ",\"dbc_lock_waits\":" << runtime.dbc_lock_waits
         << ",\"dbc_lock_signals\":" << runtime.dbc_lock_signals
-    #ifdef BT2_NATIVE_IOP
-        << ",\"dbc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_submissions:0)
-        << ",\"dbc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->dbc_dma_polls:0)
-        << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"disc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_dma_submissions:0) << ",\"disc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->disc_dma_polls:0) << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls << ",\"ncmd_read_calls\":" << runtime.ncmd_read_calls << ",\"cri_rpc_binds\":" << runtime.cri_rpc_binds << ",\"cri_rpc_calls\":" << runtime.cri_rpc_calls << ",\"disc_read_calls\":" << (runtime.native_iop?runtime.native_iop->disc_read_calls:0) << ",\"disc_read_callbacks\":" << (runtime.native_iop?runtime.native_iop->disc_read_callbacks:0) << ",\"disc_read_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->disc_read_dma_submissions:0)
+        << ",\"disc_bind_semaphores\":" << runtime.disc_bind_semaphores << ",\"disc_rpc_binds\":" << runtime.disc_rpc_binds << ",\"disc_rpc_calls\":" << runtime.disc_rpc_calls << ",\"ncmd_ready_calls\":" << runtime.ncmd_ready_calls << ",\"ncmd_read_calls\":" << runtime.ncmd_read_calls << ",\"cri_rpc_binds\":" << runtime.cri_rpc_binds << ",\"cri_rpc_calls\":" << runtime.cri_rpc_calls 
         << ",\"probe_initial_sp\":" << runtime.initial_sp << ",\"probe_semaphore_count\":" << runtime.semaphores.size() << ",\"ncmd_rpc_binds\":" << runtime.ncmd_rpc_binds << ",\"ncmd_bind_semaphores\":" << runtime.ncmd_bind_semaphores << ",\"disc_result\":" << runtime.read32(runtime.memory().data(),0x3A8740)
         << ",\"stop_returns\":[" << [&]{std::string s;for(auto a:runtime.stop_returns){if(!s.empty())s+=',';s+=std::to_string(a);}return s;}() << "]"
         << ",\"stop_ra\":" << GPR_U32(&context,31) << ",\"stop_s1\":" << GPR_U32(&context,17) << ",\"stop_s3\":" << GPR_U32(&context,19)
-        << ",\"mc_query_requests\":" << (runtime.native_iop?runtime.native_iop->mc_query_requests:0)
-        << ",\"mc_dma_submissions\":" << (runtime.native_iop?runtime.native_iop->mc_dma_submissions:0)
-        << ",\"mc_dma_polls\":" << (runtime.native_iop?runtime.native_iop->mc_dma_polls:0)
-        << ",\"timed_waits\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_waits:0)
-        << ",\"timed_wakes\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_wakes:0)
-        << ",\"timed_dispatches\":" << (runtime.native_iop?runtime.native_iop->runtime.timed_dispatches:0)
-        << ",\"logical_time_us\":" << (runtime.native_iop?runtime.native_iop->runtime.logical_time_us:0)
-        << ",\"card_alarm_fires\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_fires:0)
-        << ",\"card_alarm_sets\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_sets:0)
-        << ",\"card_alarm_waits\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_waits:0)
-        << ",\"card_alarm_idle_fires\":" << (runtime.native_iop?runtime.native_iop->runtime.card_alarm_idle_fires:0)
-        << ",\"sio2_card_fifo_packets\":" << (runtime.native_iop?runtime.native_iop->runtime.sio2_card_fifo_packets:0)
-    #endif
         << ",\"sounds_rpc_binds\":" << runtime.sounds_rpc_binds
         << ",\"sounds_rpc_calls\":" << runtime.sounds_rpc_calls
         << ",\"sound_rpc_binds\":" << runtime.sound_rpc_binds
@@ -174,53 +142,15 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
     report<<"],\"sound_payload_words\":[";
     for(unsigned i=0;i<16;++i)report<<(i?",":"")<<runtime.read32(runtime.memory().data(),0x3A5C40+i*4);
     report<<"],\"sound_thread_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.sound_rpc_calls && runtime.native_iop) {
-        auto& rt=runtime.native_iop->runtime;
-        const auto handle=rt.read(0xA14CC,4);const auto& t=rt.threads.at(handle);
-        report<<handle<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option<<","<<t.waiting<<","<<t.ready;
-    }
-    #endif
     report<<"],\"sound_iop_context\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.sound_rpc_calls && runtime.native_iop) {
-        auto& rt=runtime.native_iop->runtime;const auto& t=rt.threads.at(rt.read(0xA14CC,4));
-        report<<t.context.pc<<","<<t.context.get(31)<<","<<t.context.get(28)<<","<<t.context.get(29)<<","<<t.wait_ee_bind;
-    }
-    #endif
     report<<"],\"cri_thread_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {
-        const auto& rt=runtime.native_iop->runtime;
-        for(const auto& [id,t]:rt.threads)if(t.entry==0x1AC890) {
-            report<<id<<","<<t.entry<<","<<t.gp<<","<<t.stacksize<<","<<t.priority<<","<<t.attr<<","<<t.option
-                  <<","<<t.waiting<<","<<t.ready<<","<<t.wait_semaphore<<","<<t.context.pc<<","<<t.context.get(31);
-            break;
-        }
-    }
-    #endif
     report<<"],\"spu2_auto_dma_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {
-        const auto& d=runtime.native_iop->runtime.spu2_auto_dma;
-        report<<d.configured<<","<<d.pending<<","<<d.owner<<","<<d.program_stage<<","<<d.readbacks
-              <<","<<d.source<<","<<d.madr<<","<<d.bcr<<","<<d.chcr<<","<<d.initial_half.size();
-    }
-    #endif
     report<<"],\"ee_sound_context\":[";
     if(runtime.sound_thread_starts) {
         const auto& t=runtime.threads.at(1);const auto& c=t.context;
         report<<t.id<<","<<t.ready<<","<<c.pc<<","<<c.r[28].low<<","<<c.r[29].low<<","<<c.r[31].low<<","<<c.r[4].low<<","<<c.cop0_status;
     }
     report<<"],\"iop_rpc_servers\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {
-        bool first=true;
-        for(const auto& [id,server]:runtime.native_iop->runtime.rpc_servers) {
-            report<<(first?"":",")<<"["<<id<<","<<server.descriptor<<","<<server.buffer<<","<<server.handler<<","<<server.queue<<","<<server.gp<<"]";first=false;
-        }
-    }
-    #endif
     report<<"],\"dbc_client_words\":[";
     for(const auto client:std::array<std::uint32_t,4>{0x3A03C0,0x3A0410,0x3A0438,0x3A0460}) {
         if(client!=0x3A03C0)report<<",";report<<"[";
@@ -229,45 +159,15 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
     report<<"],\"dbc_dma_ee_words\":[";
     for(unsigned n=0;n<32;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A27C0+n*4);
     report<<"],\"dbc_dma_ee_at_transfer_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop)for(unsigned n=0;n<32;++n) {std::uint32_t w;std::memcpy(&w,runtime.native_iop->dbc_dma_ee_snapshot.data()+n*4,4);report<<(n?",":"")<<w;}
-    #endif
     report<<"],\"dbc_dma_payload_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop)for(unsigned n=0;n<32;++n) {
-        std::uint32_t value=0;for(unsigned b=0;b<4;++b)value|=std::uint32_t(runtime.native_iop->dbc_dma_payload[n*4+b])<<(b*8);
-        report<<(n?",":"")<<value;
-    }
-    #endif
     report<<"],\"mc_dma_ee_words\":[";
     for(unsigned n=0;n<48;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A7480+n*4);
     report<<"],\"pending_ee_bind\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {const auto& b=runtime.native_iop->runtime.pending_ee_bind;report<<b.thread<<","<<b.client<<","<<b.server_id<<","<<b.packet<<","<<b.rpc_id;}
-    #endif
     report<<"],\"mc_dma_payload_words\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop)for(unsigned n=0;n<48;++n){std::uint32_t v=0;std::memcpy(&v,runtime.native_iop->mc_dma_payload.data()+n*4,4);report<<(n?",":"")<<v;}
-    #endif
     report<<"],\"sio2_dma_channels\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop)for(unsigned channel: {11u,12u}) {
-        const auto& dma=runtime.native_iop->runtime.dma_channels.at(channel);
-        report<<(channel==12?",":"")<<"["<<channel<<","<<dma.madr<<","<<dma.bcr<<","<<dma.chcr<<","<<(dma.slice_known?1:0)<<"]";
-    }
-    #endif
     report<<"],\"sio2_card_transfer_counts\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop)report<<runtime.native_iop->runtime.sio2_card_sends<<","<<runtime.native_iop->runtime.sio2_card_receives;
-    #endif
     report<<"],\"sio2_card_controls\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {unsigned n=0;for(auto v:runtime.native_iop->runtime.sio2_card_controls)report<<(n++?",":"")<<v;}
-    #endif
     report<<"],\"native_iop_import_arguments\":[";
-    #ifdef BT2_NATIVE_IOP
-    if(runtime.native_iop) {unsigned n=0;for(auto v:runtime.native_iop->runtime.last_import_arguments)report<<(n++?",":"")<<v;}
-    #endif
     report<<"],\"mc_client_words\":[";
     for(unsigned n=0;n<10;++n)report<<(n?",":"")<<runtime.read32(runtime.memory().data(),0x3A6F80+n*4);
     report<<"],\"mc_input_words\":[";
@@ -290,12 +190,9 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"startup_worker_waits\":" << runtime.startup_worker_waits
         << ",\"main_priority_admissions\":" << runtime.main_priority_admissions << ",\"main_priority_previous\":" << runtime.main_priority_previous
         << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
-        << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes << ",\"scheduled_wakes\":" << runtime.scheduled_wakes << ",\"main_yields\":" << runtime.main_yields << ",\"main_sleeps\":" << runtime.main_sleeps << ",\"main_wakes\":" << runtime.main_wakes << ",\"main_sleep_fields\":" << runtime.main_sleep_fields << ",\"frame_csr_reads\":" << runtime.frame_csr_reads
+        << ",\"scheduled_priority_changes\":" << runtime.scheduled_priority_changes << ",\"scheduled_resumes\":" << runtime.scheduled_resumes << ",\"scheduled_wakes\":" << runtime.scheduled_wakes << ",\"main_yields\":" << runtime.main_yields << ",\"native_disc_requests\":" << runtime.native_disc_requests << ",\"native_fileio_requests\":" << runtime.native_fileio_requests << ",\"native_card_requests\":" << runtime.native_card_requests << ",\"native_pad_requests\":" << runtime.native_pad_requests << ",\"native_pad_transfers\":" << runtime.native_pad_transfers << ",\"native_cri_requests\":" << runtime.native_cri_requests << ",\"native_cri_returns\":" << runtime.native_cri_returns << ",\"main_sleeps\":" << runtime.main_sleeps << ",\"main_wakes\":" << runtime.main_wakes << ",\"main_sleep_fields\":" << runtime.main_sleep_fields << ",\"frame_csr_reads\":" << runtime.frame_csr_reads
         << ",\"scheduled_suspends\":" << runtime.scheduled_suspends << ",\"cri_stream_transfers\":" << runtime.cri_stream_transfers
-        << ",\"spu2_playback_samples\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.samples:0)
-        << ",\"spu2_playback_blocks\":" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.blocks:0)
-        << ",\"spu2_endx\":[" << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[0]:0) << "," << (runtime.native_iop?runtime.native_iop->runtime.spu2_playback.endx[1]:0) << "]"
-        << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"iop_timer_started\":" << (runtime.native_iop && runtime.native_iop->runtime.sound_timer.started ? 1 : 0) << ",\"fileio_binds\":" << runtime.fileio_binds << ",\"fileio_calls\":" << runtime.fileio_calls << ",\"fileio_completions\":" << runtime.fileio_completions << ",\"iop_timer_ticks\":" << (runtime.native_iop ? runtime.native_iop->runtime.sound_timer.ticks : 0u) << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
+        << ",\"file_load_idles\":" << runtime.file_load_idles << ",\"fileio_binds\":" << runtime.fileio_binds << ",\"fileio_calls\":" << runtime.fileio_calls << ",\"fileio_completions\":" << runtime.fileio_completions << ",\"iop_uploads\":" << runtime.iop_uploads << ",\"iop_upload_polls\":" << runtime.iop_upload_polls << ",\"timer2_fields\":" << runtime.timer2.fields << ",\"timer2_wraps\":" << runtime.timer2.wraps << ",\"timer2_deliveries\":" << runtime.timer2_deliveries << ",\"display_reset_phase\":" << runtime.display_reset_phase << ",\"polled_vblanks\":" << runtime.polled_vblanks << ",\"vblank_handler_registrations\":" << runtime.vblank_handler_registrations << ",\"vblank_enable_calls\":" << runtime.vblank_enable_calls
         << ",\"vblank_disable_calls\":" << runtime.vblank_disable_calls << ",\"load_poll_idles\":" << runtime.load_poll_idles << ",\"asset_poll_idles\":" << runtime.asset_poll_idles << ",\"timer1_vblanks\":" << runtime.timer1_vblanks << ",\"dbc_port_calls\":" << runtime.dbc_port_calls << ",\"dbc_main_calls\":" << runtime.dbc_main_calls << ",\"scmd_calls\":" << runtime.scmd_calls
         << ",\"vblank_deliveries\":" << runtime.vblank_deliveries << ",\"worker_wakes\":" << runtime.worker_wakes
         << ",\"worker_resumes\":" << runtime.worker_resumes << ",\"worker_sleep_returns\":" << runtime.worker_sleep_returns
@@ -308,9 +205,6 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
         << ",\"sound_dispatch_wait_sp\":" << runtime.sound_dispatch_wait_sp
         << ",\"ee_sound_probe_attempted\":" << runtime.ee_sound_probe_attempted
         << ",\"ee_sound_probe_waits\":" << runtime.ee_sound_probe_waits
-    #ifdef BT2_NATIVE_IOP
-        << ",\"ee_sound_bind_returns\":" << (runtime.native_iop?runtime.native_iop->ee_sound_bind_returns:0)
-    #endif
         << ",\"ee_sound_probe_parent_pc\":" << runtime.ee_sound_probe_parent.pc
         << ",\"ee_sound_probe_frontier\":[" << runtime.ee_sound_probe_frontier.pc << "," << runtime.ee_sound_probe_frontier.r[28].low
         << "," << runtime.ee_sound_probe_frontier.r[29].low << "," << runtime.ee_sound_probe_frontier.r[31].low
@@ -376,10 +270,9 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
     report << "]}\n";
 }
 
-#ifdef BT2_NATIVE_IOP
 void writeEvidenceDumps(PS2Runtime& runtime,char** argv) {
-    if(runtime.heap_calls && runtime.native_iop) {
-        if(runtime.native_iop->disc_read_calls) {
+    if(runtime.heap_calls) {
+        if(runtime.ncmd_read_calls) { // After the first disc read.
             std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
             ee_dump.write(reinterpret_cast<const char*>(runtime.memory().data()),runtime.memory().size());
             if(!ee_dump)throw std::runtime_error("EE evidence dump failed");
@@ -393,11 +286,11 @@ void writeEvidenceDumps(PS2Runtime& runtime,char** argv) {
             }
             if(!gs_dump)throw std::runtime_error("GS evidence dump failed");
         }
+        const auto& iop=runtime.nativeIopMemory(); // Native IOP memory store (uploaded data).
         std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);
-        if(!dump.write(reinterpret_cast<const char*>(runtime.native_iop->runtime.ram.data()),runtime.native_iop->runtime.ram.size()))throw std::runtime_error("Native IOP checkpoint write failed");
+        if(!dump.write(reinterpret_cast<const char*>(iop.data()),iop.size()))throw std::runtime_error("IOP checkpoint write failed");
     }
 }
-#endif
 
 void writeBindReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
     const auto stop_address=stop.address;
@@ -466,9 +359,6 @@ void writeEntryReport(PS2Runtime& runtime,R5900Context& context,const ProbeModes
            << ",\"osd_config_reads\":" << runtime.osd_config_reads << ",\"osd_config_sets\":" << runtime.osd_config_sets
            << ",\"ee_sound_probe_attempted\":" << runtime.ee_sound_probe_attempted
             << ",\"ee_sound_probe_waits\":" << runtime.ee_sound_probe_waits
-    #ifdef BT2_NATIVE_IOP
-            << ",\"ee_sound_bind_returns\":" << (runtime.native_iop?runtime.native_iop->ee_sound_bind_returns:0)
-    #endif
             << ",\"ee_sound_probe_parent_pc\":" << runtime.ee_sound_probe_parent.pc
             << ",\"ee_sound_probe_frontier\":[" << runtime.ee_sound_probe_frontier.pc << "," << runtime.ee_sound_probe_frontier.r[28].low
             << "," << runtime.ee_sound_probe_frontier.r[29].low << "," << runtime.ee_sound_probe_frontier.r[31].low

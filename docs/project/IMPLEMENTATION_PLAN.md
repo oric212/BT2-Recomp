@@ -9,7 +9,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Area | Decision |
 | --- | --- |
 | Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. |
-| IOP side | Replace the emulated IOP with **native RPC services**: answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Retire IOP module execution and the SPU2, SIO2 and CDVD hardware models once each service is replaced. |
+| IOP side | **Native RPC services** answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Done 2026-10-11; the emulated IOP is removed. |
 | Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU rasterizer stays only as a test reference until the GPU path matches it. VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
 | Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
 
@@ -53,9 +53,9 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 
 Each step keeps the game running to the current checkpoint (650 frames, then the GIF stop) with game-visible results unchanged.
 
-1. **Native services plan.** Write `docs/plans/iop/NATIVE_SERVICES_PLAN.md`: every RPC service the game binds, the requests it actually sends (from the existing reports and captures), the EE-visible result each must produce, the replacement order and the comparisons that stay valid.
-2. **Replace the services one at a time**, simplest first: disc and file reads from the ISO, then the controller (host input, with the existing pad script for tests), the memory card (host files), then SOUNDS, the sound driver and CRI ADX (native ADX decoding and sample playback). Remove the IOP module execution and hardware models each replacement makes obsolete.
-3. **GPU rendering plan and integration.** Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`, then build paraLLEl-GS (Vulkan, Granite) with MSVC, feed it the existing GIF/VIF1 output and privileged display registers, and present its scanout in the window. Match it against the CPU renderer on the 650 startup frames.
+1. **Native services** — done 2026-10-11: every reached IOP service is answered natively and the emulated IOP is removed ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)).
+2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
+3. **GPU rendering plan and integration.** Evidence so far (2026-10-11): the pinned paraLLEl-GS builds as a static library with MSVC in standalone mode (Vulkan SDK 1.4.363 and an AMD RX 6800 XT on the development machine), and its GS dump parser reads PCSX2's dump format, so the startup frames can be replayed offline first. Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`, then build paraLLEl-GS (Vulkan, Granite) with MSVC, feed it the existing GIF/VIF1 output and privileged display registers, and present its scanout in the window. Match it against the CPU renderer on the 650 startup frames.
 4. **GIF DMA chain mode**, the current blocker: consolidate the GIF channel-2 models into one and add chain mode by sharing the VIF1 chain walker.
 5. **Opening movie:** write `docs/plans/video/SOFDEC_PLAN.md` (native SFD video plus ADX audio) before implementing it.
 

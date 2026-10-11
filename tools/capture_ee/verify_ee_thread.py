@@ -1,7 +1,7 @@
 """Validate the reached EE sound thread query/start; keep evidence bundles local."""
 import argparse,json,struct
 from pathlib import Path
-from verify_sound_rpc import capture,words,require,queued_sound_bind_completed
+from verify_sound_rpc import capture,words,require,queued_sound_bind_completed,SERVERS
 from capture_ee import MARKER
 
 def verify(root,output=None,native=None):
@@ -25,19 +25,15 @@ def verify(root,output=None,native=None):
         later=r.get('display_reset_phase',0)==13 and r.get('sound_rpc_calls',1)>1
         require(r['sounds_rpc_binds']==1 and (r['sounds_client_words'][:5]==[0,30,7,0,0] or (later and r['sounds_client_words'][1]>30))
             and r['sounds_client_words'][5] and r['sounds_client_words'][9],'Native SOUNDS owned bind differs')
-    completed,retail_iop=capture(root,'sound-service-call-after',baseline)
+    completed,_=capture(root,'sound-service-call-after',baseline)
     require(words(completed,MARKER+8,4)==(0,0,0x1FFED10,0),'SOUNDS first caller return differs')
     require(words(completed,0x635180,16)==(0,)*16 and words(completed,0x3A97E0,4)==(16,256,0x635180,64),'SOUNDS first command/result differs')
     if native:
-        row=next(x for x in r['iop_rpc_servers'] if x[0]==0x02000004)
+        descriptor,buffer=SERVERS[0x02000004]
         # Later SOUNDS commands reuse the reply buffer (verify_sound_bank.py compares the last one).
         require((r['sounds_rpc_calls']==1 and r['sounds_result_words']==list(words(completed,0x635180,16)))
             or (r.get('display_reset_phase',0)==13 and r['sounds_rpc_calls']>1),'Native SOUNDS response differs')
-        require(r['sounds_client_words'][5]==row[2] and r['sounds_client_words'][9]==row[1],'Native SOUNDS server ownership differs')
-        owned_iop=Path(str(native)+'.iop.bin').read_bytes();ref=words(completed,0x6351C0,10)
-        if r['sounds_rpc_calls']==1: # Later SOUNDS commands rewrite the server's input buffer and request record.
-            require(owned_iop[row[2]:row[2]+256]==retail_iop[ref[5]:ref[5]+256],'SOUNDS input buffer differs')
-            for offset in (12,28,32,36,40,44,48):require(words(owned_iop,row[1]+offset,1)==words(retail_iop,ref[9]+offset,1),'SOUNDS request metadata differs')
+        require(r['sounds_client_words'][5]==buffer and r['sounds_client_words'][9]==descriptor,'Native SOUNDS server ownership differs')
     dbc,dbc_iop=capture(root,'rpc-dbc-bind-after',baseline)
     dbc_client=words(dbc,0x3A03C0,10)
     require(words(dbc,MARKER+8,4)==(0,0,0x1FFEC40,0) and dbc_client==(0,31,7,0,0,0x7AB38,0,0,0,0x7AA10),'DBCMAN forward bind return differs')

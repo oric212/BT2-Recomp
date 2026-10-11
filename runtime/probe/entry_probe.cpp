@@ -199,9 +199,7 @@ int main(int argc, char** argv) {
         if (argc >= 18) {
             checkRuntimeBoundary(runtime,context,stop);
             writeRuntimeBoundaryReport(runtime,context,stop,argv);
-#ifdef BT2_NATIVE_IOP
             writeEvidenceDumps(runtime,argv);
-#endif
             return 0;
         }
         if (bind_mode) {

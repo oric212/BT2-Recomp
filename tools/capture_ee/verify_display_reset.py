@@ -17,7 +17,7 @@ DBUFF=0x3B0850;DBUFF_SIZE=0x240;GS_STATE=0x368090;FIELD_FLAG=0x3B0A80
 def native_scope(r):
     require(r['display_reset_phase']==13 and r['polled_vblanks']==2 and r['vblank_handler_registrations']==2
         and r['vblank_enable_calls']==2 and r['vblank_disable_calls']==1 and r['heap_calls']>=7 and r['heap_frees']==2
-        and r['native_module_loads']==15 and r['cri_rpc_calls']==42 and not r['native_iop_error'],'Native display setup scope differs')
+        and r['native_module_loads']==15 and r['cri_rpc_calls']==42 and not r.get('native_iop_error'),'Native display setup scope differs')
 
 def verify(root,native):
     r=json.loads(native.read_text(encoding='utf-8'));native_scope(r)
