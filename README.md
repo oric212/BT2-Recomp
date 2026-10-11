@@ -53,9 +53,9 @@ Statuses: ✅ Verified · 🟢 Operational (working on exercised paths, not yet 
 
 ### Next steps
 
-1. Profile the startup run per subsystem (GS renderer, IOP, EE) in Release.
-2. Generalize verified address-specific handlers into general hardware behavior.
-3. GIF DMA chain mode (current blocker), then MPEG movie decoding (IPU).
+1. Replace the emulated IOP with native services: disc and files, controller, memory card, sound.
+2. GPU rendering through paraLLEl-GS.
+3. GIF DMA chain mode (current blocker), then native movie playback.
 
 [Full progress](docs/PROG.md) · [Unfinished-pass handoff](docs/progress/ACTIVE_PASS.md) · [Progress history](docs/progress/2026-10.md)
 
@@ -96,6 +96,8 @@ flowchart LR
 | **IOP runtime** | Runs the game's own IOP modules: SPU2, pad, memory card, disc |
 | **GS** | Software rasterizer for the game's draw packets |
 | **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
+
+**Direction:** the IOP runtime and the software rasterizer are being replaced by native services and GPU rendering through paraLLEl-GS, leaving a minimal compatibility layer under the recompiled game code ([implementation plan](docs/project/IMPLEMENTATION_PLAN.md)).
 
 Details: [runtime layout](docs/guides/RUNTIME_LAYOUT.md) · [reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md)
 

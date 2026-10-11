@@ -1,6 +1,6 @@
 # Reference architecture review
 
-Inspected on 2026-10-03, without building either reference or downloading game binaries/assets. BT3-Recomp is the primary architectural reference; Chronicle supplies selected validation practices. No BT3/Dark Cloud addresses, patches, or game implementations are used in BT2.
+Inspected on 2026-10-03, without building either reference or downloading game binaries/assets. BT3-Recomp is the primary architectural reference; Chronicle supplies selected validation practices. Since 2026-10-11, Tenkaichi3Decomp is the primary reference for the native layer (services, audio, movies) and paraLLEl-GS for GPU rendering. No BT3/Dark Cloud addresses, patches, or game implementations are used in BT2.
 
 ## BT3-Recomp
 

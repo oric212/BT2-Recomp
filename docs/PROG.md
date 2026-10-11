@@ -103,13 +103,13 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 ## Next steps
 
-The work shifts from per-blocker workarounds to general, measured implementations ([implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy)):
+The port moves from emulating PS2 hardware to a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step)):
 
-1. **Profile** the 650-frame Release startup run per subsystem (GS, IOP, EE, GIF/VIF, scheduler) and record the baseline.
-2. **Generalize** verified handlers that are gated on guest addresses, with regression tests and comparisons kept passing.
-3. **GIF DMA chain mode** as a general DMA chain walker shared with VIF1, the current blocker ([frame GIF plan](plans/graphics/FRAME_GIF_PLAN.md)).
-4. **Movie decoding:** plan IPU MPEG decoding in `docs/plans/video/` before implementing it.
-5. **Then:** title screen and demo fight, VU microprograms, audio output, memory card image, host controller input.
+1. **Native services plan:** every RPC service the game uses, the requests it sends and the results it must get.
+2. **Replace the emulated IOP service by service:** disc and files from the ISO, controller, memory card, then sound and CRI ADX audio.
+3. **GPU rendering:** integrate paraLLEl-GS and match it against the CPU renderer on the startup frames.
+4. **GIF DMA chain mode** (current blocker), with the GIF channel models consolidated into one.
+5. **Opening movie:** plan native Sofdec (SFD) playback, then implement it.
 
 Resume details: [active-pass handoff](progress/ACTIVE_PASS.md). Numeric snapshot: [latest.json](progress/latest.json); dashboard scopes: [components.json](progress/components.json).
 

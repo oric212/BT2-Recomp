@@ -2,50 +2,38 @@
 
 Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21441, running the original game logic natively on Windows 10/11 x64. Build with Visual Studio 2022, MSVC, C++20 and CMake.
 
-**Goal:** a lightweight native Windows x64 port, not a general-purpose PS2 emulator. The game's EE code is statically recompiled to C++; a small runtime supplies only the PS2 kernel, hardware and device behavior BT2 actually uses. The first major gameplay goal is a playable versus battle.
+**Goal:** a native Windows x64 port with a minimal compatibility layer, not a PS2 emulator. The game's EE code is statically recompiled to C++. Underneath it, the PS2 hardware is replaced by native services rather than emulated: host file access for the disc, native audio for the sound modules, host input for the controller, host storage for the memory card, and GPU rendering through paraLLEl-GS. The first major gameplay goal is a playable versus battle.
+
+## Direction (decided 2026-10-11)
+
+| Area | Decision |
+| --- | --- |
+| Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. |
+| IOP side | Replace the emulated IOP with **native RPC services**: answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Retire IOP module execution and the SPU2, SIO2 and CDVD hardware models once each service is replaced. |
+| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU rasterizer stays only as a test reference until the GPU path matches it. VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
+| Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
 
 ## Architecture rules
 
-### Scope
+### Minimal layer
 
-- **Static recompilation stays the core.** EE code runs as generated native C++. Do not add an EE interpreter, a dynamic recompiler or a full-system emulation layer.
-- **Implement what BT2 requires.** Add kernel services, hardware registers and device behavior when BT2 reaches them, with evidence. Do not implement unreached PS2 features.
-- **One implementation per subsystem.** Do not keep parallel or duplicate models of the same hardware (for example, two DMA engines or two GS paths). Extend the existing one.
-- **No needless abstraction.** Prefer the simplest direct native code that meets the demonstrated requirement. Introduce interfaces or layers only when a second real user exists.
+- **Native service over emulation.** Where the game asks a PS2 service for a result (a file, a sound, pad state, card data), produce that result natively. Emulate hardware only where the game itself drives it directly and no service boundary exists (EE DMA to the GS, VIF packets, the EE kernel).
+- **Choose the highest stable boundary.** Prefer the SIF RPC service or the EE library call over the hardware registers below it. Use the boundary that BT2's evidence shows clearly.
+- **Implement what BT2 requires.** Add behavior only when BT2 reaches it, in the simplest native form. Do not implement unreached PS2 features.
+- **One implementation per behavior.** Merge duplicated models (GIF channel 2 has four today, VIF1 two). Generalize verified special cases instead of adding handlers gated on guest PCs, stack offsets or call counts.
+- **Remove what a replacement makes obsolete**, once its tests and comparisons pass.
 
-### General behavior over workarounds
+### Correctness
 
-- **Model hardware behavior, not call sites.** Prefer a general implementation of verified PS2 behavior (a DMA channel mode, a register, a kernel service) over a handler gated on a guest PC, stack offset or call count. Address-specific gates are acceptable only as a temporary checked boundary with evidence, and should be generalized when the same behavior is reached again.
-- **Preserve semantics.** Keep DMA ordering and completion, interrupt delivery order, thread scheduling and synchronization, and memory semantics (including uncached and scratchpad accesses) consistent with the hardware and the original game's observed behavior.
-- **Fail explicitly.** Unsupported behavior stops at a checked boundary that names what was reached. Never return a fabricated success value to keep the game running.
+- **Game-visible results must match.** A native service must leave the same results in EE memory as the original (file bytes, RPC replies, structures the game reads). Compare EE-visible state and presented frames with PCSX2 captures of the original game.
+- **Fail explicitly.** Unsupported requests stop at a checked boundary that names them; never return fabricated success.
+- **Tests:** a unit test for each service request type and each generalized behavior. Comparisons of IOP internals are retired with the IOP code they checked; record which.
+- **Status vocabulary** of [PROG.md](../PROG.md): ✅ Verified, 🟢 Operational, 🔧 Incomplete, ⛔ Blocking, ⏳ Not Reached. Never infer gameplay performance from startup progress or a first-frame milestone.
 
-### Correctness over shortcuts
+### Performance
 
-- Validate every change with the existing tests and the original-game comparisons (`tools/capture_ee/verify_*.py`, phase stops).
-- Add a regression test for each generalized behavior: unit tests for the hardware rule and, where possible, a comparison against a PCSX2 capture of the original game.
-- Keep the status vocabulary of [PROG.md](../PROG.md): ✅ Verified, 🟢 Operational, 🔧 Incomplete, ⛔ Blocking, ⏳ Not Reached. Operational or untested behavior is never reported as verified.
-- Never infer gameplay performance from startup progress, function counts or a first-frame milestone. Performance claims need a measurement of a representative workload.
-
-## Performance and profiling
-
-### Where to look first
-
-1. **Software GS renderer** (`runtime/gs/`): the largest measured cost. On the 650-frame startup run it took 92% of run time before the last optimizations and about 75% after them (Release).
-2. **IOP execution engine** (`runtime/iop/core/`): IOP modules are already translated to C++, but every translated instruction calls `tick()` (step counter, budget check, executing pc). About 10.9 million IOP instructions run in the startup workload; measure what this per-instruction overhead and the IOP time model cost.
-
-### Profiling criteria
-
-- **Release builds only** (`run_startup_probe.py --config Release`); Debug timings are not representative.
-- **Representative workloads:** the full startup run (boot to the current boundary, 650 frames) now; a scene with real 3D rendering and a battle once reached. Record the workload, frame count, build and commit with every measurement.
-- **Per-subsystem breakdown:** measure EE generated code, GS rasterization, GIF/VIF processing, IOP execution, the scheduler and VBlank delivery, and probe/report overhead separately (sampling profiler plus subsystem timers).
-- **Decide from data.** Optimize or redesign a subsystem only when it dominates a representative workload, and record the before/after measurement in the monthly history. Report results as time per frame or share of run time, never as projected gameplay performance.
-
-### Redesigns that need profiling evidence first
-
-- **GPU-backed GS rendering**, with [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference) as the architecture reference. Consider it only if the optimized CPU rasterizer still dominates representative gameplay frames.
-- **Leaner native IOP execution** for hot paths, for example removing per-instruction bookkeeping from verified hot loops. Consider it only if IOP execution is a measured bottleneck.
-
-Neither is started on speculation, and neither replaces working verified code without passing the same tests and comparisons.
+- Measure Release builds on representative workloads before optimizing. The CPU GS rasterizer took about 75% of the 650-frame startup run; the GPU path replaces it. IOP execution (about 10.9 million instructions per startup) disappears with the native services.
+- Record before/after measurements in the monthly history; report time per frame or share of run time, never projected gameplay performance.
 
 ## Milestones
 
@@ -55,36 +43,31 @@ Neither is started on speculation, and neither replaces working verified code wi
 | PS2Recomp generation and integration | ✅ Verified | Provisional map, local generation, compile/link/execute |
 | Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames in the live window |
-| Opening movie | ⛔ Blocking | GIF DMA chain mode, then IPU MPEG decoding |
+| Opening movie | ⛔ Blocking | GIF DMA chain mode, then Sofdec playback |
 | Title screen, demo fight, menus | ⏳ Not Reached | |
 | Character selection and battle loading | ⏳ Not Reached | |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal |
 | Audio and a full match | ⏳ Not Reached | |
 
-## Current next step: change of strategy
+## Current next step
 
-Until now each pass followed the next blocker and often added a narrowly gated handler for it. Startup is complete and the game is entering scene code (movie, title, gameplay), where the same hardware behavior will be reached many times. The next work therefore shifts from per-blocker workarounds to general, measured implementations:
+Each step keeps the game running to the current checkpoint (650 frames, then the GIF stop) with game-visible results unchanged.
 
-1. **Profile the current workload.** Measure the 650-frame Release startup run per subsystem (GS, IOP, EE, GIF/VIF, scheduler, probe overhead) and record the baseline in the monthly history.
-2. **Audit the address-gated handlers.** List the handlers in `runtime/ee/` and `runtime/iop/` that are gated on a guest PC, stack offset or call count. Mark which describe general hardware behavior already verified at more than one site. Generalize those first, each with a regression test and the existing comparisons kept passing.
-3. **Implement GIF DMA chain mode generally.** Implement the current blocker as the general DMA source-chain walker (tag IDs, ordering, QWC/TADR/MADR updates, completion and interrupts), shared with VIF1 chains instead of a separate path, with unit tests per tag type. Then continue toward the movie.
-4. **Plan video decoding** in `docs/plans/video/` before implementing IPU MPEG decoding.
-
-Steps 1 and 2 are bounded: they change no game-visible behavior and are not an architecture rewrite. Any redesign they suggest needs its own plan and the profiling evidence above.
+1. **Native services plan.** Write `docs/plans/iop/NATIVE_SERVICES_PLAN.md`: every RPC service the game binds, the requests it actually sends (from the existing reports and captures), the EE-visible result each must produce, the replacement order and the comparisons that stay valid.
+2. **Replace the services one at a time**, simplest first: disc and file reads from the ISO, then the controller (host input, with the existing pad script for tests), the memory card (host files), then SOUNDS, the sound driver and CRI ADX (native ADX decoding and sample playback). Remove the IOP module execution and hardware models each replacement makes obsolete.
+3. **GPU rendering plan and integration.** Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`, then build paraLLEl-GS (Vulkan, Granite) with MSVC, feed it the existing GIF/VIF1 output and privileged display registers, and present its scanout in the window. Match it against the CPU renderer on the 650 startup frames.
+4. **GIF DMA chain mode**, the current blocker: consolidate the GIF channel-2 models into one and add chain mode by sharing the VIF1 chain walker.
+5. **Opening movie:** write `docs/plans/video/SOFDEC_PLAN.md` (native SFD video plus ADX audio) before implementing it.
 
 ## Working method
 
 ### What "continue" means
 
-A plain "continue" (including spelling/case variants) runs a goal-driven pass, as AGENTS.md defines. Work through "Current next step" above, in order, toward the next functional milestone. Each item follows: measure or inspect → gather evidence → implement the general behavior under the architecture rules → regression tests and original comparisons → Release rerun → next item. Finishing one item is not the end of a pass; advance to the next one.
+A plain "continue" (including spelling/case variants) runs a goal-driven pass, as AGENTS.md defines. Work through "Current next step" above, in order, toward the next functional milestone. Each item follows: inspect → gather evidence → implement the native replacement or general behavior → tests and original comparisons → Release rerun → next item. Finishing one item is not the end of a pass; advance to the next one.
 
-When execution reaches a new boundary, it is input to the plan, not a target for a narrow fix: identify the hardware or kernel behavior behind it and implement that generally at subsystem scale. If the boundary opens a new major subsystem, write its plan first (in `docs/plans/<subsystem>/`) and continue when it is actionable. Stop only when required information or access is unavailable, or when the next change would be speculative or would change architecture without profiling evidence.
+A new execution boundary is input to the plan: decide whether it belongs behind a native service or needs general EE-side behavior, and implement it accordingly. If it opens a new major subsystem, write its plan first (in `docs/plans/<subsystem>/`) and continue when it is actionable. Stop only when required information or access is unavailable, or when the next change would be speculative.
 
-When more evidence is needed, use local captures, the tooling, [the reference architecture](../reference/REFERENCE_ARCHITECTURE.md) and its linked repositories. Adapt reference behavior to BT2's observed behavior; never copy implementations 1:1, game-specific patches, symbols or unsupported success defaults.
-
-### Work at subsystem scale
-
-Implement the bounded general behavior a subsystem needs, shared by every caller, rather than one handler per blocker. Apply the architecture rules above to every new implementation.
+When more evidence is needed, use local captures, the tooling, [the reference architecture](../reference/REFERENCE_ARCHITECTURE.md) and its linked repositories. Adapt reference behavior to BT2's observed behavior; never copy implementations 1:1, decompiled game code, game-specific patches or unsupported success defaults.
 
 ### Evidence and content rules
 

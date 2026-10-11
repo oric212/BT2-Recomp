@@ -1,44 +1,52 @@
 # Resume handoff
 
-Updated: 2026-10-09. **No pass in progress.**
+Updated: 2026-10-11. **No pass in progress.**
 
 The verified checkpoint is **1254 entered / 1243 completed** (650 frames). The run stops at a read of GIF DMA channel 2 TADR (`0x1000A030`, pc `0x312084`). History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../guides/RUNTIME_LAYOUT.md).
 
 ## Goal of the next pass
 
-Shrink the PS2 layer before extending it: one general implementation of each behavior BT2 uses, built by simplifying duplicated logic, generalizing verified special cases and reusing existing code, not by adding blocker-specific patches. Then reach the opening movie on top of that. The order follows "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step-change-of-strategy): profiling → handler audit → GIF DMA investigation. Every change needs tests and passing PCSX2 comparisons; no speculative features or rewrites.
+Replace emulated PS2 hardware with a minimal native layer under the recompiled game code (decided 2026-10-11): native RPC services instead of the emulated IOP, and GPU rendering through paraLLEl-GS. Follow "Current next step" in [the implementation plan](../project/IMPLEMENTATION_PLAN.md#current-next-step). Every replacement keeps the game running to the current checkpoint with game-visible results unchanged, proven by tests and PCSX2 comparisons.
 
-### 1. Profiling baseline (Release)
+### 1. Native services plan
 
-- **Reuse** the probe report's counters (GS pixels, sprites and triangles, VIF1 transfers, IOP instructions `native_iop_steps`, EE calls, VBlanks). The earlier GS figures (92% of the run before optimization, about 75% after) came from a temporary in-process sampler that is not in the repository.
-- **Add only** per-subsystem wall time (GS rasterization, GIF/VIF, IOP execution, scheduler/VBlank, report writing), behind an opt-in switch and outside `ps2_runtime.h`.
-- **Record** the baseline in the monthly history (workload: default startup run, 650 frames; build; commit; total time; share per subsystem), repeated for stability. No optimization in this step.
+Write `docs/plans/iop/NATIVE_SERVICES_PLAN.md`. For each service the game binds, record the requests it sends at the current checkpoint and the EE-visible results each must produce:
 
-### 2. Handler audit and consolidation
+| Service | Reached use (2026-10-08 report) |
+| --- | --- |
+| Disc commands (NCMD/SCMD) | 186 sector reads, 6 disc RPC calls, 185 SCMD calls |
+| FILEIO and IOP heap | 6 file calls (`DBZP.BIN` open/seek/read/close), 9 heap calls |
+| Controller (DBCMAN) | 4 binds, 4 calls, then per-field port requests |
+| Memory card (MCSERV) | 1 bind, 2 calls, 77 queries (absent card) |
+| SOUNDS / sound driver (SDRDRV) | 6 and 3 calls; sound block and bank uploads |
+| CRI ADX (`CRI_ADXI`) | 43 calls, 2,070 stream transfers |
 
-- **List** handlers in `runtime/ee/` and `runtime/iop/` gated on a guest PC, stack offset or call count, for example the startup GIF paths at `0x28B96C`/`0x28B978`/`0x28B98C` and `0x3101A8`/`0x310148`/`0x310194` (`ps2_runtime_memory.cpp`) and the phase-locked thread syscalls (`ps2_runtime_syscalls.cpp`).
-- **Consolidate duplicates.** GIF channel 2 has four separate models: `gif_dma` and `clear_repeat_gif` (`GifDmaStaging`), `texture_gif` (`TextureGifStartup`) and `frame_gif`. VIF1 has two (`vif_startup`, `frame_vif1`). Fold the verified behavior of each into one model.
-- **Generalize** only behavior verified at more than one site. Behavior understood at one site, or not understood, stays a checked boundary, with the reason recorded.
-- **Prove each change** with a regression test and unchanged comparisons before removing the old path. Record in the monthly history what was removed, generalized or kept.
+Sources: existing reports, `runtime/iop/services/` and `runtime/iop/ee_bridge/` (the current request validation), the per-service plans in `docs/plans/`, and [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) (`plat_sys.c`, `plat_stub.c`, `plat_mc.c`, `snd_se.c`, `snd_adx.c`). The plan also lists the replacement order and which comparisons stay valid; comparisons of IOP internals are retired with the code they checked.
 
-### 3. GIF DMA investigation (current blocker)
+### 2. Replace services one at a time
 
-- **Evidence first.** The routine at `0x312060` reads TADR (`lw` at `0x312084`), rewrites it unless it reads `0xFFFFFFFF`, then reads CHCR, clears its MOD bits (mask `0xFFFFFFF3`) and zeroes QWC. Follow it to its channel start and record the final CHCR (MOD, TTE, TIE), TADR, MADR/QWC and, if chained, the tag chain in RAM (IDs, QWC, addresses, tag IRQ bits). Capture the original at that point if ordering or completion is unclear. Implement chain mode only if that start uses it.
-- **Extend the consolidated GIF model from step 2.** For chain mode, extract the existing VIF1 walker in `frameVif1Start` (refe/cnt/next/ref/refs/end, tag transfer; call/ret and tag IRQs refused) into one walker shared by both channels. GIF differs only in the payload destination (the GS packet path) and tag transfer.
-- **Required behavior:** tag IDs as reached (call/ret only if reached); PATH3 after the preceding VIF1 PATH2 work; QWC/MADR/TADR left as the hardware leaves them; completion (STR clear, D_STAT bit); interrupts (tag IRQ, TIE, CIS) only if enabled. Scratchpad-sourced data (bit 31, currently masked off by `0x7FFFFFF0`) only if the chain uses it.
-- **Tests:** a unit test per reached tag type, register checks after each transfer, VIF1's tests passing through the shared walker, and a comparison with an original capture before the transfer counts as verified.
-- **References:** PCSX2 `Dmac.cpp`/`Gif.cpp`; PS2Recomp's GIF arbiter for path ordering; [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference) for the GS side of the packets.
+Disc and file reads from the ISO first, then the controller (host input, keeping the pad script for tests), the memory card (host files), then SOUNDS, the sound driver and CRI ADX (native ADX decoding and sample playback). After each one: the game reaches the same checkpoint, the EE-visible comparisons pass, a unit test covers each request type, and the IOP code it made obsolete is removed.
 
-### 4. Opening movie
+### 3. GPU rendering
 
-IPU MPEG-2 decoding needs `docs/plans/video/IPU_PLAN.md` before any implementation.
+Write `docs/plans/graphics/GPU_RENDERING_PLAN.md`: build paraLLEl-GS (snapshot `cc6184af`, Vulkan, Granite) with MSVC, feed it the existing GIF/VIF1 output (`gif_transfer`) and the privileged display registers, and present its `vsync` scanout in the live window. Match it against the CPU renderer on the 650 startup frames before switching.
+
+### 4. GIF DMA (current blocker)
+
+- **Evidence first.** The routine at `0x312060` reads TADR (`lw` at `0x312084`), rewrites it unless it reads `0xFFFFFFFF`, then reads CHCR, clears its MOD bits (mask `0xFFFFFFF3`) and zeroes QWC. Follow it to its channel start and record the final CHCR, TADR, MADR/QWC and, if chained, the tag chain.
+- **One GIF model.** GIF channel 2 has four models today: `gif_dma` and `clear_repeat_gif` (`GifDmaStaging`), `texture_gif` (`TextureGifStartup`) and `frame_gif`. Consolidate them, then add chain mode by sharing the VIF1 chain walker in `frameVif1Start` (refe/cnt/next/ref/refs/end, tag transfer; call/ret and tag IRQs refused).
+- **Tests:** a unit test per reached tag type, register checks after each transfer, VIF1 tests passing through the shared walker, and a comparison with an original capture.
+
+### 5. Opening movie
+
+The movie is CRI Sofdec (`ZS2USOP.SFD`). Write `docs/plans/video/SOFDEC_PLAN.md` (native video decoding plus ADX audio, no IPU emulation) before implementing it.
 
 ## Pass completion
 
-1. **Debug gate:** ALL and `bt2-entry-probe` build, **18/18 CTests**, the Python suites (capture, recompilation, IOP, Ghidra) pass, and the sound-worker diagnostic stays at 302/295.
-2. **Original comparisons:** **42 of 46 pass**: 23 on the full run, 12 at the phase stops (`BT2_PHASE_STOP` = `311860`, `310518`, `28b218`, `24b81c`) and 7 with their own inputs (below). Known failures: `cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization`. No new failures; any change to these needs a recorded reason.
+1. **Debug gate:** ALL and `bt2-entry-probe` build, all CTests and the Python suites pass, and the sound-worker diagnostic is unchanged (or retired with the code it checks, with the reason recorded).
+2. **Original comparisons:** currently **42 of 46 pass**: 23 on the full run, 12 at the phase stops (`BT2_PHASE_STOP` = `311860`, `310518`, `28b218`, `24b81c`) and 7 with their own inputs. Known failures: `cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization`. No new failures, except comparisons retired with replaced IOP code, each recorded with its reason.
 3. **Release rerun:** same checkpoint as Debug, with a frame render checked visually.
-4. **Docs:** PROG.md, the monthly history (baseline, audit, results), this handoff with the next actionable step, `components.json` if a status changed, `sync_progress.py --check`, links resolving, no mojibake.
+4. **Docs:** PROG.md, the monthly history, this handoff with the next actionable step, `components.json` if a status changed, `sync_progress.py --check`, links resolving, no mojibake.
 5. **Commit and push**, with no attribution lines.
 
 The full gate is a scratch script, not a tracked tool; its steps are this list.
@@ -51,7 +59,7 @@ Run these with their own inputs (`$C=work/pcsx2-capture`, outputs to a scratch f
 
 - **After the movie:** the title screen waits for Start; without input the game runs a CPU-vs-CPU demo fight (user report).
 - **Frame field:** handler-delivered VBlanks while main sleeps do not toggle `display_field`. Check against an original capture if a field-dependent path diverges.
-- **Memory card, host input (XInput/SDL, keyboard), 16:9:** unchanged.
+- **Host input (XInput/SDL, keyboard), 16:9:** unchanged.
 - **Map-gap iterations** rebuild everything, because the generated declaration header changes.
 - **Tests:** `tests/bootstrap_tests.cpp` could be split by subsystem.
 - **Loop and gate tooling:** the selection-loop driver, receipt refresh and full gate still live in scratch scripts; move them into `tools/`.
