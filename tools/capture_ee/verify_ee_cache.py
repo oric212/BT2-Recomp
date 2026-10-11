@@ -31,7 +31,11 @@ def verify(root,native):
     if r.get('cri_stream_transfers',0):
         # Later helper fills reuse this exact 0x880-byte stream buffer; its owned IOP copy must match.
         iop=Path(str(native)+'.iop.bin').read_bytes()
-        require(iop[0x14FD40:0x14FD40+0x880]==owned[0x365BC0:0x366440],'Transferred stream buffer differs')
+        sent,held=iop[0x14FD40:0x14FD40+0x880],owned[0x365BC0:0x366440]
+        # Either the EE has re-uploaded the buffer, or the stop falls after the VBlank echo returned it
+        # (identical except the sequence counter, advanced by one) and before the next upload.
+        echoed=sent[:-4]==held[:-4] and int.from_bytes(held[-4:],'little')==int.from_bytes(sent[-4:],'little')+1
+        require(sent==held or echoed,'Transferred stream buffer differs')
     else:require(owned[0x365BC0:0x366440]==ee[0x365BC0:0x366440],'Coherent cache range differs')
     print('Verified both indexed ways, original caller return and coherent native range; physical cache timing remains unvalidated.')
 if __name__=='__main__':

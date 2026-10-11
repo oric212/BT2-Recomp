@@ -145,6 +145,26 @@ int main() {
         check(gs.frame_sprites==2 && gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==(0x80000000u|(index*8)));
     }
     {
+        // Depth test: a sprite writes Z 100 (Z32 at page 32); GEQUAL passes with Z 100, GREATER fails with
+        // Z 100 and passes with Z 101, NEVER draws nothing; GEQUAL over unwritten depth is refused.
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        auto draw=[&](unsigned ztst,std::uint32_t z,std::uint32_t color){
+            t.clear();q(0x1000000000008007ULL,0xE); // NLOOP 7, EOP, A+D.
+            q(0x10000,0x4C);q(0x20,0x4E);q(0,0x18);q(0x0003000000030000ULL,0x40); // FRAME, ZBUF Z32 writes, SCISSOR 0..3.
+            q(0x10000|(std::uint64_t(ztst)<<17),0x47);q(color,0x01);q(6,0x00);       // TEST ZTE, RGBAQ, PRIM sprite.
+            q(0x1000000000008002ULL,0xE);q(0x0000000000000000ULL|(std::uint64_t(z)<<32),0x05);q(0x0000000000200020ULL|(std::uint64_t(z)<<32),0x05);
+            return t;};
+        GsCommandSink gs;
+        gs.transfer(draw(1,100,0x11));check(gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==0x11);
+        gs.transfer(draw(2,100,0x22));check(gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==0x22);
+        gs.transfer(draw(3,100,0x33));check(gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==0x22);
+        gs.transfer(draw(3,101,0x44));check(gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==0x44);
+        gs.transfer(draw(0,500,0x55));check(gs.word(GsCommandSink::ct32Word(0,1,1,1)).value==0x44);
+        GsCommandSink fresh;bool refused=false;try{fresh.transfer(draw(2,1,0x66));}catch(const std::runtime_error&){refused=true;}
+        check(refused);
+    }
+    {
         // Display decoding for presentation: DISPFB FBW 1 (64 pixels), DISPLAY 64x2; one written pixel
         // becomes BGRA, the rest are reported as unwritten; an unsupported display PSM is refused.
         GsCommandSink gs;gs.seedForTest(GsCommandSink::ct32Word(0,1,1,0),0x00332211);

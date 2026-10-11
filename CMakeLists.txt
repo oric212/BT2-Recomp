@@ -44,6 +44,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/gs/cpu/gs_command_sink.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
+    runtime/ee/dma_chain.cpp
     runtime/ee/ps2_runtime_services.cpp
     runtime/ee/ps2_runtime_syscalls.cpp
     runtime/ee/ipu_device.cpp)
@@ -83,6 +84,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-native-services-tests runtime/tests/native_services_tests.cpp)
     bt2_target_defaults(bt2-native-services-tests)
     add_test(NAME native-services COMMAND bt2-native-services-tests)
+    add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
+    bt2_target_defaults(bt2-dma-chain-tests)
+    add_test(NAME dma-chain COMMAND bt2-dma-chain-tests)
     # GPU GS through paraLLEl-GS (docs/plans/graphics/GPU_RENDERING_PLAN.md); fetch it with
     # tools/graphics/gpu/fetch_parallel_gs.py. Off until it matches the CPU model.
     option(BT2_GPU_GS "Build the paraLLEl-GS backend and its tests" OFF)

@@ -6,6 +6,7 @@
 
 struct GsCommandSink::Draw {
     std::uint64_t frame=0,texture0=0;unsigned fbp=0,width=0,psm=0,zbp=0,zpsm=0,ox=0,oy=0,tw=0,th=0,tfx=0,wms=0,wmt=0,sa=0,sb=0,sc=0,sd=0;
+    unsigned ztst=1; // 0 NEVER, 1 ALWAYS (or ZTE off), 2 GEQUAL, 3 GREATER.
     bool zmsk=false,tme=false,abe=false,tcc=false,linear=false,colclamp=false,pabe_on=false;int fix=0;
     int sx0=0,sy0=0,sx1=0,sy1=0; // Scissor and buffer limits: pixels in [sx0,sx1) x [sy0,sy1).
     std::uint32_t mask=0,zmask=0;
@@ -232,17 +233,25 @@ inline std::uint32_t GsCommandSink::texel(const Draw& d,int u,int v) const {
 }
 
 GsCommandSink::Draw GsCommandSink::prepare(std::uint64_t prim) const {
-    auto reject=[](){throw std::runtime_error("Unsupported GS drawing state");};
+    auto reject=[](const char* what){throw std::runtime_error(std::string("Unsupported GS drawing state: ")+what);};
     // TME (with FST UVs) and ABE are supported; FGE/AA1 are not.
     Draw d;d.tme=(prim>>4)&1;d.abe=(prim>>6)&1;const bool fst=(prim>>8)&1;
-    if((prim&0xA0) || (d.tme && !fst))reject();
+    if(prim&0x20)reject("fogging (FGE)");
+    if(prim&0x80)reject("antialiasing (AA1)");
+    if(d.tme && !fst)reject("STQ texture coordinates (FST 0)");
     const unsigned c=unsigned((prim>>9)&1);
     d.frame=state.regs[0x4C+c];const auto zbuf=state.regs[0x4E+c],offset=state.regs[0x18+c],scissor=state.regs[0x40+c],test=state.regs[0x47+c];
     d.fbp=unsigned(d.frame&511);d.width=unsigned((d.frame>>16)&63);d.psm=unsigned((d.frame>>24)&63);
     d.zbp=unsigned(zbuf&511);d.zpsm=unsigned((zbuf>>24)&15);d.zmsk=(zbuf>>32)&1;
     // Alpha and destination-alpha tests off; depth test off or ALWAYS; no dither or FBA.
-    if(!d.width || (d.psm!=0 && d.psm!=1) || (test&1) || (test&0x4000) || ((test>>16)&1 && ((test>>17)&3)!=1) || (!d.zmsk && d.zpsm!=0 && d.zpsm!=1)
-        || (state.regs[0x45]&1) || (state.regs[0x4A+c]&1))reject();
+    if(!d.width)reject("frame width 0");
+    if(d.psm!=0 && d.psm!=1)reject("frame pixel format");
+    if(test&1)reject("alpha test");
+    if(test&0x4000)reject("destination alpha test");
+    d.ztst=(test>>16)&1?unsigned((test>>17)&3):1u;
+    if((!d.zmsk || d.ztst>=2) && d.zpsm!=0 && d.zpsm!=1)reject("depth buffer format");
+    if(state.regs[0x45]&1)reject("dithering");
+    if(state.regs[0x4A+c]&1)reject("FBA");
     d.ox=unsigned(offset&0xFFFF);d.oy=unsigned((offset>>32)&0xFFFF);
     d.sx0=int(scissor&2047);d.sy0=int((scissor>>32)&2047);
     d.sx1=std::min(int((scissor>>16)&2047)+1,int(d.width*64));d.sy1=std::min(int((scissor>>48)&2047)+1,2048);
@@ -252,12 +261,18 @@ GsCommandSink::Draw GsCommandSink::prepare(std::uint64_t prim) const {
     d.tw=unsigned((d.texture0>>26)&15);d.th=unsigned((d.texture0>>30)&15);d.tfx=unsigned((d.texture0>>35)&3);
     d.tbp=unsigned(d.texture0&0x3FFF);d.tbw=unsigned((d.texture0>>14)&63);d.csa=unsigned((d.texture0>>56)&31);d.t8=((d.texture0>>20)&63)==0x13;
     d.tcc=(d.texture0>>34)&1;d.linear=(tex1>>5)&1;d.wms=unsigned(clamp&3);d.wmt=unsigned((clamp>>2)&3);
-    if(d.tme && ((((d.texture0>>20)&63)!=0x14 && ((d.texture0>>20)&63)!=0x13) || d.tw>10 || d.th>10 || d.tfx>1 || ((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u) || d.wms>1 || d.wmt>1))reject();
+    if(d.tme) {
+        if(((d.texture0>>20)&63)!=0x14 && ((d.texture0>>20)&63)!=0x13)reject("texture pixel format");
+        if(d.tw>10 || d.th>10)reject("texture size");
+        if(d.tfx>1)reject("texture function HIGHLIGHT/HIGHLIGHT2");
+        if(((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u))reject("mipmapping or mixed filters");
+        if(d.wms>1 || d.wmt>1)reject("REGION texture wrap");
+    }
     // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
     const auto alpha=state.regs[0x42+c];
     d.sa=unsigned(alpha&3);d.sb=unsigned((alpha>>2)&3);d.sc=unsigned((alpha>>4)&3);d.sd=unsigned((alpha>>6)&3);
     d.fix=int((alpha>>32)&255);d.colclamp=state.regs[0x46]&1;d.pabe_on=state.regs[0x49]&1;
-    if(d.abe && (d.sa==3 || d.sb==3 || d.sc==3 || d.sd==3))reject();
+    if(d.abe && (d.sa==3 || d.sb==3 || d.sc==3 || d.sd==3))reject("reserved blend selector");
     d.mask=std::uint32_t(d.frame>>32)|(d.psm==1?0xFF000000u:0u);d.zmask=d.zpsm==1?0xFFFFFFu:0xFFFFFFFFu;
     return d;
 }
@@ -274,6 +289,14 @@ inline GsCommandSink::Rgba GsCommandSink::sample(const Draw& d,int u,int v) cons
 }
 
 void GsCommandSink::plot(const Draw& d,int px,int py,Rgba vertex,int u,int v,std::uint32_t z) {
+    // Depth test before any write: NEVER draws nothing; GEQUAL/GREATER compare with the stored Z.
+    if(d.ztst==0)return;
+    if(d.ztst>=2) {
+        const auto zw=word(address(d.zbp,d.width,unsigned(px),unsigned(py),true));
+        if((zw.known&d.zmask)!=d.zmask)throw std::runtime_error("GS depth test reads unwritten depth buffer");
+        const auto stored=zw.value&d.zmask,incoming=z&d.zmask;
+        if(d.ztst==2?incoming<stored:incoming<=stored)return;
+    }
     Rgba s=vertex;
     if(d.tme) {
         const auto t=sample(d,u,v);
@@ -310,7 +333,7 @@ void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
     // A sprite reaching past the scissored buffer is refused, as before (not clipped silently).
     const auto scissor=state.regs[0x40+unsigned((prim>>9)&1)];
     if(std::min(int((scissor>>16)&2047)+1,x1)>int(d.width*64) || std::min(int((scissor>>48)&2047)+1,y1)>2048)
-        throw std::runtime_error("Unsupported GS drawing state");
+        throw std::runtime_error("Unsupported GS drawing state: sprite beyond the frame buffer");
     x0=std::max(x0,d.sx0);y0=std::max(y0,d.sy0);x1=std::min(x1,d.sx1);y1=std::min(y1,d.sy1);
     const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
     const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);

@@ -29,14 +29,14 @@ BT2 Recomp aims to run the original PS2 game logic natively on Windows 10/11 usi
 | First presented frame | ✅ Verified — 650 frames shown in a live window |
 | Controller check | ✅ Verified — passed with the native controller service |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
-| Opening movie | ⛔ Blocking — decoder set up; GIF DMA chain mode stops the run before the first movie frame |
+| Opening movie | ⛔ Blocking — GIF chain mode works; the first ADX stream commands need replies |
 | Title screen | ⏳ Not Reached — waits for Start |
 | Demo fight (no input) | ⏳ Not Reached |
 | Gameplay (menus, versus battle) | ⏳ Not Reached |
 | Audio | 🔧 Incomplete — sound requests answered natively; no sound output |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
-**Measured 2026-10-11:** runtime coverage **1,254 EE functions entered / 1,243 completed** in the verified run · static coverage **9,493 EE functions mapped and generated** · verification **15/15 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-11:** runtime coverage **1,259 EE functions entered / 1,249 completed** in the verified run · static coverage **9,494 EE functions mapped and generated** · verification **17/17 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 ### How progress is measured

@@ -43,7 +43,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | PS2Recomp generation and integration | ✅ Verified | Provisional map, local generation, compile/link/execute |
 | Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames in the live window |
-| Opening movie | ⛔ Blocking | GIF DMA chain mode, then Sofdec playback |
+| Opening movie | ⛔ Blocking | CRI ADX stream replies, then Sofdec playback |
 | Title screen, demo fight, menus | ⏳ Not Reached | |
 | Character selection and battle loading | ⏳ Not Reached | |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal |
@@ -56,8 +56,8 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 1. **Native services** — done 2026-10-11: every reached IOP service is answered natively and the emulated IOP is removed ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)).
 2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
 3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default, with the CPU renderer as fallback.
-4. **GIF DMA chain mode**, the current blocker: consolidate the GIF channel-2 models into one and add chain mode by sharing the VIF1 chain walker.
-5. **Opening movie:** write `docs/plans/video/SOFDEC_PLAN.md` (native SFD video plus ADX audio) before implementing it.
+4. **GIF DMA chain mode** — done 2026-10-11: frame-phase GIF channel 2 runs source chains through the DMA chain walker shared with VIF1. Still open: merging the startup GIF channel-2 models into the frame one.
+5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md)), the current blocker: the first CRI ADX stream commands need the IOP's replies; capture them in PCSX2, then follow the movie path.
 
 ## Working method
 

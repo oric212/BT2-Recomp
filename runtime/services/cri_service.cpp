@@ -1,6 +1,8 @@
 #include "ee/ps2_runtime.h"
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <iostream>
 
 // Native CRI ADX service (0x90000200) in place of CRI_ADXI. Replies as the original returned them
 // (traced 2026-10-11); the handles are opaque IOP addresses the EE keeps and passes back.
@@ -60,8 +62,16 @@ void PS2Runtime::nativeCriVblank(const R5900Context* interrupted) {
     for(auto& c:native_cri_channels_) {
         if(!c.pending)continue;
         // A buffer carrying stream commands (ADX playback) needs the IOP's answer: not implemented yet.
-        if(std::any_of(native_iop_ram_.begin()+c.iop,native_iop_ram_.begin()+c.iop+stream_size-4,[](std::uint8_t b){return b!=0;}))
+        if(std::any_of(native_iop_ram_.begin()+c.iop,native_iop_ram_.begin()+c.iop+stream_size-4,[](std::uint8_t b){return b!=0;})) {
+            // Name the refused commands: the nonzero words of the buffer (offset: value).
+            std::cerr<<"CRI stream commands not answered (channel at IOP 0x"<<std::hex<<c.iop<<"):";
+            for(std::size_t k=0;k+4<=stream_size-4;k+=4) {
+                std::uint32_t w;std::memcpy(&w,native_iop_ram_.data()+c.iop+k,4);
+                if(w)std::cerr<<" +"<<k<<":"<<w;
+            }
+            std::cerr<<std::dec<<std::endl;
             throw UnsupportedSyscall(0x14,interrupted->pc);
+        }
         std::copy_n(native_iop_ram_.begin()+c.iop,stream_size,memory_.begin()+c.ee);
         std::uint32_t counter;std::memcpy(&counter,memory_.data()+c.ee+stream_size-4,4);++counter;
         std::memcpy(memory_.data()+c.ee+stream_size-4,&counter,4);

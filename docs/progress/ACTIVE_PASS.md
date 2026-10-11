@@ -6,11 +6,11 @@ The verified checkpoint is **1254 entered / 1243 completed** (650 frames), now o
 
 ## Goal of the next pass
 
-GPU rendering through paraLLEl-GS ([plan](../plans/graphics/GPU_RENDERING_PLAN.md#progress-2026-10-11)). Mirror mode runs: frames 1–29 match the CPU renderer exactly; from frame 30 a few hundred words per frame differ by one step in a color channel.
+Opening movie ([plan](../plans/video/SOFDEC_PLAN.md)). GIF chain mode is done; the run stops at the first CRI ADX stream commands (commands 8 and 5 on object `0x1B5E2C`, IOP buffer `0x191740`).
 
-1. **Needs the user:** a PCSX2 GS dump of the startup frames (through frame ~40), kept in ignored `work/`, to decide which renderer is right for those words.
-2. Then: make the GPU the default (move the verifiers that read CPU VRAM to GPU readback); the automatic CPU fallback waits until the port is done. Presentation and GPU-only mode (2.3 s startup run) are done.
-3. Then GIF DMA chain mode (the current blocker) and the opening movie plan.
+1. Capture the original's reply in PCSX2 (installed locally, with the BIOS the earlier captures used) with a new `capture_ee.py` point after the commands are uploaded and answered.
+2. Implement the replies in the CRI service with tests; run to the next boundary and record the movie path (IPU or library).
+3. GPU rendering: a PCSX2 GS dump still decides the one-step rounding differences (user).
 
 ## Notes
 

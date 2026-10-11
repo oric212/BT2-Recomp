@@ -1,4 +1,5 @@
 #include "ps2_runtime.h"
+#include "dma_chain.h"
 
 // PS2Runtime guest memory access and memory-mapped I/O (DMA, GIF/VIF1, timers, GS privileged registers).
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
@@ -76,6 +77,22 @@ void PS2Runtime::indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
     ++indexed_cache_operations;
 }
 
+void PS2Runtime::frameGifChainStart(std::uint32_t value) {
+    // Source chain (MOD 1, no tag transfer): the data of every tag, in order, is PATH3 GIF data.
+    // GIF packets may continue across tags, so the data is joined and sent as one GS transaction.
+    auto& g=frame_gif;
+    if(g.qwc || (value&0xC0))throw UnsupportedGuestMemory(0x1000A000,4); // Pending MADR data, TTE or TIE.
+    const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),g.tadr,"GIF");
+    std::vector<std::uint8_t> data;
+    for(const auto& c:chain.segments)data.insert(data.end(),c.data.begin(),c.data.end());
+    if(!data.empty())gif_dma.gs.transfer(data);
+    const auto& last=chain.segments.back();
+    std::uint64_t last_tag;std::memcpy(&last_tag,memory_.data()+last.tag,8);
+    g.madr=last.data.empty()?g.madr:std::uint32_t(last.data.data()+last.data.size()-memory_.data());
+    g.tadr=chain.next_tadr;g.bytes+=data.size();g.chcr=(std::uint32_t(last_tag)&0xFFFF0000u)|(value&0xFEFFu);
+    ++g.starts;++g.chain_starts;
+}
+
 void PS2Runtime::frameVif1Start(std::uint32_t value) {
     auto& v=frame_vif1;
     if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
@@ -85,23 +102,12 @@ void PS2Runtime::frameVif1Start(std::uint32_t value) {
     // DIRECT/DIRECTHL hand quadword-aligned PATH2 data to the GS. Any other code, or a DIRECT
     // payload that crosses a tag, stops at the channel start before any effect.
     struct Word {std::uint32_t value,tag;unsigned segment,phase;const std::uint8_t* at;};
-    std::vector<Word> stream;std::uint32_t tag=v.tadr,next_tadr=0;unsigned tags=0,segment=0;
-    for(unsigned n=0;;++n) {
-        if(n>=65536 || tag%16 || tag>=ram_size-16)throw std::runtime_error("VIF1 DMA chain outside RAM");
-        std::uint64_t lo;std::memcpy(&lo,memory_.data()+tag,8);
-        const std::uint32_t qwc=std::uint32_t(lo&0xFFFF),id=std::uint32_t((lo>>28)&7),addr=std::uint32_t((lo>>32)&0x7FFFFFF0);
-        if(lo&0x80000000)throw std::runtime_error("VIF1 DMA tag IRQ is not modelled");
-        if(id==5 || id==6)throw std::runtime_error("VIF1 DMA call/ret tags are not modelled");
-        ++segment;for(unsigned k=2;k<4;++k){std::uint32_t w;std::memcpy(&w,memory_.data()+tag+k*4,4);stream.push_back({w,tag,segment,k,memory_.data()+tag+k*4});}
-        ++tags;
-        if(qwc) {
-            const auto data=(id==1 || id==2 || id==7)?tag+16:addr;
-            if(data>=ram_size || std::size_t(qwc)*16>ram_size-data)throw std::runtime_error("VIF1 DMA data outside RAM");
-            ++segment;
-            for(std::uint32_t k=0;k<qwc*4;++k){std::uint32_t w;std::memcpy(&w,memory_.data()+data+k*4,4);stream.push_back({w,tag,segment,k%4,memory_.data()+data+k*4});}
-        }
-        if(id==0 || id==7) {next_tadr=id==7?tag+16+qwc*16:tag+16;break;}
-        tag=id==1?tag+16+qwc*16:id==2?addr:tag+16;
+    const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),v.tadr,"VIF1");
+    std::vector<Word> stream;const std::uint32_t next_tadr=chain.next_tadr;const unsigned tags=unsigned(chain.segments.size());unsigned segment=0;
+    for(const auto& c:chain.segments) {
+        ++segment;for(unsigned k=2;k<4;++k){std::uint32_t w;std::memcpy(&w,c.tag_words+(k-2)*4,4);stream.push_back({w,c.tag,segment,k,c.tag_words+(k-2)*4});}
+        if(c.data.empty())continue;
+        ++segment;for(std::size_t k=0;k<c.data.size()/4;++k){std::uint32_t w;std::memcpy(&w,c.data.data()+k*4,4);stream.push_back({w,c.tag,segment,unsigned(k%4),c.data.data()+k*4});}
     }
     std::vector<std::span<const std::uint8_t>> directs;std::uint64_t direct_qwords=0;
     try {
@@ -216,14 +222,17 @@ void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32
         if(address==0x10009030) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);v.tadr=value&0x0FFFFFFF;return;}
         frameVif1Start(value);return;
     }
-    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020)) {
+    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
         checkMemory(rdram,0,0);auto& g=frame_gif;
         if(g.chcr&0x100)throw UnsupportedGuestMemory(address,4); // Writes while a transfer runs.
         if(address==0x1000A020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);g.qwc=value;return;}
         if(address==0x1000A010) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);g.madr=value&0x0FFFFFFF;return;}
-        if(value!=0x101 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
+        if(address==0x1000A030) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);g.tadr=value&0x0FFFFFFF;return;}
+        // CHCR bits 16-31 (TAG) are read-only: a read-modify-write start carries the last tag back.
+        if((value&0xFFFF)==0x105) {frameGifChainStart(value);return;}
+        if((value&0xFFFF)!=0x101 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
         gif_dma.gs.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
-        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&~0x100u;++g.starts;return;
+        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;return;
     }
     // Main's H-BLANK delay helpers (0x28C778 start, 0x28C790 wait >= 400 and stop): logical Timer 1.
     if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
@@ -299,9 +308,9 @@ void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32
 
 std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
     if(std::uint32_t value=0;ipuRead(address,value)) {checkMemory(rdram,0,0);return value;}
-    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020)) {
+    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
         checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;
-        return address==0x1000A000?frame_gif.chcr:address==0x1000A010?frame_gif.madr:frame_gif.qwc;
+        return address==0x1000A000?frame_gif.chcr:address==0x1000A010?frame_gif.madr:address==0x1000A020?frame_gif.qwc:frame_gif.tadr;
     }
     // Frame phase: GIF and VIF1 transfers complete synchronously and no VU1 work is started, so
     // channel and path status reads see idle (VIF1_STAT 0x40 and GIF_STAT 0 as captured at the

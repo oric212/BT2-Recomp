@@ -449,13 +449,13 @@ public:
     std::array<std::uint64_t,15> gs_privileged{};unsigned gs_display_writes=0,gs_display_flips=0;
     // Frame-phase GIF DMA (channel 2), normal mode from main RAM; transfers complete synchronously
     // into the general GS path (FRAME_GIF_PLAN.md).
-    struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0;unsigned starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0;
+    struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0,tadr=0;unsigned starts=0,chain_starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0; // Frame GIF: normal and source-chain mode.
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes interpreted. Only the reached codes are supported (FRAME_GIF_PLAN.md).
     struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
         std::uint32_t blocked_code=0,blocked_tag=0,blocked_tadr=0;unsigned unsupported=0;} frame_vif1;
     struct FrameVif1Unsupported {std::uint32_t code,tag;};
-    void frameVif1Start(std::uint32_t value);
+    void frameVif1Start(std::uint32_t value);void frameGifChainStart(std::uint32_t value);
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
     LogicalTimer1 timer1;unsigned timer1_frame_writes=0,timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
