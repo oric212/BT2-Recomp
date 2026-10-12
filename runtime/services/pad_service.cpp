@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include "services/pad_block.h"
 #include <array>
 #include <cstdlib>
@@ -37,7 +37,7 @@ constexpr std::array<std::uint32_t,32> dbc_initial_table={0,0,0,0,0,0,0,0,0,0,0,
 constexpr std::array<std::uint32_t,32> dbc_detected_table={1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,0,0x82640,0,0,0xFFFFFF00,0xFFFFFFFF,0x82290,1,1,1,0,0x82640};
 }
 
-bool PS2Runtime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(r.send_size!=dbc_words*4 || r.recv_size!=dbc_words*4 || r.receive!=r.send_source)throw UnsupportedSyscall(0x77,context->pc);
     auto& state=nativePadState();
     std::array<std::uint32_t,dbc_words> w;for(unsigned n=0;n<dbc_words;++n)w[n]=read32(rdram,r.send_source+n*4);
@@ -76,7 +76,7 @@ bool PS2Runtime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const S
     return true;
 }
 
-NativePadState& PS2Runtime::nativePadState() {
+NativePadState& EeRuntime::nativePadState() {
     if(!native_pad_) {
         native_pad_=std::make_shared<NativePadState>();
         if(const char* script=std::getenv("BT2_PAD_SCRIPT"))native_pad_->pad.script=PadScript::parse(script); // Repeatable input (pad_script.h).
@@ -84,7 +84,7 @@ NativePadState& PS2Runtime::nativePadState() {
     return *native_pad_;
 }
 
-void PS2Runtime::nativePadVblank(std::uint8_t* rdram) {
+void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
     auto& state=nativePadState();
     state.pad.advanceField(); // Scripted input changes at field starts; fields count every VBlank.
     if(!state.open || ++state.fields_open<pad_detection_fields)return;

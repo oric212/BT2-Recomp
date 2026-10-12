@@ -1,4 +1,5 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <iostream>
@@ -24,7 +25,7 @@ void run_probe() {
     context.r[4].low = 0;
     context.r[31].low = return_sentinel;
     const auto before = context.r;
-    PS2Runtime runtime;
+    EeRuntime runtime;
     runtime.expected_return = return_sentinel;
     runtime.registerFunction(probe_address, FUN_0032EEE0_0x32eee0);
     runtime.callFunction(probe_address, context);

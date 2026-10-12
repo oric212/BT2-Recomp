@@ -1,4 +1,4 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -8,7 +8,7 @@
 //   VLQI.dest ft,(is++)   VSQI.dest fs,(it++)   VLQD.dest ft,(--is)   VSQD.dest fs,(--it)
 // COP2 fields: dest bits 24-21 (x, y, z, w), bits 20-16 and 15-11 the two registers, low bits the form.
 
-void PS2Runtime::vu0MemoryInstruction(R5900Context* context,std::uint32_t instruction) {
+void EeRuntime::vu0MemoryInstruction(R5900Context* context,std::uint32_t instruction) {
     const unsigned form=instruction&0x7FF,upper=(instruction>>16)&31,lower=(instruction>>11)&31;
     if(instruction>>25!=0x25 || form<0x37C || form>0x37F) {
         char text[96];std::snprintf(text,sizeof text,"VU0 memory instruction 0x%08X is not modelled (pc 0x%X)",instruction,context->pc);
@@ -34,12 +34,12 @@ void PS2Runtime::vu0MemoryInstruction(R5900Context* context,std::uint32_t instru
 // Once frames are presented no VU microprogram has been started by anything the runtime models (VIF
 // microprogram calls are refused), so both units are idle whoever asks: main, a worker thread or an
 // interrupt handler. Before the first frame only the captured startup sequences are answered.
-bool PS2Runtime::cop2Condition(R5900Context*) {
+bool EeRuntime::cop2Condition(R5900Context*) {
     if(gs_display_flips>=1)return false;
     throw UnsupportedVuStatus();
 }
 
-std::uint32_t PS2Runtime::readVuStatus(R5900Context* context) {
+std::uint32_t EeRuntime::readVuStatus(R5900Context* context) {
     if(clear_repeat_gif && displayResetStep(context,6,0x31062C,624))return clear_repeat_gif->readVuIdle();
     if(gs_display_flips>=1)return 0;
     if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
@@ -50,13 +50,13 @@ std::uint32_t PS2Runtime::readVuStatus(R5900Context* context) {
 // CFC2/CTC2 of the VU0 status flag register. The flags are maintained only inside functions that clear
 // and then read them (the game's clip tests): there every flag-setting instruction between the two is
 // routed through vu0UpdateFlags. CTC2 writes the sticky bits (6-11); the others follow the operations.
-std::uint32_t PS2Runtime::readVuStatusFlag(R5900Context*) {return vu0_status_flags_;}
-void PS2Runtime::writeVuStatusFlag(R5900Context*,std::uint32_t value) {vu0_status_flags_=std::uint16_t((vu0_status_flags_&0x3Fu)|(value&0xFC0u));}
+std::uint32_t EeRuntime::readVuStatusFlag(R5900Context*) {return vu0_status_flags_;}
+void EeRuntime::writeVuStatusFlag(R5900Context*,std::uint32_t value) {vu0_status_flags_=std::uint16_t((vu0_status_flags_&0x3Fu)|(value&0xFC0u));}
 
 // VADD/VSUB with a full or broadcast operand (COP2 special1 functions 0x28, 0x2C, 0x00-0x07): the zero
 // and sign flags over the destination fields, and their sticky copies. Overflow and underflow are not
 // modelled (host IEEE arithmetic); other instructions are refused by name.
-void PS2Runtime::vu0UpdateFlags(R5900Context* context,std::uint32_t instruction) {
+void EeRuntime::vu0UpdateFlags(R5900Context* context,std::uint32_t instruction) {
     const unsigned function=instruction&0x3F,ft=(instruction>>16)&31,fs=(instruction>>11)&31;
     if(instruction>>25!=0x25 || (function!=0x28 && function!=0x2C && function>7)) {
         char text[96];std::snprintf(text,sizeof text,"VU0 flag effects of instruction 0x%08X are not modelled (pc 0x%X)",instruction,context->pc);

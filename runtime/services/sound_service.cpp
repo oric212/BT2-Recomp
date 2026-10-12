@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <array>
 
 // Native sound driver (SDRDRV, 0x80000701) and SOUNDS (0x02000004) services. Replies as the
@@ -20,7 +20,7 @@ constexpr std::uint32_t sounds_init=0x10,sounds_bank=0x20,sounds_unload=0x30,sou
 constexpr std::array<std::uint32_t,16> sounds_status={0,0,0,0,1,1,0,0,0x20010,0,0,0,2,0x1C2440,0,0};
 }
 
-bool PS2Runtime::nativeSoundDriverCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeSoundDriverCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(r.send_size!=64 || r.recv_size!=16)throw UnsupportedSyscall(0x77,context->pc);
     std::array<std::uint32_t,4> reply{};
     switch(r.rpc_number) {
@@ -40,7 +40,7 @@ bool PS2Runtime::nativeSoundDriverCall(std::uint8_t* rdram,R5900Context* context
     context->r[2].low=sound_rpc_calls==1?0x60002:0x60002+sound_rpc_calls;return true;
 }
 
-bool PS2Runtime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(r.send_size!=256 || r.recv_size!=64)throw UnsupportedSyscall(0x77,context->pc);
     switch(r.rpc_number) {
     case sounds_init: break;

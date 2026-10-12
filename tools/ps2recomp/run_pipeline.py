@@ -509,12 +509,14 @@ def main():
         run([sys.executable, str(ROOT / "tools/ps2recomp/generate_kernel.py"), "--payload", "startup"])
         startup_kernel_generation = json.loads((ROOT / "work/kernel-generation-startup/generation.manifest.json").read_text(encoding="utf-8"))
     build = ROOT / "build/probe"
-    run(["cmake", "-S", str(ROOT), "-B", str(build), "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF"), "-DBT2_BUILD_STARTUP_KERNEL_PAYLOAD=" + ("ON" if osd_readback else "OFF")], folder / "configure.log")
-    run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "1", "--", "/nodeReuse:false"], folder / "probe-build.log")
+    # The probe builds with Ninja inside the MSVC environment (tools/build/msvc.py).
+    msvc = [sys.executable, str(ROOT / "tools/build/msvc.py")]
+    run(msvc + ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja Multi-Config", "-DBT2_BUILD_GENERATED_PROBE=ON", "-DBT2_BUILD_KERNEL_PAYLOAD=" + ("ON" if timer_capture else "OFF"), "-DBT2_BUILD_STARTUP_KERNEL_PAYLOAD=" + ("ON" if osd_readback else "OFF")], folder / "configure.log")
+    run(msvc + ["cmake", "--build", str(build), "--config", "Debug"], folder / "probe-build.log")
     run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "generated-bt2-probe|bootstrap-runtime|generated-kernel-handler|generated-buffer-fill|generated-timer-write|generated-copy-handler"], folder / "probe-test.log")
     run([str(build / "Debug/bt2-generated-probe.exe")])
-    result = run(["cmake", "--build", str(build), "--config", "Debug", "--target", "bt2-entry-probe",
-                  "--parallel", "1", "--", "/nodeReuse:false"], folder / "integration-build.log", check=False)
+    result = run(msvc + ["cmake", "--build", str(build), "--config", "Debug", "--target", "bt2-entry-probe"],
+                 folder / "integration-build.log", check=False)
     entry_stop = None
     if result.returncode == 0:
         run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "^generated-entry-probe$"], folder / "entry-test.log")

@@ -50,6 +50,12 @@ python -m unittest discover -s tools/inspect_elf -p "test_*.py"
 
 Field layouts and generic semantics follow the ELF specification: [header](https://gabi.xinuos.com/elf/02-eheader.html), [program headers](https://gabi.xinuos.com/elf/07-pheader.html), and [section headers](https://gabi.xinuos.com/elf/03-sheader.html). Processor-specific values are recorded without guessing their meaning.
 
+## Build environment and gate
+
+- `python tools/build/msvc.py <command...>` runs a command inside the MSVC x64 environment (the variables `vcvars64.bat` sets, plus Visual Studio's bundled Ninja on `PATH`). The probe build uses it: `python tools/build/msvc.py cmake --build build/probe --config Release --target bt2-entry-probe`. It picks the Visual Studio installation that has the C++ tools and bundles Ninja; `BT2_VS_ROOT` overrides the choice.
+- `python tools/gate/run_gate.py --disc <iso>` is the pre-commit gate: Debug build, CTest, the Python suites, the Debug probe runs (full run, sound worker, four phase stops, each with its own report) and the original comparisons, run concurrently. It exits non-zero when a step fails. `--skip-build` reuses the current build. Comparisons that need their own capture inputs or an earlier stop are listed in `NOT_IN_GATE` in the script and are run by hand.
+- `run_startup_probe.py --report PATH` writes the report and its dumps to another path, so several probe runs can execute at once.
+
 ## Pinned PS2Recomp tools
 
 Requires Python 3.10+, Git, CMake 3.21+, and Visual Studio 2022/MSVC x64. Internet access is needed to fetch the open-source sources on the first build. The host's normal CMake build stays independent.

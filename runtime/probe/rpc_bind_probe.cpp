@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <ps2_recompiled_functions.h>
 #include <fstream>
 #include <iostream>
@@ -7,13 +7,13 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) throw std::runtime_error("Usage: bt2-rpc-bind-probe CHECKED_CAPTURE_IMAGE");
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
-        if (!input || input.tellg() != PS2Runtime::ram_size)
+        if (!input || input.tellg() != EeRuntime::ram_size)
             throw std::runtime_error("Invalid checked RPC capture image");
-        std::vector<std::uint8_t> image(PS2Runtime::ram_size);
+        std::vector<std::uint8_t> image(EeRuntime::ram_size);
         input.seekg(0);
         if (!input.read(reinterpret_cast<char*>(image.data()), image.size()))
             throw std::runtime_error("Could not read checked capture image");
-        PS2Runtime runtime;
+        EeRuntime runtime;
         runtime.loadMemory(image);
         // Explicit isolated fixture: reconstruct pending packet from the checked
         // IOP request, before the captured callback's completed EE state.

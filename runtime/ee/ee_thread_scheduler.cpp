@@ -1,4 +1,4 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 #include "ee_execution_owner.h"
 #include <algorithm>
 #include <cstring>
@@ -8,7 +8,7 @@
 // context thread calls, and running ready workers on their retained stacks while main is parked.
 // Main runs on the host stack; workers run as EeExecutionOwner stacks and park on SleepThread.
 
-void PS2Runtime::requireNoPreemption(std::uint32_t selector,const R5900Context* context) const {
+void EeRuntime::requireNoPreemption(std::uint32_t selector,const R5900Context* context) const {
     // Equal priorities keep FIFO order; only a strictly higher-priority ready thread preempts.
     // Main is runnable whenever it is not the caller; workers are parked or ready below it.
     const bool main=current_thread_id==1;
@@ -19,7 +19,7 @@ void PS2Runtime::requireNoPreemption(std::uint32_t selector,const R5900Context* 
             throw UnsupportedSyscall(selector,context->pc);
 }
 
-bool PS2Runtime::mainYieldsToReadyWorkers(std::uint8_t* rdram,R5900Context* context) {
+bool EeRuntime::mainYieldsToReadyWorkers(std::uint8_t* rdram,R5900Context* context) {
     // A syscall from main that readies a worker above main's priority returns only after that worker
     // (and any other ready worker above main) has run until it parks again, as the kernel reschedules
     // on syscall return. Nested scheduling and interrupt context stay refused by the caller's check.
@@ -29,7 +29,7 @@ bool PS2Runtime::mainYieldsToReadyWorkers(std::uint8_t* rdram,R5900Context* cont
     runReadyThreads(rdram,context);++main_yields;return true;
 }
 
-bool PS2Runtime::sleepMainThread(std::uint8_t* rdram,R5900Context* context) {
+bool EeRuntime::sleepMainThread(std::uint8_t* rdram,R5900Context* context) {
     // Main sleeps until a WakeupThread/iWakeupThread names it (a banked wakeup returns at once).
     // While it sleeps, ready workers run at any priority and the idle CPU receives one logical
     // VBLANK_START per field; handlers and workers run in that order, as in deliverVblank.
@@ -46,12 +46,12 @@ bool PS2Runtime::sleepMainThread(std::uint8_t* rdram,R5900Context* context) {
     ++main_sleeps;context->r[2].low=1;return true; // SleepThread returns the caller ID.
 }
 
-void PS2Runtime::wakeMainThread() {
+void EeRuntime::wakeMainThread() {
     if(main_sleeping)main_sleeping=false;else ++main_wakeups;
     ++main_wakes;
 }
 
-bool PS2Runtime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
+bool EeRuntime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
     const bool main=current_thread_id==1;
     if(main && selector==0x32)return sleepMainThread(rdram,context);
     if(!main && selector==0x30 && context->r[4].low==1) {
@@ -129,7 +129,7 @@ bool PS2Runtime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t 
     return false;
 }
 
-bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
+bool EeRuntime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
     // Interrupt context: current_thread_id names the interrupted thread; no reschedule happens here.
     const auto id=static_cast<std::uint32_t>(context->r[4].low);
     if(selector==0xFFFFFFD1u) {context->r[2].low=current_thread_id;return true;} // iGetThreadId
@@ -152,7 +152,7 @@ bool PS2Runtime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t select
     return false;
 }
 
-void PS2Runtime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
+void EeRuntime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
     // Main is the parent host stack. Ready workers above main run in priority order: a new
     // owner starts a started worker; a parked owner resumes only after an owned wake.
     const auto saved=*parent;const bool nested=startup_scheduler_active;
@@ -187,7 +187,7 @@ void PS2Runtime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
     startup_scheduler_active=nested;
 }
 
-void PS2Runtime::dispatchReadyStartupWorkers(std::uint8_t* rdram,R5900Context* parent) {
+void EeRuntime::dispatchReadyStartupWorkers(std::uint8_t* rdram,R5900Context* parent) {
     if(current_thread_id!=1 || main_thread_priority!=2 || parent->pc!=0x32EAF8
         || parent->r[4].low!=1 || parent->r[5].low!=24 || parent->r[31].low!=0x2EEA34
         || queued_sound_completions!=1 || !sound_thread_waiting || threads.size()!=6 || startup_scheduler_active)

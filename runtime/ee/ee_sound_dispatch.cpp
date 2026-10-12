@@ -1,10 +1,10 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 #include "ee_execution_owner.h"
 #include <utility>
 #include <cstdlib>
 #include <algorithm>
 
-void PS2Runtime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent) {
+void EeRuntime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent) {
     if(ee_sound_probe_attempted || !thread_initialized || current_thread_id!=1 || main_thread_priority!=2
         || heap_calls!=6 || cri_rpc_calls!=37 || startup_worker_starts!=4 || startup_worker_priority_changes!=4
         || startup_worker_suspends!=2 || parent->pc!=0x32EAF8 || parent->r[31].low!=0x2EEA34
@@ -42,14 +42,14 @@ void PS2Runtime::probeReadySoundThread(std::uint8_t* rdram, R5900Context* parent
     throw UnsupportedSyscall(0x32,ee_sound_probe_frontier.pc);
 }
 
-void PS2Runtime::queueSoundsBind(R5900Context* context,const std::array<unsigned,16>& reply) {
+void EeRuntime::queueSoundsBind(R5900Context* context,const std::array<unsigned,16>& reply) {
     if(!ee_queued_sound_rpc || queued_sounds_bind.pending || queued_sound_submissions || sounds_rpc_binds
         || current_thread_id!=1 || main_thread_priority!=2 || iop_epoch!=1 || reply[7]!=0x6351C0 || reply[8]!=0x80000009)
         throw UnsupportedSyscall(0x77,context->pc);
     queued_sounds_bind={true,iop_epoch,reply};++queued_sound_submissions;
     ++sif_dma_submissions;context->r[2].low=0x60003; // Accepted transport submission only.
 }
-void PS2Runtime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* context) {
+void EeRuntime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* context) {
     if(!ee_queued_sound_rpc || !queued_sounds_bind.pending || queued_sound_completions || queued_sounds_bind.epoch!=iop_epoch
         || current_thread_id!=1 || main_thread_priority!=2 || context->pc!=0x32ECA8 || context->r[4].low!=7
         || context->r[31].low!=0x332874 || threads.size()!=2 || !threads[1].ready || threads[1].entry!=0x315380
@@ -72,7 +72,7 @@ void PS2Runtime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* contex
     if(std::memcmp(&saved,context,sizeof(saved))) throw std::runtime_error("Queued completion changed waiting main CPU");
 }
 
-bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
+bool EeRuntime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
     // VBLANK_START (cause 2) registration after main's admitted priority, and its replacement
     // during main's display re-initialization (GS reset removes it; the VSync setter re-adds it).
     if(selector!=0x10 && selector!=0x11 && selector!=0x14 && selector!=0x15)return false;
@@ -124,7 +124,7 @@ bool PS2Runtime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t sel
     context->r[2].low=(intc_mask&bit)?1:0;intc_mask&=~bit;++vblank_disable_calls;return true;
 }
 
-void PS2Runtime::advanceLogicalField() {
+void EeRuntime::advanceLogicalField() {
     timer1.field(); // Display time reaches the field boundary (credits Timer 1 HBLANKs while counting).
     // Timer 2 runs from the startup mode write; its BIOS-era COUNT/COMP residue is not observable
     // (initial MODE already had CUE set), so the logical counter starts at COUNT 0, COMP 0.
@@ -136,7 +136,7 @@ void PS2Runtime::advanceLogicalField() {
     timer2.advanceField();
 }
 
-void PS2Runtime::runIntcHandlers(std::uint8_t* rdram,R5900Context* interrupted,std::uint32_t cause,const char* name) {
+void EeRuntime::runIntcHandlers(std::uint8_t* rdram,R5900Context* interrupted,std::uint32_t cause,const char* name) {
     // Registered handlers in chain order with the kernel handler ABI (a0 cause, a1 argument,
     // registered GP) on the captured kernel interrupt stack.
     constexpr std::uint32_t stack=0x81FC0,callback_return=0xFFFFFFF8;
@@ -155,7 +155,7 @@ void PS2Runtime::runIntcHandlers(std::uint8_t* rdram,R5900Context* interrupted,s
     in_interrupt_=false;delivering_cause_=0;
 }
 
-void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
+void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     constexpr std::uint32_t cause=2;
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);

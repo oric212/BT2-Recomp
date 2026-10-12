@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <iostream>
 #include <memory>
@@ -11,28 +12,33 @@ template<class Action> void reject(Action action,const std::source_location wher
     try { action(); } catch (const std::runtime_error&) { caught = true; }
     require(caught,where);
 }
-void return_leaf(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void return_leaf(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0,
-                                PS2Runtime::GuestBranchKind::Return, "synthetic return");
+                                EeRuntime::GuestBranchKind::Return, "synthetic return");
 }
-void nested_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void nested_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     const auto saved_ra = GPR_U32(ctx, 31);
     SET_GPR_U32(ctx, 31, 0x204);
     runtime->dispatchGuestBranch(ram, ctx, 0x300, 0x200, 0x204,
-                                PS2Runtime::GuestBranchKind::IndirectCall, "synthetic indirect call");
+                                EeRuntime::GuestBranchKind::IndirectCall, "synthetic indirect call");
     SET_GPR_U32(ctx, 31, saved_ra);
     return_leaf(ram, ctx, runtime);
 }
-void bad_return(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void bad_return(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     runtime->dispatchGuestBranch(ram, ctx, 0xBAD, ctx->pc, 0,
-                                PS2Runtime::GuestBranchKind::Return, "synthetic invalid return");
+                                EeRuntime::GuestBranchKind::Return, "synthetic invalid return");
 }
-void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void tail_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     runtime->dispatchGuestBranch(ram, ctx, 0x300, ctx->pc, 0,
-                                PS2Runtime::GuestBranchKind::TailJump, "synthetic tail");
+                                EeRuntime::GuestBranchKind::TailJump, "synthetic tail");
 }
 
-void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     const auto return_address = ctx->r[31].low;
     const auto sp = ctx->r[29].low;
     ctx->r[3].low = 0xFFFFFFBD;
@@ -54,7 +60,8 @@ void clobber_rpc_callback(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runt
 }
 
 unsigned vblank_fixture_calls=0;
-void vblank_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void vblank_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     // Synthetic handler: checks the interrupt ABI, then wakes ID 5 through interrupt syscalls.
     require(GPR_U32(ctx,4)==2 && GPR_U32(ctx,5)==0x1234 && GPR_U32(ctx,28)==0x38BDF0 && GPR_U32(ctx,29)==0x81FC0
         && !(ctx->cop0_status&0x10001) && runtime->in_interrupt_);
@@ -64,9 +71,10 @@ void vblank_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
     require(call(0xFFFFFFD1u,0,0)==1 && call(0xFFFFFFCFu,5,0x81F00)==4 && runtime->read32(ram,0x81F00)==4);
     require(call(0xFFFFFFCCu,5,0)==5 && call(0xFFFFFFCFu,5,0x81F00)==2 && call(0xFFFFFFCCu,5,0)==5);
     ++vblank_fixture_calls;ctx->r[2].low=0;
-    runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0, PS2Runtime::GuestBranchKind::Return, "synthetic handler return");
+    runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0, EeRuntime::GuestBranchKind::Return, "synthetic handler return");
 }
-void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtime) {
+void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    auto* runtime=static_cast<EeRuntime*>(guest);
     auto c=*ctx;c.r[3].low=0x29;c.r[4].low=0;c.r[5].low=1;runtime->handleSyscall(ram,&c,0); // Thread-context call.
 }
 }
@@ -77,7 +85,7 @@ int main() {
         ADD32_OV(5,0xFFFFFFFCu,sum,overflow);require(sum==1 && !overflow);
         ADD32_OV(0x7FFFFFFFu,1,sum,overflow);require(sum==0x80000000u && overflow);
         ADD32_OV(0x80000000u,0xFFFFFFFFu,sum,overflow);require(sum==0x7FFFFFFFu && overflow);
-        PS2Runtime traps;R5900Context trap_ctx{};
+        EeRuntime traps;R5900Context trap_ctx{};
         reject([&]{traps.SignalException(&trap_ctx,EXCEPTION_INTEGER_OVERFLOW);});
         // Multiply-accumulate helpers: HI:LO low words as one value, 32-bit sign extension.
         require(Ps2HiLoToU64(0xFFFFFFFF00000001ull,0xAAAAAAAA80000002ull)==0x0000000180000002ull);
@@ -98,7 +106,7 @@ int main() {
         {
             // VU0 memory instructions from their words: VSQI.xyzw vf16,(vi15++) then VLQD.xyzw vf19,(--vi15)
             // push and pop a register; a partial dest mask moves only its lanes; other words are refused.
-            PS2Runtime vum;R5900Context c{};float out[4];
+            EeRuntime vum;R5900Context c{};float out[4];
             c.vu0_vf[16]=_mm_set_ps(4,3,2,1);c.vi[15]=5;
             vum.vu0MemoryInstruction(&c,0x4BEF837D);require(c.vi[15]==6);
             vum.vu0MemoryInstruction(&c,0x4BF37B7E);_mm_storeu_ps(out,c.vu0_vf[19]);
@@ -134,7 +142,7 @@ int main() {
     }
     {
         // Overlay functions dispatch only while RAM holds the exact bytes they were generated from.
-        PS2Runtime overlay;overlay.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime overlay;overlay.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         auto* ram=overlay.memory().data();R5900Context ctx{};
         const std::uint8_t code[8]={0x08,0x00,0xE0,0x03,0x00,0x00,0x00,0x00}; // Synthetic JR RA / NOP.
         reject([&]{overlay.registerOverlayFunction(0x400000,return_leaf,std::span<const std::uint8_t>(code,6));});
@@ -142,13 +150,13 @@ int main() {
         overlay.registerOverlayFunction(0x400000,return_leaf,code);
         reject([&]{overlay.registerOverlayFunction(0x400000,return_leaf,code);});
         ctx.r[31].low=0x204;
-        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"not loaded");});
+        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"not loaded");});
         require(!overlay.overlay_dispatch_validations);
         std::copy(std::begin(code),std::end(code),ram+0x400000);
-        overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"loaded");
+        overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"loaded");
         require(overlay.overlay_dispatch_validations==1 && ctx.pc==0x204);
         ram[0x400004]=1; // Any change to the bound body is refused.
-        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"changed");});
+        reject([&]{overlay.dispatchGuestBranch(ram,&ctx,0x400000,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"changed");});
         require(overlay.overlay_dispatch_validations==1);
     }
     {
@@ -194,7 +202,7 @@ int main() {
         reject([&]{t.writeComp(0x10000);});
     }
     {
-        PS2Runtime cache; cache.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size)); R5900Context ctx;
+        EeRuntime cache; cache.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size)); R5900Context ctx;
         ctx.r[4].low=0x1000;ctx.r[5].low=0x1040;
         ctx.pc=0x32F4CC;
         reject([&]{cache.readCacheTagLo(&ctx);});
@@ -220,7 +228,7 @@ int main() {
 
     try {
         {
-            PS2Runtime console;console.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            EeRuntime console;console.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             console.sound_rpc_calls=1;console.native_module_loads=14;
             R5900Context cpu;cpu.pc=0x32F098;cpu.r[3].low=0x7C;cpu.r[4].low=16;cpu.r[5].low=cpu.r[29].low=0x1000;
             console.write32(console.memory().data(),0x1000,0x1100);std::memcpy(console.memory().data()+0x1100,"synthetic log",14);
@@ -277,17 +285,17 @@ int main() {
             reject([&]{absent.poll(false);});require(absent.events==0);
         }
         {
-            PS2Runtime widths;std::vector<std::uint8_t> image(PS2Runtime::ram_size,0xA5);
+            EeRuntime widths;std::vector<std::uint8_t> image(EeRuntime::ram_size,0xA5);
             widths.loadMemory(image);auto* ram=widths.memory().data();R5900Context ctx{};
             widths.write16(ram,2,0x1234);
             require(widths.read16(ram,2)==0x1234);
             reject([&]{(void)widths.read16(ram,3);});
-            reject([&]{(void)widths.read16(ram,PS2Runtime::ram_size-1);});
+            reject([&]{(void)widths.read16(ram,EeRuntime::ram_size-1);});
             const auto bits=PS2_POR({0x0123456789ABCDEF,0xF00000000000000F},{0xFEDCBA9876543210,0x000000000000FFF0});
             require(bits.low==UINT64_MAX && bits.high==0xF00000000000FFFF);
             require(ram[1]==0xA5 && ram[2]==0x34 && ram[3]==0x12 && ram[4]==0xA5 && widths.halfword_writes==1);
             reject([&]{widths.write16(ram,3,0);});
-            reject([&]{widths.write16(ram,PS2Runtime::ram_size-1,0);});
+            reject([&]{widths.write16(ram,EeRuntime::ram_size-1,0);});
             reject([&]{widths.write16(ram,0x12001000,0);});
             reject([&]{widths.handleBreak(ram,&ctx);});
             reject([&]{widths.Store64(ram,&ctx,0x12001000,0x200);});
@@ -296,8 +304,8 @@ int main() {
         }
 
         {
-            PS2Runtime sif;
-            std::vector<std::uint8_t> sif_image(PS2Runtime::ram_size);
+            EeRuntime sif;
+            std::vector<std::uint8_t> sif_image(EeRuntime::ram_size);
             sif.loadMemory(sif_image);
             auto* sif_ram = sif.memory().data();
             R5900Context sif_context{};
@@ -321,18 +329,18 @@ int main() {
             require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6 && sif.sif_command_reads == 1);
             reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
             sif.memory().back() = 0xF1;
-            require(sif.read8(sif_ram, PS2Runtime::ram_size - 1) == 0xF1);
-            reject([&] { sif.read8(sif_ram, PS2Runtime::ram_size); });
+            require(sif.read8(sif_ram, EeRuntime::ram_size - 1) == 0xF1);
+            reject([&] { sif.read8(sif_ram, EeRuntime::ram_size); });
             reject([&] { sif.read8(nullptr, 0); });
-            sif.dataCacheLine(sif_ram, PS2Runtime::ram_size - 64);
+            sif.dataCacheLine(sif_ram, EeRuntime::ram_size - 64);
             reject([&] { sif.dataCacheLine(sif_ram, 1); });
-            reject([&] { sif.dataCacheLine(sif_ram, PS2Runtime::ram_size); });
+            reject([&] { sif.dataCacheLine(sif_ram, EeRuntime::ram_size); });
             require(sif.data_cache_lines == 1);
             SET_GPR_ZE32(&sif_context, 2, 0x80000000);
             require(sif_context.r[2].low == 0x80000000 && sif_context.r[2].high == 0xB6);
             SET_GPR_ZE32(&sif_context, 0, 1);
             require(GPR_U32(&sif_context, 0) == 0 && SUB32(0, 1) == UINT32_MAX);
-            std::vector<std::uint8_t> iop_fixture(PS2Runtime::sif_iop_size, 0xA5);
+            std::vector<std::uint8_t> iop_fixture(EeRuntime::sif_iop_size, 0xA5);
             const std::array<std::uint32_t, 3> iop_table{0x19600, 0x19680, 0x93640};
             std::memcpy(iop_fixture.data() + 0x196C0, iop_table.data(), 12);
             reject([&] { sif.supplySifDma(iop_fixture, 0x702); });
@@ -390,18 +398,18 @@ int main() {
             require(sif.uncached_byte_accesses == 2 && sif.data_cache_lines == 2);
             // Authored hostile callback fixture checks interruption isolation,
             // not the generated callback's implementation.
-            std::vector<std::uint8_t> bind_bundle(PS2Runtime::sif_iop_size + 96);
+            std::vector<std::uint8_t> bind_bundle(EeRuntime::sif_iop_size + 96);
             auto put = [&](std::size_t offset, std::uint32_t value) {
                 std::memcpy(bind_bundle.data() + offset, &value, 4);
             };
             const std::array<std::uint32_t, 16> reply{0, 0, 0x80000008, 0, 0, 0x203A97C0, 0,
                 0x3A87A8, 0x80000009, 0x3F570, 0x3FB20, 0, 0, 0, 0, 0};
-            std::memcpy(bind_bundle.data() + PS2Runtime::sif_iop_size, reply.data(), 64);
-            put(PS2Runtime::sif_iop_size + 64, 0x801);
+            std::memcpy(bind_bundle.data() + EeRuntime::sif_iop_size, reply.data(), 64);
+            put(EeRuntime::sif_iop_size + 64, 0x801);
             put(0x3F570, 0x80000592); put(0x3F578, 0x3FB20);
             put(0x3F5B0, 0x3F558); put(0x3F560, 0x3F570);
             const std::array<std::uint32_t, 7> call_sema{0, 1, 0, 0, 0, 0x3838E8, 3};
-            std::memcpy(bind_bundle.data() + PS2Runtime::sif_iop_size + 68, call_sema.data(), 28);
+            std::memcpy(bind_bundle.data() + EeRuntime::sif_iop_size + 68, call_sema.data(), 28);
             put(0x3F560, 0);
             reject([&] { sif.supplySifBind(bind_bundle); });
             put(0x3F560, 0x3F570);
@@ -463,16 +471,16 @@ int main() {
         require(GPR_S64(&context, 4) >> 32 == 0x7FFFFFFF);
         SET_GPR_S64(&context, 0, -1);
         require(GPR_S64(&context, 0) == 0 && context.r[0].low == left.low);
-        PS2Runtime runtime;
-        std::vector<std::uint8_t> image(PS2Runtime::ram_size, 0xA5);
+        EeRuntime runtime;
+        std::vector<std::uint8_t> image(EeRuntime::ram_size, 0xA5);
         runtime.loadMemory(image);
         auto* memory = runtime.memory().data();
         runtime.write128(memory, 16, right);
         require(runtime.read32(memory, 16) == 1 && memory[15] == 0xA5 && memory[32] == 0xA5);
-        runtime.write8(memory, static_cast<std::uint32_t>(PS2Runtime::ram_size - 1), 7);
+        runtime.write8(memory, static_cast<std::uint32_t>(EeRuntime::ram_size - 1), 7);
         require(runtime.memory().back() == 7);
-        reject([&] { runtime.write8(memory, static_cast<std::uint32_t>(PS2Runtime::ram_size), 0); });
-        reject([&] { runtime.write128(memory, static_cast<std::uint32_t>(PS2Runtime::ram_size - 8), right); });
+        reject([&] { runtime.write8(memory, static_cast<std::uint32_t>(EeRuntime::ram_size), 0); });
+        reject([&] { runtime.write128(memory, static_cast<std::uint32_t>(EeRuntime::ram_size - 8), right); });
         reject([&] { runtime.write128(memory, 1, right); });
         reject([&] { (void)runtime.read32(memory, 1); });
         reject([&] { (void)runtime.read32(memory, 0x10000000); });
@@ -486,7 +494,7 @@ int main() {
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         require(!runtime.thread_initialized && memory[0x100] == 0xA5);
         context.r[6].low = 0x100000;
-        context.r[7].low = PS2Runtime::ram_size - 4;
+        context.r[7].low = EeRuntime::ram_size - 4;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         require(!runtime.thread_initialized);
         context.r[7].low = 0x101;
@@ -514,16 +522,16 @@ int main() {
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         context.r[3].low=0x3E;runtime.handleSyscall(memory,&context,0);
         require(context.r[2].low==runtime.heap_end && context.r[2].high==0x1234 && runtime.heap_end_queries==1);
-        PS2Runtime uninitialized;
+        EeRuntime uninitialized;
         reject([&] { uninitialized.handleSyscall(nullptr, &context, 0); });
         runtime.write32(memory, 0x170, 0x89ABCDEF);
         require(runtime.read32(memory, 0x170) == 0x89ABCDEF && memory[0x174] == 0xA5);
         reject([&] { runtime.write32(memory, 1, 0); });
-        reject([&] { runtime.write32(memory, PS2Runtime::ram_size - 2, 0); });
+        reject([&] { runtime.write32(memory, EeRuntime::ram_size - 2, 0); });
         runtime.write64(memory, 0x180, UINT64_C(0xFEDCBA9876543210));
         require(runtime.read64(memory, 0x180) == UINT64_C(0xFEDCBA9876543210) && memory[0x188] == 0xA5);
         reject([&] { runtime.write64(memory, 3, 0); });
-        reject([&] { (void)runtime.read64(memory, PS2Runtime::ram_size - 4); });
+        reject([&] { (void)runtime.read64(memory, EeRuntime::ram_size - 4); });
         runtime.registerFunction(0x200, nested_call);
         runtime.registerFunction(0x300, return_leaf);
         runtime.registerFunction(0x400, bad_return);
@@ -531,26 +539,26 @@ int main() {
         runtime.registerFunction(0x600, return_leaf);
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x200, 0x100, 0x104,
-                PS2Runtime::GuestBranchKind::DirectCall, "synthetic call") && context.pc == 0x104);
+                EeRuntime::GuestBranchKind::DirectCall, "synthetic call") && context.pc == 0x104);
         require(runtime.returns == 2 && runtime.guest_calls == 2);
         reject([&] { runtime.dispatchGuestBranch(memory, &context, 0x400, 0x100, 0x104,
-                     PS2Runtime::GuestBranchKind::DirectCall, "bad callee"); });
+                     EeRuntime::GuestBranchKind::DirectCall, "bad callee"); });
         SET_GPR_U32(&context, 31, 0x104);
         require(runtime.dispatchGuestBranch(memory, &context, 0x500, 0x100, 0x104,
-                PS2Runtime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
+                EeRuntime::GuestBranchKind::DirectCall, "tail callee") && context.pc == 0x104);
         require(runtime.entered_functions==std::set<std::uint32_t>{0x200,0x300,0x400,0x500});
         require(runtime.completed_functions==std::set<std::uint32_t>{0x200,0x300,0x500});
         SET_GPR_U32(&context,31,0x104);
-        require(runtime.dispatchGuestBranch(memory,&context,0x300,0x100,0x104,PS2Runtime::GuestBranchKind::DirectCall,"repeated entry"));
+        require(runtime.dispatchGuestBranch(memory,&context,0x300,0x100,0x104,EeRuntime::GuestBranchKind::DirectCall,"repeated entry"));
         require(runtime.entered_functions.size()==4 && runtime.completed_functions.size()==3);
-        reject([&]{runtime.dispatchGuestBranch(memory,&context,0x600,0x100,0,PS2Runtime::GuestBranchKind::DirectCall,"invalid resume");});
+        reject([&]{runtime.dispatchGuestBranch(memory,&context,0x600,0x100,0,EeRuntime::GuestBranchKind::DirectCall,"invalid resume");});
         require(runtime.entered_functions.size()==4 && runtime.completed_functions.size()==3);
         runtime.Store32(memory, &context, 0x500, 0x12345678);
         require(runtime.read32(memory, 0x500) == 0x12345678);
         reject([&] { runtime.Store32(memory, &context, 0x1000E010, 1); });
         require(runtime.read32(memory, 0x500) == 0x12345678);
-        PS2Runtime dma_checkpoint;
-        dma_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        EeRuntime dma_checkpoint;
+        dma_checkpoint.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
         auto* dma_ram = dma_checkpoint.memory().data();
         reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
         reject([&] { dma_checkpoint.supplyDma5Control(0x184); });
@@ -608,7 +616,7 @@ int main() {
         dma_checkpoint.dmac_handlers.resize(128);
         dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
         require(dma_context.r[2].low == UINT64_MAX && dma_checkpoint.dmac_handlers.size() == 128);
-        PS2Runtime semaphore_runtime;
+        EeRuntime semaphore_runtime;
         semaphore_runtime.semaphores.push_back({1, 1, 0});
         R5900Context semaphore_context{};
         semaphore_context.r[3].low = 0x44;
@@ -633,7 +641,7 @@ int main() {
             require(semaphore_context.r[2].low == UINT64_MAX && semaphore_context.r[2].high == 0x5678);
         }
         {
-            PS2Runtime disc;disc.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            EeRuntime disc;disc.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             R5900Context dc{}; auto* dm=disc.memory().data();
             disc.initial_sp=0x1FFED60;disc.mc_rpc_calls=2;disc.mc_rpc_binds=1;
             disc.semaphores.resize(10);dc.pc=0x32EC68;dc.r[3].low=0x40;
@@ -650,7 +658,7 @@ int main() {
             reject([&]{disc.handleSyscall(dm,&dc,0);});
         }
         {
-            PS2Runtime disc;disc.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            EeRuntime disc;disc.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             auto* dm=disc.memory().data();R5900Context dc{};disc.initial_sp=0x1FFED60;
             disc.disc_rpc_calls=1;disc.semaphores.resize(10);dc.pc=0x32EC68;dc.r[3].low=0x40;
             dc.r[4].low=disc.initial_sp-608;dc.r[31].low=0x332814;dc.r[17].low=0x369590;dc.r[19].low=0xFFFFFFFF80000595;
@@ -685,7 +693,7 @@ int main() {
         runtime.write32(memory, 0x610, 1);
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         runtime.write32(memory, 0x610, 0);
-        context.r[4].low = PS2Runtime::ram_size - 20;
+        context.r[4].low = EeRuntime::ram_size - 20;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         context.r[4].low = 0x601;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
@@ -705,7 +713,7 @@ int main() {
         context.r[5].low = 0x701;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         require(runtime.syscall_handlers[0x83] == 0x700);
-        context.r[5].low = PS2Runtime::ram_size;
+        context.r[5].low = EeRuntime::ram_size;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
         context.r[4].low = 256;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
@@ -732,7 +740,7 @@ int main() {
         reject([&] { runtime.supplyTimer3Mode(0x83); });
         reject([&] { runtime.write32(memory, 0x10001810, 0); });
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
-        PS2Runtime invalid_timer;
+        EeRuntime invalid_timer;
         reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
         reject([&] { invalid_timer.supplyTimer2Mode(0x10000); });
@@ -759,8 +767,8 @@ int main() {
         require(runtime.timer2_mode_reads == 1);
         require(runtime.Load32(memory, &context, 0x10001010) == 0x382 && runtime.timer2_mode_reads == 2);
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
-        PS2Runtime mismatch;
-        mismatch.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime mismatch;
+        mismatch.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         mismatch.supplyTimer2Mode(0x80);
         mismatch.supplyTimer2Readback(0x782);
         auto* mismatch_ram = mismatch.memory().data();
@@ -772,11 +780,11 @@ int main() {
         context.ll_bit = true;
         runtime.clearLLBit(&context);
         require(!context.ll_bit);
-        PS2Runtime patched;
-        patched.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime patched;
+        patched.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         auto* patch_ram = patched.memory().data();
         reject([&] { patched.enableKernelPatch(0x80076000, 8); });
-        const std::vector<std::uint8_t> baseline(PS2Runtime::kernel_snapshot_size, 0x5A);
+        const std::vector<std::uint8_t> baseline(EeRuntime::kernel_snapshot_size, 0x5A);
         patched.loadKernelSnapshot(baseline);
         reject([&] { patched.enableKernelPatch(0x80076001, 8); });
         reject([&] { patched.enableKernelPatch(0x80076000, 0); });
@@ -806,8 +814,8 @@ int main() {
             registration.r[5].low = address;
             reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
         }
-        PS2Runtime unwritten;
-        unwritten.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime unwritten;
+        unwritten.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         unwritten.loadKernelSnapshot(baseline);
         unwritten.enableKernelPatch(0x80076000, 8);
         registration.r[5].low = 0x80076000;
@@ -887,7 +895,7 @@ int main() {
                 && patched.intc_handlers[1].cause == 11 && patched.intc_handlers[1].address == 0x100
                 && patched.intc_handlers[1].arg == 0 && patched.intc_handlers[1].gp == 0x12345678
                 && patched.intc_handler_order == std::vector<std::uint32_t>{2, 1});
-        for (const auto address : {0u, 0x101u, static_cast<std::uint32_t>(PS2Runtime::ram_size), 0x80076000u}) {
+        for (const auto address : {0u, 0x101u, static_cast<std::uint32_t>(EeRuntime::ram_size), 0x80076000u}) {
             registration.r[5].low = address;
             reject([&] { patched.handleSyscall(patch_ram, &registration, 0); });
         }
@@ -906,7 +914,7 @@ int main() {
         patched.handleSyscall(patch_ram, &registration, 0);
         require(registration.r[2].low == UINT64_MAX && registration.r[2].high == 0x5678
                 && patched.intc_handlers.size() == 128 && patched.intc_handler_order.front() == 128);
-        PS2Runtime intc;
+        EeRuntime intc;
         R5900Context intc_context{};
         intc_context.r[3].low = 0x14;
         intc_context.r[4].low = 11;
@@ -926,12 +934,12 @@ int main() {
         require(intc.intc_mask == 0x1802 && intc_context.r[2].low == 1 && intc_context.r[2].high == UINT64_MAX);
         intc.handleSyscall(nullptr, &intc_context, 0);
         require(intc.intc_mask == 0x1802 && intc_context.r[2].low == 0 && intc.intc_enable_calls == 2);
-        PS2Runtime already_enabled;
+        EeRuntime already_enabled;
         already_enabled.supplyIntcMask(0x1802);
         already_enabled.handleSyscall(nullptr, &intc_context, 0);
         require(intc_context.r[2].low == 0 && already_enabled.intc_mask == 0x1802);
-        PS2Runtime creation;
-        creation.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        EeRuntime creation;
+        creation.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
         auto* creation_ram = creation.memory().data();
         const auto descriptor = [&](unsigned offset, std::uint32_t value) {
             creation.write32(creation_ram, 0x300 + offset, value);
@@ -947,7 +955,7 @@ int main() {
         reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
         creation.heap_initialized = true;
         creation.heap_start = 0x4000;
-        for (const auto address : {0x301u, static_cast<std::uint32_t>(PS2Runtime::ram_size - 32)}) {
+        for (const auto address : {0x301u, static_cast<std::uint32_t>(EeRuntime::ram_size - 32)}) {
             create_context.r[4].low = address;
             reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
         }
@@ -983,7 +991,7 @@ int main() {
         creation.handleSyscall(creation_ram, &create_context, 0);
         require(create_context.r[2].low == UINT64_MAX && create_context.r[2].high == UINT64_MAX
                 && creation.threads.size() == 254 && creation.word_writes == full_words);
-        PS2Runtime identity;
+        EeRuntime identity;
         R5900Context identity_context{};
         identity_context.r[3].low = 0x2F;
         identity_context.r[2] = {0xABCD, UINT64_MAX};
@@ -998,7 +1006,7 @@ int main() {
         priority_context.r[3].low = 0x29;
         priority_context.r[4].low = priority_context.r[5].low = 1;
         priority_context.r[2] = {0xABCD, UINT64_MAX};
-        PS2Runtime priority;
+        EeRuntime priority;
         reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
         priority.thread_initialized = true;
         priority.current_thread_id = 1;
@@ -1016,8 +1024,8 @@ int main() {
         require(priority_context.r[2].low == 0 && priority_context.r[2].high == UINT64_MAX && priority.main_thread_priority == 1);
         priority.handleSyscall(nullptr, &priority_context, 0);
         require(priority_context.r[2].low == 1 && priority.priority_changes == 2);
-        PS2Runtime osd;
-        osd.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime osd;
+        osd.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         R5900Context osd_context{};
         osd_context.r[3].low = 0x4B;
         osd_context.r[4].low = 0x100;
@@ -1029,7 +1037,7 @@ int main() {
         reject([&] { osd.handleSyscall(nullptr, &osd_context, 0); });
         osd_context.r[4].low = 0x101;
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
-        osd_context.r[4].low = PS2Runtime::ram_size;
+        osd_context.r[4].low = EeRuntime::ram_size;
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
         osd_context.r[4].low = UINT64_MAX;
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
@@ -1041,8 +1049,8 @@ int main() {
                 && osd.word_writes == 1 && osd_context.r[2].low == 0xABCD && osd_context.r[2].high == UINT64_MAX
                 && osd.memory()[0xFF] == 0xA5 && osd.memory()[0x104] == 0xA5);
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
-        PS2Runtime osd_sequence;
-        osd_sequence.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime osd_sequence;
+        osd_sequence.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         R5900Context sequence_context{};
         sequence_context.r[3].low = 0x4B;
         sequence_context.r[4].low = 0x100;
@@ -1060,7 +1068,7 @@ int main() {
         sequence_context.r[3].low = 0x4A;
         sequence_context.r[4].low = 0x104;
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[4].low = PS2Runtime::ram_size;
+        sequence_context.r[4].low = EeRuntime::ram_size;
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
         sequence_context.r[4].low = UINT64_MAX;
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
@@ -1086,8 +1094,8 @@ int main() {
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
         sequence_context.r[3].low = 0x4B;
         reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        PS2Runtime second_overlay;
-        second_overlay.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime second_overlay;
+        second_overlay.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         const std::vector<std::uint8_t> payload(0x330, 0xC3);
         reject([&] { second_overlay.enableStartupKernelPayload(payload); });
         second_overlay.loadKernelSnapshot(baseline);
@@ -1132,8 +1140,8 @@ int main() {
         bound_context.r[31].low = second_overlay.expected_return;
         second_overlay.callFunction(0x80075000, bound_context);
         require(second_overlay.kernel_dispatch_validations == 1 && second_overlay.returns == 1);
-        PS2Runtime incomplete_binding;
-        incomplete_binding.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime incomplete_binding;
+        incomplete_binding.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         incomplete_binding.loadKernelSnapshot(baseline);
         incomplete_binding.enableKernelPatch(0x80076000, 8);
         incomplete_binding.enableStartupKernelPayload(payload);
@@ -1141,8 +1149,8 @@ int main() {
         incomplete_binding.write32(incomplete_binding.memory().data(), 0x80075000, 0xC3C3C3C3);
         reject([&] { incomplete_binding.callFunction(0x80075000, bound_context); });
         require(incomplete_binding.kernel_dispatch_validations == 0 && incomplete_binding.guest_calls == 0);
-        PS2Runtime table_registration;
-        table_registration.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime table_registration;
+        table_registration.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         table_registration.loadKernelSnapshot(baseline);
         table_registration.enableKernelPatch(0x80076000, 8);
         auto table_payload = payload;
@@ -1174,7 +1182,7 @@ int main() {
         table_context.r[3].low = 0x55;
         reject([&] { table_registration.handleSyscall(table_ram, &table_context, 0); });
         require(table_registration.custom_syscall_calls == 0 && table_registration.syscall_registrations == 1);
-        PS2Runtime poll;
+        EeRuntime poll;
         poll.semaphores.push_back({1, 1, 0});
         R5900Context poll_context{};
         poll_context.r[3].low = 0x45; poll_context.r[4].low = 0;
@@ -1187,7 +1195,7 @@ int main() {
         poll.handleSyscall(nullptr, &poll_context, 0);
         require(poll_context.r[2].low == UINT64_MAX && poll_context.r[2].high == 0x12345678
                 && poll.semaphore_polls == 3 && poll.semaphore_waits == 0 && poll.semaphore_signals == 0);
-        PS2Runtime cache;
+        EeRuntime cache;
         R5900Context cache_context{};
         cache_context.r[3].low = 0x64;
         cache_context.r[2] = {0x12345678, 0xABCDEF};
@@ -1206,7 +1214,7 @@ int main() {
         cache_context.r[4].low = 2;
         reject([&] { cache.handleSyscall(nullptr, &cache_context, 1); });
         require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
-        PS2Runtime shutdown;
+        EeRuntime shutdown;
         R5900Context shutdown_context{};
         shutdown_context.r[3].low = 0x17; shutdown_context.r[4].low = 5;
         shutdown_context.r[2].high = 0x1122334455667788ULL;
@@ -1248,9 +1256,9 @@ int main() {
         shutdown_context.r[5].low = 0x10000;
         reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
         require(shutdown.reset_clear_writes == 0);
-        PS2Runtime zero_checkpoint;
+        EeRuntime zero_checkpoint;
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
-        zero_checkpoint.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+        zero_checkpoint.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 16); });
         zero_checkpoint.expectStartupZeroRegion(16, 32);
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
@@ -1300,14 +1308,14 @@ int main() {
             require(FPU_CVT_W_S(-2.75f)==-2 && FPU_CVT_W_S(2.75f)==2 && FPU_CVT_W_S(3.0e9f)==INT32_MAX
                 && FPU_CVT_W_S(-3.0e9f)==INT32_MIN && FPU_CVT_W_S(std::bit_cast<float>(0x80000001u))==0);
         }
-        PS2Runtime start_boundary;R5900Context start_context{};
+        EeRuntime start_boundary;R5900Context start_context{};
         start_boundary.registerFunction(0x32FDA0,return_leaf);start_boundary.sound_rpc_calls=1;
         start_context.r[2].low=0x1234;
         reject([&]{start_boundary.dispatchGuestBranch(nullptr,&start_context,0x32FDA0,0x315210,0x315218,
-            PS2Runtime::GuestBranchKind::DirectCall,"checked StartThread");});
+            EeRuntime::GuestBranchKind::DirectCall,"checked StartThread");});
         require(start_boundary.guest_calls==0 && start_context.r[2].low==0x1234);
         {
-            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             const std::array<std::uint32_t,14> data={0x70030C11,3,0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};
             const auto evidence=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data.data()),sizeof(data));
             reject([&]{rt.supplySoundThreadStart(evidence.first(52));});require(!rt.sound_thread_start_supplied);
@@ -1326,7 +1334,7 @@ int main() {
             reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.sound_thread_starts==1);
         }
         {
-            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=rt.memory().data();
+            EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=rt.memory().data();
             rt.cri_rpc_calls=37;rt.heap_calls=6;rt.thread_initialized=true;rt.current_thread_id=1;rt.main_thread_priority=2;
             rt.initial_sp=0x1FFED60;rt.stack_base=0x1EFF000;rt.thread_arguments={0x38BDF0,UINT32_MAX,0x100000,0,0x100250};
             rt.threads.push_back({2,0,0,0,0,0,0,0,0});rt.threads.push_back({3,0,0,0,0,0,0,0,0});rt.threads[1].ready=true;rt.semaphores.resize(10);
@@ -1339,7 +1347,7 @@ int main() {
             reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.main_thread_queries==1);
         }
         {
-            PS2Runtime rt;rt.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=rt.memory().data();
+            EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=rt.memory().data();
             rt.cri_rpc_calls=37;rt.heap_calls=6;rt.thread_initialized=rt.heap_initialized=true;rt.main_thread_queries=1;
             rt.current_thread_id=1;rt.main_thread_priority=2;rt.initial_sp=0x1FFED60;rt.thread_arguments[4]=0x100250;
             rt.threads.resize(2);rt.threads[1].id=3;rt.threads[1].ready=true;
@@ -1385,7 +1393,7 @@ int main() {
             } catch(const std::exception&) { std::cerr<<"Worker lifecycle counters: "<<rt.startup_worker_queries<<"/"<<rt.startup_worker_starts<<"/"<<rt.startup_worker_priority_changes<<"\n";throw; }
             require(rt.startup_worker_queries==4 && rt.startup_worker_starts==4 && rt.startup_worker_priority_changes==4);
         }
-        PS2Runtime heap_evidence_runtime;
+        EeRuntime heap_evidence_runtime;
         const std::array<std::uint32_t,16> heap_reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3AC840,0x80000009,0x48438,0x48480,0,0,0,0,0};
         auto heap_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(heap_reply.data()),sizeof(heap_reply));
         reject([&] {heap_evidence_runtime.supplyHeapBind(heap_bytes.first(60));});
@@ -1395,7 +1403,7 @@ int main() {
         heap_evidence_runtime.supplyHeapBind(heap_bytes);
         require(heap_evidence_runtime.heap_bind_supplied && !heap_evidence_runtime.heap_binds);
         reject([&] {heap_evidence_runtime.supplyHeapBind(heap_bytes);});
-        PS2Runtime heap_allocation_runtime;
+        EeRuntime heap_allocation_runtime;
         const std::array<std::uint32_t,17> allocation_evidence={0x400,0x3AC880,0x80000008,0,0,0,0,0x3AC840,0x8000000A,0,0,0,0,0,0,0,0xCE500};
         auto allocation_bytes=std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(allocation_evidence.data()),sizeof(allocation_evidence));
         reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes.first(64));});
@@ -1405,7 +1413,7 @@ int main() {
         heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);
         require(heap_allocation_runtime.heap_allocation_supplied && !heap_allocation_runtime.heap_copy_supplied);
         reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);});
-        PS2Runtime dmac;dmac.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
+        EeRuntime dmac;dmac.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
         R5900Context dc;dc.r[29].low=dmac.initial_sp-32;dc.pc=0x28B2B4;
         reject([&]{dmac.Store32(dmac.memory().data(),&dc,0x1000E000,1);});
         dmac.heap_frees=1;dmac.native_module_loads=14;
@@ -1425,7 +1433,7 @@ int main() {
         require(stream.mode==before.mode && stream.commands==before.commands && stream.words==before.words);
         reject([&]{stream.consume(std::array<std::uint32_t,1>{0x81000404});});
         reject([&]{stream.consume(std::array<std::uint32_t,1>{0x01010404});});
-        PS2Runtime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
+        EeRuntime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
         auto* disc_ram=disc_alias.memory().data();disc_alias.write64(disc_ram,0x3A8600,0x123456789ABCDEF0);
         // The uncached alias at every width follows the word/byte rule: only after RPCINIT; owned RAM is
         // coherent, so the alias reads and writes the same bytes.
@@ -1439,7 +1447,7 @@ int main() {
         // dumps still cover main RAM only.
         disc_alias.write32(disc_ram,0x70000010,0xCAFEF00D);require(disc_alias.read32(disc_ram,0x70000010)==0xCAFEF00D);
         disc_alias.write64(disc_ram,0x70003FF8,0x1122334455667788);require(disc_alias.read8(disc_ram,0x70003FFF)==0x11);
-        require(disc_alias.read32(disc_ram,0x10)!=0xCAFEF00D && disc_alias.memory().size()==PS2Runtime::ram_size);
+        require(disc_alias.read32(disc_ram,0x10)!=0xCAFEF00D && disc_alias.memory().size()==EeRuntime::ram_size);
         reject([&]{disc_alias.read32(disc_ram,0x70004000);});reject([&]{disc_alias.read32(disc_ram,0x70003FFE);});
         reject([&]{disc_alias.read32(disc_ram,0x02000000);});
         // toSPR then fromSPR (normal mode, synchronous): RAM 0x100000 -> SPR 0x100 -> RAM 0x200000.
@@ -1461,8 +1469,8 @@ int main() {
         require(disc_alias.read32(disc_ram,0x70000200)==0x13579BDF && disc_alias.read32(disc_ram,0x70000210)==0x2468ACE0);
         require(disc_alias.ipuRead(0x1000D400,chcr) && !(chcr&0x100) && disc_alias.ipuRead(0x1000D480,chcr) && chcr==0x220);
 
-        PS2Runtime sound_dispatch;
-        sound_dispatch.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+        EeRuntime sound_dispatch;
+        sound_dispatch.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         sound_dispatch.thread_initialized=true;sound_dispatch.current_thread_id=1;sound_dispatch.main_thread_priority=2;
         sound_dispatch.heap_calls=6;sound_dispatch.cri_rpc_calls=37;
         sound_dispatch.startup_worker_starts=4;sound_dispatch.startup_worker_priority_changes=4;sound_dispatch.startup_worker_suspends=2;
@@ -1485,7 +1493,7 @@ int main() {
         {
             // Admitted-main thread semantics: previous-priority returns, status codes, TH_SELF,
             // and fail-closed transitions whenever a strictly higher-priority thread would run.
-            PS2Runtime sched;sched.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=sched.memory().data();
+            EeRuntime sched;sched.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=sched.memory().data();
             sched.thread_initialized=true;sched.current_thread_id=1;sched.main_thread_priority=24;sched.main_priority_admissions=1;
             sched.threads.resize(6);
             for(unsigned n=0;n<6;++n){auto& t=sched.threads[n];t.id=n+2;t.current_priority=n==2?8u:20u;t.context.pc=n?0x100000u:0u;}
@@ -1527,7 +1535,7 @@ int main() {
         {
             // VBLANK_START delivery: chain ABI, interrupt-context wake semantics, banked wakeups
             // and fail-closed thread-context syscalls. Woken ID 5 stays below main's priority here.
-            PS2Runtime irq;irq.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=irq.memory().data();
+            EeRuntime irq;irq.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=irq.memory().data();
             irq.thread_initialized=true;irq.current_thread_id=1;irq.main_thread_priority=24;irq.main_priority_admissions=1;
             irq.threads.resize(6);
             for(unsigned n=0;n<6;++n){auto& t=irq.threads[n];t.id=n+2;t.current_priority=30;t.context.pc=0x100000;}
@@ -1543,7 +1551,7 @@ int main() {
             require(main.pc==0x32E9A8 && irq.current_thread_id==1);
             irq.handleSyscall(ram,&enable,0);require(enable.r[2].low==0 && irq.vblank_deliveries==1); // Not newly enabled.
             reject([&]{R5900Context c=main;c.r[3].low=0xFFFFFFCCu;c.r[4].low=5;irq.handleSyscall(ram,&c,0);}); // Thread context.
-            PS2Runtime bad;bad.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
+            EeRuntime bad;bad.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             bad.thread_initialized=true;bad.current_thread_id=1;bad.main_thread_priority=24;bad.main_priority_admissions=1;
             bad.supplyIntcMask(0x1806);bad.registerFunction(0x1006D8,vblank_bad_fixture);
             R5900Context badadd=add;bad.handleSyscall(bad.memory().data(),&badadd,0);
@@ -1554,7 +1562,7 @@ int main() {
             // Main sleep/wake: an interrupt wakeup before the sleep is banked and returns at once;
             // sleeping with nothing to wake main is refused; a worker sees main WAIT while it
             // sleeps and READY otherwise, and its WakeupThread ends the sleep.
-            PS2Runtime ms;ms.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=ms.memory().data();
+            EeRuntime ms;ms.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=ms.memory().data();
             ms.thread_initialized=true;ms.current_thread_id=1;ms.main_thread_priority=24;ms.main_priority_admissions=1;
             ms.threads.resize(1);ms.threads[0].id=2;ms.threads[0].current_priority=8;ms.threads[0].context.pc=0x100000;ms.threads[0].waiting=true;
             R5900Context wake{};wake.pc=0x1006D8;wake.r[3].low=0xFFFFFFCCu;wake.r[4].low=1;
@@ -1583,7 +1591,7 @@ int main() {
         {
             // Synthetic one-shot VSync registration: preserve the void ABI, reject aliasing/replacement,
             // publish checked RAM once, and retain the previous publication on later fields.
-            PS2Runtime vs;vs.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=vs.memory().data();
+            EeRuntime vs;vs.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=vs.memory().data();
             vs.current_thread_id=1;vs.main_thread_priority=24;vs.gs_display_flips=1;vs.timer1_stops=1;vs.intc_mask=4;
             R5900Context c{};c.pc=0x32EFD8;c.r[3].low=0x73;c.r[2].low=0x12345678;
             c.r[29].low=c.r[4].low=0x1000;c.r[5].low=0x1004;
@@ -1600,23 +1608,23 @@ int main() {
             R5900Context stat{};stat.pc=0x123456;
             require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));
             vs.current_thread_id=2;require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));vs.current_thread_id=1; // Whoever asks.
-            {auto early=std::make_unique<PS2Runtime>();reject([&]{early->readVuStatus(&stat);});} // Heap: main's frame is already large.
+            {auto early=std::make_unique<EeRuntime>();reject([&]{early->readVuStatus(&stat);});} // Heap: main's frame is already large.
             // Admitted main that keeps calling without an idle point gets a VBLANK after a field's worth
             // of calls (a busy-wait on a flag); each delivery restarts the count.
             vs.main_priority_admissions=1;vs.registerFunction(0x300,return_leaf);
             const auto before=vs.vblank_deliveries;
             R5900Context busy{};busy.pc=0x200;busy.cop0_status=0x10001;
-            for(unsigned n=0;n<PS2Runtime::main_calls_per_field*2+2;++n) {
+            for(unsigned n=0;n<EeRuntime::main_calls_per_field*2+2;++n) {
                 busy.r[31].low=0x204;
-                vs.dispatchGuestBranch(ram,&busy,0x300,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"busy poll");
+                vs.dispatchGuestBranch(ram,&busy,0x300,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"busy poll");
             }
             require(vs.vblank_deliveries==before+2 && vs.busy_main_vblanks==2);
             // The same holds for loop iterations without calls (a long computation), but not while
             // interrupts are disabled: the field stays due until they are enabled again.
-            for(unsigned n=0;n<=PS2Runtime::main_checkpoints_per_field;++n)vs.eeCheckpointDue();
+            for(unsigned n=0;n<=EeRuntime::main_checkpoints_per_field;++n)vs.eeCheckpointDue();
             require(vs.busy_main_vblanks==3);
             busy.cop0_status=0x10000;
-            for(unsigned n=0;n<=PS2Runtime::main_checkpoints_per_field+5;++n)vs.eeCheckpointDue();
+            for(unsigned n=0;n<=EeRuntime::main_checkpoints_per_field+5;++n)vs.eeCheckpointDue();
             require(vs.busy_main_vblanks==3);
             busy.cop0_status=0x10001;vs.eeCheckpointDue();
             require(vs.busy_main_vblanks==4);
@@ -1625,7 +1633,7 @@ int main() {
             // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS);
             // UNPACK, a DIRECT crossing a tag, or a DIRECT the GS refuses stop at the channel start
             // with no channel or GS effect and the code/tag recorded.
-            PS2Runtime vf;vf.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));auto* ram=vf.memory().data();
+            EeRuntime vf;vf.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=vf.memory().data();
             auto tag=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
             tag(0x2000,0x70000000,0);vf.frame_vif1.tadr=0x2000;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && vf.frame_vif1.cis);

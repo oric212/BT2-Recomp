@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <algorithm>
@@ -6,8 +7,8 @@
 int main() {
     try {
         for (const auto size : {0u, 12u, 0x330u}) {
-            PS2Runtime runtime;
-            std::vector<std::uint8_t> image(PS2Runtime::ram_size, 0xA5);
+            EeRuntime runtime;
+            std::vector<std::uint8_t> image(EeRuntime::ram_size, 0xA5);
             constexpr std::uint32_t source = 0x1000, destination = 0x2000;
             for (std::uint32_t i = 0; i < size; ++i) image[source + i] = static_cast<std::uint8_t>(i);
             runtime.loadMemory(image);

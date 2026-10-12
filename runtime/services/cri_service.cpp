@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include "services/cri_stream.h"
 #include <algorithm>
 #include <array>
@@ -23,7 +23,7 @@ constexpr std::uint32_t player_base=0x1B5DA0,player_size=0x1C;
 constexpr std::uint32_t stream_size=0x880;
 }
 
-bool PS2Runtime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     const auto in=[&](unsigned n){if(n*4+4>r.send_size)throw UnsupportedSyscall(0x77,context->pc);return read32(rdram,r.send_source+n*4);};
     const auto reply=[&](std::initializer_list<std::uint32_t> words) {
         if(r.recv_size!=words.size()*4)throw UnsupportedSyscall(0x77,context->pc);
@@ -63,7 +63,7 @@ bool PS2Runtime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const S
     context->r[2].low=create?0x780002:0x780002+cri_rpc_calls-1;return true;
 }
 
-bool PS2Runtime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,std::uint32_t source,std::uint32_t destination,std::uint32_t size) {
+bool EeRuntime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,std::uint32_t source,std::uint32_t destination,std::uint32_t size) {
     const auto channel=std::find_if(native_cri_channels_.begin(),native_cri_channels_.end(),[&](const auto& c){return c.ee==source && c.iop==destination;});
     if(channel==native_cri_channels_.end())return false;
     if(size!=stream_size)throw UnsupportedSyscall(0x77,context->pc);
@@ -72,7 +72,7 @@ bool PS2Runtime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context
     return true;
 }
 
-void PS2Runtime::nativeCriVblank(const R5900Context* interrupted) {
+void EeRuntime::nativeCriVblank(const R5900Context* interrupted) {
     // The IOP consumes each uploaded buffer and returns it with the sequence counter advanced.
     native_cri_audio.field(); // The IOP's player advances one field.
     for(auto& c:native_cri_channels_) {

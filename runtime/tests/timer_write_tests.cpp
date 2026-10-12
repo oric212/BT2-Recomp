@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <algorithm>
@@ -6,8 +7,8 @@
 int main() {
     try {
         for (const auto status : {0u, 0x10000u}) {
-            PS2Runtime runtime;
-            runtime.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+            EeRuntime runtime;
+            runtime.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
             runtime.supplyTimer2Mode(0xC80);
             R5900Context context{};
             context.cop0_status = status;

@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <array>
 
 // Native memory card service (MCSERV, 0x80000400) with no card inserted. Requests use the public
@@ -15,7 +15,7 @@ constexpr std::uint32_t mc_no_card=static_cast<std::uint32_t>(-11);
 constexpr unsigned mc_info_size=192;
 }
 
-bool PS2Runtime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(r.send_size!=48)throw UnsupportedSyscall(0x77,context->pc);
     std::array<std::uint32_t,12> in;for(unsigned n=0;n<12;++n)in[n]=read32(rdram,r.send_source+n*4);
     if(r.rpc_number==mc_init) {

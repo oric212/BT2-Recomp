@@ -1,5 +1,5 @@
 #include <iostream>
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <array>
 #include <cstring>
 #include <string>
@@ -14,16 +14,16 @@ constexpr std::uint32_t uncached(std::uint32_t address) {return address&0x1FFFFF
 
 // Server handles are opaque IOP addresses the EE stores in the client and passes back. Native
 // services keep the values the original services returned, so EE memory is unchanged.
-const PS2Runtime::NativeServer* PS2Runtime::nativeServerById(std::uint32_t id) const {
+const EeRuntime::NativeServer* EeRuntime::nativeServerById(std::uint32_t id) const {
     for(const auto& s:native_servers_)if(s.id==id)return &s;
     return nullptr;
 }
-const PS2Runtime::NativeServer* PS2Runtime::nativeServerByHandle(std::uint32_t handle) const {
+const EeRuntime::NativeServer* EeRuntime::nativeServerByHandle(std::uint32_t handle) const {
     for(const auto& s:native_servers_)if(s.server==handle)return &s;
     return nullptr;
 }
 
-bool PS2Runtime::decodeSifRpc(std::uint8_t* rdram,const R5900Context* context,SifRpcRequest& out) {
+bool EeRuntime::decodeSifRpc(std::uint8_t* rdram,const R5900Context* context,SifRpcRequest& out) {
     // r4: descriptor array {source, IOP destination, size, attribute}; r5: count (1 or 2). The last
     // descriptor carries the command packet (attribute 0x44); a first one carries the send data.
     const auto descriptors=static_cast<std::uint32_t>(context->r[4].low),count=static_cast<std::uint32_t>(context->r[5].low);
@@ -45,7 +45,7 @@ bool PS2Runtime::decodeSifRpc(std::uint8_t* rdram,const R5900Context* context,Si
     out=r;return true;
 }
 
-bool PS2Runtime::handleNativeSifDma(std::uint8_t* rdram,R5900Context* context) {
+bool EeRuntime::handleNativeSifDma(std::uint8_t* rdram,R5900Context* context) {
     SifRpcRequest r;
     if(!decodeSifRpc(rdram,context,r))return handleNativeRawDma(rdram,context);
     const auto* server=r.cid==sif_bind?nativeServerById(r.rpc_number):nativeServerByHandle(read32(rdram,r.client+36));
@@ -66,7 +66,7 @@ bool PS2Runtime::handleNativeSifDma(std::uint8_t* rdram,R5900Context* context) {
     return callNativeService(rdram,context,r,*server);
 }
 
-void PS2Runtime::completeNativeRpc(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server,
+void EeRuntime::completeNativeRpc(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server,
                                    const std::array<std::uint32_t,16>& reply) {
     for(unsigned n=0;n<16;++n)write32(rdram,sif_receive_buffer+n*4,reply[n]);
     // A blocking client waits on its semaphore (client+8); a no-wait client (-1) runs its end function.
@@ -81,13 +81,13 @@ void PS2Runtime::completeNativeRpc(std::uint8_t* rdram,R5900Context* context,con
     std::copy(saved.begin(),saved.end(),memory_.begin()+scratch);
 }
 
-void PS2Runtime::completeNativeCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+void EeRuntime::completeNativeCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     // Call reply: received size and buffer, then the RPC_END header naming the client.
     const std::array<std::uint32_t,16> reply={r.recv_size?r.recv_size<<8:0u,r.recv_size?r.receive:0u,sif_rpc_end,0,0,0,0,r.client,sif_call,0,0,0,0,0,0,0};
     completeNativeRpc(rdram,context,r,server,reply);
 }
 
-unsigned& PS2Runtime::nativeBindCounter(const NativeServer& server) {
+unsigned& EeRuntime::nativeBindCounter(const NativeServer& server) {
     switch(server.id) {
     case 0x80000597: return disc_rpc_binds;
     case 0x80000595: return ncmd_rpc_binds;
@@ -103,7 +103,7 @@ unsigned& PS2Runtime::nativeBindCounter(const NativeServer& server) {
 }
 
 // Returns false for a request the native service does not own yet; it then stays on its emulated route.
-bool PS2Runtime::callNativeService(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::callNativeService(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     // A refused request names itself: server, function number, sizes and the first send words.
     try {
         switch(server.id) {

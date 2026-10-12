@@ -1,10 +1,10 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 #include "dma_chain.h"
 
-// PS2Runtime guest memory access and memory-mapped I/O (DMA, GIF/VIF1, timers, GS privileged registers).
+// EeRuntime guest memory access and memory-mapped I/O (DMA, GIF/VIF1, timers, GS privileged registers).
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
 
-void PS2Runtime::write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
+void EeRuntime::write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
     if(auto* spr=scratchpadAt(address,4)) {std::memcpy(spr,&value,4);return;}
     address = uncachedWordAddress(rdram, address);
     if(address==0x10003000 && vif_startup.phase==5 && value==1 && !vif_startup.pending_mask) {
@@ -54,7 +54,7 @@ void PS2Runtime::write32(std::uint8_t* rdram, std::uint32_t address, std::uint32
     ++word_writes;
 }
 
-void PS2Runtime::indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
+void EeRuntime::indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
                           std::uint32_t operation, std::uint32_t address) {
     const auto begin=static_cast<std::uint32_t>(ctx->r[4].low);
     const auto end=static_cast<std::uint32_t>(ctx->r[5].low);
@@ -77,7 +77,7 @@ void PS2Runtime::indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
     ++indexed_cache_operations;
 }
 
-void PS2Runtime::frameGifChainStart(std::uint32_t value) {
+void EeRuntime::frameGifChainStart(std::uint32_t value) {
     // Source chain (MOD 1, no tag transfer): the data of every tag, in order, is PATH3 GIF data.
     // GIF packets may continue across tags, so the data is joined and sent as one GS transaction.
     auto& g=frame_gif;
@@ -93,7 +93,7 @@ void PS2Runtime::frameGifChainStart(std::uint32_t value) {
     ++g.starts;++g.chain_starts;
 }
 
-void PS2Runtime::frameVif1Start(std::uint32_t value) {
+void EeRuntime::frameVif1Start(std::uint32_t value) {
     auto& v=frame_vif1;
     if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
     // Walk the whole chain first. Each DMA tag contributes its upper 64 bits (two VIF codes at
@@ -135,14 +135,14 @@ void PS2Runtime::frameVif1Start(std::uint32_t value) {
     v.chcr=value&~0x100u;v.cis=true;++v.starts;
 }
 
-void PS2Runtime::countDisplayFlip() {
+void EeRuntime::countDisplayFlip() {
     ++gs_display_flips;
     if(on_display_flip)on_display_flip(); // Host presentation of the completed flip (viewer mode).
     // Probe frame budget: stop after this completed flip as a checked boundary.
     if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(0x120000E0,8);}
 }
 
-void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
+void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
     checkMemory(rdram,0,0);
     if(address==0x12001000 && vif_startup.phase==6 && !graph_startup_phase && value==0x200
         && context->pc==0x30FE44 && context->r[29].low==initial_sp-112 && gs_csr_reset_writes==1) {
@@ -177,7 +177,7 @@ void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32
     ++gs_csr_reset_writes;
 }
 
-std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
     checkMemory(rdram,0,0);
     // IPU registers are 64-bit (IPU_CMD/IPU_TOP carry BUSY in bit 63): low word, then high word.
     if(address>=0x10002000 && address<0x10002040 && !(address&15)) {
@@ -216,7 +216,7 @@ std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std
     ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
 }
 
-void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
     if(ipuWrite(address,value)) {checkMemory(rdram,0,0);return;}
     if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
         && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
@@ -314,7 +314,7 @@ void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32
     write32(rdram, address, value);
 }
 
-std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
     if(std::uint32_t value=0;ipuRead(address,value)) {checkMemory(rdram,0,0);return value;}
     if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
         checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;
@@ -416,7 +416,7 @@ std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std
     return read32(rdram, address);
 }
 
-std::uint32_t PS2Runtime::read32(std::uint8_t* rdram, std::uint32_t address) {
+std::uint32_t EeRuntime::read32(std::uint8_t* rdram, std::uint32_t address) {
     if(auto* spr=scratchpadAt(address,4)) {std::uint32_t value;std::memcpy(&value,spr,4);return value;}
     address = uncachedWordAddress(rdram, address);
     if (address == 0x1000E010 && dma_status_supplied_ && !dma_status_reads) {
@@ -448,7 +448,7 @@ std::uint32_t PS2Runtime::read32(std::uint8_t* rdram, std::uint32_t address) {
     return value;
 }
 
-bool PS2Runtime::ipuRead(std::uint32_t address,std::uint32_t& value) {
+bool EeRuntime::ipuRead(std::uint32_t address,std::uint32_t& value) {
     if(!ipuContext())return false;
     if(address==0x1000F520) {value=dmac_enabler;return true;}
     if(const auto spr=scratchpad_dma.read32(address)) {value=*spr;return true;}
@@ -457,7 +457,7 @@ bool PS2Runtime::ipuRead(std::uint32_t address,std::uint32_t& value) {
     value=*ipu_value;return true;
 }
 
-bool PS2Runtime::ipuWrite(std::uint32_t address,std::uint32_t value) {
+bool EeRuntime::ipuWrite(std::uint32_t address,std::uint32_t value) {
     if(!ipuContext())return false;
     if(address==0x1000F590) {
         if((value&~0x10000u)!=(dmac_enabler&~0x10000u))throw UnsupportedGuestMemory(address,4);
@@ -475,7 +475,7 @@ bool PS2Runtime::ipuWrite(std::uint32_t address,std::uint32_t value) {
 // quadwords from SADR to main RAM at MADR; toSPR (0x1000D400) copies the other way, or in source chain
 // mode (MOD 1) copies each tag's data from TADR's chain to SADR onwards. Other modes, tag transfer,
 // transfers that wrap the 16 KB scratchpad and channel interrupts are refused.
-void PS2Runtime::scratchpadTransfer(std::uint32_t address,std::uint32_t value) {
+void EeRuntime::scratchpadTransfer(std::uint32_t address,std::uint32_t value) {
     auto& c=scratchpad_dma.channels.at(address);
     const bool from_spr=address==0x1000D000;
     if(!from_spr && (value&0xFFu)==0x05 && !c.qwc) {

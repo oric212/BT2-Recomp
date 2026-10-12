@@ -1,4 +1,5 @@
 #include "probe_state.h"
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #ifdef BT2_KERNEL_PAYLOAD
@@ -12,7 +13,7 @@
 // addresses; the selection loop's entries are bound in their own files (selected_bindings.cpp,
 // overlay_bindings.cpp) so a new selection does not recompile this one.
 
-void registerStartupFunctions(PS2Runtime& runtime) {
+void registerStartupFunctions(EeRuntime& runtime) {
     runtime.registerFunction(0x31EDB0, FUN_0031EDB0_0x31edb0);
     runtime.registerFunction(0x31F010, FUN_0031F010_0x31f010);
     runtime.registerFunction(0x332970, FUN_00332970_0x332970);
@@ -88,7 +89,7 @@ void registerStartupFunctions(PS2Runtime& runtime) {
     registerSelectedOverlays(runtime); // overlay_bindings.cpp
 }
 
-void registerKernelPayloads(PS2Runtime& runtime,const ProbeModes& modes) {
+void registerKernelPayloads(EeRuntime& runtime,const ProbeModes& modes) {
     const bool timer_mode=modes.timer,osd_readback_mode=modes.osd_readback;
     if (timer_mode) {
     #ifdef BT2_KERNEL_PAYLOAD

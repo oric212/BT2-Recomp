@@ -1,10 +1,10 @@
 #include <cstdio>
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 
-// PS2Runtime guest call dispatch and kernel function binding.
+// EeRuntime guest call dispatch and kernel function binding.
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
 
-void PS2Runtime::registerKernelFunction(std::uint32_t address, RecompiledFunction function,
+void EeRuntime::registerKernelFunction(std::uint32_t address, RecompiledFunction function,
                                 std::span<const std::uint8_t> expected_payload) {
     const bool primary = kernel_patch_end_ && address == kernel_patch_start_
         && expected_payload.size() == kernel_patch_end_ - kernel_patch_start_;
@@ -19,13 +19,13 @@ void PS2Runtime::registerKernelFunction(std::uint32_t address, RecompiledFunctio
 
 // A field's worth of main-thread work without an idle point: the VBLANK arrives anyway, once main runs
 // with interrupts enabled in the frame phase (otherwise it stays due and is retried).
-void PS2Runtime::busyMainField() {
+void EeRuntime::busyMainField() {
     if(!main_context_ || current_thread_id!=1 || in_interrupt_ || !gs_display_flips || !main_priority_admissions || startup_scheduler_active
         || !(intc_mask&4u) || (main_context_->cop0_status&0x10001u)!=0x10001u)return;
     ++busy_main_vblanks;deliverVblank(memory().data(),main_context_);
 }
 
-bool PS2Runtime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, std::uint32_t target,
+bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, std::uint32_t target,
                              std::uint32_t source, std::uint32_t resume, GuestBranchKind kind, const char*) {
     if (kind == GuestBranchKind::Return) {
         const auto expected = call_returns_.empty() ? expected_return : call_returns_.back();
@@ -101,7 +101,7 @@ bool PS2Runtime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context,
     return true;
 }
 
-void PS2Runtime::verifyKernelBinding(std::uint32_t address) {
+void EeRuntime::verifyKernelBinding(std::uint32_t address) {
     if (const auto overlay = overlay_code_bindings_.find(address); overlay != overlay_code_bindings_.end()) {
         if (memory_.size() < address + overlay->second.size()
                 || !std::equal(overlay->second.begin(), overlay->second.end(), memory_.begin() + address))

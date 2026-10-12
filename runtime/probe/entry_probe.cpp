@@ -6,6 +6,7 @@
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 #include <cstring>
@@ -25,13 +26,13 @@ int main(int argc, char** argv) {
             intc_mode=modes.intc,readback_mode=modes.readback,osd_mode=modes.osd,osd_readback_mode=modes.osd_readback,
             dma_status_mode=modes.dma_status,sif_rpc_mode=modes.sif_rpc,sif_dma_mode=modes.sif_dma,sif_mode=modes.sif,dma5_mode=modes.dma5;
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
-        if (!input || input.tellg() != static_cast<std::streamoff>(PS2Runtime::ram_size))
+        if (!input || input.tellg() != static_cast<std::streamoff>(EeRuntime::ram_size))
             throw std::runtime_error("Invalid prepared guest image size");
-        std::vector<std::uint8_t> image(PS2Runtime::ram_size);
+        std::vector<std::uint8_t> image(EeRuntime::ram_size);
         input.seekg(0);
         if (!input.read(reinterpret_cast<char*>(image.data()), static_cast<std::streamsize>(image.size())))
             throw std::runtime_error("Could not read guest image");
-        PS2Runtime runtime;
+        EeRuntime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
         // Frame budget: stop after this many display flips (default 1000, none in viewer mode;

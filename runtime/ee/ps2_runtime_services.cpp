@@ -1,9 +1,9 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 
-// PS2Runtime owned SIF/RPC service handlers: request receipt, evidence supply and RPC/command completion.
+// EeRuntime owned SIF/RPC service handlers: request receipt, evidence supply and RPC/command completion.
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
 
-void PS2Runtime::supplySifDma(std::span<const std::uint8_t> before, std::uint32_t result) {
+void EeRuntime::supplySifDma(std::span<const std::uint8_t> before, std::uint32_t result) {
     if (!sif_command_supplied_ || !sif_iop_.empty() || before.size() != sif_iop_size || result != 0x701)
         throw std::runtime_error("SIF DMA checkpoint size/return/order differs");
     std::uint32_t buffer, system_buffer, old_ee;
@@ -17,7 +17,7 @@ void PS2Runtime::supplySifDma(std::span<const std::uint8_t> before, std::uint32_
     sif_ee_receive_address = old_ee;
 }
 
-void PS2Runtime::supplySifBind(std::span<const std::uint8_t> bundle) {
+void EeRuntime::supplySifBind(std::span<const std::uint8_t> bundle) {
     if (!sif_rpc_supplied_ || !sif_bind_iop_.empty() || (bundle.size() != sif_iop_size + 68 && bundle.size() != sif_iop_size + 96))
         throw std::runtime_error("Invalid/repeated RPC bind capture bundle");
     auto word = [&](std::size_t offset) { std::uint32_t value; std::memcpy(&value, bundle.data() + offset, 4); return value; };
@@ -38,7 +38,7 @@ void PS2Runtime::supplySifBind(std::span<const std::uint8_t> bundle) {
     std::copy_n(bundle.data() + sif_iop_size, 64, sif_bind_reply_.data());
 }
 
-void PS2Runtime::supplyCdInit(std::span<const std::uint8_t> bundle) {
+void EeRuntime::supplyCdInit(std::span<const std::uint8_t> bundle) {
     if (sif_bind_iop_.empty() || !sif_call_sema_supplied_ || cd_init_supplied_ || (bundle.size() != 88 && bundle.size() != 128))
         throw std::runtime_error("Invalid/repeated CD-init completion bundle");
     const std::array<std::uint32_t, 22> expected{0, 0x902,
@@ -56,7 +56,7 @@ void PS2Runtime::supplyCdInit(std::span<const std::uint8_t> bundle) {
     cd_init_supplied_ = true;
 }
 
-void PS2Runtime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
+void EeRuntime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
     const std::array<std::uint32_t, 22> expected{0x370000,1,0,0,2,0x3838D8,
         0,0,0x80000008,0,0,0x203A97C0,0,0x369F40,0x80000009,0x3F690,0x3F6D8,0,0,0,0,0};
     if (!cd_semaphores_supplied_ || scmd_bind_supplied_ || (bundle.size() != 88 && bundle.size() != 184 && bundle.size() != 188 && bundle.size() != 192 && bundle.size() != 204 && bundle.size() != 224 && bundle.size() != 228 && bundle.size() != 236 && bundle.size() != 244 && bundle.size() != 252 && bundle.size() != 316 && bundle.size() != 324 && bundle.size() != 616 && bundle.size() != 988 && bundle.size() != 1124 && bundle.size() != 1332 && bundle.size() != 1464 && bundle.size() != 1596)
@@ -133,7 +133,7 @@ void PS2Runtime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
     std::copy_n(bundle.data()+24,64,scmd_reply_.data()); scmd_bind_supplied_=true;
 }
 
-void PS2Runtime::receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
+void EeRuntime::receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
     if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2
             || context->r[4].low != initial_sp - 464 || context->r[5].low != 1
             || context->r[29].low != context->r[4].low || rpc_end_callback_active_)
@@ -167,7 +167,7 @@ void PS2Runtime::receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context)
     context->r[2].low = 0x801;
 }
 
-void PS2Runtime::deliverEeCommand(std::uint8_t* rdram,R5900Context* context,std::uint32_t handler,std::uint32_t argument) {
+void EeRuntime::deliverEeCommand(std::uint8_t* rdram,R5900Context* context,std::uint32_t handler,std::uint32_t argument) {
     std::array<std::uint8_t,sizeof(R5900Context)> saved_cpu;std::memcpy(saved_cpu.data(),context,saved_cpu.size());
     auto callback=*context;callback.r[4].low=0x3A94C0;callback.r[5].low=argument;callback.r[28].low=0x38BDF0;
     constexpr std::uint32_t callback_return=0xFFFFFFF8;callback.r[31].low=callback_return;
@@ -181,7 +181,7 @@ void PS2Runtime::deliverEeCommand(std::uint8_t* rdram,R5900Context* context,std:
         throw std::runtime_error("FILEIO SIF command handler changed interrupted CPU state");
 }
 
-void PS2Runtime::deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
+void EeRuntime::deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
                        std::uint32_t client, unsigned semaphore,
                        std::uint32_t server, std::uint32_t buffer) {
     std::array<std::uint8_t, sizeof(R5900Context)> saved_cpu;
@@ -219,7 +219,7 @@ void PS2Runtime::deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
         throw std::runtime_error("RPC_END changed interrupted CPU state");
 }
 
-void PS2Runtime::receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context) {
+void EeRuntime::receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context) {
     const bool bind=!post_loadfile.binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
     if(context->r[29].low!=d || d!=initial_sp-(bind?528:608) || context->r[5].low!=1
         || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1
@@ -241,7 +241,7 @@ void PS2Runtime::receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context)
     ++sif_dma_submissions;context->r[2].low=0x30000+post_loadfile.operations();
 }
 
-void PS2Runtime::receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
+void EeRuntime::receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
     const bool bind=!post_cd.scmd_binds;const auto d=static_cast<std::uint32_t>(context->r[4].low);
     if(context->r[29].low!=d || d!=initial_sp-(bind?432:448) || context->r[5].low!=(bind?1u:2u)
         || semaphores.size()!=8 || semaphores[7].count || semaphores[7].maximum!=1
@@ -267,7 +267,7 @@ void PS2Runtime::receiveFreshScmd(std::uint8_t* rdram,R5900Context* context) {
     ++sif_dma_submissions;context->r[2].low=0x20000+post_cd.operations();
 }
 
-void PS2Runtime::receiveFreshCd(std::uint8_t* rdram,R5900Context* context) {
+void EeRuntime::receiveFreshCd(std::uint8_t* rdram,R5900Context* context) {
     const bool bind=post_cd.binds<2;
     auto d=static_cast<std::uint32_t>(context->r[4].low);checkMemory(rdram,d,bind?16:32);
     if(context->r[29].low!=d || d!=initial_sp-(bind?464:544) || static_cast<std::uint32_t>(context->r[5].low)!=(bind?1u:2u)
@@ -299,7 +299,7 @@ void PS2Runtime::receiveFreshCd(std::uint8_t* rdram,R5900Context* context) {
     context->r[2].low=0x20000+post_cd.binds+post_cd.calls; // authored logical token
 }
 
-void PS2Runtime::receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context) {
+void EeRuntime::receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context) {
     if (cd_init_calls || sif_bind_callbacks != 1 || sif_dma_submissions != 2
             || context->r[4].low != initial_sp - 544 || context->r[29].low != context->r[4].low
             || context->r[5].low != 2 || data_cache_lines != 6 || semaphores.size() != 4
@@ -333,7 +333,7 @@ void PS2Runtime::receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context) 
     context->r[2].low = 0x902;
 }
 
-void PS2Runtime::receiveScmdBind(std::uint8_t* rdram, R5900Context* context) {
+void EeRuntime::receiveScmdBind(std::uint8_t* rdram, R5900Context* context) {
     if (scmd_bind_calls || cd_init_calls != 1 || cd_semaphores_created != 4
             || context->r[4].low != initial_sp - 432 || context->r[29].low != context->r[4].low
             || context->r[5].low != 1 || semaphores.size() != 8 || semaphores[7].count != 0
@@ -357,7 +357,7 @@ void PS2Runtime::receiveScmdBind(std::uint8_t* rdram, R5900Context* context) {
     context->r[2].low=1;
 }
 
-void PS2Runtime::receiveScmdMmode(std::uint8_t* rdram,R5900Context* context) {
+void EeRuntime::receiveScmdMmode(std::uint8_t* rdram,R5900Context* context) {
     if(scmd_mmode_calls || scmd_bind_calls!=1 || semaphore_deletions!=3 || semaphores.size()!=8
         || semaphores[7].count!=0 || semaphores[7].maximum!=1 || semaphores[7].option!=0x3838E8
         || context->r[4].low!=initial_sp-448 || context->r[29].low!=context->r[4].low || context->r[5].low!=2

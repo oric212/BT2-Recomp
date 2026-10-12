@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <algorithm>
@@ -8,8 +9,8 @@ int main() {
     try {
         for (const auto [address, size] : std::array<std::pair<std::uint32_t, std::uint32_t>, 4>{
                 {{0x1000, 8192}, {0x1003, 23}, {0x1000, 11}, {0x1000, 0}}}) {
-            PS2Runtime runtime;
-            runtime.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size, 0xA5));
+            EeRuntime runtime;
+            runtime.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
             runtime.expected_return = 0xFFFFFFFC;
             runtime.registerFunction(0x003251DC, FUN_003251DC_0x3251dc);
             R5900Context context{};

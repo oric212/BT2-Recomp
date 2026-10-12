@@ -52,9 +52,9 @@ The gate run ends at its frame budget (1,000 frames, just after the logo movie).
 | Memory card | 🔧 Incomplete | No card inserted; no card image or saves |
 | Disc / filesystem | ✅ Verified | ISO-backed reads and file I/O; archive table and overlay byte-identical to the original |
 
-## Verification (2026-10-12)
+## Verification (2026-10-13)
 
-- **Tests:** MSVC Debug and Release builds, **17/17 CTests**, Python suites (174 capture, 3 CPU graphics, 71 recompilation, 11 IOP inspection, 3 Ghidra). Release and Debug reach the same checkpoint.
+- **Tests:** MSVC Debug and Release builds (Ninja), **17/17 CTests**, Python suites (174 capture, 3 CPU graphics, 77 recompilation, 11 IOP inspection, 3 Ghidra, 2 gate, 2 build). Release and Debug reach the same checkpoint. The gate is `tools/gate/run_gate.py`.
 - **Native services A/B:** same stop and identical EE memory as the emulated IOP, except two regions of stale IOP bytes ([details](plans/iop/NATIVE_SERVICES_PLAN.md#progress-2026-10-11)).
 - **Original comparisons** (46 scripts against PCSX2 captures): 23 pass on the full run, 12 at captured phase stops, 7 with their own capture inputs (not rerun this pass); 4 fail (`cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization`), as before.
 - **Frames:** inspected visually. The logo movie's first picture (a green leader frame in a black letterbox) equals ffmpeg's decode of `LOGO_O.SFD` within one colour step; a mid-logo frame shows the same logo as a PCSX2 memory capture; the opening's first picture matches ffmpeg's. The user confirms how the game should look on request.
@@ -68,8 +68,7 @@ Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step):
 1. **3D pipeline** (current blocker): VIF1 display lists with tag transfer, UNPACK and microprogram upload, then VU1 execution and PATH1 output ([plan](plans/graphics/VU1_PIPELINE_PLAN.md)).
 2. **GPU rendering:** paraLLEl-GS draws and presents the frames; one-step rounding differences from frame 30 need a PCSX2 GS dump to decide before the GPU becomes the default.
 3. **Movie verification:** a frame-by-frame comparison of decoded movie frames with ffmpeg ([IPU plan](plans/video/IPU_PLAN.md)).
-4. **Build time:** link step of the full probe (about 30 s per incremental build); the generated code could move into its own library.
-5. **Native audio output:** ADX decoding and sound bank playback behind the sound and CRI services.
+4. **Native audio output:** ADX decoding and sound bank playback behind the sound and CRI services.
 
 ## Links
 

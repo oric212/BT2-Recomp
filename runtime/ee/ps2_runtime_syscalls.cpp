@@ -1,10 +1,10 @@
-#include "ps2_runtime.h"
+#include "ee_runtime.h"
 
-// PS2Runtime EE syscall and SIF RPC dispatch (handleSyscall): admits each reached kernel call and
+// EeRuntime EE syscall and SIF RPC dispatch (handleSyscall): admits each reached kernel call and
 // routes RPC requests to the owned service handlers.
 // Kept out of the header so edits rebuild this unit, not every generated unit that includes it.
 
-void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
+void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::uint32_t code) {
     const auto selector = static_cast<std::uint32_t>(context->r[3].low);
     if (code == 0 && selector < syscall_handlers.size() && syscall_handlers[selector]) {
         const auto handler = syscall_handlers[selector];

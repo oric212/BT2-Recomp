@@ -1,11 +1,12 @@
 #include "probe_state.h"
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 
 // Checkpoint validation: the state each replayed startup checkpoint must reach at its boundary.
 // Later checkpoints are validated per request by their receivers; these checks cover the boundary.
 
-void checkCdContinuation(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop) {
+void checkCdContinuation(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop) {
     const auto stopped=stop.stopped;
     const auto stop_selector=stop.selector;
     const auto stop_handler=stop.handler;
@@ -36,7 +37,7 @@ void checkCdContinuation(PS2Runtime& runtime,R5900Context& context,const ProbeSt
                    "CD semaphore checkpoint boundary differs");
 }
 
-void checkRuntimeBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop) {
+void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop) {
     const auto stopped=stop.stopped;
     const auto stop_address=stop.address;
     const auto stop_size=stop.size;
@@ -47,7 +48,7 @@ void checkRuntimeBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeS
     const auto stop_resume=stop.resume;
     // The C library's stdio lock (created lazily after admission) is outside the startup service accounting.
     const auto stdio_locks=static_cast<std::size_t>(std::count_if(runtime.semaphores.begin(),runtime.semaphores.end(),
-        [](const auto& sema){return sema.option==0x383988 || PS2Runtime::stdioCallSema(sema.option);}));
+        [](const auto& sema){return sema.option==0x383988 || EeRuntime::stdioCallSema(sema.option);}));
     const auto semas=runtime.semaphores.size()-stdio_locks;
     const bool pending_mc_bind=runtime.dbc_rpc_calls==4 && semas==11 && stop_selector==0x77 && context.pc==0x32F028
         && runtime.semaphores[10].maximum==1 && runtime.semaphores[10].count==0 && (runtime.semaphores[10].option==0x3838D8 || (runtime.mc_rpc_binds==1 && runtime.semaphores[10].option==0x3838E8));
@@ -299,7 +300,7 @@ void checkRuntimeBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeS
     }
 }
 
-void checkBindContinuation(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,const std::vector<std::uint8_t>& kernel_before) {
+void checkBindContinuation(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop,const std::vector<std::uint8_t>& kernel_before) {
     const auto stopped=stop.stopped;
     const auto stop_selector=stop.selector;
     const auto stop_handler=stop.handler;
@@ -354,7 +355,7 @@ void checkBindContinuation(PS2Runtime& runtime,R5900Context& context,const Probe
             "CPU state changed across RPC continuation");
 }
 
-void checkEntryBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeModes& modes,const ProbeStop& stop,const std::vector<std::uint8_t>& kernel_before,const std::vector<std::uint8_t>& image,const std::array<std::uint32_t,5>& args) {
+void checkEntryBoundary(EeRuntime& runtime,R5900Context& context,const ProbeModes& modes,const ProbeStop& stop,const std::vector<std::uint8_t>& kernel_before,const std::vector<std::uint8_t>& image,const std::array<std::uint32_t,5>& args) {
     const bool snapshot_mode=modes.snapshot,timer_mode=modes.timer,timer2_mode=modes.timer2,
         intc_mode=modes.intc,readback_mode=modes.readback,osd_mode=modes.osd,
         osd_readback_mode=modes.osd_readback,dma_status_mode=modes.dma_status,sif_rpc_mode=modes.sif_rpc,
@@ -486,7 +487,7 @@ void checkEntryBoundary(PS2Runtime& runtime,R5900Context& context,const ProbeMod
     if (sif_dma_mode) {
         const auto iop = runtime.sifIopMemory();
         const std::array<std::uint32_t, 5> consumed{0, 0, 0x80000000, 0, 0x3A94C0};
-        require(iop.size() == PS2Runtime::sif_iop_size && runtime.sif_ee_receive_address == 0x3A94C0
+        require(iop.size() == EeRuntime::sif_iop_size && runtime.sif_ee_receive_address == 0x3A94C0
                 && std::memcmp(iop.data() + 0x19600, consumed.data(), 20) == 0
                 && std::memcmp(iop.data() + 0x196C8, &consumed[4], 4) == 0,
                 "Bounded IOP receive effects differ from capture");

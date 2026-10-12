@@ -24,7 +24,7 @@ def render(addresses):
     # new selection recompiles one small binding file.
     header = '#pragma once\n#include <cstdint>\n' + ''.join(
         f'void {name}(uint8_t* rdram, R5900Context* ctx, PS2Runtime* runtime);\n' for name in names) + \
-        'inline void registerExtraStartup(PS2Runtime& runtime) {\n' \
+        'inline void registerExtraStartup(EeRuntime& runtime) {\n' \
         '    // One table and one call site: registering in order without inlining the call per entry.\n' \
         '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function;} entries[] = {\n' + ''.join(
         f'        {{0x{address:08X}, {name}}},\n'
@@ -73,7 +73,7 @@ def render_overlays(selection):
             tables.append(f'inline constexpr std::uint8_t bt2_overlay_{start:08X}[] = {{{body}}};\n')
             registrations.append(f'    runtime.registerOverlayFunction(0x{start:08X}, {name}, bt2_overlay_{start:08X});\n')
     header = ('#pragma once\n#include <cstdint>\n' + ''.join(declarations) + ''.join(tables)
-              + 'inline void registerOverlays(PS2Runtime& runtime) {\n' + ''.join(registrations) + '}\n')
+              + 'inline void registerOverlays(EeRuntime& runtime) {\n' + ''.join(registrations) + '}\n')
     return cmake + ')\n', header
 
 

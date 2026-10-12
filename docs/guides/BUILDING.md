@@ -84,18 +84,21 @@ The current deeper startup checkpoint is not reproducible from a fresh clone wit
 Once your generated build and required capture bundles exist, and your checkout includes the startup runner:
 
 ```powershell
-cmake --build build/probe --config Debug --target bt2-entry-probe
+python tools/build/msvc.py cmake --build build/probe --config Debug --target bt2-entry-probe
 python tools/ps2recomp/run_startup_probe.py --disc rom/BT2-USA.iso
 ```
 
+The probe build directory uses **Ninja** (`run_pipeline.py` configures it with `-G "Ninja Multi-Config"`). `tools/build/msvc.py` runs a command inside the MSVC x64 environment, so a Developer PowerShell is not needed; it uses the Visual Studio installation that bundles Ninja (override with `BT2_VS_ROOT`). A `build/probe` folder made earlier with a Visual Studio generator must be deleted first.
+
 The probe executes generated EE and translated IOP code, performs reads against your ISO and reports the execution boundary, distinct entries, call/return events and sound/heap counters. It stops at an unsupported or checked runtime boundary; reaching that boundary is not a full game boot.
 
-**Build times.** MSVC targets compile their sources in parallel (`/MP`), and the entry probe precompiles the stable standard headers. Measured on a 10-core / 20-thread machine:
-- **Clean entry-probe build:** about 40 s (804 objects).
-- **Change to a header every generated unit includes** (`ps2_runtime.h`, `gs_command_sink.h`): about 35 s.
-- **Edit to a runtime implementation file** (for example `runtime/ee/ps2_runtime_*.cpp`, `runtime/gs/cpu/gs_command_sink.cpp`): about 3 s. See [the runtime layout](RUNTIME_LAYOUT.md).
+**Build times.** Measured on a 10-core / 20-thread machine on 2026-10-13, with all 10,650 mapped functions compiled in (about 10,600 generated files):
+- **Full Release build of the entry probe:** about 6 minutes (Debug: about 8 minutes). Needed after a change to a header generated code includes (`ps2_runtime.h`, `ps2_runtime_macros.h`, `ps2_fpu.h`).
+- **Edit to the runtime header** (`ee_runtime.h`): about 16 s. Generated code does not include it.
+- **Edit to one runtime source or one generated file:** about 12 s.
+- **Nothing changed:** about 5 s.
 
-Peak memory is about 23 GB with 20 parallel compilers.
+Before that date the build used the Visual Studio generator and one runtime header for everything: a runtime header edit was a full rebuild of about 14 minutes and a one-file change about 1 minute. See [the runtime layout](RUNTIME_LAYOUT.md) for the header split.
 
 **Optimized probe.** For long runs and selection loops, build and run the Release configuration, which is about 7× faster (16 s instead of 112 s for the current checkpoint). Its report and RAM/GS dumps are identical to Debug:
 
@@ -104,7 +107,13 @@ cmake --build build/probe --config Release --target bt2-entry-probe
 python tools/ps2recomp/run_startup_probe.py --config Release --disc rom/BT2-USA.iso
 ```
 
-The verification gate uses Debug.
+The verification gate uses Debug:
+
+```powershell
+python tools/gate/run_gate.py --disc rom/BT2-USA.iso
+```
+
+It builds Debug, then runs CTest, the Python suites and the Debug probe runs concurrently, and finally the original comparisons (about 80 s when the build is up to date). Debug compiles the generated code and the runtime's hot sources optimized; the rest of the runtime, the probe and the tests keep the full Debug settings.
 
 **Controller input.** Runs press the controller buttons from a deterministic script. By default the script answers the no-memory-card prompt with "Yes" (`--pad-script`, steps `FIELD:buttons` in logical IOP fields; an empty value disables input). Runs stop after 1,000 display flips (`--frames` overrides).
 

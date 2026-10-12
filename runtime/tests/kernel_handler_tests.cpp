@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <iostream>
@@ -6,9 +7,9 @@
 void require(bool ok) { if (!ok) throw std::runtime_error("Kernel handler check failed"); }
 int main(int argc, char** argv) {
     try {
-        PS2Runtime runtime;
-        runtime.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
-        std::vector<std::uint8_t> snapshot(PS2Runtime::kernel_snapshot_size);
+        EeRuntime runtime;
+        runtime.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
+        std::vector<std::uint8_t> snapshot(EeRuntime::kernel_snapshot_size);
         if (argc == 2) {
             std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
             if (!input || input.tellg() != static_cast<std::streamoff>(snapshot.size()))

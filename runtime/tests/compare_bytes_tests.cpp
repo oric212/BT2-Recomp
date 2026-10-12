@@ -1,3 +1,4 @@
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <algorithm>
@@ -8,7 +9,7 @@ int main() {
             for(unsigned alignment : {0u,1u}) {
                 for(int changed : {-1,0,8,15,16,31,63}) {
                     if(changed>=static_cast<int>(length))continue;
-                    PS2Runtime runtime;std::vector<std::uint8_t> image(PS2Runtime::ram_size,0);
+                    EeRuntime runtime;std::vector<std::uint8_t> image(EeRuntime::ram_size,0);
                     const unsigned a=0x1000+alignment,b=0x2000+alignment;
                     for(unsigned n=0;n<length;++n)image[a+n]=image[b+n]=static_cast<std::uint8_t>(n+1);
                     if(changed>=0)image[b+changed]+=1;
@@ -24,7 +25,7 @@ int main() {
         for(unsigned length : {0u,1u,15u,16u,17u,32u,47u,64u}) {
             for(unsigned alignment : {0u,1u,8u}) {
                 for(unsigned zero : {0u,7u,8u,15u,16u,31u,64u}) {
-                    PS2Runtime runtime;std::vector<std::uint8_t> image(PS2Runtime::ram_size,0xA5);
+                    EeRuntime runtime;std::vector<std::uint8_t> image(EeRuntime::ram_size,0xA5);
                     const unsigned source=0x1000+alignment,dest=0x2000+alignment;
                     for(unsigned n=0;n<80;++n)image[source+n]=n<zero?static_cast<std::uint8_t>(n+1):0;
                     auto expected=image;

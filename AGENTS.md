@@ -34,7 +34,9 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 ## Builds
 
 - **Narrow checks first:** unit tests, offline tools and data checks, subsystem tests, targeted builds. Batch related changes; run the full build/probe only for an integration gate or before commit. Every pass still completes the full build, test and probe gate before commit.
-- **Headers reached by generated code** (`ps2_runtime.h`, `gs_command_sink.h`) hold declarations, state and small hot helpers only; an edit recompiles every generated unit. Put implementation in the focused `.cpp` files of `runtime/ee/`, `runtime/gs/`, `runtime/services/`. Keep `/MP` and the standard-header PCH; no unity builds; never merge generated units.
+- **Headers reached by generated code** (`ps2_runtime.h`, `ps2_runtime_macros.h`, `ps2_fpu.h`) hold only the CPU context and the entry points generated code calls; an edit recompiles every generated unit (about 6 minutes). Runtime state and declarations go in `ee_runtime.h` (`EeRuntime`), implementation in the focused `.cpp` files of `runtime/ee/`, `runtime/gs/`, `runtime/services/`. A new entry point for generated code is declared in `ps2_runtime.h` and forwarded in `guest_interface.cpp`.
+- **Build with Ninja** through `python tools/build/msvc.py cmake --build build/probe --config <Debug|Release>`. Keep the precompiled headers; no unity builds; never merge generated units.
+- **Gate:** `python tools/gate/run_gate.py --disc <iso>` builds Debug and runs the tests, probe runs and original comparisons concurrently.
 - **Long probe runs use Release** (`run_startup_probe.py --config Release`); the pre-commit gate runs Debug.
 - **After a pass,** keep only intentional build outputs and required diagnostic artifacts; delete temporary residue, stale logs, abandoned builds, old dumps and backups. Never delete source inputs, probe inputs, reference data or test artifacts without verifying they are unused.
 

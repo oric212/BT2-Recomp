@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include "services/devices/disc_metadata.h"
 #include <array>
 #include <cstring>
@@ -20,7 +20,7 @@ constexpr std::uint32_t fileio_command=0x80000011,fileio_handler=0x333378,fileio
 constexpr std::uint32_t fileio_version=0x30303033;
 }
 
-bool PS2Runtime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(local_disc_path.empty() || r.send_size>0x800 || r.recv_size!=(r.rpc_number==fileio_init?8u:4u))throw UnsupportedSyscall(0x77,context->pc);
     const auto in=[&](unsigned n){if(n*4+4>r.send_size)throw UnsupportedSyscall(0x77,context->pc);return read32(rdram,r.send_source+n*4);};
     if(r.rpc_number==fileio_init) {
@@ -91,6 +91,6 @@ bool PS2Runtime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,cons
     finishNativeFileio(context);return true;
 }
 
-void PS2Runtime::finishNativeFileio(R5900Context* context) {
+void EeRuntime::finishNativeFileio(R5900Context* context) {
     ++fileio_calls;++sif_dma_submissions;++native_fileio_requests;context->r[2].low=0x70100+fileio_calls;
 }

@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <algorithm>
 
 // Native IOP memory: the IOP heap service (0x80000003), raw EE->IOP SIF DMA uploads and their
@@ -11,7 +11,7 @@ constexpr std::uint32_t heap_alloc=1,heap_free=2;
 constexpr std::uint32_t embedded_module_image=0x369F90;
 }
 
-bool PS2Runtime::nativeHeapCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeHeapCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(r.send_size!=4 || r.recv_size!=4)throw UnsupportedSyscall(0x77,context->pc);
     const auto argument=read32(rdram,r.send_source);
     if(r.rpc_number==heap_alloc) {
@@ -28,7 +28,7 @@ bool PS2Runtime::nativeHeapCall(std::uint8_t* rdram,R5900Context* context,const 
     throw UnsupportedSyscall(0x77,context->pc);
 }
 
-bool PS2Runtime::handleNativeRawDma(std::uint8_t* rdram,R5900Context* context) {
+bool EeRuntime::handleNativeRawDma(std::uint8_t* rdram,R5900Context* context) {
     // One descriptor {EE source, IOP destination, size, attribute 0}: data, not a command packet.
     const auto d=static_cast<std::uint32_t>(context->r[4].low);
     if(context->r[5].low!=1 || read32(rdram,d+12))return false;
@@ -41,15 +41,15 @@ bool PS2Runtime::handleNativeRawDma(std::uint8_t* rdram,R5900Context* context) {
     if(!native_heap_.covers(destination,size))throw UnsupportedSyscall(0x77,context->pc);
     if(source==embedded_module_image) {
         ++heap_transfers;++sif_dma_submissions;context->r[2].low=0x50000+heap_transfers;
-        native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&PS2Runtime::heap_dma_polls;
+        native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&EeRuntime::heap_dma_polls;
     } else {
         ++iop_uploads;++sif_dma_submissions;context->r[2].low=0x5A0000+iop_uploads;
-        native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&PS2Runtime::iop_upload_polls;
+        native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&EeRuntime::iop_upload_polls;
     }
     return true;
 }
 
-bool PS2Runtime::handleNativeDmaStat(R5900Context* context) {
+bool EeRuntime::handleNativeDmaStat(R5900Context* context) {
     // sceSifDmaStat on a native transfer: copies complete at submission, so the status is done (-1).
     const auto token=native_dma_tokens_.find(static_cast<std::uint32_t>(context->r[4].low));
     if(token==native_dma_tokens_.end())return false;

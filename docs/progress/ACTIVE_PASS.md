@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-12. **No pass in progress.**
+Updated: 2026-10-13. **No pass in progress.**
 
 The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (10,650) is compiled into the probe. The long Release run with the movies skipped reaches the title screen, chooses New Game and stops at the first VIF1 display list of the 3D pipeline (3,198 / 3,189 functions, 3,385 frames). History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../guides/RUNTIME_LAYOUT.md).
 
@@ -20,8 +20,9 @@ The 3D pipeline ([plan](../plans/graphics/VU1_PIPELINE_PLAN.md)): VIF1 display l
 
 ## Notes
 
-- Build times (Release probe): full rebuild about 14 minutes (any change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `gs_command_sink.h`), a new function about 1 minute, half of it linking.
+- Build with `python tools/build/msvc.py cmake --build build/probe --config Release --target bt2-entry-probe` (Ninja). Times: runtime header (`ee_runtime.h`) edit about 16 s, one file about 12 s, full rebuild about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`).
+- Gate: `python tools/gate/run_gate.py --disc <iso>` (about 80 s plus the build).
 - The user knows how the game should look and offers to inspect frames saved under `work/frames/`.
 - SOUNDS functions `0x60`, `0x80` and `0x100` are answered with the unchanged status block by inference (not in the PCSX2 call log); capture them if a difference shows.
-- The full gate's generic verifier loop omits per-script inputs; see [PROG.md](../PROG.md#verification-2026-10-12) for which checks need phase stops or their own captures.
+- The gate runs 22 comparisons on the full run and 9 at phase stops; the 15 that need their own inputs or an earlier stop, or that differ as recorded in [PROG.md](../PROG.md#verification-2026-10-13), are listed in `NOT_IN_GATE` in `tools/gate/run_gate.py`.
 - Kept local captures: `work/pcsx2-capture/cri-stream-kept/` (stream captures and logs), `work/pcsx2-capture/sounds-log/` and `sounds-function-*`; reference movie frames in `work/movie-ref/`.

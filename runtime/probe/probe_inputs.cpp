@@ -30,10 +30,10 @@ template<std::size_t N> std::array<std::uint8_t,N> readFixed(const char* path,co
 }
 }
 
-std::uint32_t loadStartupEvidence(PS2Runtime& runtime,const ProbeModes& modes,char** argv) {
+std::uint32_t loadStartupEvidence(EeRuntime& runtime,const ProbeModes& modes,char** argv) {
     const int argc=modes.argc;
     if (modes.snapshot)
-        runtime.loadKernelSnapshot(readEvidence(argv[3],{PS2Runtime::kernel_snapshot_size},"Invalid kernel snapshot size","Could not read kernel snapshot"));
+        runtime.loadKernelSnapshot(readEvidence(argv[3],{EeRuntime::kernel_snapshot_size},"Invalid kernel snapshot size","Could not read kernel snapshot"));
     if (modes.timer) {
         const auto word=readWord(argv[4],"Invalid Timer 3 capture word","Timer capture read failed");
         require(word == 0x83, "Timer capture differs from the validated startup observation");
@@ -73,9 +73,9 @@ std::uint32_t loadStartupEvidence(PS2Runtime& runtime,const ProbeModes& modes,ch
         runtime.supplySifCommand(readWord(argv[12],"Invalid SIF checkpoint word","SIF checkpoint read failed"));
     if (modes.sif_dma) {
         // The IOP receive area followed by the captured result word.
-        auto bytes=readEvidence(argv[13],{PS2Runtime::sif_iop_size+4},"Invalid SIF DMA checkpoint bundle","SIF DMA checkpoint read failed");
-        std::uint32_t result;std::memcpy(&result,bytes.data()+PS2Runtime::sif_iop_size,4);
-        bytes.resize(PS2Runtime::sif_iop_size);
+        auto bytes=readEvidence(argv[13],{EeRuntime::sif_iop_size+4},"Invalid SIF DMA checkpoint bundle","SIF DMA checkpoint read failed");
+        std::uint32_t result;std::memcpy(&result,bytes.data()+EeRuntime::sif_iop_size,4);
+        bytes.resize(EeRuntime::sif_iop_size);
         runtime.supplySifDma(bytes, result);
     }
     if (modes.sif_rpc)
@@ -90,15 +90,15 @@ std::uint32_t loadStartupEvidence(PS2Runtime& runtime,const ProbeModes& modes,ch
     return osd_word;
 }
 
-void loadContinuationEvidence(PS2Runtime& runtime,const ProbeModes& modes,char** argv) {
+void loadContinuationEvidence(EeRuntime& runtime,const ProbeModes& modes,char** argv) {
     if (modes.bind)
-        runtime.supplySifBind(readEvidence(argv[15],{PS2Runtime::sif_iop_size+68,PS2Runtime::sif_iop_size+96},
+        runtime.supplySifBind(readEvidence(argv[15],{EeRuntime::sif_iop_size+68,EeRuntime::sif_iop_size+96},
             "Invalid RPC bind capture bundle","RPC bind bundle read failed"));
     if (modes.cd)
         runtime.supplyCdInit(readEvidence(argv[16],{88,128},"Invalid CD-init bundle size","Could not read CD-init bundle"));
 }
 
-void loadScmdEvidence(PS2Runtime& runtime,char** argv) {
+void loadScmdEvidence(EeRuntime& runtime,char** argv) {
     runtime.supplyScmdBind(readEvidence(argv[17],{88,184,188,192,204,224,228,236,244,252,316,324,616,988,1124,1332,1464,1596},
         "Invalid SCMD bundle size","Invalid SCMD bind bundle size"));
 }

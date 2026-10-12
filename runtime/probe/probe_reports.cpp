@@ -1,4 +1,5 @@
 #include "probe_state.h"
+#include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 #include <fstream>
@@ -25,7 +26,7 @@ std::string jsonEEAddresses(const std::set<std::uint32_t>& addresses) {
     return out+"]";
 }
 
-std::string jsonStartupThreads(const PS2Runtime& runtime) {
+std::string jsonStartupThreads(const EeRuntime& runtime) {
     std::ostringstream out;out<<"[";bool first=true;
     for(const auto& t:runtime.threads)if(t.id>=4 && t.id<=7) {
         if(!first)out<<",";first=false;
@@ -36,7 +37,7 @@ std::string jsonStartupThreads(const PS2Runtime& runtime) {
 }
 }
 
-void writeCdReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
+void writeCdReport(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
     const auto stop_selector=stop.selector;
     const auto stop_target=stop.target;
     const auto stop_source=stop.source;
@@ -68,7 +69,7 @@ void writeCdReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& st
     report << "]}\n";
 }
 
-void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
+void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
     const auto execution_budget_exhausted=stop.execution_budget_exhausted;
     const auto stop_address=stop.address;
     const auto stop_size=stop.size;
@@ -271,7 +272,7 @@ void writeRuntimeBoundaryReport(PS2Runtime& runtime,R5900Context& context,const 
     report << "]}\n";
 }
 
-void writeEvidenceDumps(PS2Runtime& runtime,char** argv) {
+void writeEvidenceDumps(EeRuntime& runtime,char** argv) {
     if(runtime.heap_calls) {
         if(runtime.ncmd_read_calls) { // After the first disc read.
             std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
@@ -293,7 +294,7 @@ void writeEvidenceDumps(PS2Runtime& runtime,char** argv) {
     }
 }
 
-void writeBindReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
+void writeBindReport(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop,char** argv) {
     const auto stop_address=stop.address;
     const auto stop_selector=stop.selector;
     std::ofstream report(argv[2]);
@@ -326,7 +327,7 @@ void writeBindReport(PS2Runtime& runtime,R5900Context& context,const ProbeStop& 
     report << "]}\n";
 }
 
-void writeEntryReport(PS2Runtime& runtime,R5900Context& context,const ProbeModes& modes,const ProbeStop& stop,const std::array<std::uint32_t,5>& args,char** argv) {
+void writeEntryReport(EeRuntime& runtime,R5900Context& context,const ProbeModes& modes,const ProbeStop& stop,const std::array<std::uint32_t,5>& args,char** argv) {
     const bool snapshot_mode=modes.snapshot,timer_mode=modes.timer,timer2_mode=modes.timer2,
         intc_mode=modes.intc,readback_mode=modes.readback,osd_readback_mode=modes.osd_readback,
         dma5_mode=modes.dma5;

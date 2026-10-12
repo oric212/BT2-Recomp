@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include "services/devices/disc_metadata.h"
 #include "services/devices/disc_sectors.h"
 #include <array>
@@ -14,7 +14,7 @@ constexpr std::uint32_t ncmd_read=1,ncmd_ready=14,scmd_error=4;
 constexpr std::uint32_t drive_ready=2,completion_record_size=144;
 }
 
-bool PS2Runtime::nativeDiscCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeDiscCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     if(local_disc_path.empty())throw UnsupportedSyscall(0x77,context->pc);
     const auto reply_word=[&](std::uint32_t value) {
         if(r.recv_size!=4)throw UnsupportedSyscall(0x77,context->pc);

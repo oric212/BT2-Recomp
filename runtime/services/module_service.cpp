@@ -1,4 +1,4 @@
-#include "ee/ps2_runtime.h"
+#include "ee/ee_runtime.h"
 #include <array>
 #include <string>
 #include <string_view>
@@ -19,7 +19,7 @@ constexpr std::array<ModuleResult,13> module_results={{
 constexpr std::uint32_t embedded_module_result=1; // The EE-embedded module ends without residency.
 }
 
-bool PS2Runtime::nativeModuleCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+bool EeRuntime::nativeModuleCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
     // Version (0xFF) and the bind stay on the captured LOADFILE replay for now.
     if(r.rpc_number!=load_by_path && r.rpc_number!=load_from_buffer)return false;
     if(r.send_size!=512 || r.recv_size!=8)throw UnsupportedSyscall(0x77,context->pc);

@@ -25,8 +25,8 @@ set_target_properties(bt2-port PROPERTIES
 )
 target_compile_options(bt2-port PRIVATE /W4 /permissive- /utf-8)
 
-# EE runtime: the out-of-line PS2Runtime and GS implementation shared by every probe and test target
-# that includes ps2_runtime.h.
+# EE runtime: the EeRuntime and GS implementation, built once as the bt2-ee-runtime library and linked by
+# every probe and test target that includes ee_runtime.h.
 set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ee_sound_dispatch.cpp
     runtime/ee/ee_thread_scheduler.cpp
@@ -40,19 +40,25 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/services/sound_service.cpp
     runtime/services/cri_service.cpp
     runtime/ee/retained_ee_stack.cpp
-    runtime/ee/ps2_fpu.cpp
-    runtime/gs/cpu/gs_command_sink.cpp
-    runtime/ee/ps2_runtime_dispatch.cpp
-    runtime/ee/ps2_runtime_memory.cpp
     runtime/ee/dma_chain.cpp
     runtime/ee/ps2_runtime_services.cpp
     runtime/ee/ps2_runtime_syscalls.cpp
+    runtime/ee/vu0_macro.cpp)
+
+# The part of the runtime that generated code and the frame loop call constantly (guest memory, guest
+# calls, the CPU renderer, movie decoding, the FPU). Debug compiles it optimized so the gate's Debug probe
+# runs take a quarter of the time; it keeps the debug standard library checks but not /RTC1.
+set(BT2_EE_HOT_SOURCES
+    runtime/ee/ps2_fpu.cpp
+    runtime/gs/cpu/gs_command_sink.cpp
+    runtime/ee/guest_interface.cpp
+    runtime/ee/ps2_runtime_dispatch.cpp
+    runtime/ee/ps2_runtime_memory.cpp
     runtime/ee/ipu_device.cpp
     runtime/ee/ipu_input.cpp
     runtime/ee/ipu_vlc.cpp
     runtime/ee/ipu_block.cpp
-    runtime/ee/ipu_csc.cpp
-    runtime/ee/vu0_macro.cpp)
+    runtime/ee/ipu_csc.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -62,11 +68,16 @@ if(BT2_BUILD_GENERATED_PROBE)
         message(FATAL_ERROR "Generate local BT2 code with tools/ps2recomp/run_pipeline.py first.")
     endif()
     enable_testing()
-    # EE probes and tests: generated units include ps2_runtime.h through runtime/ee.
+    # EE probes and tests: generated units include ps2_runtime.h (the interface they see) through runtime/ee.
     function(bt2_ee_target target)
         bt2_target_defaults(${target})
         target_include_directories(${target} PRIVATE runtime/ee "${BT2_GENERATED_DIR}")
     endfunction()
+    add_library(bt2-ee-runtime-hot OBJECT ${BT2_EE_HOT_SOURCES})
+    bt2_ee_target(bt2-ee-runtime-hot)
+    target_compile_options(bt2-ee-runtime-hot PRIVATE $<$<CONFIG:Debug>:/O2 /Ob2>)
+    add_library(bt2-ee-runtime STATIC ${BT2_EE_RUNTIME_SOURCES} $<TARGET_OBJECTS:bt2-ee-runtime-hot>)
+    bt2_ee_target(bt2-ee-runtime)
     add_executable(bt2-generated-probe runtime/probe/generated_probe.cpp "${BT2_PROBE_SOURCE}")
     bt2_ee_target(bt2-generated-probe)
     target_compile_definitions(bt2-generated-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
@@ -76,7 +87,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_test(NAME disc-metadata COMMAND bt2-disc-metadata-tests)
     add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp)
     bt2_ee_target(bt2-bootstrap-tests)
-    # Its main keeps many PS2Runtime objects (each several megabytes) as locals.
+    # Its main keeps many EeRuntime objects (each several megabytes) as locals.
     target_link_options(bt2-bootstrap-tests PRIVATE /STACK:268435456)
     add_test(NAME bootstrap-runtime COMMAND bt2-bootstrap-tests)
     add_executable(bt2-ee-stack-tests runtime/tests/retained_ee_stack_tests.cpp runtime/ee/retained_ee_stack.cpp)
@@ -248,22 +259,25 @@ if(BT2_BUILD_GENERATED_PROBE)
         target_include_directories(bt2-entry-probe PRIVATE "${BT2_STARTUP_KERNEL_DIR}")
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_STARTUP_KERNEL_PAYLOAD=1)
     endif()
-    target_sources(bt2-entry-probe PRIVATE ${BT2_EE_RUNTIME_SOURCES})
+    target_link_libraries(bt2-entry-probe PRIVATE bt2-ee-runtime)
     bt2_ee_target(bt2-entry-probe)
     if(BT2_GPU_GS)
         target_link_libraries(bt2-entry-probe PRIVATE bt2-gpu-gs)
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_GPU_GS=1)
     endif()
     target_compile_definitions(bt2-entry-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)
+    # Build speed only: a full link of the 10,000 generated objects takes about a minute, so Release links
+    # incrementally as Debug does (which rules out the linker's unreferenced-code and folding passes).
+    target_link_options(bt2-entry-probe PRIVATE $<$<CONFIG:Release>:/INCREMENTAL /OPT:NOREF /OPT:NOICF>)
     # Build speed only: precompile the stable standard headers that every generated unit reaches through
-    # ps2_runtime.h. Project and generated headers (ps2_runtime.h, gs_command_sink.h, generated
+    # ps2_runtime.h, and that the runtime itself uses. Project and generated headers (ps2_runtime.h, generated
     # declarations) change often and stay out of the PCH; unity builds are not used.
     target_precompile_headers(bt2-entry-probe PRIVATE
         <algorithm> <array> <bit> <cstdint> <cstdlib> <cstring> <functional> <iostream> <map> <memory>
         <optional> <set> <span> <stdexcept> <string> <unordered_map> <vector> <immintrin.h>)
     add_test(NAME generated-entry-probe COMMAND bt2-entry-probe
         "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/guest-memory.bin"
-        "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/entry-stop.json")
+        "${CMAKE_CURRENT_BINARY_DIR}/ctest-entry-stop.json") # Its own report: the gate's runs own work/bt2-generation.
 endif()
 
 if(BT2_BUILD_GENERATED_PROBE)
@@ -274,12 +288,13 @@ endif()
 
 foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
     if(TARGET ${bt2_ee_runtime_target})
-        target_sources(${bt2_ee_runtime_target} PRIVATE ${BT2_EE_RUNTIME_SOURCES})
+        target_link_libraries(${bt2_ee_runtime_target} PRIVATE bt2-ee-runtime)
     endif()
 endforeach()
 
-# Build speed only: MSBuild compiles a project's sources one at a time unless the compiler is asked to
-# parallelize, so every MSVC target here compiles its translation units in parallel (/MP).
+# Build speed only: the probe build uses Ninja (docs/guides/BUILDING.md), which compiles in parallel by
+# itself. A Visual Studio generator compiles a project's sources one at a time unless the compiler is
+# asked to parallelize, so every MSVC target here also carries /MP.
 get_property(bt2_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(bt2_target IN LISTS bt2_all_targets)
     get_target_property(bt2_target_type ${bt2_target} TYPE)
@@ -287,3 +302,31 @@ foreach(bt2_target IN LISTS bt2_all_targets)
         target_compile_options(${bt2_target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/MP>)
     endif()
 endforeach()
+
+# The entry probe's generated game code is its own object library, apart from the handwritten runtime:
+# - it has its own small precompiled header (the standard headers ps2_runtime.h needs);
+# - Debug compiles it optimized, as Release does, so the gate's Debug probe runs take a fraction of the
+#   time (together with the hot runtime sources above). Other handwritten code keeps the full Debug
+#   settings. Its runtime checks (/RTC1) cannot be combined with optimization, so they move from the
+#   configuration's flags to each handwritten target.
+string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+foreach(bt2_target IN LISTS bt2_all_targets)
+    get_target_property(bt2_target_type ${bt2_target} TYPE)
+    if(bt2_target_type STREQUAL "EXECUTABLE" OR bt2_target_type STREQUAL "STATIC_LIBRARY")
+        target_compile_options(${bt2_target} PRIVATE $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/RTC1>)
+    endif()
+endforeach()
+if(TARGET bt2-entry-probe)
+    get_target_property(bt2_handwritten bt2-entry-probe SOURCES)
+    set(bt2_generated ${bt2_handwritten})
+    list(FILTER bt2_generated INCLUDE REGEX "/game/generated/")
+    list(FILTER bt2_handwritten EXCLUDE REGEX "/game/generated/")
+    set_property(TARGET bt2-entry-probe PROPERTY SOURCES ${bt2_handwritten})
+    add_library(bt2-entry-generated OBJECT ${bt2_generated})
+    target_compile_features(bt2-entry-generated PRIVATE cxx_std_20)
+    target_compile_options(bt2-entry-generated PRIVATE /W4 /permissive- /utf-8 /MP $<$<CONFIG:Debug>:/O2 /Ob2>)
+    target_include_directories(bt2-entry-generated PRIVATE $<TARGET_PROPERTY:bt2-entry-probe,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(bt2-entry-generated PRIVATE $<TARGET_PROPERTY:bt2-entry-probe,COMPILE_DEFINITIONS>)
+    target_precompile_headers(bt2-entry-generated PRIVATE <array> <bit> <cstdint> <cstring> <stdexcept> <immintrin.h>)
+    target_link_libraries(bt2-entry-probe PRIVATE bt2-entry-generated)
+endif()
