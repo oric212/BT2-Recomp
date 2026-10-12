@@ -15,6 +15,9 @@ public class DiscoverBT2Target extends GhidraScript {
     // that Ghidra otherwise absorbs as intra-function flow. A target directly after a completed
     // JR RA/delay-slot pair has no fall-through entry and is also separated (leaf tail calls).
     // Other targets stay as discovered.
+    // JR RA or a tail J: with its delay slot, the end of the code before a separate entry.
+    private static boolean endsFunction(int word) { return word == 0x03E00008 || (word >>> 26) == 2; }
+
     private List<Address> tailCallTargets(Function function, Address entry) throws Exception {
         List<Address> targets = new ArrayList<>();
         for (Instruction ins : currentProgram.getListing().getInstructions(function.getBody(), true)) {
@@ -28,14 +31,14 @@ public class DiscoverBT2Target extends GhidraScript {
                 int ins2 = currentProgram.getMemory().getInt(address.add(4L * n));
                 frame |= (ins2 & 0xFFFF0000) == 0x27BD0000 && (short) ins2 < 0;
             }
-            // A previous function's JR RA / delay slot ends right before the target, possibly followed by
+            // A previous function's JR RA (or tail J) / delay slot ends right before the target, possibly followed by
             // up to three alignment NOPs.
             // (The delay slot itself may be a NOP, so the adjacent case is checked first.)
-            frame |= currentProgram.getMemory().getInt(address.subtract(8)) == 0x03E00008;
+            frame |= endsFunction(currentProgram.getMemory().getInt(address.subtract(8)));
             Address before = address;
             for (int pad = 0; pad < 3 && currentProgram.getMemory().getInt(before.subtract(4)) == 0; ++pad) {
                 before = before.subtract(4);
-                frame |= currentProgram.getMemory().getInt(before.subtract(8)) == 0x03E00008;
+                frame |= endsFunction(currentProgram.getMemory().getInt(before.subtract(8)));
             }
             boolean called = false;
             for (Reference ref : getReferencesTo(address)) called |= ref.getReferenceType().isCall();

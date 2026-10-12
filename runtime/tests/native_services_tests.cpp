@@ -94,6 +94,19 @@ int main() {
             writeCriStreamMessages(buffer,messages);
             require(at(0)==2 && at(0x10)==0 && at(0x14)==0x3659C8 && at(0x1C)==blocks*0x400 && at(0x24)==0x3659DC,"messages in the returned buffer");
         }
+        {
+            // A 24 kHz player (command 4) plays half-size blocks at the same block rate, as logged:
+            // 0x400, 0x200, 0x400, 0x200 ... bytes per field.
+            CriAudioFlow slow;slow.sourceCreated(1,0x11,0x365900);slow.playerCreated(9,0x11,0x12);
+            std::vector<std::uint8_t> setup(cri_stream_size);const std::uint32_t records[8]={4,9,24000,0xFFFFFFF1u,2,9,1,0};
+            const std::uint32_t two=2;std::memcpy(setup.data(),&two,4);std::memcpy(setup.data()+0x10,records,32);
+            consumeCriStreamCommands(setup,&slow,0);
+            slow.dataWritten(1,0x150740,0x2000,1);
+            const unsigned halves[]={0x400,0x200,0x400,0x200};
+            for(const auto bytes:halves) {slow.field();const auto m=slow.played(1);require(m.size()==1 && m[0].bytes==bytes,"24 kHz blocks");}
+            bool odd=false;try{slow.rate(9,44100);}catch(const std::runtime_error&){odd=true;}
+            require(odd,"unmodelled rate refused");
+        }
         // Writes that are not contiguous (the ring wraps) are reported as separate stretches.
         CriAudioFlow wrap;wrap.sourceCreated(1,0x11,0x100);wrap.sourceCreated(2,0x12,0x200);wrap.playerCreated(9,0x11,0x12);
         wrap.dataWritten(1,0x17CD40,0x400,1);wrap.dataWritten(1,0x179140,0x400,1);wrap.dataWritten(2,0x180E40,0x400,1);wrap.dataWritten(2,0x17D240,0x400,1);
@@ -113,10 +126,13 @@ int main() {
         require(flushed.size()==2 && flushed[0].address==0x17C540 && flushed[0].bytes==0xC00 && flushed[1].address==0x179140 && flushed[1].bytes==0x2000,"stop reports the remaining data");
         stop.field();require(stop.played(1).empty(),"a stopped player reports nothing more");
         wrap.play(9,0);
-        bool playing_destroy=false;wrap.play(9,1);try{wrap.playerDestroyed(9);}catch(const std::runtime_error&){playing_destroy=true;}
-        wrap.play(9,0);wrap.playerDestroyed(9);
+        // A player destroyed while playing (a skipped movie) ends without reports; a queued stop for it
+        // is ignored, a start for it refused.
+        wrap.play(9,1);wrap.dataWritten(1,0x179540,0x800,1);wrap.playerDestroyed(9);wrap.field();
+        require(wrap.played(1).empty(),"a destroyed player reports nothing");
+        wrap.play(9,0);
         bool gone=false;try{wrap.play(9,1);}catch(const std::runtime_error&){gone=true;}
-        require(playing_destroy && gone,"only a stopped player is destroyed");
+        require(gone,"a destroyed player cannot start");
         wrap.playerCreated(9,0x11,0x12);
         bool refused_argument=false;try{wrap.play(9,2);}catch(const std::runtime_error&){refused_argument=true;}
         require(refused_argument,"unmodelled player argument refused");

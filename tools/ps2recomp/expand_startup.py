@@ -159,10 +159,27 @@ def static_callees(target, rows, selected, limit):
     return found
 
 
+def neighbours(target, rows, selected, span):
+    """Exact, unique mapped main-ELF entries within `span` bytes of `target` that are not yet selected.
+    Code of one source file sits together, so entries next to a reached one are likely reached soon;
+    binding them ahead saves a rebuild and rerun per entry. Reached-entry counts are unchanged."""
+    if not span:
+        return []
+    counts = collections.Counter(int(row['Start'], 0) for row in rows)
+    bindings = (ROOT / 'runtime/probe/startup_bindings.cpp').read_text(encoding='utf-8')
+    linked = {int(address, 16) for address in re.findall(r'registerFunction\(0x([0-9A-Fa-f]+)', bindings)}
+    return sorted(address for address, count in counts.items()
+                  if count == 1 and address != target and abs(address - target) <= span and address not in selected
+                  and address not in linked and not overlay_programs.program_for(address)
+                  and (ROOT / f'game/generated/bt2/FUN_{address:08X}_0x{address:x}.cpp').exists())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, default=FOLDER / 'entry-stop.json')
     parser.add_argument('--callees', type=int, default=0, help='Also bind up to this many static callees of the reached entry.')
+    parser.add_argument('--neighbours', type=lambda text: int(text, 0), default=0, help='Also bind every mapped entry within this many bytes of the reached entry.')
+    parser.add_argument('--all', action='store_true', help='Bind every mapped main-ELF entry not yet selected (no reached entry needed).')
     args = parser.parse_args()
     verify_generated()
     addresses = verify_extra()
@@ -173,13 +190,21 @@ def main():
         return
     with (FOLDER / 'candidates.csv').open(newline='', encoding='utf-8') as stream:
         rows = list(csv.DictReader(stream))
-    target = select_target(stop.get('target'), rows)
-    if target in addresses:
-        raise ValueError('Reached entry was already selected; inspect actual dispatch failure.')
     previous = json.loads((FOLDER / 'extra-startup.json').read_text(encoding='utf-8')) if (FOLDER / 'extra-startup.json').exists() else {}
-    callees = static_callees(target, rows, set(addresses), args.callees)
-    static = [a for a in previous.get('static_callees', []) if a != target] + callees
-    addresses += [target] + callees
+    if args.all:
+        # Every remaining mapped entry: after this, a stop at an unbound entry means an unmapped one.
+        target = None
+        callees = neighbours(0, rows, set(addresses), 0xFFFFFFFF)
+        static = previous.get('static_callees', []) + callees
+        addresses += callees
+    else:
+        target = select_target(stop.get('target'), rows)
+        if target in addresses:
+            raise ValueError('Reached entry was already selected; inspect actual dispatch failure.')
+        callees = static_callees(target, rows, set(addresses), args.callees)
+        callees += neighbours(target, rows, set(addresses) | set(callees), args.neighbours)
+        static = [a for a in previous.get('static_callees', []) if a != target] + callees
+        addresses += [target] + callees
     manifest = json.loads((FOLDER / 'generation.manifest.json').read_text(encoding='utf-8'))
     files = {f'FUN_{address:08X}_0x{address:x}.cpp':
              manifest['files'][f'FUN_{address:08X}_0x{address:x}.cpp'] for address in addresses}
@@ -189,9 +214,12 @@ def main():
     (FOLDER / 'extra-startup.json').write_text(json.dumps({
         'addresses': addresses, 'files': files, 'map_sha256': manifest['map_sha256'], 'static_callees': static,
         'limitations': 'Actually reached mapped entries plus static_callees (direct calls of reached entries, bound before '
-                       'they are reached); boundaries remain provisional; no runtime behavior inferred.'
+                       'they are reached, or mapped entries next to one); boundaries remain provisional; no runtime behavior inferred.'
     }, indent=2) + '\n', encoding='utf-8')
-    print(f'Selected neutral generated entry FUN_{target:08X} and {len(callees)} static callees; bindings remain ignored.')
+    if target is None:
+        print(f'Selected all {len(callees)} remaining mapped entries; bindings remain ignored.')
+        return
+    print(f'Selected neutral generated entry FUN_{target:08X} and {len(callees)} static callees or neighbours; bindings remain ignored.')
 
 
 if __name__ == '__main__':

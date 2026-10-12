@@ -44,6 +44,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames before the movie; 1,000 with its first fields |
 | Opening movie | 🟢 Operational | Logo and opening movies play to the end (native IPU, native ADX flow, no sound) |
+| Title screen | 🟢 Operational | Renders with its options; reached with scripted input |
 | Title screen, demo fight, menus | ⏳ Not Reached | |
 | Character selection and battle loading | ⏳ Not Reached | |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal |

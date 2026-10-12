@@ -16,6 +16,6 @@ struct DmaChain {
     std::uint32_t next_tadr=0; // TADR after the transfer ends.
 };
 
-// Walks the chain synchronously. CNT, NEXT, REF, REFS, REFE and END are supported; CALL/RET and
-// tag IRQs throw (not reached). The channel name prefixes every error.
+// Walks the chain synchronously. CNT, NEXT, REF, REFS, REFE, END, CALL and RET (two return levels, as
+// the channel's address stack) are supported; tag IRQs throw (not reached). The channel name prefixes every error.
 DmaChain walkDmaSourceChain(std::span<const std::uint8_t> ram,std::uint32_t tadr,const char* channel);

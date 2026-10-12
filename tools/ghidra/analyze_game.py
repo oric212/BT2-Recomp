@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--ghidra-home", type=Path, default=ROOT.parent / "tools" / "ghidra_12.1.4_PUBLIC")
     parser.add_argument("--java-home", type=Path, default=Path("C:/Program Files/Eclipse Adoptium/jdk-25.0.3.9-hotspot"))
     parser.add_argument("--discover-blocker", action="store_true", help="Discover only the latest observed missing handler/target")
+    parser.add_argument("--discover-prologues", action="store_true", help="Create every function that opens a stack frame right after a completed function and is not part of one (pointer-only targets), in one pass")
     parser.add_argument("--program", choices=sorted(overlay_programs.PROGRAMS), help="Analyze a wrapped runtime-loaded overlay instead of the executable")
     args = parser.parse_args()
     blocker = None
@@ -62,6 +63,10 @@ def main():
         if discovered_address != blocker["address"]:
             parser.error("Blocker diagnostic differs from the latest execution stop.")
         discovery = ["-preScript", "DiscoverBT2Target.java", hex(blocker["address"])]
+    if args.discover_prologues:
+        if args.discover_blocker:
+            parser.error("Choose one discovery mode.")
+        discovery = ["-preScript", "DiscoverBT2Prologues.java"]
     command = [str(java), "-Xmx2G", "-Xshare:off", "--enable-native-access=ALL-UNNAMED",
                "-Djava.system.class.loader=ghidra.GhidraClassLoader", "-Dfile.encoding=UTF8",
                "-Duser.language=en", "-Duser.country=US", "-Dlog4j.skipJansi=true",

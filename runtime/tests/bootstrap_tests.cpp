@@ -1,5 +1,6 @@
 #include "ee/ps2_runtime_macros.h"
 #include <iostream>
+#include <memory>
 #include <algorithm>
 #include <source_location>
 
@@ -85,12 +86,48 @@ int main() {
         const ProbeGpr x{0x7FFF000100FF8000ull,0x0001000200030004ull},y{0x0001FFFF00010001ull,0x00FF01FE02FD03FCull};
         require(PS2_PADDH(x,y).low==0x8000000001008001ull && PS2_PADDH(x,y).high==0x0100020003000400ull);
         require(PS2_PMAXH(x,y).low==0x7FFF000100FF0001ull && PS2_PMINH(x,y).low==0x0001FFFF00018000ull);
+        // VU0 macro mode: VF0 is (0, 0, 0, 1); a masked write changes only the selected lanes.
+        R5900Context vu{};float lanes[4];
+        _mm_storeu_ps(lanes,vu.vu0_vf[0]);require(lanes[0]==0 && lanes[1]==0 && lanes[2]==0 && lanes[3]==1);
+        _mm_storeu_ps(lanes,vu.vu0_vf[5]);require(lanes[0]==0 && lanes[3]==0);
+        const __m128 a=_mm_set_ps(4,3,2,1),b=_mm_set_ps(40,30,20,10);
+        _mm_storeu_ps(lanes,PS2_VBLEND(a,PS2_VADD(a,b),_mm_castsi128_ps(_mm_set_epi32(-1,0,0,0))));
+        require(lanes[0]==1 && lanes[1]==2 && lanes[2]==3 && lanes[3]==44);
+        _mm_storeu_ps(lanes,PS2_VSUB(b,a));require(lanes[0]==9 && lanes[3]==36);
+        _mm_storeu_ps(lanes,PS2_VMUL(a,b));require(lanes[1]==40 && lanes[2]==90);
+        {
+            // VU0 memory instructions from their words: VSQI.xyzw vf16,(vi15++) then VLQD.xyzw vf19,(--vi15)
+            // push and pop a register; a partial dest mask moves only its lanes; other words are refused.
+            PS2Runtime vum;R5900Context c{};float out[4];
+            c.vu0_vf[16]=_mm_set_ps(4,3,2,1);c.vi[15]=5;
+            vum.vu0MemoryInstruction(&c,0x4BEF837D);require(c.vi[15]==6);
+            vum.vu0MemoryInstruction(&c,0x4BF37B7E);_mm_storeu_ps(out,c.vu0_vf[19]);
+            require(c.vi[15]==5 && out[0]==1 && out[1]==2 && out[2]==3 && out[3]==4 && vum.vu0_memory_instructions==2);
+            c.vu0_vf[19]=_mm_setzero_ps();c.vi[15]=6;
+            vum.vu0MemoryInstruction(&c,0x4B137B7E); // VLQD.x: only x is loaded.
+            _mm_storeu_ps(out,c.vu0_vf[19]);require(out[0]==1 && out[1]==0 && out[3]==0);
+            reject([&]{vum.vu0MemoryInstruction(&c,0x4BEF8368);});
+            // Status flags as the game's clip test uses them: clear, VSUB.xyw vf0,vf5,vf11 and
+            // VSUB.xy vf0,vf12,vf5, then read the sticky zero/sign bits (0xC0).
+            c.vu0_vf[5]=_mm_set_ps(1,5,200,100);c.vu0_vf[11]=_mm_setzero_ps();c.vu0_vf[12]=_mm_set_ps(0,0,4096,4096);
+            vum.writeVuStatusFlag(&c,0);vum.vu0UpdateFlags(&c,0x4BAB282C);vum.vu0UpdateFlags(&c,0x4B85602C);
+            require((vum.readVuStatusFlag(&c)&0xC0)==0);                     // Inside: nothing zero or negative.
+            c.vu0_vf[5]=_mm_set_ps(1,5,200,5000);                             // x beyond 4096: 4096 - x is negative.
+            vum.writeVuStatusFlag(&c,0);vum.vu0UpdateFlags(&c,0x4BAB282C);vum.vu0UpdateFlags(&c,0x4B85602C);
+            require((vum.readVuStatusFlag(&c)&0xC0)==0x80);
+            c.vu0_vf[5]=_mm_set_ps(0,5,200,100);                              // w zero: sticky zero, kept by a later operation.
+            vum.writeVuStatusFlag(&c,0);vum.vu0UpdateFlags(&c,0x4BAB282C);vum.vu0UpdateFlags(&c,0x4B85602C);
+            require((vum.readVuStatusFlag(&c)&0xC0)==0x40);
+            reject([&]{vum.vu0UpdateFlags(&c,0x4BE4294A);});                  // VMUL: not modelled.
+        }
         require(PS2_PCGTH(x,y).low==0xFFFFFFFFFFFF0000ull && PS2_PCGTH(x,y).high==0);
         require(PS2_PPACB(x,y).low==0xFFFEFDFC01FF0101ull && PS2_PPACB(x,y).high==0x01020304FF01FF00ull);
         // Byte interleave (rt's byte first) and the 256-bit funnel shift rs:rt >> SA.
         const ProbeGpr lo{0x0706050403020100ull,0x0F0E0D0C0B0A0908ull},hi{0x1716151413121110ull,0x1F1E1D1C1B1A1918ull};
         require(PS2_PEXTLB(hi,lo).low==0x1303120211011000ull && PS2_PEXTLB(hi,lo).high==0x1707160615051404ull);
         require(PS2_PEXTUB(hi,lo).low==0x1B0B1A0A19091808ull && PS2_PEXTUB(hi,lo).high==0x1F0F1E0E1D0D1C0Cull);
+        require(PS2_PEXTLW(hi,lo).low==0x1312111003020100ull && PS2_PEXTLW(hi,lo).high==0x1716151407060504ull);
+        require(PS2_PEXTUW(hi,lo).low==0x1B1A19180B0A0908ull && PS2_PEXTUW(hi,lo).high==0x1F1E1D1C0F0E0D0Cull);
         require(PS2_QFSRV(hi,lo,0).low==lo.low && PS2_QFSRV(hi,lo,0).high==lo.high);
         require(PS2_QFSRV(hi,lo,24).low==0x0A09080706050403ull && PS2_QFSRV(hi,lo,24).high==0x1211100F0E0D0C0Bull);
         require(PS2_QFSRV(hi,lo,120).low==0x161514131211100Full && PS2_QFSRV(hi,lo,120).high==0x1E1D1C1B1A191817ull);
@@ -1558,16 +1595,31 @@ int main() {
             require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B400C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
             vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);
             require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
+            // In the frame phase no VU microprogram runs: VPU_STAT reads idle from any code or thread, and the COP2
+            // condition is false; before the first frame the read stays refused.
+            R5900Context stat{};stat.pc=0x123456;
+            require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));
+            vs.current_thread_id=2;require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));vs.current_thread_id=1; // Whoever asks.
+            {auto early=std::make_unique<PS2Runtime>();reject([&]{early->readVuStatus(&stat);});} // Heap: main's frame is already large.
             // Admitted main that keeps calling without an idle point gets a VBLANK after a field's worth
             // of calls (a busy-wait on a flag); each delivery restarts the count.
             vs.main_priority_admissions=1;vs.registerFunction(0x300,return_leaf);
             const auto before=vs.vblank_deliveries;
-            R5900Context busy{};busy.pc=0x200;
+            R5900Context busy{};busy.pc=0x200;busy.cop0_status=0x10001;
             for(unsigned n=0;n<PS2Runtime::main_calls_per_field*2+2;++n) {
                 busy.r[31].low=0x204;
                 vs.dispatchGuestBranch(ram,&busy,0x300,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"busy poll");
             }
             require(vs.vblank_deliveries==before+2 && vs.busy_main_vblanks==2);
+            // The same holds for loop iterations without calls (a long computation), but not while
+            // interrupts are disabled: the field stays due until they are enabled again.
+            for(unsigned n=0;n<=PS2Runtime::main_checkpoints_per_field;++n)vs.eeCheckpointDue();
+            require(vs.busy_main_vblanks==3);
+            busy.cop0_status=0x10000;
+            for(unsigned n=0;n<=PS2Runtime::main_checkpoints_per_field+5;++n)vs.eeCheckpointDue();
+            require(vs.busy_main_vblanks==3);
+            busy.cop0_status=0x10001;vs.eeCheckpointDue();
+            require(vs.busy_main_vblanks==4);
         }
         {
             // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS);

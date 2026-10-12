@@ -3,7 +3,8 @@
 // The IOP consumes the commands and returns the buffer with the count cleared and the records unchanged
 // (PCSX2 captures rpc-cri-stream-reply, 2026-10-11: commands 8 and 5 on one object; 2026-10-12: the
 // movie audio start, commands 8, 4 (48000 Hz) and 9 twice (per-channel pan), and on the second channel
-// the audio data command 0x100 ({object, IOP address, byte count}) once per audio channel, then command 2 ({object, 1}) on the first channel).
+// the audio data command 0x100 ({object, IOP address, byte count}) once per audio channel, then command 2 ({object, 1}) on the first channel; the 24 kHz stream after the
+// movies adds command 3 ({object, 1, 0x65}; meaning unknown) and command 4 with rate 24000).
 #pragma once
 #include "cri_audio.h"
 #include <cstdint>
@@ -23,7 +24,7 @@ inline unsigned consumeCriStreamCommands(std::span<std::uint8_t> buffer,CriAudio
     if(count>(cri_stream_size-0x14)/0x10)throw std::runtime_error("CRI stream command count out of range");
     for(std::uint32_t i=0;i<count;++i) {
         std::uint32_t code;std::memcpy(&code,buffer.data()+0x10+i*0x10,4);
-        if(code!=2 && code!=4 && code!=5 && code!=8 && code!=9 && code!=0x100) {
+        if(code!=2 && code!=3 && code!=4 && code!=5 && code!=8 && code!=9 && code!=0x100) {
             // Name the whole upload: every record's four words.
             std::string text="Unsupported CRI stream command "+std::to_string(code)+" (record "+std::to_string(i)+" of "+std::to_string(count)+"):";
             for(std::uint32_t r=0;r<count;++r)for(unsigned w=0;w<4;++w) {
@@ -36,6 +37,7 @@ inline unsigned consumeCriStreamCommands(std::span<std::uint8_t> buffer,CriAudio
     if(audio)for(std::uint32_t i=0;i<count;++i) {
         std::uint32_t words[4];std::memcpy(words,buffer.data()+0x10+i*0x10,16);
         if(words[0]==2)audio->play(words[1],words[2]);
+        else if(words[0]==4)audio->rate(words[1],words[2]);
         else if(words[0]==0x100)audio->dataWritten(words[1],words[2],words[3],channel);
     }
     std::memset(buffer.data(),0,4);

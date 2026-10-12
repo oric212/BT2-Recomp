@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches
+from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches, route_recursive_calls, route_vu_memory, detach_generated_headers
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -82,6 +82,54 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertIn('= (GPR_S64(ctx, 17) >= 0);',text)
         self.assertIn('= (GPR_S64(ctx, 2) < 0);',text)
         self.assertIn('(int32_t)GPR_S32(ctx, 4)',text)
+
+    def test_prepared_sources_do_not_include_the_generated_declarations(self):
+        source='#include "ps2_runtime.h"\n#include <ps2_recompiled_functions.h>\n#include <ps2_recompiled_stubs.h>\nvoid FUN_00100008_0x100008() {}\n'
+        text=detach_generated_headers(source,'FUN_00100008_0x100008')
+        self.assertNotIn('ps2_recompiled',text);self.assertIn('#include "ps2_runtime.h"',text)
+        with self.assertRaises(ValueError):detach_generated_headers(source+'FUN_00100010_0x100010();\n','FUN_00100008_0x100008')
+
+    def test_vu_status_flag_access_goes_to_the_runtime(self):
+        from prepare_runtime import route_cop2_condition
+        source='SET_GPR_U32(ctx, 2, ctx->vu0_status);\nctx->vu0_status = static_cast<uint16_t>(GPR_U32(ctx, 3) & 0xFC0);\n'
+        text,count=route_cop2_condition(source)
+        self.assertEqual(count,2)
+        self.assertIn('SET_GPR_U32(ctx, 2, runtime->readVuStatusFlag(ctx));',text)
+        self.assertIn('runtime->writeVuStatusFlag(ctx, GPR_U32(ctx, 3) & 0xFC0);',text)
+        with self.assertRaises(ValueError):route_cop2_condition('x = ctx->vu0_status + 1;')
+        # Flag-setting instructions between the clear and the read report to the runtime; others do not.
+        body=('ctx->vu0_status = static_cast<uint16_t>(GPR_U32(ctx, 0) & 0xFFFFu);\n'
+              '    // 0x129484: 0x4bab282c  vsub.xyw    $vf0, $vf5, $vf11\n    ctx->pc = 0x129484u;\n'
+              '    // 0x12948c: 0x4b86297d  vftoi4.xy   $vf6, $vf5\n'
+              'SET_GPR_U32(ctx, 2, ctx->vu0_status);\n    // 0x1294b0: 0x4bab282c  vsub.xyw    $vf0, $vf5, $vf11\n')
+        text,count=route_cop2_condition(body)
+        self.assertEqual(count,3)
+        self.assertEqual(text.count('runtime->vu0UpdateFlags(ctx, 0x4bab282cu);'),1)
+        self.assertIn('vsub.xyw    $vf0, $vf5, $vf11\n    runtime->vu0UpdateFlags(ctx, 0x4bab282cu);\n    ctx->pc = 0x129484u;',text)
+
+    def test_vu0_memory_instructions_run_natively(self):
+        source=('    // 0x128ef0: 0x4bef837d  vsqi.xyzw   $vf16, ($vi15++)\n    ctx->pc = 0x128ef0u;\n'
+                '    { uint32_t addr = ((uint32_t)(ctx->vi[16] & 0x3FF)) << 4; WRITE128(addr, x); }\n'
+                '        // 0x128f00: 0x4bf37b7e  vlqd.xyzw   $vf19, (--$vi15) (Delay Slot)\n'
+                '        { ctx->vi[15] = (ctx->vi[15] - 1) & 0x3FF; uint32_t addr = ((uint32_t)(ctx->vi[15] & 0x3FF)) << 4; }\n'
+                '    ctx->vi[15] = ctx->vi[0] + 0;\n')
+        text,count=route_vu_memory(source)
+        self.assertEqual(count,2)
+        self.assertIn('    runtime->vu0MemoryInstruction(ctx, 0x4bef837du);\n',text)
+        self.assertIn('        runtime->vu0MemoryInstruction(ctx, 0x4bf37b7eu);\n',text)
+        self.assertIn('ctx->vi[15] = ctx->vi[0] + 0;',text)
+        with self.assertRaises(ValueError):route_vu_memory('{ uint32_t addr = ((uint32_t)(ctx->vi[3] & 0x3FF)) << 4; }\n')
+
+    def test_recursive_self_call_goes_through_the_dispatcher(self):
+        source=('    SET_GPR_U32(ctx, 31, 0x28DB18u);\n    ctx->pc = 0x28DB14u;\n    ctx->branch_pc = 0x28DB10u;\n'
+                '    SET_GPR_U64(ctx, 5, 1);\n    ctx->pc = 0x28DAA8u;\n    goto label_28daa8;\n    ctx->pc = 0x28DB18u;\n'
+                '    ctx->pc = 0x28DB40u;\n    goto label_28db60;\n')
+        text,count=route_recursive_calls(source,0x28DAA8)
+        self.assertEqual(count,1)
+        self.assertIn('dispatchGuestBranch(rdram, ctx, 0x28DAA8u, ctx->branch_pc, 0x28DB18u, PS2Runtime::GuestBranchKind::DirectCall, "JAL")',text)
+        self.assertNotIn('goto label_28daa8',text);self.assertIn('goto label_28db60',text)
+        # A linked jump to another label of the function is left alone.
+        self.assertEqual(route_recursive_calls(source,0x28DB00),(source,0))
 
     def test_direct_jump_ends_the_path(self):
         source = ('    ctx->pc = 0x28BB60u;\n'

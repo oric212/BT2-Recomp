@@ -110,7 +110,7 @@ def switch_targets(address,start,end,spans,metadata,data,word):
             # else is not proven.
             op=ins>>26
             if op==0:return ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03) and (ins>>11)&31!=i
-            if op in (0x28,0x29,0x2B,0x3F,0x1F):return True
+            if op in (0x28,0x29,0x2B,0x3F,0x1F,0x39,0x3D):return True # Stores, including SWC1/SDC1.
             return op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37) and (ins>>16)&31!=i
         def beq_zero(ins,opcode):return ins>>26==opcode and (ins>>16)&31==0
         if beq_zero(word(address-20),4):branch=address-20
@@ -119,9 +119,30 @@ def switch_targets(address,start,end,spans,metadata,data,word):
             branch=address-24 # BEQ whose delay slot (both paths) leaves the index intact; SLL follows it.
         else:return None
         # The index producer precedes the bound; at the function start the index is an incoming argument.
-        index,bound=(word(branch-8) if branch-8>=start else 0),word(branch-4)
+        # The bound may instead sit in the delay slot of a conditional, non-likely branch (a sign test
+        # of the index): it runs before the fall-through path reaches the guard.
+        # Between the bound and the guard only instructions proven not to write the condition or the
+        # index may stand (register saves in a prologue): stores write no integer register, R-type ALU
+        # writes rd, I-type ALU and loads write rt. Anything else is not proven.
+        def writes(ins,reg):
+            op=ins>>26
+            if op in (0x28,0x29,0x2B,0x3F,0x1F,0x39,0x3D):return False
+            if op==0 and ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03):return (ins>>11)&31==reg
+            if op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37):return (ins>>16)&31==reg
+            return True
         c=(word(branch)>>21)&31
-        if control(index) or bound>>26!=11 or (bound>>21)&31!=i or (bound>>16)&31!=c or c in (0,i):return None
+        if c in (0,i):return None
+        at=branch-4
+        while True:
+            if at<start or branch-at>64:return None
+            bound=word(at)
+            if bound>>26==11 and (bound>>21)&31==i and (bound>>16)&31==c:break
+            if control(bound) or writes(bound,c) or writes(bound,i):return None
+            at-=4
+        index=word(at-4) if at-4>=start else 0
+        op,rs,rt=index>>26,(index>>21)&31,(index>>16)&31
+        falls_through=op in (5,6,7) or (op==4 and rs!=rt) or (op==1 and rt in (0,1))
+        if control(index) and not falls_through:return None
         hi,disp=lui&65535,sign(load&65535)
     else:
         # Second layout: SLTIU c,i,N / BEQ c,zero / LUI b (delay) / SLL s,i,2 / ADDIU b,b,lo /
@@ -202,11 +223,11 @@ def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
 def has_switch_case_gaps(candidate, metadata, data):
     """Accept holes that hold case blocks of a proven jump-table switch Ghidra did not follow.
 
-    The body must contain exactly one bounded switch (switch_targets, with every table target inside
-    the candidate). Each hole must contain at least one table target; its words are NOP padding before
+    The body must contain at least one bounded switch (switch_targets, with every table target inside
+    the candidate); several switches share the same rules. Each hole must contain at least one table target; its words are NOP padding before
     the first target, then straight-line case blocks (calls included), each starting exactly at a table
-    target and ending in JR RA or an unconditional branch to the candidate, with a non-control delay slot,
-    all inside the hole; the last block may instead fall through into the span after the hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
+    target (or inside the previous block when that one falls through into it, never in a delay slot) and ending in JR RA, a tail jump (J) into this program's code or an unconditional branch to the candidate, with a non-control delay slot,
+    all inside the hole (conditional branches into the candidate may occur inside a block); the last block may instead fall through into the span after the hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
     start,end=candidate['start'],candidate['end_exclusive']
     try:spans=[(int(a,16),int(b,16)+1) for a,b in (r.split('-') for r in candidate.get('body_ranges',[]))]
     except (ValueError,TypeError):return False
@@ -224,41 +245,64 @@ def has_switch_case_gaps(candidate, metadata, data):
     whole=[(start,end)]
     switches=[(a,t) for a in range(start,end,4) if any(x<=a<y for x,y in spans) and word(a)&0xFC1FFFFF==8 and word(a)!=0x03E00008
               for t in [switch_targets(a,start,end,whole,metadata,data,word)] if t is not None]
-    if len(switches)!=1:return False
-    jump,targets=switches[0];targets=set(targets)
+    if not switches:return False
+    jumps={address for address,_ in switches};targets={t for _,table in switches for t in table}
     holes=[(left[1],right[0]) for left,right in zip(spans,spans[1:])]
-    hole_words=set()
+    hole_words=set();walked=set();all_slots=set();inner_branches=[]
     for h0,h1 in holes:
         inside=sorted(t for t in targets if h0<=t<h1)
-        if not inside:return False
-        address=h0
+        if not inside:
+            # A hole without case blocks: only NOP padding after an unconditional transfer (B into the
+            # candidate, J or JR RA) and its non-control delay slot. The scan below rejects branches into it.
+            before=word(h0-8) if h0-start>=8 else 0
+            local=before&0xFFFF0000==0x10000000 and start<=h0-4+((before&65535)-(65536 if before&32768 else 0))*4<end
+            if any(word(a)!=0 for a in range(h0,h1,4)) or control(word(h0-4)) or not (local or before>>26==2 or before==0x03E00008):return False
+            hole_words.update(range(h0,h1,4));continue
+        address=h0;slots=set()
         for target in inside:
-            if target<address:return False # A target inside an earlier block of this hole.
+            if target<address:
+                # A target inside an earlier block: a case that the previous one falls through into.
+                # It is another entry of that straight-line code unless it is a delay slot.
+                if target in slots:return False
+                continue
             if any(word(a)!=0 for a in range(address,target,4)):return False # Only padding before a block.
             address=target
             while True:
                 if address==h1:break # Falls through into the span after the hole.
                 ins=word(address)
                 if control(ins) and address+4>=h1:return False # Its delay slot would leave the hole.
+                walked.add(address)
                 if not control(ins):address+=4;continue
                 # A call (JAL, or JALR rd=ra) returns after its delay slot: straight-line within the block.
                 call=ins>>26==3 or (ins>>26==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0)
+                slots.add(address+4);all_slots.add(address+4)
                 if call and not control(word(address+4)):address+=8;continue
+                # A conditional branch into the candidate keeps the block going after its delay slot; a
+                # target inside a hole must be an instruction of a case block (checked below).
+                if (ins>>26 in (5,6,7,21,22,23) or (ins>>26 in (4,20) and (ins>>21)&31!=(ins>>16)&31) or (ins>>26==1 and (ins>>16)&31 in (0,1,2,3))) and not control(word(address+4)):
+                    immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
+                    if not start<=address+4+immediate*4<end:return False
+                    inner_branches.append(address+4+immediate*4);address+=8;continue
                 if ins==0x03E00008:pass
                 elif ins&0xFFFF0000==0x10000000:
                     immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
                     if not start<=address+4+immediate*4<end:return False
+                elif ins>>26==2:
+                    # A tail jump (J) to code of this program ends the block like a return.
+                    target=((address+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)
+                    if not sections[0]['address']<=target<sections[0]['address']+sections[0]['size']:return False
                 else:return False
                 if control(word(address+4)):return False
                 address+=8;break
         if any(word(a)!=0 for a in range(address,h1,4)):return False
         hole_words.update(range(h0,h1,4))
+    if any(target in hole_words and (target not in walked or target in all_slots) for target in inner_branches):return False
     # The spans: no transfer into a hole except the switch itself; no other indirect jump.
     for address in range(start,end,4):
         if address in hole_words:continue
         ins=word(address);op=ins>>26
         standard_call=op==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0
-        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and address!=jump) or (cop_control(ins) and not cop_branch(ins)):return False
+        if (op==0 and ins&63 in (8,9) and ins!=0x03E00008 and not standard_call and address not in jumps) or (cop_control(ins) and not cop_branch(ins)):return False
         if op in (1,4,5,6,7,20,21,22,23) or cop_branch(ins):
             immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
             if address+4+immediate*4 in hole_words:return False

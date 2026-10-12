@@ -226,26 +226,85 @@ def cri_upload_flag_stub(count=None,code=None,log=False):
     return prefix+words+[0,0x0220202D,j(0x2FCFBC),0]
 
 
-def pad_inject_stub(stop_at_flag=False):
+SOUNDS_FUNCTION=None # --sounds-function: halt when the SOUNDS call wrapper returns from this function number.
+SOUNDS_RETURN_HOOKS,SOUNDS_TRAP=(0x297544,0x297474),STUB_DATA+0x100 # Both SOUNDS call wrappers; one trap copy each.
+
+
+SOUNDS_OCCURRENCE=1 # --sounds-occurrence: which call of the function halts (counted at STUB_DATA+0x10).
+
+
+def sounds_function_stub(function,hook,base,occurrence=1):
+    # Replaces LW v1,-0x3F24(gp) / LD s0,0x10(sp) after a SOUNDS wrapper's sceSifCallRpc (s1: function
+    # number): for the `occurrence`-th call of `function`, publishes s1 and the wrapper's buffer pointer
+    # with the stream-reply marker and halts; otherwise runs the displaced pair and continues.
+    count=[0x3C190100,0x37390300,0x8F380010,0x27180001,0xAF380010,0x27180000|((-occurrence)&0xFFFF),0x17000000,0] # Count; BNEZ early.
+    early=12+len(count)
+    count[6]|=early-(3+6)-1
+    return [0x24180000|function,0x16380000|(early-2),0,
+            *count,
+            0x3C180038,0x37187E80,0xAF110010,0x8F99C0DC,0xAF190014,0x34190000|TEXTURE_POINTS['rpc-cri-stream-reply'][1],0xAF190000,
+            j(base+(early-2)*4),0,
+            0x8F83C0DC,0xDFB00010,j(hook+8),0]
+
+
+SOUNDS_LOG=None # --sounds-log N: record every SOUNDS call and halt at the N-th.
+SOUNDS_LOG_ENTRIES=STUB_DATA+0x400 # 24-word entries: function, 4 command words, 16 reply words.
+
+
+def sounds_log_stub(hook,base,calls):
+    # Replaces LW v1,-0x3F24(gp) / LD s0,0x10(sp) after a SOUNDS wrapper's sceSifCallRpc (s1: function
+    # number): appends {function, command words 0-3, reply words 0-15} to the log (index at
+    # STUB_DATA+0x10), halts with the stream-reply marker at the `calls`-th call, otherwise runs the
+    # displaced pair and continues. Clobbers t0-t4, t8, t9.
+    words=[0x3C190100,0x37390300,0x8F280010,0x00084980,0x00085140,0x012A4821,0x01394821,0x25080001,0xAF280010,
+           0xAD310400,0x8F8AC0DC]
+    for k in range(4):words+=[0x8D4B0040+4*k,0xAD2B0404+4*k]
+    words+=[0x240C0010,0x8D4B0000,0xAD2B0414,0x254A0004,0x25290004,0x258CFFFF,0x1580FFFA,0]
+    words+=[0x25080000|((-calls)&0xFFFF),0x15000008,0]
+    halt=len(words)+5
+    words+=[0x3C180038,0x37187E80,0xAF110010,0x34190000|TEXTURE_POINTS['rpc-cri-stream-reply'][1],0xAF190000,j(base+halt*4),0]
+    return words+[0x8F83C0DC,0xDFB00010,j(hook+8),0]
+
+
+PAD_PRESS_START=False # --pad-start: the fourth quarter of each press cycle presses START (title screen).
+
+
+def pad_inject_stub(stop_at_flag=False,press_start=False):
     # Replaces XORI v1,v1,0xFFFF / NOR a0,zero,a0 in the pad reader (v1 becomes the pressed buttons).
     # Counts reader calls at STUB_DATA+4; inside the window, each 64-call cycle presses LEFT for
     # 16 calls, releases, presses CROSS for 16 calls and releases (the absent-card prompt answer).
     # With `stop_at_flag`, presses end once the upload hook has set its flag (the movie keeps playing).
+    # With `press_start`, the last 16 calls of the cycle press START instead of releasing.
     stop=[0x8F180000,0x17000010,0] if stop_at_flag else [] # LW t8,0(t8); BNEZ t8,exit.
+    start=[0x10000005,0,0x2718FFFF,0x17000002,0,0x34630008] if press_start else [] # B exit; ADDIU t8,-1; BNEZ exit; ORI v1,START.
     words=[0x3863FFFF,0x00042027,0x3C180100,0x37180300,0x8F190004,0x27390001,0xAF190004,*stop,
            0x27390000|((-PAD_INJECT_START)&0xFFFF),0x2F380000|PAD_INJECT_LENGTH,0x1300000C,0,
            0x0019C102,0x33180003,0x17000004,0,0x34630080,0x10000005,0,
-           0x2718FFFE,0x17000002,0,0x34634000,
+           0x2718FFFE,0x17000002,0,0x34634000,*start,
            j(PAD_INJECT_HOOK+8),0]
+    if press_start:
+        base=len(stop)
+        words[base+9]=0x13000000|(12+len(start))   # Outside the window: to the exit.
+        words[base+16]=0x10000000|(5+len(start))   # After LEFT: to the exit.
+        words[base+19]=0x17000004                  # Not the CROSS quarter: to the START test.
+        if stop:words[8]=0x17000000|(16+len(start))
     return words
 
 
 def texture_stub(point):
     if point=='rpc-cri-stream-reply':
         words=cri_stream_reply_stub(CRI_STREAM_DELAY,CRI_STREAM_LOG)
-        words+= [0]*(PAD_INJECT_OFFSET//4-len(words))+pad_inject_stub(CRI_STREAM_DELAY is not None)
+        words+= [0]*(PAD_INJECT_OFFSET//4-len(words))+pad_inject_stub(CRI_STREAM_DELAY is not None,PAD_PRESS_START)
         words+= [0]*(CRI_UPLOAD_OFFSET//4-len(words))+cri_upload_flag_stub(CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_LOG)
         words+= [0]*((STUB_DATA-FRESH_BIND_STUB)//4+3-len(words)) # Zeroed flag, pad counter and reply counter.
+        if SOUNDS_LOG is not None:
+            for index,hook in enumerate(SOUNDS_RETURN_HOOKS):
+                words+= [0]*((SOUNDS_TRAP+index*0x100-FRESH_BIND_STUB)//4-len(words))+sounds_log_stub(hook,SOUNDS_TRAP+index*0x100,SOUNDS_LOG)
+            words+= [0]*((SOUNDS_LOG_ENTRIES-FRESH_BIND_STUB)//4+SOUNDS_LOG*24-len(words)) # Zeroed log.
+        if SOUNDS_FUNCTION is not None:
+            words+= [0]*((SOUNDS_TRAP-FRESH_BIND_STUB)//4-len(words))
+            for index,hook in enumerate(SOUNDS_RETURN_HOOKS):
+                words+= [0]*((SOUNDS_TRAP+index*0x80-FRESH_BIND_STUB)//4-len(words))+sounds_function_stub(SOUNDS_FUNCTION,hook,SOUNDS_TRAP+index*0x80,SOUNDS_OCCURRENCE)
         if CRI_STREAM_LOG:
             words+= [0]*((CRI_LOG_ROUTINE-FRESH_BIND_STUB)//4-len(words))+cri_stream_log_routine()
             words+= [0]*((STUB_DATA+0x100-FRESH_BIND_STUB)//4+CRI_LOG_ENTRIES*12-len(words)) # Zeroed log.
@@ -580,6 +639,16 @@ def instrument(data, point='kernel-handler'):
             hook_offset=seg['file_offset']+CRI_UPLOAD_HOOK-seg['virtual_address']
             if struct.unpack_from('<2I',data,hook_offset)!=(0,0x0220202D):raise ValueError('CRI pump upload words differ')
             struct.pack_into('<2I',patched,hook_offset,0x08000000|((FRESH_BIND_STUB+CRI_UPLOAD_OFFSET)>>2),0)
+            if SOUNDS_LOG is not None:
+                for index,hook in enumerate(SOUNDS_RETURN_HOOKS):
+                    hook_offset=seg['file_offset']+hook-seg['virtual_address']
+                    if struct.unpack_from('<2I',data,hook_offset)!=(0x8F83C0DC,0xDFB00010):raise ValueError('SOUNDS wrapper displaced words differ')
+                    struct.pack_into('<2I',patched,hook_offset,0x08000000|((SOUNDS_TRAP+index*0x100)>>2),0)
+            if SOUNDS_FUNCTION is not None:
+                for index,hook in enumerate(SOUNDS_RETURN_HOOKS):
+                    hook_offset=seg['file_offset']+hook-seg['virtual_address']
+                    if struct.unpack_from('<2I',data,hook_offset)!=(0x8F83C0DC,0xDFB00010):raise ValueError('SOUNDS wrapper displaced words differ')
+                    struct.pack_into('<2I',patched,hook_offset,0x08000000|((SOUNDS_TRAP+index*0x80)>>2),0)
         if point in ('rpc-cache-after','rpc-cache-invalidate-after'):
             hooks=(0x32F4CC,0x32F508) if point=='rpc-cache-after' else (0x32F60C,0x32F648)
             for hook,target in ((hooks[0],0x100),(hooks[1],0x180)):
@@ -731,12 +800,23 @@ def main():
     parser.add_argument('--interactive-pad',action='store_true',help='Show the PCSX2 window and bind pad 1 to keyboard (arrows, Enter=Cross, Backspace=Circle, Space=Start), SDL and XInput controllers, so a person can answer in-game prompts. Requires --timeout >= 120.')
     parser.add_argument('--cri-stream-count',type=int,help='rpc-cri-stream-reply: halt at the reply to the first upload carrying exactly this many commands.')
     parser.add_argument('--cri-stream-delay',type=int,help='rpc-cri-stream-reply: let this many replies pass after the flagged upload before halting (0-32766); pad presses stop at the flag.')
+    parser.add_argument('--sounds-function',type=lambda text:int(text,0),help='rpc-cri-stream-reply: halt instead when the SOUNDS (0x02000004) call with this function number returns (not with --cri-stream-log); combine with a --cri-stream-code that never occurs.')
+    parser.add_argument('--sounds-occurrence',type=int,default=1,help='--sounds-function: halt at this call of the function (default: the first).')
+    parser.add_argument('--sounds-log',type=int,help='rpc-cri-stream-reply: record every SOUNDS (0x02000004) call with its command and reply and halt at this call count (1-300; not with --cri-stream-log or --sounds-function); read with read_sounds_log.py.')
+    parser.add_argument('--pad-start',action='store_true',help='rpc-cri-stream-reply: the unattended presses also include START (needed at the title screen).')
     parser.add_argument('--cri-stream-log',action='store_true',help='rpc-cri-stream-reply: record the channel\'s uploads and replies from the flagged upload to the halt (read with read_cri_stream_log.py).')
     parser.add_argument('--cri-stream-code',type=lambda text:int(text,0),help='rpc-cri-stream-reply: halt at the reply to the first upload whose first command has this code.')
     parser.add_argument('--cri-stream-channel',type=lambda text:int(text,0),default=0x35FD00,help='rpc-cri-stream-reply: EE buffer of the stream channel to watch.')
     args = parser.parse_args()
     global CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_CHANNEL,CRI_STREAM_DELAY,CRI_STREAM_LOG
     CRI_STREAM_LOG=args.cri_stream_log
+    global PAD_PRESS_START,SOUNDS_OCCURRENCE,SOUNDS_LOG,SOUNDS_FUNCTION
+    SOUNDS_LOG=args.sounds_log
+    if SOUNDS_LOG is not None and (not 1<=SOUNDS_LOG<=300 or CRI_STREAM_LOG or args.sounds_function is not None):raise SystemExit('--sounds-log: 1..300, alone')
+    SOUNDS_OCCURRENCE=args.sounds_occurrence
+    PAD_PRESS_START=args.pad_start
+    SOUNDS_FUNCTION=args.sounds_function
+    if SOUNDS_FUNCTION is not None and (CRI_STREAM_LOG or not 0<=SOUNDS_FUNCTION<0x8000):raise SystemExit('--sounds-function: 0..0x7FFF, and not together with --cri-stream-log')
     CRI_STREAM_DELAY=args.cri_stream_delay
     CRI_STREAM_CHANNEL=args.cri_stream_channel
     CRI_STREAM_COUNT,CRI_STREAM_CODE=args.cri_stream_count,args.cri_stream_code

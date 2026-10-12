@@ -11,7 +11,18 @@ import re
 from run_pipeline import ROOT, verify_generated
 
 
+def detach_generated_headers(text,own):
+    # The generator's declaration headers list every mapped function and are rewritten whenever the map
+    # changes; including them would recompile every prepared source on each map change. A prepared source
+    # reaches other functions only through the dispatcher, so it needs neither header.
+    text=text.replace('#include <ps2_recompiled_functions.h>\n','').replace('#include <ps2_recompiled_stubs.h>\n','')
+    foreign=set(re.findall(r'\bFUN_[0-9A-F]{8}_0x[0-9a-f]+\b',text))-{own}
+    if foreign:raise ValueError(f'Prepared source {own} still names {sorted(foreign)[:3]}')
+    return text
+
+
 def write_prepared(path,text):
+    text=detach_generated_headers(text,path.stem)
     # Unchanged prepared sources keep their timestamps, so incremental builds skip them.
     if not path.exists() or path.read_text(encoding='utf-8')!=text:
         path.write_text(text,encoding='utf-8')
@@ -41,8 +52,27 @@ def route_vu_status(source):
     return text,count
 
 def route_cop2_condition(source):
-    # BC2T/BC2F test the VU condition; the runtime owns which VU work exists.
+    # BC2T/BC2F test the VU condition; the runtime owns which VU work exists. CFC2/CTC2 of the status
+    # flag register go to the runtime as well (macro-mode arithmetic does not maintain the flags).
     text,count=re.subn(r'\(\(ctx->vu0_status & 0x1\)\)',r'(runtime->cop2Condition(ctx))',source)
+    text,reads=re.subn(r'SET_GPR_U32\(ctx, (\d+), ctx->vu0_status\);',r'SET_GPR_U32(ctx, \1, runtime->readVuStatusFlag(ctx));',text)
+    text,writes=re.subn(r'ctx->vu0_status = static_cast<uint16_t>\(GPR_U32\(ctx, (\d+)\) & (0x[0-9A-Fa-f]+u?)\);',r'runtime->writeVuStatusFlag(ctx, GPR_U32(ctx, \1) & \2);',text)
+    count+=reads+writes
+    # Between a flag clear and the flag read, every flag-setting VU instruction first reports its
+    # effects to the runtime (from the instruction word in the generator's comment).
+    quiet=('vnop','vwaitq','vftoi','vitof','vmove','vmr32','vabs','vclip','sqc2','lqc2','qmfc2','qmtc2','cfc2','ctc2')
+    lines=text.split('\n');out=[];armed=False
+    for line in lines:
+        out.append(line)
+        if 'runtime->writeVuStatusFlag(' in line:armed=True
+        elif 'runtime->readVuStatusFlag(' in line:armed=False
+        elif armed:
+            m=re.match(r'(\s*)// 0x[0-9a-f]+: 0x([0-9a-f]+)  (v[a-z0-9]+)',line)
+            if m and not m[3].startswith(quiet):
+                if not m[3].startswith(('vadd','vsub','vmul','vmadd','vmsub','vopm','vdiv','vsqrt','vrsqrt','vmax','vmini')):
+                    raise ValueError(f'Unrecognized VU instruction {m[3]} between a flag clear and read')
+                out.append(f'{m[1]}runtime->vu0UpdateFlags(ctx, 0x{m[2]}u);');count+=1
+    text='\n'.join(out)
     if 'ctx->vu0_status' in text:raise ValueError('Unrecognized generated COP2 condition')
     return text,count
 
@@ -84,6 +114,29 @@ def route_fast_byte_reads(source):
     # Keep the generated LB/LBU cast; only route its literal address through checked RAM.
     text,count=re.subn(r'\bFAST_READ8\((0x[0-9A-Fa-f]+u)\)',r'READ8(\1)',source)
     if 'FAST_READ8(' in text:raise ValueError('Unrecognized generated fast byte read')
+    return text,count
+
+
+def route_recursive_calls(source,entry):
+    # A JAL to the function's own entry is emitted as an internal jump with RA set; its JR RA then leaves
+    # the native function with a return address inside it. Make it a real guest call through the
+    # dispatcher (same call accounting and depth limit as any other call).
+    pattern=re.compile(r'(SET_GPR_U32\(ctx, 31, (0x[0-9A-Fa-f]+)u\);(?:(?!SET_GPR_U32\(ctx, 31,|goto ).)*?ctx->pc = (0x[0-9A-Fa-f]+)u;\s+)goto label_[0-9a-f]+;(\s+ctx->pc = \2u;)',re.S)
+    def call(m):
+        if int(m[3],16)!=entry:return m[0]
+        return (m[1]+f'if (!runtime->dispatchGuestBranch(rdram, ctx, {m[3]}u, ctx->branch_pc, {m[2]}u, '
+                'PS2Runtime::GuestBranchKind::DirectCall, "JAL")) {\n        return;\n    }'+m[4])
+    text,count=pattern.subn(call,source)
+    return text,sum(1 for m in pattern.finditer(source) if int(m[3],16)==entry)
+
+
+def route_vu_memory(source):
+    # VLQI/VSQI/VLQD/VSQD address VU0 data memory; the generator's output swaps their register fields
+    # and reads main RAM. The runtime executes them from the instruction word instead.
+    pattern=re.compile(r'(// 0x[0-9a-f]+: 0x([0-9a-f]+)  v(?:lqi|sqi|lqd|sqd)[^\n]*\n(?:\s*ctx->pc = 0x[0-9a-f]+u;\n)?)(\s*)\{[^\n]*\}\n')
+    text,count=pattern.subn(lambda m:f'{m[1]}{m[3]}runtime->vu0MemoryInstruction(ctx, 0x{m[2]}u);\n',source)
+    if re.search(r'ctx->vi\[(1[6-9]|[2-9][0-9])\]',text) or 'uint32_t addr = ((uint32_t)(ctx->vi[' in text:
+        raise ValueError('Unrecognized generated VU0 memory access')
     return text,count
 
 
@@ -162,10 +215,12 @@ def main():
         text,halfword_count=route_fast_halfword_reads(text)
         text,byte_count=route_fast_byte_reads(text)
         text,sign_count=widen_sign_branches(text)
+        text,recursive_count=route_recursive_calls(text,address)
+        text,vu_memory_count=route_vu_memory(text)
         destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

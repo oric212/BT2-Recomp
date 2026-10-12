@@ -55,6 +55,16 @@ struct R5900Context {
     bool in_delay_slot = false;
     std::array<float, 32> f{};
     float f_acc = 0;
+    // VU0 float registers for COP2 macro-mode instructions in generated code (x in the lowest lane).
+    // VF0 is the constant (0, 0, 0, 1).
+    __m128 vu0_vf[32] = {_mm_set_ps(1.0f, 0.0f, 0.0f, 0.0f)};
+    __m128 vu0_acc = _mm_setzero_ps(); // ACC, the multiply-accumulate register.
+    float vu0_q = 0;                   // Q, the divide/square-root result (written before the game reads it).
+    __m128 vu0_r = _mm_setzero_ps();   // R, the random number register.
+    std::uint16_t vi[16] = {};         // VU0 integer registers.
+    std::uint32_t vu0_clip_flags = 0;  // VCLIP results (computed by generated code).
+    // Generated ABI storage for MTC0 Wired in the game's unreached TLB setup; no TLB is modelled.
+    std::uint32_t cop0_wired = 0, cop0_random = 47;
 };
 
 struct UnsupportedSyscall : std::runtime_error {
@@ -88,18 +98,16 @@ public:
     [[noreturn]] void SignalException(R5900Context*, PS2Exception exception) {
         throw std::runtime_error("EE exception "+std::to_string(int(exception))+" raised by generated code");
     }
-    // BC2T/BC2F condition (VU activity). In the frame model no VU microprogram is ever started.
-    bool cop2Condition(R5900Context*) {
-        if(frameGifContext())return false;
-        throw UnsupportedVuStatus();
-    }
-    std::uint32_t readVuStatus(R5900Context* context) {
-        if(clear_repeat_gif && displayResetStep(context,6,0x31062C,624))return clear_repeat_gif->readVuIdle();
-        if(frameGifContext() && (context->pc==0x31062C || context->pc==0x31064C))return 0; // VU1 never started in the frame model.
-        if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
-            return gif_dma.readVuIdle();
-        throw UnsupportedVuStatus();
-    }
+    // VU activity as generated code sees it (vu0_macro.cpp): the BC2T/BC2F condition, CFC2/CTC2 of the
+    // status flag register, and VPU_STAT. No VU microprogram is ever started in the frame model.
+    bool cop2Condition(R5900Context* context);
+    std::uint32_t readVuStatusFlag(R5900Context* context);
+    void writeVuStatusFlag(R5900Context* context,std::uint32_t value);
+    // Flag effects of a VU0 macro arithmetic instruction (from its word), run before the generated code
+    // for it wherever a function clears and then reads the status flags (prepare_runtime.py).
+    void vu0UpdateFlags(R5900Context* context,std::uint32_t instruction);
+    std::uint16_t vu0_status_flags_=0; // Z (bit 0), S (bit 1) of the last operation; sticky ZS (6), SS (7).
+    std::uint32_t readVuStatus(R5900Context* context);
     using RecompiledFunction = void (*)(std::uint8_t*, R5900Context*, PS2Runtime*);
     // Diagnostic handoff: retain the parent while running the ready sound child.
     // The priority request remains pending; the first wait is a checked boundary.
@@ -131,10 +139,16 @@ public:
     void wakeMainThread();
     bool mainYieldsToReadyWorkers(std::uint8_t*,R5900Context*);
     std::uint32_t main_priority_previous=0;
-    // Main executing without an idle point still spends time: after this many guest calls since the last
-    // VBLANK a field has elapsed (logical CPU time; busy-wait loops that poll a flag rely on it).
-    static constexpr unsigned main_calls_per_field=100000;
-    unsigned main_calls_since_field_=0,busy_main_vblanks=0;
+    // Main executing without an idle point still spends time: after this many guest calls or loop
+    // iterations (backward branches) since the last VBLANK a field has elapsed (logical CPU time; busy-wait
+    // loops and long computations such as decompression rely on it). Delivered only with interrupts enabled.
+    static constexpr unsigned main_calls_per_field=100000,main_checkpoints_per_field=500000;
+    unsigned main_calls_since_field_=0,main_checkpoints_since_field_=0,busy_main_vblanks=0;
+    R5900Context* main_context_=nullptr; // Main's context as last seen at a guest branch.
+    // VU0 data memory (4 KB) and the macro-mode instructions that address it (vu0_macro.cpp).
+    std::array<std::uint8_t,4096> vu0_memory_{};unsigned vu0_memory_instructions=0;
+    void vu0MemoryInstruction(R5900Context* context,std::uint32_t instruction);
+    void busyMainField();
     unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
@@ -283,6 +297,8 @@ public:
         if(address%16)throw std::runtime_error("Unsupported unaligned quadword load");
         ProbeGpr value;std::memcpy(&value,memory_.data()+address,sizeof(value));return value;
     }
+    // Vector register stores (VU0 macro mode: SQC2) pass the lanes as an integer vector.
+    void write128(std::uint8_t* rdram, std::uint32_t address, __m128i value) { write128(rdram, address, std::bit_cast<ProbeGpr>(value)); }
     void write128(std::uint8_t* rdram, std::uint32_t address, const ProbeGpr& value) {
         if (auto* spr = scratchpadAt(address, 16)) {std::memcpy(spr, &value, 16); return;}
         address = uncachedWideAddress(address, 16);
@@ -638,6 +654,7 @@ public:
         if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u))
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
                 +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
+        if (current_thread_id == 1 && ++main_checkpoints_since_field_ > main_checkpoints_per_field) busyMainField();
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
     }
 
@@ -774,6 +791,7 @@ private:
     std::vector<NativeCriChannel> native_cri_channels_;
     unsigned native_cri_422s_=0,native_cri_400s_=0;
     bool native_sounds_started_=false;
+    unsigned native_sounds_banks_=0; // Sound banks loaded by SOUNDS 0x20 and not unloaded by 0x30 (status word 5).
     std::uint32_t native_cri_players_=0; // Live 0x408 player slots (bit n); a new player takes the lowest free one.
     std::map<std::uint32_t,NativeFile> native_files_;std::uint32_t native_next_fd_=1;
     std::array<std::uint32_t,2> native_fileio_buffers_{};std::uint32_t native_fileio_next_buffer_=0;

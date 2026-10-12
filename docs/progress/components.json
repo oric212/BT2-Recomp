@@ -23,9 +23,8 @@
     },
     {
       "name": "Title screen",
-      "status": "blocked",
-      "note": "Sound request 0x50",
-      "current": true
+      "status": "working",
+      "note": "Options shown"
     },
     {
       "name": "Demo fight",
@@ -34,8 +33,9 @@
     },
     {
       "name": "Gameplay",
-      "status": "not_reached",
-      "note": "Menus, battle"
+      "status": "blocked",
+      "note": "Needs 3D pipeline",
+      "current": true
     }
   ],
   "groups": [
@@ -80,7 +80,7 @@
         {
           "name": "GIF / VIF",
           "status": "working",
-          "note": "Normal and chain DMA; no VIF unpack"
+          "note": "Chain DMA, call/ret; no VIF unpack"
         },
         {
           "name": "IPU / video",
@@ -89,13 +89,13 @@
         },
         {
           "name": "Audio",
-          "status": "blocked",
-          "note": "ADX flow native; no sound output"
+          "status": "incomplete",
+          "note": "Stream flow native; no sound output"
         },
         {
           "name": "VU microprograms",
-          "status": "not_reached",
-          "note": "Not reached yet"
+          "status": "blocked",
+          "note": "VU0 inline code runs; VU1 next"
         }
       ]
     },

@@ -28,7 +28,15 @@ int main() {
     // REFE ends after the tag; unmodelled forms throw before any effect.
     tag(ram,0x200,0,1,0x800);check(walkDmaSourceChain(ram,0x200,"TEST").next_tadr==0x210,"REFE ends the chain");
     tag(ram,0x300,7,0,0,true);check(throws([&]{walkDmaSourceChain(ram,0x300,"TEST");}),"tag IRQ rejected");
-    tag(ram,0x300,5,0,0x400);check(throws([&]{walkDmaSourceChain(ram,0x300,"TEST");}),"CALL rejected");
+    // CALL runs a sub-list and RET comes back after the caller's data; a third nested CALL is refused
+    // and a RET without a caller ends the transfer.
+    tag(ram,0x300,5,1,0x500);tag(ram,0x320,7,0,0);tag(ram,0x500,1,1,0);tag(ram,0x520,6,0,0);
+    const auto called=walkDmaSourceChain(ram,0x300,"TEST");
+    check(called.segments.size()==4 && called.segments[0].data.data()==ram.data()+0x310 && called.segments[1].tag==0x500
+        && called.segments[2].tag==0x520 && called.segments[3].tag==0x320 && called.next_tadr==0x330,"CALL and RET");
+    tag(ram,0x500,5,0,0x540);tag(ram,0x540,5,0,0x560);tag(ram,0x560,7,0,0);
+    check(throws([&]{walkDmaSourceChain(ram,0x300,"TEST");}),"third call level rejected");
+    tag(ram,0x600,6,1,0);check(walkDmaSourceChain(ram,0x600,"TEST").next_tadr==0x620,"RET without a caller ends");
     check(throws([&]{walkDmaSourceChain(ram,0x108,"TEST");}),"unaligned TADR rejected");
     tag(ram,0x300,3,4,0xFF0);check(throws([&]{walkDmaSourceChain(ram,0x300,"TEST");}),"data outside RAM rejected");
     std::cout<<"DMA chain tests passed\n";

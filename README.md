@@ -29,13 +29,13 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Controller check | ✅ Verified — passed with the native controller service |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
 | Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end (decoded natively, no sound); frames match an independent decoder at spot checks |
-| Title screen | ⛔ Blocking — after the movies the game asks its sound module for something not yet captured (SOUNDS `0x50`) |
+| Title screen | 🟢 Operational — the title screen and its options render (the user confirms the picture); reached with scripted Start presses |
 | Demo fight (no input) | ⏳ Not Reached |
-| Gameplay (menus, versus battle) | ⏳ Not Reached |
-| Audio | 🔧 Incomplete — sound requests answered natively; no sound output |
+| Gameplay (menus, versus battle) | ⛔ Blocking — after New Game the game starts its 3D pipeline: VIF1 display lists with tag transfer and VU1 microprograms, not modelled yet |
+| Audio | 🔧 Incomplete — sound requests and stream flow answered natively; no sound output |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
-**Measured 2026-10-12:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run · static coverage **9,547 EE functions mapped and generated** · verification **17/17 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-12:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run · static coverage **10,650 EE functions mapped and generated** · verification **17/17 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.

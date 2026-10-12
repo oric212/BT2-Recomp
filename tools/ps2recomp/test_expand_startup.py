@@ -1,5 +1,5 @@
 import unittest
-from expand_startup import select_target, render
+from expand_startup import select_target, render, neighbours
 
 
 class StartupExpansionTests(unittest.TestCase):
@@ -11,6 +11,12 @@ class StartupExpansionTests(unittest.TestCase):
                 select_target(target, rows)
         with self.assertRaises(ValueError):
             select_target(0x1000, rows * 2)
+
+    def test_neighbours_need_a_span_a_unique_row_and_a_generated_source(self):
+        rows = [{'Start': '0x1000', 'End': '0x1080'}, {'Start': '0x1080', 'End': '0x1100'}, {'Start': '0x1080', 'End': '0x1100'}]
+        self.assertEqual(neighbours(0x1000, rows, set(), 0), [])
+        # 0x1080 is duplicated and no generated source exists for these synthetic addresses.
+        self.assertEqual(neighbours(0x1000, rows, set(), 0x1000), [])
 
     def test_neutral_bindings_and_source_selection(self):
         cmake, header = render([0x1000, 0x2000])

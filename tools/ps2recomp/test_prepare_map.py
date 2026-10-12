@@ -86,6 +86,19 @@ class BoundedSwitchTests(unittest.TestCase):
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*changed)))
         self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<17I',*words[:-1])))
+        # Register saves between the bound and the guard keep the proof (the bound moved up two words,
+        # two stores in between); an instruction writing the condition register there breaks it.
+        apart=words.copy();apart[1]=0x2C620002;apart[2]=0xFFB00000;apart[3]=0xE7B40010
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*apart)))
+        apart[3]=0x24020001
+        self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*apart)))
+        # The bound in the delay slot of a conditional branch on the index (BLTZ v1) is still proven;
+        # after an unconditional branch, a likely branch or a jump it is not.
+        signed=words.copy();signed[2]=0x0460000B
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*signed)))
+        for value in (0x1000000B,0x0462000B,0x08000400):
+            changed=words.copy();changed[2]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,struct.pack('<18I',*changed)))
 
     def test_moved_index_beql_switch_with_padding_after_jump(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
@@ -196,10 +209,43 @@ class SwitchCaseGapTests(unittest.TestCase):
         called=self.words.copy();called[10]=0x0C000400;called[11]=0 # JAL 0x1000 with a NOP delay slot.
         self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(called)))
 
+    def test_switch_candidate_may_also_have_a_padding_hole(self):
+        # As above, plus a second hole that is only a NOP after JR RA and its delay slot (0x23CDF8 shape).
+        words=[0x2C820006,0x1040000A,0,0x00041080,0x3C030000,0x00621821,0x8C631044,0x00600008,0,
+               0,0x03E00008,0x0000102D,0x03E00008,0x24020001,0,0x03E00008,0,
+               0x1030,0x1030,0x1028,0x1028,0x103C,0x103C]
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x5C,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        candidate={'start':0x1000,'end_exclusive':0x1044,'body_size':52,'contiguous_aligned':False,'body_ranges':['1000-1023','1030-1037','103c-1043']}
+        pack=lambda w:struct.pack('<23I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        # A table target inside the first case block (a case falling through) is accepted, its delay
+        # slot is not.
+        inner=words.copy();inner[9]=0x24020005;inner[19]=0x1024
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(inner)))
+        inner[19]=0x102C
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(inner)))
+        # A case block may contain a conditional branch into the candidate (here BEQ v0 to the default
+        # at 0x1030 with a NOP delay slot, replacing the padding and shifting nothing); a branch out of
+        # the candidate is refused.
+        branchy=words.copy();branchy[19]=0x1024;branchy[20]=0x1024
+        branchy[9]=0x10400002;branchy[10]=0;branchy[11]=0x03E00008
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(branchy))) # JR RA last: its delay slot leaves the hole.
+        outside=words.copy();outside[19]=0x1024;outside[20]=0x1024;outside[9]=0x10400040
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(outside)))
+        # The padding hole must be NOPs, follow an unconditional transfer, and not be a branch target.
+        for index,value in [(14,0x24020001),(12,0x24020002),(1,0x1040000C)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(changed)))
+
     def test_case_block_reached_only_by_the_table(self):
         pack=lambda w:struct.pack('<20I',*w)
         self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(self.words)))
         self.assertEqual(select_candidates({'functions':[self.candidate]},self.metadata,data=pack(self.words))[0],[{'start':0x1000,'end':0x1038}])
+        # A case block may end in a tail jump (J) to code of the program; a jump outside it is refused.
+        tail=self.words.copy();tail[10]=0x08000400
+        self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(tail)))
+        tail[10]=0x08000800
+        self.assertFalse(has_switch_case_gaps(self.candidate,self.metadata,pack(tail)))
         # A last block without a return falls through into the span after the hole: accepted.
         fall=self.words.copy();fall[10]=0
         self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(fall)))

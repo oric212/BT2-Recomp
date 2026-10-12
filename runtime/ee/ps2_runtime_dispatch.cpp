@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "ps2_runtime.h"
 
 // PS2Runtime guest call dispatch and kernel function binding.
@@ -16,11 +17,22 @@ void PS2Runtime::registerKernelFunction(std::uint32_t address, RecompiledFunctio
     functions_.emplace(address, function);
 }
 
+// A field's worth of main-thread work without an idle point: the VBLANK arrives anyway, once main runs
+// with interrupts enabled in the frame phase (otherwise it stays due and is retried).
+void PS2Runtime::busyMainField() {
+    if(!main_context_ || current_thread_id!=1 || in_interrupt_ || !gs_display_flips || !main_priority_admissions || startup_scheduler_active
+        || !(intc_mask&4u) || (main_context_->cop0_status&0x10001u)!=0x10001u)return;
+    ++busy_main_vblanks;deliverVblank(memory().data(),main_context_);
+}
+
 bool PS2Runtime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, std::uint32_t target,
                              std::uint32_t source, std::uint32_t resume, GuestBranchKind kind, const char*) {
     if (kind == GuestBranchKind::Return) {
         const auto expected = call_returns_.empty() ? expected_return : call_returns_.back();
-        if (target != expected) throw std::runtime_error("Unexpected probe return target");
+        if (target != expected) {
+            char text[160];std::snprintf(text,sizeof text,"Unexpected probe return target: 0x%X, expected 0x%X, from 0x%X (thread %u, depth %zu)",target,expected,source,current_thread_id,call_returns_.size());
+            throw std::runtime_error(text);
+        }
         context->pc = target;
         ++returns;
         return true;
@@ -45,11 +57,9 @@ bool PS2Runtime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context,
         if(++asset_poll_idles>20000)throw UnsupportedGuestBranch(target,source,resume);
         deliverVblank(rdram,context);
     }
-    if((kind==GuestBranchKind::DirectCall || kind==GuestBranchKind::IndirectCall) && current_thread_id==1 && gs_display_flips
-        && main_priority_admissions && !startup_scheduler_active && !in_interrupt_ && (intc_mask&4u)
-        && ++main_calls_since_field_>main_calls_per_field) {
-        // A field's worth of main-thread work without an idle point: the VBLANK arrives anyway.
-        ++busy_main_vblanks;deliverVblank(rdram,context);
+    if(current_thread_id==1 && !in_interrupt_) {
+        main_context_=context;
+        if((kind==GuestBranchKind::DirectCall || kind==GuestBranchKind::IndirectCall) && ++main_calls_since_field_>main_calls_per_field)busyMainField();
     }
     const auto found = functions_.find(target);
     if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {

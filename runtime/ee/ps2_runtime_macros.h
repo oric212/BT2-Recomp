@@ -105,6 +105,13 @@ inline ProbeGpr PS2_PMAXH(ProbeGpr left,ProbeGpr right) {
 inline ProbeGpr PS2_PMINH(ProbeGpr left,ProbeGpr right) {
     return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return a<b?a:b;});
 }
+// VU0 macro-mode arithmetic on four float lanes (COP2 VADD/VSUB/VMUL) and the field-masked register
+// write (lanes whose mask is set take the result). Host IEEE arithmetic: the VU's handling of
+// infinities, NaNs and denormals is not reproduced.
+inline __m128 PS2_VADD(__m128 left,__m128 right) {return _mm_add_ps(left,right);}
+inline __m128 PS2_VSUB(__m128 left,__m128 right) {return _mm_sub_ps(left,right);}
+inline __m128 PS2_VMUL(__m128 left,__m128 right) {return _mm_mul_ps(left,right);}
+inline __m128 PS2_VBLEND(__m128 kept,__m128 result,__m128 mask) {return _mm_blendv_ps(kept,result,mask);}
 // PCGTH: each halfword becomes 0xFFFF where rs > rt (signed), else 0.
 inline ProbeGpr PS2_PCGTH(ProbeGpr left,ProbeGpr right) {
     return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return static_cast<std::int16_t>(a>b?-1:0);});
@@ -125,6 +132,13 @@ inline ProbeGpr ps2_interleave_bytes(ProbeGpr rs,ProbeGpr rt,unsigned first) {
 }
 inline ProbeGpr PS2_PEXTLB(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_bytes(rs,rt,0);}
 inline ProbeGpr PS2_PEXTUB(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_bytes(rs,rt,8);}
+// PEXTLW/PEXTUW: interleave the low (upper) two words, rt's word first.
+inline ProbeGpr ps2_interleave_words(ProbeGpr rs,ProbeGpr rt,unsigned first) {
+    const auto odd=std::bit_cast<std::array<std::uint32_t,4>>(rs),even=std::bit_cast<std::array<std::uint32_t,4>>(rt);
+    return std::bit_cast<ProbeGpr>(std::array<std::uint32_t,4>{even[first],odd[first],even[first+1],odd[first+1]});
+}
+inline ProbeGpr PS2_PEXTLW(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_words(rs,rt,0);}
+inline ProbeGpr PS2_PEXTUW(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_words(rs,rt,2);}
 // QFSRV: the 256-bit value rs:rt shifted right by `shift` bits (0-127, from the SA register); low 128 bits.
 inline ProbeGpr PS2_QFSRV(ProbeGpr rs,ProbeGpr rt,std::uint32_t shift) {
     const std::uint64_t words[5]={rt.low,rt.high,rs.low,rs.high,0};

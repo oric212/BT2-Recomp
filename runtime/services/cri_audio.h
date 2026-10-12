@@ -4,8 +4,10 @@
 // and once the player is started (command 2 {player, 1}) each returned buffer carries one message per
 // played stretch, {0, EE object, address, bytes}, in the order the data was written; a stop (command 2
 // {player, 0}) reports the rest at once. The IOP plays
-// 48 kHz 16-bit data in 512-sample blocks (0x400 bytes per source); a field (800.8 samples) reports
-// the blocks that ended in it. No sound is produced here; time is logical (one field per VBLANK).
+// in blocks of 512 output samples at 48 kHz (10.67 ms): 0x400 bytes per source of 48 kHz 16-bit data,
+// 0x200 bytes of 24 kHz data (command 4 {player, rate, ...} sets the rate; both rates logged). A field
+// (16.68 ms) reports the blocks that ended in it. No sound is produced here; time is logical (one field
+// per VBLANK).
 #pragma once
 #include <array>
 #include <cstdint>
@@ -23,10 +25,18 @@ public:
     // RPC 0x400 created a source (one audio channel) on an IOP buffer object for an EE object; RPC 0x408
     // a player over two buffer objects.
     void sourceCreated(std::uint32_t handle,std::uint32_t buffer,std::uint32_t ee_object) {sources_[handle].buffer=buffer;sources_[handle].ee_object=ee_object;}
-    void playerCreated(std::uint32_t handle,std::uint32_t first,std::uint32_t second) {players_[handle]={{first,second},false,0};}
+    void playerCreated(std::uint32_t handle,std::uint32_t first,std::uint32_t second) {players_[handle]={{first,second},false,0,block_bytes};}
+    // Stream command 4: the player's sampling rate. A block is 0x400 bytes at 48 kHz and scales with the rate.
+    void rate(std::uint32_t player,std::uint32_t hertz) {
+        if(!hertz || hertz>48000 || (std::uint64_t(block_bytes)*hertz)%48000)throw std::runtime_error("CRI player rate "+std::to_string(hertz)+" is not modelled");
+        known(players_,player,"CRI rate command for an unknown player").block=std::uint32_t(std::uint64_t(block_bytes)*hertz/48000);
+    }
 
+    // RPC 0x409. A movie that ends is stopped first (logged); a skipped movie destroys its player while it
+    // plays: playback ends without further reports and the announced data is dropped (not captured).
     void playerDestroyed(std::uint32_t handle) {
-        if(known(players_,handle,"CRI destroy of an unknown player").playing)throw std::runtime_error("CRI destroy of a playing player");
+        const auto& p=known(players_,handle,"CRI destroy of an unknown player");
+        if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {s.due=0;s.written.clear();}
         players_.erase(handle);
     }
 
@@ -40,6 +50,7 @@ public:
     // next returned buffer reports all data still announced as played (logged at the end of the logo movie).
     void play(std::uint32_t player,std::uint32_t argument) {
         if(argument>1)throw std::runtime_error("CRI player command 2 with argument "+std::to_string(argument)+" is not modelled");
+        if(!argument && !players_.count(player))return; // A stop still queued for a player destroyed meanwhile.
         auto& p=known(players_,player,"CRI play command for an unknown player");
         if(argument && !p.playing) {p.playing=true;p.clock=initial_phase;}
         if(!argument) {
@@ -53,7 +64,7 @@ public:
         for(auto& [handle,p]:players_) {
             if(!p.playing)continue;
             p.clock+=field_ticks;const unsigned blocks=unsigned(p.clock/block_ticks);p.clock%=block_ticks;
-            for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1])s.due+=blocks*block_bytes;
+            for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1])s.due+=blocks*p.block;
             played_blocks+=blocks;
         }
     }
@@ -85,7 +96,7 @@ private:
     static constexpr std::uint64_t field_ticks=4004,block_ticks=2560,initial_phase=1440; // Phase as captured.
     struct Stretch {std::uint32_t address=0,bytes=0;};
     struct Source {std::uint32_t buffer=0,ee_object=0,due=0;unsigned channel=0;std::deque<Stretch> written;};
-    struct Player {std::array<std::uint32_t,2> buffers{};bool playing=false;std::uint64_t clock=0;};
+    struct Player {std::array<std::uint32_t,2> buffers{};bool playing=false;std::uint64_t clock=0;std::uint32_t block=block_bytes;};
     std::map<std::uint32_t,Source> sources_;
     std::map<std::uint32_t,Player> players_;
     template<class Map> static auto& known(Map& map,std::uint32_t handle,const char* error) {

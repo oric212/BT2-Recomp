@@ -51,7 +51,8 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ipu_input.cpp
     runtime/ee/ipu_vlc.cpp
     runtime/ee/ipu_block.cpp
-    runtime/ee/ipu_csc.cpp)
+    runtime/ee/ipu_csc.cpp
+    runtime/ee/vu0_macro.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -75,6 +76,8 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_test(NAME disc-metadata COMMAND bt2-disc-metadata-tests)
     add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp)
     bt2_ee_target(bt2-bootstrap-tests)
+    # Its main keeps many PS2Runtime objects (each several megabytes) as locals.
+    target_link_options(bt2-bootstrap-tests PRIVATE /STACK:268435456)
     add_test(NAME bootstrap-runtime COMMAND bt2-bootstrap-tests)
     add_executable(bt2-ee-stack-tests runtime/tests/retained_ee_stack_tests.cpp runtime/ee/retained_ee_stack.cpp)
     bt2_ee_target(bt2-ee-stack-tests)
