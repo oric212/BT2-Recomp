@@ -49,7 +49,7 @@ Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking ·
 ```powershell
 cmake -S . -B build
 cmake --build build --config Debug
-.uild\Debugt2-port.exe
+.\build\Debug\bt2-port.exe
 ```
 
 This builds the foundation host only. Running the game code needs your own disc image and the local preparation steps in the [build guide](docs/guides/BUILDING.md).
