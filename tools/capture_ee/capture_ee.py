@@ -163,33 +163,59 @@ def cache_capture_segment(terminal_words,point):
 def j(target):return 0x08000000|(target>>2)
 
 
-def cri_stream_reply_stub(delay=None):
+def cri_stream_reply_stub(delay=None,log=False):
     # At the reply-handler call (a1: returned buffer): halt on channel 0x35FD00 once the upload hook
     # has flagged a command-carrying upload (STUB_DATA), i.e. at the reply to those commands. With
-    # `delay`, that many further replies on the channel pass first (counted at STUB_DATA+8).
+    # `delay`, that many further replies on the channel pass first (counted at STUB_DATA+8); with
+    # `log`, every reply of any channel after the flag is recorded first (cri_stream_log_routine, kind 1).
     # Otherwise run the displaced JALR v1 / LW a2,0x10(s0) and continue after them.
+    # Log prefix: LUI/ORI t9; LW t9,0(t9); BEQZ t9,+3; NOP; JAL log; OR t8,a1,zero (delay slot sets the buffer).
+    record=[0x3C190100,0x37390300,0x8F390000,0x13200004,0,0x0C000000|(CRI_LOG_ROUTINE>>2),0x00A0C025,0x340B0001] if log else []
+    if log:record[5:8]=[0x340B0001,0x0C000000|(CRI_LOG_ROUTINE>>2),0x00A0C025] # ORI t3,zero,1; JAL log; OR t8,a1,zero.
+    base=len(record)
     wait=[] if delay is None else [0x3C190100,0x37390300,0x8F380008,0x27180001,0xAF380008,0x2F180000|(delay+1),0x17000000,0]
-    resume=17+len(wait) # Index of the displaced instructions.
+    trap=9+len(wait)   # Index (after the prefix) of the halt sequence.
+    resume=trap+8      # Index of the displaced instructions.
     if wait:wait[6]|=resume-(9+6)-1
-    return [0x3C180000|(CRI_STREAM_CHANNEL>>16),0x37180000|(CRI_STREAM_CHANNEL&0xFFFF),0x14A00000|(24<<16)|(resume-3),0,
+    return [*record,
+            0x3C180000|(CRI_STREAM_CHANNEL>>16),0x37180000|(CRI_STREAM_CHANNEL&0xFFFF),0x14A00000|(24<<16)|(resume-3),0,
             0x3C190100,0x37390300,0x8F390000,0x13200000|(resume-8),0,
             *wait,
             0x3C180038,0x37187E80,0xAF050010,0xAF100014,0x34190000|TEXTURE_POINTS['rpc-cri-stream-reply'][1],0xAF190000,
-            j(FRESH_BIND_STUB+(15+len(wait))*4),0,
+            j(FRESH_BIND_STUB+(base+trap+6)*4),0,
             0x0060F809,0x8E060010,j(0x2FCEF0),0]
+
+
+def cri_stream_log_routine():
+    # Subroutine (t8: stream buffer, t3: kind 1 reply / 2 upload; clobbers t0-t3, t9): for a buffer
+    # with a nonzero count, appends one 12-word entry {buffer | kind, count, sequence counter, nine
+    # record words from +0x10} to the log at STUB_DATA+0x100 while fewer than CRI_LOG_ENTRIES are
+    # stored (index at STUB_DATA+0xC).
+    words=[0x8F0A0000,0x11400000,0,                                                     # LW t2,0(t8); BEQZ t2,return.
+           0x3C190100,0x37390300,0x8F28000C,0x2D090000|CRI_LOG_ENTRIES,0x11200000,0,
+           0x00084940,0x00085100,0x012A4821,0x01394821,0x25080001,0xAF28000C,
+           0x01785825,0xAD2B0100,0x8F0A0000,0xAD2A0104,0x8F0A087C,0xAD2A0108]           # OR t3,t3,t8; SW ...
+    for k in range(9):words+=[0x8F0A0010+4*k,0xAD2A010C+4*k]
+    words[1]|=len(words)-2;words[7]|=len(words)-8 # Both branches reach the return.
+    return words+[0x03E00008,0]
 
 
 CRI_STREAM_CHANNEL=0x35FD00 # --cri-stream-channel: the stream channel's EE buffer.
 CRI_STREAM_COUNT=None # --cri-stream-count: flag only uploads carrying exactly this many commands.
 CRI_STREAM_DELAY=None # --cri-stream-delay: replies to let pass after the flagged upload (pad presses stop at the flag).
+CRI_STREAM_LOG=False  # --cri-stream-log: record uploads and replies between the flag and the halt.
+CRI_LOG_ROUTINE=STUB_DATA+0x20;CRI_LOG_ENTRIES=2400 # Log code and capacity; entries start at STUB_DATA+0x100.
 CRI_STREAM_CODE=None  # --cri-stream-code: flag only uploads whose first command record has this code.
 
 
-def cri_upload_flag_stub(count=None,code=None):
+def cri_upload_flag_stub(count=None,code=None,log=False):
     # Replaces NOP / DADDU a0,s1,zero before the pump's sceSifSetDma: flags (STUB_DATA) an upload
     # of channel 0x35FD00 whose first word (command count) is nonzero or, with `count`, equals it,
-    # and, with `code`, whose first command record (buffer + 0x10) carries that code.
+    # and, with `code`, whose first command record (buffer + 0x10) carries that code. With `log`,
+    # every upload of any channel after the flag is recorded first (kind 2).
     SKIP=object() # Branch-to-skip placeholder: (opcode word, SKIP) pairs are resolved below.
+    # Log prefix: LUI/ORI t9; LW t9,0(t9); BEQZ t9,+3; ORI t3,zero,2; JAL log; LW t8,0xC(s0) (delay slot).
+    prefix=[0x3C190100,0x37390300,0x8F390000,0x13200003,0x340B0002,0x0C000000|(CRI_LOG_ROUTINE>>2),0x8E18000C] if log else []
     words=[0x8E19000C,0x3C180000|(CRI_STREAM_CHANNEL>>16),0x37180000|(CRI_STREAM_CHANNEL&0xFFFF),(0x17380000,SKIP),0,0x8F390000]           # LW t9,0xC(s0); BNE t9,channel.
     if count is None:words+=[(0x13200000,SKIP),0]                                      # BEQZ count.
     else:words+=[0x27390000|((-count)&0xFFFF),(0x17200000,SKIP),0]                     # ADDIU; BNEZ.
@@ -197,7 +223,7 @@ def cri_upload_flag_stub(count=None,code=None):
     words+=[0x3C180100,0x37180300,0x34190001,0xAF190000]                               # Flag = 1.
     skip=len(words)
     words=[word if isinstance(word,int) else word[0]|(skip-index-1) for index,word in enumerate(words)]
-    return words+[0,0x0220202D,j(0x2FCFBC),0]
+    return prefix+words+[0,0x0220202D,j(0x2FCFBC),0]
 
 
 def pad_inject_stub(stop_at_flag=False):
@@ -216,10 +242,13 @@ def pad_inject_stub(stop_at_flag=False):
 
 def texture_stub(point):
     if point=='rpc-cri-stream-reply':
-        words=cri_stream_reply_stub(CRI_STREAM_DELAY)
+        words=cri_stream_reply_stub(CRI_STREAM_DELAY,CRI_STREAM_LOG)
         words+= [0]*(PAD_INJECT_OFFSET//4-len(words))+pad_inject_stub(CRI_STREAM_DELAY is not None)
-        words+= [0]*(CRI_UPLOAD_OFFSET//4-len(words))+cri_upload_flag_stub(CRI_STREAM_COUNT,CRI_STREAM_CODE)
+        words+= [0]*(CRI_UPLOAD_OFFSET//4-len(words))+cri_upload_flag_stub(CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_LOG)
         words+= [0]*((STUB_DATA-FRESH_BIND_STUB)//4+3-len(words)) # Zeroed flag, pad counter and reply counter.
+        if CRI_STREAM_LOG:
+            words+= [0]*((CRI_LOG_ROUTINE-FRESH_BIND_STUB)//4-len(words))+cri_stream_log_routine()
+            words+= [0]*((STUB_DATA+0x100-FRESH_BIND_STUB)//4+CRI_LOG_ENTRIES*12-len(words)) # Zeroed log.
         return struct.pack('<'+str(len(words))+'I',*words)
     if point=='rpc-mc-frame-callback':
         # The startup GetInfo requests no outputs (type flag at 0x3A700C is 0); frame-phase queries request
@@ -702,10 +731,12 @@ def main():
     parser.add_argument('--interactive-pad',action='store_true',help='Show the PCSX2 window and bind pad 1 to keyboard (arrows, Enter=Cross, Backspace=Circle, Space=Start), SDL and XInput controllers, so a person can answer in-game prompts. Requires --timeout >= 120.')
     parser.add_argument('--cri-stream-count',type=int,help='rpc-cri-stream-reply: halt at the reply to the first upload carrying exactly this many commands.')
     parser.add_argument('--cri-stream-delay',type=int,help='rpc-cri-stream-reply: let this many replies pass after the flagged upload before halting (0-32766); pad presses stop at the flag.')
+    parser.add_argument('--cri-stream-log',action='store_true',help='rpc-cri-stream-reply: record the channel\'s uploads and replies from the flagged upload to the halt (read with read_cri_stream_log.py).')
     parser.add_argument('--cri-stream-code',type=lambda text:int(text,0),help='rpc-cri-stream-reply: halt at the reply to the first upload whose first command has this code.')
     parser.add_argument('--cri-stream-channel',type=lambda text:int(text,0),default=0x35FD00,help='rpc-cri-stream-reply: EE buffer of the stream channel to watch.')
     args = parser.parse_args()
-    global CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_CHANNEL,CRI_STREAM_DELAY
+    global CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_CHANNEL,CRI_STREAM_DELAY,CRI_STREAM_LOG
+    CRI_STREAM_LOG=args.cri_stream_log
     CRI_STREAM_DELAY=args.cri_stream_delay
     CRI_STREAM_CHANNEL=args.cri_stream_channel
     CRI_STREAM_COUNT,CRI_STREAM_CODE=args.cri_stream_count,args.cri_stream_code

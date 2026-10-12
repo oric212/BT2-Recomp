@@ -10,13 +10,16 @@
 // - 2 create channel {index, EE buffer, IOP buffer, 0x880}: channel handle 0x1B58C0 + index*0x44.
 // - 0x403, 0x40A: no reply. 0x40C {0xBB80, 0xFFFF, 0xFFFF}: {0, 1, 0}.
 // - 0x422 {1, IOP buffer, 0x100}: handle 0x1BBA40 + n*0x30. 0x400 {..., handle, 1, ...}: 0x1BC580 + n*0x14.
-// - 0x408 {2, 0, handle, handle}: 0x1B5DA0 + n*0x1C.
+// - 0x408 {2, 0, buffer handle, buffer handle}: player 0x1B5DA0 + n*0x1C (lowest free n). 0x409 {player}: destroys
+//   a stopped player, no reply (the reuse of its handle is seen in the captures of two successive movies).
 // Stream channels: the EE uploads each channel's 0x880-byte buffer, and at the next VBlank the IOP
 // returns it with the last word (the EE's sequence counter) advanced by one and its commands consumed
-// (cri_stream.h); unknown command codes stop at that VBlank.
+// (cri_stream.h); unknown command codes stop at that VBlank. While a player runs, the returned buffer
+// carries its messages about played data (cri_audio.h).
 
 namespace {
-constexpr std::uint32_t cri_create=2,cri_403=0x403,cri_40a=0x40A,cri_40c=0x40C,cri_422=0x422,cri_400=0x400,cri_408=0x408;
+constexpr std::uint32_t cri_create=2,cri_403=0x403,cri_40a=0x40A,cri_40c=0x40C,cri_422=0x422,cri_400=0x400,cri_408=0x408,cri_409=0x409;
+constexpr std::uint32_t player_base=0x1B5DA0,player_size=0x1C;
 constexpr std::uint32_t stream_size=0x880;
 }
 
@@ -40,8 +43,19 @@ bool PS2Runtime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const S
     case cri_40a: if(r.send_size!=12)throw UnsupportedSyscall(0x77,context->pc);none();break;
     case cri_40c: if(in(0)!=0xBB80)throw UnsupportedSyscall(0x77,context->pc);reply({0,1,0});break;
     case cri_422: if(in(0)!=1)throw UnsupportedSyscall(0x77,context->pc);reply({0x1BBA40+native_cri_422s_++*0x30});break;
-    case cri_400: reply({0x1BC580+native_cri_400s_++*0x14});break;
-    case cri_408: if(in(0)!=2)throw UnsupportedSyscall(0x77,context->pc);reply({0x1B5DA0+native_cri_408s_++*0x1C});break;
+    case cri_400: {const auto handle=0x1BC580+native_cri_400s_++*0x14;native_cri_audio.sourceCreated(handle,in(1),in(3));reply({handle});break;} // {EE state, 0x422 handle, 1, EE object}.
+    case cri_408: {
+        if(in(0)!=2 || native_cri_players_==UINT32_MAX)throw UnsupportedSyscall(0x77,context->pc);
+        unsigned slot=0;while(native_cri_players_&(1u<<slot))++slot;
+        native_cri_players_|=1u<<slot;
+        const auto handle=player_base+slot*player_size;native_cri_audio.playerCreated(handle,in(2),in(3));reply({handle});break;
+    }
+    case cri_409: { // Destroy a stopped player; its slot is free for the next 0x408 (the original reuses the handle).
+        const auto handle=in(0);const auto slot=(handle-player_base)/player_size;
+        if(r.send_size!=4 || handle<player_base || (handle-player_base)%player_size || slot>=32 || !(native_cri_players_&(1u<<slot)))throw UnsupportedSyscall(0x77,context->pc);
+        try {native_cri_audio.playerDestroyed(handle);} catch(const std::runtime_error& e) {std::cerr<<e.what()<<std::endl;throw UnsupportedSyscall(0x77,context->pc);}
+        native_cri_players_&=~(1u<<slot);none();break;
+    }
     default: throw UnsupportedSyscall(0x77,context->pc);
     }
     completeNativeCall(rdram,context,r,server);
@@ -60,10 +74,14 @@ bool PS2Runtime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context
 
 void PS2Runtime::nativeCriVblank(const R5900Context* interrupted) {
     // The IOP consumes each uploaded buffer and returns it with the sequence counter advanced.
+    native_cri_audio.field(); // The IOP's player advances one field.
     for(auto& c:native_cri_channels_) {
         if(!c.pending)continue;
+        const auto channel=unsigned(&c-native_cri_channels_.data());
+        const auto stream=std::span<std::uint8_t>(native_iop_ram_.data()+c.iop,stream_size);
         // Commands are consumed (count cleared); unknown command codes stop at this VBlank.
-        try {native_cri_commands+=consumeCriStreamCommands(std::span<std::uint8_t>(native_iop_ram_.data()+c.iop,stream_size));}
+        // Then the buffer carries the player's messages for the data played since the last return.
+        try {native_cri_commands+=consumeCriStreamCommands(stream,&native_cri_audio,channel);writeCriStreamMessages(stream,native_cri_audio.played(channel));}
         catch(const std::runtime_error& e) {std::cerr<<e.what()<<" (channel EE 0x"<<std::hex<<c.ee<<", IOP 0x"<<c.iop<<std::dec<<")"<<std::endl;throw UnsupportedSyscall(0x14,interrupted->pc);}
         std::copy_n(native_iop_ram_.begin()+c.iop,stream_size,memory_.begin()+c.ee);
         std::uint32_t counter;std::memcpy(&counter,memory_.data()+c.ee+stream_size-4,4);++counter;

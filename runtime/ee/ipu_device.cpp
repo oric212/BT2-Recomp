@@ -1,5 +1,6 @@
 #include "ipu_device.h"
 #include "ipu_vlc.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>

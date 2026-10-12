@@ -22,6 +22,7 @@ public:
     // Frame-phase configuration: H-BLANK or BUSCLK/256, CUE on or off; no gate, zero return or
     // interrupts (so a COUNT wrap raises no flag).
     void reconfigure(std::uint32_t value) {
+        value&=~0xC00u; // Writing 1 to the equal/overflow flags (bits 10, 11) acknowledges them; no flag is modelled.
         if(!configured_ || (value!=0x02 && value!=0x03 && value!=0x82 && value!=0x83))throw std::runtime_error("Unsupported Timer 1 mode");
         if((value&3)!=(mode_&3))busclk_remainder_=0;
         mode_=value;

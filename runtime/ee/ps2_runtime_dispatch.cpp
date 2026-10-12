@@ -45,6 +45,12 @@ bool PS2Runtime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context,
         if(++asset_poll_idles>20000)throw UnsupportedGuestBranch(target,source,resume);
         deliverVblank(rdram,context);
     }
+    if((kind==GuestBranchKind::DirectCall || kind==GuestBranchKind::IndirectCall) && current_thread_id==1 && gs_display_flips
+        && main_priority_admissions && !startup_scheduler_active && !in_interrupt_ && (intc_mask&4u)
+        && ++main_calls_since_field_>main_calls_per_field) {
+        // A field's worth of main-thread work without an idle point: the VBLANK arrives anyway.
+        ++busy_main_vblanks;deliverVblank(rdram,context);
+    }
     const auto found = functions_.find(target);
     if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
         if(!sound_thread_start_supplied || sound_thread_checkpoint || current_thread_id!=1 || main_thread_priority!=2

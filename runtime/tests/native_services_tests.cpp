@@ -67,5 +67,59 @@ int main() {
     try{consumeCriStreamCommands(stream);}catch(const std::runtime_error&){refused=true;}
     require(refused,"unknown CRI command refused");
 
+    {
+        // Audio flow as logged from the original: two sources of one player, data announced each field,
+        // and after the start the played blocks per field are 2,1,2,1,2,1,2,2,1,2,1,2,1,2,2,...
+        CriAudioFlow flow;flow.sourceCreated(0xA,0x1A,0x3659C8);flow.sourceCreated(0xB,0x1B,0x3659DC);flow.playerCreated(0x50,0x1A,0x1B);
+        std::vector<std::uint8_t> buffer(cri_stream_size);
+        const auto word=[&](std::size_t offset,std::uint32_t value){std::memcpy(buffer.data()+offset,&value,4);};
+        const auto at=[&](std::size_t offset){std::uint32_t value;std::memcpy(&value,buffer.data()+offset,4);return value;};
+        std::uint32_t write_a=0x179140,write_b=0x17D240;
+        const auto announce=[&](std::uint32_t bytes) {
+            word(0,2);word(0x10,0x100);word(0x14,0xA);word(0x18,write_a);word(0x1C,bytes);word(0x20,0x100);word(0x24,0xB);word(0x28,write_b);word(0x2C,bytes);
+            consumeCriStreamCommands(buffer,&flow,1);write_a+=bytes;write_b+=bytes;
+        };
+        announce(0xA00);flow.field();require(flow.played(1).empty(),"no messages before the start");
+        std::vector<std::uint8_t> command(cri_stream_size);const std::uint32_t play[5]={1,0,0,0,2};
+        std::memcpy(command.data(),play,4);std::memcpy(command.data()+0x10,&play[4],4);const std::uint32_t args[2]={0x50,1};std::memcpy(command.data()+0x14,args,8);
+        consumeCriStreamCommands(command,&flow,0);
+        const unsigned expected[]={2,1,2,1,2,1,2,2,1,2,1,2,1,2,2,1,2,1,2,1,2,1,2,2};
+        std::uint32_t read_a=0x179140;
+        for(const auto blocks:expected) {
+            announce(0xA00);flow.field();
+            const auto messages=flow.played(1);
+            require(messages.size()==2 && messages[0].ee_object==0x3659C8 && messages[0].address==read_a && messages[0].bytes==blocks*0x400
+                && messages[1].ee_object==0x3659DC && messages[1].address==read_a+0x4100 && messages[1].bytes==blocks*0x400,"played blocks per field");
+            read_a+=blocks*0x400;
+            writeCriStreamMessages(buffer,messages);
+            require(at(0)==2 && at(0x10)==0 && at(0x14)==0x3659C8 && at(0x1C)==blocks*0x400 && at(0x24)==0x3659DC,"messages in the returned buffer");
+        }
+        // Writes that are not contiguous (the ring wraps) are reported as separate stretches.
+        CriAudioFlow wrap;wrap.sourceCreated(1,0x11,0x100);wrap.sourceCreated(2,0x12,0x200);wrap.playerCreated(9,0x11,0x12);
+        wrap.dataWritten(1,0x17CD40,0x400,1);wrap.dataWritten(1,0x179140,0x400,1);wrap.dataWritten(2,0x180E40,0x400,1);wrap.dataWritten(2,0x17D240,0x400,1);
+        wrap.play(9,1);wrap.field();
+        const auto split=wrap.played(1);
+        require(split.size()==4 && split[0].address==0x17CD40 && split[1].address==0x179140 && split[2].ee_object==0x200 && split[3].address==0x17D240,"wrapped stretches");
+        // A player without announced data reports nothing; later data plays at the block rate from then on.
+        wrap.field();require(wrap.played(1).empty(),"a starved player reports nothing");
+        wrap.dataWritten(1,0x179540,0xA00,1);wrap.dataWritten(2,0x17D640,0xA00,1);wrap.field();
+        const auto resumed=wrap.played(1);
+        require(resumed.size()==2 && resumed[0].address==0x179540 && resumed[0].bytes<=0x800 && resumed[0].bytes==resumed[1].bytes,"data after starvation");
+        // Stop ends playback and reports everything still announced, split where the ring wraps (as
+        // logged: {17C540, C00} then {179140, 2000}); other arguments are refused.
+        CriAudioFlow stop;stop.sourceCreated(1,0x11,0x100);stop.playerCreated(9,0x11,0x12);stop.play(9,1);
+        stop.dataWritten(1,0x17C540,0xC00,1);stop.dataWritten(1,0x179140,0x2000,1);stop.play(9,0);stop.field();
+        const auto flushed=stop.played(1);
+        require(flushed.size()==2 && flushed[0].address==0x17C540 && flushed[0].bytes==0xC00 && flushed[1].address==0x179140 && flushed[1].bytes==0x2000,"stop reports the remaining data");
+        stop.field();require(stop.played(1).empty(),"a stopped player reports nothing more");
+        wrap.play(9,0);
+        bool playing_destroy=false;wrap.play(9,1);try{wrap.playerDestroyed(9);}catch(const std::runtime_error&){playing_destroy=true;}
+        wrap.play(9,0);wrap.playerDestroyed(9);
+        bool gone=false;try{wrap.play(9,1);}catch(const std::runtime_error&){gone=true;}
+        require(playing_destroy && gone,"only a stopped player is destroyed");
+        wrap.playerCreated(9,0x11,0x12);
+        bool refused_argument=false;try{wrap.play(9,2);}catch(const std::runtime_error&){refused_argument=true;}
+        require(refused_argument,"unmodelled player argument refused");
+    }
     std::cout<<"Native IOP heap, pad block and CRI stream checks passed."<<std::endl;
 }

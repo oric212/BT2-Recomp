@@ -1,3 +1,4 @@
+#include <iostream>
 #include "ee/ps2_runtime.h"
 #include <array>
 #include <cstring>
@@ -103,16 +104,24 @@ unsigned& PS2Runtime::nativeBindCounter(const NativeServer& server) {
 
 // Returns false for a request the native service does not own yet; it then stays on its emulated route.
 bool PS2Runtime::callNativeService(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
-    switch(server.id) {
-    case 0x80000597: case 0x80000595: case 0x80000593: return nativeDiscCall(rdram,context,r,server);
-    case 0x80000001: return nativeFileioCall(rdram,context,r,server);
-    case 0x80000400: return nativeCardCall(rdram,context,r,server);
-    case 0x80001300: case 0x8000131E: case 0x8000131F: return nativePadCall(rdram,context,r,server);
-    case 0x80000003: return nativeHeapCall(rdram,context,r,server);
-    case 0x80000006: return nativeModuleCall(rdram,context,r,server);
-    case 0x80000701: return nativeSoundDriverCall(rdram,context,r,server);
-    case 0x02000004: return nativeSoundsCall(rdram,context,r,server);
-    case 0x90000200: return nativeCriCall(rdram,context,r,server);
+    // A refused request names itself: server, function number, sizes and the first send words.
+    try {
+        switch(server.id) {
+        case 0x80000597: case 0x80000595: case 0x80000593: return nativeDiscCall(rdram,context,r,server);
+        case 0x80000001: return nativeFileioCall(rdram,context,r,server);
+        case 0x80000400: return nativeCardCall(rdram,context,r,server);
+        case 0x80001300: case 0x8000131E: case 0x8000131F: return nativePadCall(rdram,context,r,server);
+        case 0x80000003: return nativeHeapCall(rdram,context,r,server);
+        case 0x80000006: return nativeModuleCall(rdram,context,r,server);
+        case 0x80000701: return nativeSoundDriverCall(rdram,context,r,server);
+        case 0x02000004: return nativeSoundsCall(rdram,context,r,server);
+        case 0x90000200: return nativeCriCall(rdram,context,r,server);
+        }
+        throw UnsupportedSyscall(0x77,context->pc);
+    } catch(const UnsupportedSyscall&) {
+        std::cerr<<"Native service refused: server 0x"<<std::hex<<server.id<<" function 0x"<<r.rpc_number<<" send 0x"<<r.send_size<<" receive 0x"<<r.recv_size<<" words";
+        for(std::uint32_t n=0;n<8 && n*4+4<=r.send_size && r.send_source;++n)std::cerr<<" "<<read32(rdram,r.send_source+n*4);
+        std::cerr<<std::dec<<std::endl;
+        throw;
     }
-    throw UnsupportedSyscall(0x77,context->pc);
 }

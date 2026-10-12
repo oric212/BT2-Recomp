@@ -85,6 +85,7 @@ int main() {
         const ProbeGpr x{0x7FFF000100FF8000ull,0x0001000200030004ull},y{0x0001FFFF00010001ull,0x00FF01FE02FD03FCull};
         require(PS2_PADDH(x,y).low==0x8000000001008001ull && PS2_PADDH(x,y).high==0x0100020003000400ull);
         require(PS2_PMAXH(x,y).low==0x7FFF000100FF0001ull && PS2_PMINH(x,y).low==0x0001FFFF00018000ull);
+        require(PS2_PCGTH(x,y).low==0xFFFFFFFFFFFF0000ull && PS2_PCGTH(x,y).high==0);
         require(PS2_PPACB(x,y).low==0xFFFEFDFC01FF0101ull && PS2_PPACB(x,y).high==0x01020304FF01FF00ull);
         // Byte interleave (rt's byte first) and the 256-bit funnel shift rs:rt >> SA.
         const ProbeGpr lo{0x0706050403020100ull,0x0F0E0D0C0B0A0908ull},hi{0x1716151413121110ull,0x1F1E1D1C1B1A1918ull};
@@ -137,6 +138,7 @@ int main() {
         LogicalTimer1 b;b.configure(3);b.reconfigure(0x82);b.setCount(0);
         b.field();require(b.count()==9609);for(unsigned f=0;f<4;++f)b.field();require(b.count()==48048);
         reject([&]{b.reconfigure(0x182);});reject([&]{b.reconfigure(0x81);});
+        b.reconfigure(0xC83);require(b.mode()==0x83);b.reconfigure(0x82); // Flag acknowledgement bits are not mode bits.
     }
     {
         // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.
@@ -1525,6 +1527,13 @@ int main() {
             require(sleep.r[2].low==1 && !ms.main_wakeups && ms.main_sleeps==1 && !ms.main_sleeping);
             reject([&]{R5900Context again=sleep;ms.handleSyscall(ram,&again,0);}); // VBLANK_START disabled: nothing wakes main.
             require(!ms.main_sleeping && ms.main_sleeps==1 && !ms.main_sleep_fields);
+            // Admitted main deletes its newest semaphore whatever its count; an older one stays refused.
+            ms.semaphores.push_back({0,1,0x1234});ms.semaphores.push_back({1,1,0});
+            R5900Context older{};older.pc=0x32EC78;older.r[3].low=0x41;older.r[4].low=0;
+            reject([&]{ms.handleSyscall(ram,&older,0);});
+            R5900Context newest=older;newest.r[4].low=1;ms.handleSyscall(ram,&newest,0);
+            require(newest.r[2].low==1 && ms.semaphores.size()==1);
+            ms.semaphores.clear();
             ms.current_thread_id=2;ms.main_sleeping=true;
             R5900Context query{};query.r[4].low=1;query.r[5].low=0x1000;
             require(ms.handleScheduledThreadSyscall(ram,0x30,&query) && query.r[2].low==4 && ms.read32(ram,0x1000)==4);
@@ -1549,6 +1558,16 @@ int main() {
             require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B400C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
             vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);
             require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
+            // Admitted main that keeps calling without an idle point gets a VBLANK after a field's worth
+            // of calls (a busy-wait on a flag); each delivery restarts the count.
+            vs.main_priority_admissions=1;vs.registerFunction(0x300,return_leaf);
+            const auto before=vs.vblank_deliveries;
+            R5900Context busy{};busy.pc=0x200;
+            for(unsigned n=0;n<PS2Runtime::main_calls_per_field*2+2;++n) {
+                busy.r[31].low=0x204;
+                vs.dispatchGuestBranch(ram,&busy,0x300,0x200,0x204,PS2Runtime::GuestBranchKind::DirectCall,"busy poll");
+            }
+            require(vs.vblank_deliveries==before+2 && vs.busy_main_vblanks==2);
         }
         {
             // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS);

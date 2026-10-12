@@ -43,7 +43,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | PS2Recomp generation and integration | ✅ Verified | Provisional map, local generation, compile/link/execute |
 | Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames before the movie; 1,000 with its first fields |
-| Opening movie | ⛔ Blocking | First pictures decoded natively and presented; playback waits for audio progress |
+| Opening movie | 🟢 Operational | Logo and opening movies play to the end (native IPU, native ADX flow, no sound) |
 | Title screen, demo fight, menus | ⏳ Not Reached | |
 | Character selection and battle loading | ⏳ Not Reached | |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal |
@@ -57,7 +57,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
 3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default, with the CPU renderer as fallback.
 4. **GIF DMA chain mode** — done 2026-10-11: frame-phase GIF channel 2 runs source chains through the DMA chain walker shared with VIF1. Still open: merging the startup GIF channel-2 models into the frame one.
-5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md), [IPU plan](../plans/video/IPU_PLAN.md)), the current blocker: CRI stream replies are native; the native IPU decodes the movie's MPEG-2 pictures (FDEC, VDEC, BDEC, CSC) and the game presents them. Next: the audio playback progress the movie player waits for, then frame comparison with PCSX2.
+5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md), [IPU plan](../plans/video/IPU_PLAN.md)), operational: the native IPU decodes both movies and the native CRI service paces them with the player's played-data reports. Next: the SOUNDS request after the movies (`0x50`, to be captured), then systematic frame comparison with ffmpeg.
 
 ## Working method
 

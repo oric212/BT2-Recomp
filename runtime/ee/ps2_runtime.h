@@ -28,6 +28,7 @@
 #include "ipu_device.h"
 #include "services/sif_rpc.h"
 #include "services/iop_heap.h"
+#include "services/cri_audio.h"
 #include "stopped_dma_channels.h"
 #include <memory>
 struct EeExecutionOwner;
@@ -130,6 +131,10 @@ public:
     void wakeMainThread();
     bool mainYieldsToReadyWorkers(std::uint8_t*,R5900Context*);
     std::uint32_t main_priority_previous=0;
+    // Main executing without an idle point still spends time: after this many guest calls since the last
+    // VBLANK a field has elapsed (logical CPU time; busy-wait loops that poll a flag rely on it).
+    static constexpr unsigned main_calls_per_field=100000;
+    unsigned main_calls_since_field_=0,busy_main_vblanks=0;
     unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
@@ -767,12 +772,15 @@ private:
     IopHeap native_heap_;
     std::map<std::uint32_t,unsigned PS2Runtime::*> native_dma_tokens_;                 // Transfer token -> poll counter.
     std::vector<NativeCriChannel> native_cri_channels_;
-    unsigned native_cri_422s_=0,native_cri_400s_=0,native_cri_408s_=0;bool native_sounds_started_=false;
+    unsigned native_cri_422s_=0,native_cri_400s_=0;
+    bool native_sounds_started_=false;
+    std::uint32_t native_cri_players_=0; // Live 0x408 player slots (bit n); a new player takes the lowest free one.
     std::map<std::uint32_t,NativeFile> native_files_;std::uint32_t native_next_fd_=1;
     std::array<std::uint32_t,2> native_fileio_buffers_{};std::uint32_t native_fileio_next_buffer_=0;
 public:
     unsigned native_disc_requests=0,native_fileio_requests=0,native_card_requests=0,native_pad_requests=0,native_pad_transfers=0,native_other_binds=0;
     unsigned native_cri_requests=0,native_cri_returns=0,native_cri_commands=0;
+    CriAudioFlow native_cri_audio; // What the IOP player reports back while a stream plays.
     void nativePadVblank(std::uint8_t* rdram);
     void nativeCriVblank(const R5900Context* interrupted);
     bool handleNativeDmaStat(R5900Context* context);

@@ -18,14 +18,14 @@
     },
     {
       "name": "Opening movie",
-      "status": "blocked",
-      "note": "Waits for audio",
-      "current": true
+      "status": "working",
+      "note": "Both movies play"
     },
     {
       "name": "Title screen",
-      "status": "not_reached",
-      "note": "Waits for Start"
+      "status": "blocked",
+      "note": "Sound request 0x50",
+      "current": true
     },
     {
       "name": "Demo fight",
@@ -84,13 +84,13 @@
         },
         {
           "name": "IPU / video",
-          "status": "incomplete",
-          "note": "MPEG-2 decode and RGB conversion"
+          "status": "working",
+          "note": "Both movies decode; no IDEC/PACK"
         },
         {
           "name": "Audio",
           "status": "blocked",
-          "note": "No output or playback progress"
+          "note": "ADX flow native; no sound output"
         },
         {
           "name": "VU microprograms",

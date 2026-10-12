@@ -31,7 +31,8 @@ Decode the opening movie's MPEG video with a native implementation of the IPU's 
 - **Reference:** PCSX2 `pcsx2/IPU/` at the pinned revision `81526d4dc7cc70e4ae75abb35a789417456c6d43` (kept in ignored `work/references/pcsx2-ipu/`), read for behaviour only.
 - **Around the IPU:** toSPR DMA in source-chain mode; MMI instructions the movie's motion compensation uses (PADDH, PMAXH, PMINH, PPACB, PEXTLB, PEXTUB, QFSRV) and the trapping ADD/ADDI; GIF IMAGE data continuing in later transfers.
 - **Reached:** the movie decodes an I, a P and a B picture (1,088 coded macroblocks, three CSC passes of 896), uploads 16×448 strips straight to the displayed framebuffer and presents them every field. Then no further IPU command is issued: the player waits for audio playback progress ([Sofdec plan](SOFDEC_PLAN.md#progress-2026-10-12-later)).
-- **Not yet:** IDEC, PACK, RGB16 output with dithering, resuming BDEC when the input ends inside a macroblock (refused by name); comparison of decoded frames with PCSX2; Release decode timing.
+- **Not yet:** IDEC, PACK, RGB16 output with dithering, resuming BDEC when the input ends inside a macroblock (refused by name); Release decode timing.
+- **Later the same day:** with the native audio flow ([Sofdec plan](SOFDEC_PLAN.md#progress-2026-10-12-audio-flow)) both movies decode completely: 3,387 pictures, 2.46 million BDEC macroblocks, 10.1 million VDEC codes, P and B pictures through the game's own motion compensation (one more MMI helper, PCGTH). Spot checks: the logo's first picture equals ffmpeg's decode within one colour step, a mid-logo frame shows the logo of a PCSX2 memory capture, the opening's first picture matches ffmpeg's. A frame-by-frame comparison against ffmpeg (local, from the user's disc image) is the next verification step.
 
 ## IPU behavior to implement
 

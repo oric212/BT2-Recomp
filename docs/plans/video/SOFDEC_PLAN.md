@@ -37,6 +37,18 @@ Play the game's Sofdec movies natively. Step 5 of the [implementation plan](../.
 - **Current stop:** three pictures are decoded and presented, the audio stream has started (21 commands), then the movie player issues no further IPU command. A capture five seconds into playback (`--cri-stream-delay 300`) shows no status in either stream buffer (only the sequence counters advance), while the EE object next to the second channel (`0x366458`...) holds advancing counters and an IOP read position (`0x17A6AE`).
 - **Open:** where the EE obtains audio playback progress (a third transfer from the IOP, an RPC, or its own VBLANK-based estimate) and which value releases the next picture. That decides what the native CRI service must supply.
 
+## Progress (2026-10-12, audio flow)
+
+- **How progress reaches the EE:** the buffer the IOP returns is itself a message list: word 0 counts the IOP's messages and each record is {0, EE object, IOP address, bytes}. The reply handler (`0x3068E0`) dispatches them to the EE object. The earlier captures showed count 0 only because nothing was playing yet.
+- **Logged in PCSX2** (`capture_ee.py --cri-stream-log`, which records every non-empty upload and reply between a flagged upload and the halt; read with `read_cri_stream_log.py`):
+  - Each field the EE announces the PCM it wrote to the two sources' ring buffers (`0x100` {source, address, bytes}; rings of `0x4000` bytes).
+  - From the field after the start command (2 {player, 1}), each returned buffer reports the played data per source, in write order, in blocks of `0x400` bytes: 2, 1, 2, 1, 2, 1, 2, 2, 1, ... blocks per field, i.e. 512-sample blocks at 48 kHz against 800.8 samples per field. A stretch that crosses the ring end is reported as two messages.
+  - The stop command (2 {player, 0}) is followed, one field later, by a report of all data still announced.
+  - Between the two movies the player is destroyed (RPC `0x409` {player}) and recreated with the same handle.
+- **Native model** (`runtime/services/cri_audio.h`): sources (RPC `0x400`, linked to their buffer object and EE object), players over two buffer objects (RPC `0x408`), a logical 48 kHz clock per playing player (one field per VBLANK, phase as logged), and the reports above. A player without announced data reports nothing. No sound is produced.
+- **Result:** the logo movie (151 pictures) and the opening movie (3,236 pictures) play to the end. The run then reaches the SOUNDS service with function `0x50`, not yet captured.
+- **Movie leader frame:** the logo movie's first picture is a flat green field in a black letterbox; ffmpeg decodes the same picture from `LOGO_O.SFD`. It is part of the stream, not a decoding error.
+
 ## Approach
 
 1. **CRI stream replies (done 2026-10-12):** capture EE and IOP RAM in PCSX2 at the first VBlank after these commands are uploaded, and at the next point the EE reads the returned buffer. Derive what the returned buffer holds for commands 8 and 5 (object state, play position, status). Implement those replies in `runtime/services/cri_service.cpp`, one test per command, and keep unknown commands at the checked boundary.

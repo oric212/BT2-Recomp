@@ -105,6 +105,10 @@ inline ProbeGpr PS2_PMAXH(ProbeGpr left,ProbeGpr right) {
 inline ProbeGpr PS2_PMINH(ProbeGpr left,ProbeGpr right) {
     return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return a<b?a:b;});
 }
+// PCGTH: each halfword becomes 0xFFFF where rs > rt (signed), else 0.
+inline ProbeGpr PS2_PCGTH(ProbeGpr left,ProbeGpr right) {
+    return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return static_cast<std::int16_t>(a>b?-1:0);});
+}
 // PPACB: the low bytes of rt's halfwords fill the low doubleword, those of rs the high doubleword.
 inline ProbeGpr PS2_PPACB(ProbeGpr rs,ProbeGpr rt) {
     const auto high=std::bit_cast<std::array<std::uint8_t,16>>(rs),low=std::bit_cast<std::array<std::uint8_t,16>>(rt);

@@ -745,8 +745,11 @@ void PS2Runtime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::
         // The C library's completed open/close/lseek/read deletes its per-call semaphore (newest).
         const bool stdio_open_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
             && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && stdioCallSema(semaphores[id].option);
-        if (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                || (!admitted_rpc_cleanup && !stdio_open_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations())))
+        // Admitted main deletes its newest semaphore in any state (the movie player's lock, count 1): no
+        // thread waits on a semaphore in this model, so nothing is released.
+        const bool newest_cleanup=main_priority_admissions && current_thread_id==1 && !in_interrupt_ && id+1==semaphores.size();
+        if (!newest_cleanup && (semaphores[id].count != 0 || semaphores[id].maximum != 1
+                || (!admitted_rpc_cleanup && !stdio_open_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations()))))
             throw UnsupportedSyscall(selector, context->pc);
         semaphores.pop_back();
         ++semaphore_deletions;

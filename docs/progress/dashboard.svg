@@ -32,15 +32,15 @@
 <text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">No-card prompt</text>
 </g>
-<g><title>Opening movie: Blocking. Waits for audio</title>
-<rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#fff1eb" stroke="#c2410c" stroke-width="2"/>
+<g><title>Opening movie: Operational. Both movies play</title>
+<rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Opening movie</text>
-<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#c2410c">Waits for audio</text>
+<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Both movies play</text>
 </g>
-<g><title>Title screen: Not Reached. Waits for Start</title>
-<rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
+<g><title>Title screen: Blocking. Sound request 0x50</title>
+<rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#fff1eb" stroke="#c2410c" stroke-width="2"/>
 <text x="612.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title screen</text>
-<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Waits for Start</text>
+<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#c2410c">Sound request 0x50</text>
 </g>
 <g><title>Demo fight: Not Reached. If no Start</title>
 <rect x="684.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
@@ -96,18 +96,18 @@
 <circle cx="351" cy="292" r="3.5" fill="#2b78b8"/>
 <text x="362" y="296" font-size="13" font-weight="600" fill="#1e293b">GIF / VIF</text>
 <text x="347" y="314" font-size="11.5" fill="#64748b">Normal and chain DMA; no VIF unpack</text></g>
-<g><title>IPU / video: Incomplete. MPEG-2 decode and RGB conversion</title>
+<g><title>IPU / video: Operational. Both movies decode; no IDEC/PACK</title>
 <rect x="334" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="354" r="3.5" fill="#b77912"/>
+<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="351" cy="354" r="3.5" fill="#2b78b8"/>
 <text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
-<text x="347" y="376" font-size="11.5" fill="#64748b">MPEG-2 decode and RGB conversion</text></g>
-<g><title>Audio: Blocking. No output or playback progress</title>
+<text x="347" y="376" font-size="11.5" fill="#64748b">Both movies decode; no IDEC/PACK</text></g>
+<g><title>Audio: Blocking. ADX flow native; no sound output</title>
 <rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="405" width="3" height="36" rx="1.5" fill="#c2410c"/>
 <circle cx="351" cy="416" r="3.5" fill="#c2410c"/>
 <text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">No output or playback progress</text></g>
+<text x="347" y="438" font-size="11.5" fill="#64748b">ADX flow native; no sound output</text></g>
 <g><title>VU microprograms: Not Reached. Not reached yet</title>
 <rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="467" width="3" height="36" rx="1.5" fill="#8793a5"/>
