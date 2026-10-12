@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-11",
+  "updated": "2026-10-12",
   "flow": [
     {
       "name": "Startup",
@@ -9,7 +9,7 @@
     {
       "name": "Controller check",
       "status": "verified",
-      "note": "Emulated DS2"
+      "note": "Native pad service"
     },
     {
       "name": "Memory card",
@@ -19,7 +19,7 @@
     {
       "name": "Opening movie",
       "status": "blocked",
-      "note": "Stops at GIF chain",
+      "note": "No frames decoded",
       "current": true
     },
     {
@@ -45,7 +45,7 @@
         {
           "name": "EE CPU and kernel services",
           "status": "working",
-          "note": "Frame-phase threads not compared"
+          "note": "Recompiled game code runs"
         },
         {
           "name": "IOP services",
@@ -74,23 +74,23 @@
       "items": [
         {
           "name": "GS",
-          "status": "incomplete",
-          "note": "Sprites, triangles, PSMT4/8"
+          "status": "working",
+          "note": "GPU (paraLLEl-GS) or CPU renderer"
         },
         {
           "name": "GIF / VIF",
-          "status": "blocked",
-          "note": "GIF chain mode stops the run"
+          "status": "working",
+          "note": "Normal and chain DMA; no VIF unpack"
         },
         {
           "name": "IPU / video",
-          "status": "incomplete",
-          "note": "Setup only; no MPEG decoding"
+          "status": "blocked",
+          "note": "Header parsed; frame decoding next"
         },
         {
           "name": "Audio",
           "status": "incomplete",
-          "note": "Requests native; no sound output"
+          "note": "Requests answered; no sound output"
         },
         {
           "name": "VU microprograms",
@@ -113,14 +113,14 @@
           "note": "Disc and embedded ELF confirmed"
         },
         {
-          "name": "Static coverage",
+          "name": "Code generation",
           "status": "verified",
-          "note": "9,493 EE functions generated"
+          "note": "Game code recompiled to C++"
         },
         {
           "name": "Tests",
           "status": "verified",
-          "note": "18/18 CTests; Python suites pass"
+          "note": "17/17 CTests; Python suites pass"
         },
         {
           "name": "Original comparisons",

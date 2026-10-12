@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-11 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-12 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -22,20 +22,20 @@
 <text x="84.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
 <text x="84.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Boot to frame loop</text>
 </g>
-<g><title>Controller check: Verified. Emulated DS2</title>
+<g><title>Controller check: Verified. Native pad service</title>
 <rect x="156.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="216.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Controller check</text>
-<text x="216.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Emulated DS2</text>
+<text x="216.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native pad service</text>
 </g>
 <g><title>Memory card: Verified. No-card prompt</title>
 <rect x="288.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">No-card prompt</text>
 </g>
-<g><title>Opening movie: Blocking. Stops at GIF chain</title>
+<g><title>Opening movie: Blocking. No frames decoded</title>
 <rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#fff1eb" stroke="#c2410c" stroke-width="2"/>
 <text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Opening movie</text>
-<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#c2410c">Stops at GIF chain</text>
+<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#c2410c">No frames decoded</text>
 </g>
 <g><title>Title screen: Not Reached. Waits for Start</title>
 <rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="1.2"/>
@@ -53,12 +53,12 @@
 <text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Menus, battle</text>
 </g>
 <text x="24" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
-<g><title>EE CPU and kernel services: Operational. Frame-phase threads not compared</title>
+<g><title>EE CPU and kernel services: Operational. Recompiled game code runs</title>
 <rect x="24" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="41" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="52" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel services</text>
-<text x="37" y="252" font-size="11.5" fill="#64748b">Frame-phase threads not compared</text></g>
+<text x="37" y="252" font-size="11.5" fill="#64748b">Recompiled game code runs</text></g>
 <g><title>IOP services: Operational. Native; no IOP code runs</title>
 <rect x="24" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
@@ -84,30 +84,30 @@
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="37" y="500" font-size="11.5" fill="#64748b">Native, no card image or saves</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
-<g><title>GS: Incomplete. Sprites, triangles, PSMT4/8</title>
+<g><title>GS: Operational. GPU (paraLLEl-GS) or CPU renderer</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="219" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="230" r="3.5" fill="#b77912"/>
+<rect x="334" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="351" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="362" y="234" font-size="13" font-weight="600" fill="#1e293b">GS</text>
-<text x="347" y="252" font-size="11.5" fill="#64748b">Sprites, triangles, PSMT4/8</text></g>
-<g><title>GIF / VIF: Blocking. GIF chain mode stops the run</title>
+<text x="347" y="252" font-size="11.5" fill="#64748b">GPU (paraLLEl-GS) or CPU renderer</text></g>
+<g><title>GIF / VIF: Operational. Normal and chain DMA; no VIF unpack</title>
 <rect x="334" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="281" width="3" height="36" rx="1.5" fill="#c2410c"/>
-<circle cx="351" cy="292" r="3.5" fill="#c2410c"/>
+<rect x="334" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="351" cy="292" r="3.5" fill="#2b78b8"/>
 <text x="362" y="296" font-size="13" font-weight="600" fill="#1e293b">GIF / VIF</text>
-<text x="347" y="314" font-size="11.5" fill="#64748b">GIF chain mode stops the run</text></g>
-<g><title>IPU / video: Incomplete. Setup only; no MPEG decoding</title>
+<text x="347" y="314" font-size="11.5" fill="#64748b">Normal and chain DMA; no VIF unpack</text></g>
+<g><title>IPU / video: Blocking. Header parsed; frame decoding next</title>
 <rect x="334" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="354" r="3.5" fill="#b77912"/>
+<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#c2410c"/>
+<circle cx="351" cy="354" r="3.5" fill="#c2410c"/>
 <text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
-<text x="347" y="376" font-size="11.5" fill="#64748b">Setup only; no MPEG decoding</text></g>
-<g><title>Audio: Incomplete. Requests native; no sound output</title>
+<text x="347" y="376" font-size="11.5" fill="#64748b">Header parsed; frame decoding next</text></g>
+<g><title>Audio: Incomplete. Requests answered; no sound output</title>
 <rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="351" cy="416" r="3.5" fill="#b77912"/>
 <text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">Requests native; no sound output</text></g>
+<text x="347" y="438" font-size="11.5" fill="#64748b">Requests answered; no sound output</text></g>
 <g><title>VU microprograms: Not Reached. Not reached yet</title>
 <rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="467" width="3" height="36" rx="1.5" fill="#8793a5"/>
@@ -127,18 +127,18 @@
 <circle cx="661" cy="292" r="3.5" fill="#16835d"/>
 <text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Retail validation</text>
 <text x="657" y="314" font-size="11.5" fill="#64748b">Disc and embedded ELF confirmed</text></g>
-<g><title>Static coverage: Verified. 9,493 EE functions generated</title>
+<g><title>Code generation: Verified. Game code recompiled to C++</title>
 <rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="354" r="3.5" fill="#16835d"/>
-<text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Static coverage</text>
-<text x="657" y="376" font-size="11.5" fill="#64748b">9,493 EE functions generated</text></g>
-<g><title>Tests: Verified. 18/18 CTests; Python suites pass</title>
+<text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
+<text x="657" y="376" font-size="11.5" fill="#64748b">Game code recompiled to C++</text></g>
+<g><title>Tests: Verified. 17/17 CTests; Python suites pass</title>
 <rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="416" r="3.5" fill="#16835d"/>
 <text x="672" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
-<text x="657" y="438" font-size="11.5" fill="#64748b">18/18 CTests; Python suites pass</text></g>
+<text x="657" y="438" font-size="11.5" fill="#64748b">17/17 CTests; Python suites pass</text></g>
 <g><title>Original comparisons: Incomplete. 42 of 46 pass at this checkpoint</title>
 <rect x="644" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
