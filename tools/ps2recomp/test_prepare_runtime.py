@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads
+from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -71,6 +71,17 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertIn("GuestBranchKind::TailJump", text)
         self.assertIn("other(rdram, ctx, runtime);", text)
         self.assertEqual(route_tail_calls(text), (text, 0))
+
+    def test_sign_branches_compare_64_bits(self):
+        source=('const bool branch_taken_0x31a378 = (GPR_S32(ctx, 17) >= 0); '
+                'const bool branch_taken_0x10 = (GPR_S32(ctx, 2) < 0); '
+                'const bool branch_taken_0x14 = (GPR_U64(ctx, 3) != GPR_U64(ctx, 0)); '
+                'SET_GPR_S32(ctx, 2, (int32_t)GPR_S32(ctx, 4));')
+        text,count=widen_sign_branches(source)
+        self.assertEqual(count,2)
+        self.assertIn('= (GPR_S64(ctx, 17) >= 0);',text)
+        self.assertIn('= (GPR_S64(ctx, 2) < 0);',text)
+        self.assertIn('(int32_t)GPR_S32(ctx, 4)',text)
 
     def test_direct_jump_ends_the_path(self):
         source = ('    ctx->pc = 0x28BB60u;\n'

@@ -23,6 +23,20 @@ Play the game's Sofdec movies natively. Step 5 of the [implementation plan](../.
 - **Movie path:** the run then reaches 1,590 functions and stops at the first **toIPU DMA** (channel 4, `0x1000B400`, pc `0x2CB384`): the game's own Sofdec library feeds the IPU. Step 3's choice is therefore **native IPU commands** (the game code stays unchanged).
 - **Next:** write `docs/plans/video/IPU_PLAN.md` (toIPU/fromIPU DMA, the IPU commands the movie issues, MPEG-1/2 macroblock decoding and CSC), then implement it.
 
+## Progress (2026-10-12, later)
+
+- **More stream commands captured** (`capture_ee.py --capture-point rpc-cri-stream-reply` with the new `--cri-stream-count`, `--cri-stream-code`, `--cri-stream-channel` and `--cri-stream-delay` triggers). All are answered like 8 and 5: the count is cleared and the records are returned unchanged.
+
+  | Channel (EE buffer) | Commands | Meaning (from the arguments) |
+  | --- | --- | --- |
+  | `0x35FD00` | 8, 4 (`0xBB80`, `0x65`), 9 twice (`0`, `-15`; `1`, `15`) | Audio start: 48,000 Hz, per-channel pan |
+  | `0x365BC0` | `0x100` twice ({object, IOP address, `0xA00`}) | Audio data: 2,560 bytes per audio channel written to IOP memory |
+  | `0x35FD00` | 2 ({object, 1}) | Start playback, presumably |
+
+- **Presentation:** while a movie plays the game does not call the library flip; it rewrites DISPFB/DISPLAY for both circuits every field. The runtime now counts a frame at the library flip or at the VBLANK ending a field with such an update, and bounds time without a frame (3,600 fields).
+- **Current stop:** three pictures are decoded and presented, the audio stream has started (21 commands), then the movie player issues no further IPU command. A capture five seconds into playback (`--cri-stream-delay 300`) shows no status in either stream buffer (only the sequence counters advance), while the EE object next to the second channel (`0x366458`...) holds advancing counters and an IOP read position (`0x17A6AE`).
+- **Open:** where the EE obtains audio playback progress (a third transfer from the IOP, an RPC, or its own VBLANK-based estimate) and which value releases the next picture. That decides what the native CRI service must supply.
+
 ## Approach
 
 1. **CRI stream replies (done 2026-10-12):** capture EE and IOP RAM in PCSX2 at the first VBlank after these commands are uploaded, and at the next point the EE reads the returned buffer. Derive what the returned buffer holds for commands 8 and 5 (object state, play position, status). Implement those replies in `runtime/services/cri_service.cpp`, one test per command, and keep unknown commands at the checked boundary.

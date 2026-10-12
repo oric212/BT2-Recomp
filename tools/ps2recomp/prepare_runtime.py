@@ -87,6 +87,14 @@ def route_fast_byte_reads(source):
     return text,count
 
 
+def widen_sign_branches(source):
+    # BLTZ/BGEZ/BLEZ/BGTZ (and their likely/link forms) compare the full 64-bit register on the R5900;
+    # the generator emits a 32-bit test, which misreads e.g. a 64-bit BUSY flag in bit 63.
+    text,count=re.subn(r'(const bool branch_taken_0x[0-9a-f]+ = \()GPR_S32(\(ctx, \d+\) (?:<|>=|<=|>) 0\);)',r'\1GPR_S64\2',source)
+    if re.search(r'branch_taken_0x[0-9a-f]+ = \(GPR_S32',text):raise ValueError('Unrecognized generated sign branch')
+    return text,count
+
+
 def build_memory(data, metadata, size=32 * 1024 * 1024):
     memory = bytearray(size)
     occupied = []
@@ -126,6 +134,7 @@ def main():
         text, count = route_tail_calls(source.read_text(encoding="utf-8"))
         if count != expected_count:
             raise ValueError(f"Unexpected emitted tail call count in {filename}; review changed output.")
+        text, _ = widen_sign_branches(text)
         destination = patched / source.name
         write_prepared(destination,text)
         prepared_sources.append({"source": filename,
@@ -152,14 +161,16 @@ def main():
             raise ValueError('Reached indexed cache helper shape/count differs')
         text,halfword_count=route_fast_halfword_reads(text)
         text,byte_count=route_fast_byte_reads(text)
+        text,sign_count=widen_sign_branches(text)
         destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:
         raise ValueError('Unexpected generated data cache instruction shape/count.')
+    text, _ = widen_sign_branches(text)
     destination = patched / source.name
     write_prepared(destination, text)
     prepared_sources.append({'source': source.name,

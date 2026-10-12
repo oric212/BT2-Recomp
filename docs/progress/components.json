@@ -19,7 +19,7 @@
     {
       "name": "Opening movie",
       "status": "blocked",
-      "note": "No frames decoded",
+      "note": "Waits for audio",
       "current": true
     },
     {
@@ -84,13 +84,13 @@
         },
         {
           "name": "IPU / video",
-          "status": "blocked",
-          "note": "Header parsed; frame decoding next"
+          "status": "incomplete",
+          "note": "MPEG-2 decode and RGB conversion"
         },
         {
           "name": "Audio",
-          "status": "incomplete",
-          "note": "Requests answered; no sound output"
+          "status": "blocked",
+          "note": "No output or playback progress"
         },
         {
           "name": "VU microprograms",

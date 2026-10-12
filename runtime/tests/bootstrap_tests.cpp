@@ -71,6 +71,30 @@ void vblank_bad_fixture(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* runtim
 }
 int main() {
     {
+        // Trapping 32-bit add: overflow only when equal-signed operands give the other sign.
+        std::uint32_t sum=0;bool overflow=true;
+        ADD32_OV(5,0xFFFFFFFCu,sum,overflow);require(sum==1 && !overflow);
+        ADD32_OV(0x7FFFFFFFu,1,sum,overflow);require(sum==0x80000000u && overflow);
+        ADD32_OV(0x80000000u,0xFFFFFFFFu,sum,overflow);require(sum==0x7FFFFFFFu && overflow);
+        PS2Runtime traps;R5900Context trap_ctx{};
+        reject([&]{traps.SignalException(&trap_ctx,EXCEPTION_INTEGER_OVERFLOW);});
+        // Multiply-accumulate helpers: HI:LO low words as one value, 32-bit sign extension.
+        require(Ps2HiLoToU64(0xFFFFFFFF00000001ull,0xAAAAAAAA80000002ull)==0x0000000180000002ull);
+        require(Ps2SignExt32ToU64(0x80000000u)==0xFFFFFFFF80000000ull && Ps2SignExt32ToU64(7)==7);
+        // Halfword MMI: wrapping add, signed min/max, and byte packing (rt low, rs high).
+        const ProbeGpr x{0x7FFF000100FF8000ull,0x0001000200030004ull},y{0x0001FFFF00010001ull,0x00FF01FE02FD03FCull};
+        require(PS2_PADDH(x,y).low==0x8000000001008001ull && PS2_PADDH(x,y).high==0x0100020003000400ull);
+        require(PS2_PMAXH(x,y).low==0x7FFF000100FF0001ull && PS2_PMINH(x,y).low==0x0001FFFF00018000ull);
+        require(PS2_PPACB(x,y).low==0xFFFEFDFC01FF0101ull && PS2_PPACB(x,y).high==0x01020304FF01FF00ull);
+        // Byte interleave (rt's byte first) and the 256-bit funnel shift rs:rt >> SA.
+        const ProbeGpr lo{0x0706050403020100ull,0x0F0E0D0C0B0A0908ull},hi{0x1716151413121110ull,0x1F1E1D1C1B1A1918ull};
+        require(PS2_PEXTLB(hi,lo).low==0x1303120211011000ull && PS2_PEXTLB(hi,lo).high==0x1707160615051404ull);
+        require(PS2_PEXTUB(hi,lo).low==0x1B0B1A0A19091808ull && PS2_PEXTUB(hi,lo).high==0x1F0F1E0E1D0D1C0Cull);
+        require(PS2_QFSRV(hi,lo,0).low==lo.low && PS2_QFSRV(hi,lo,0).high==lo.high);
+        require(PS2_QFSRV(hi,lo,24).low==0x0A09080706050403ull && PS2_QFSRV(hi,lo,24).high==0x1211100F0E0D0C0Bull);
+        require(PS2_QFSRV(hi,lo,120).low==0x161514131211100Full && PS2_QFSRV(hi,lo,120).high==0x1E1D1C1B1A191817ull);
+    }
+    {
         // Overlay functions dispatch only while RAM holds the exact bytes they were generated from.
         PS2Runtime overlay;overlay.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));
         auto* ram=overlay.memory().data();R5900Context ctx{};
@@ -1390,6 +1414,13 @@ int main() {
         disc_alias.ipuWrite(0x1000D020,0x400);disc_alias.ipuWrite(0x1000D080,0x10);
         reject([&]{disc_alias.ipuWrite(0x1000D000,0x100);}); // Would wrap the scratchpad.
         disc_alias.ipuWrite(0x1000D080,0);reject([&]{disc_alias.ipuWrite(0x1000D000,0x104);}); // Chain mode.
+        // toSPR source chain: REF to 0x100000 (1 qword), then END with one qword after the tag.
+        disc_alias.write64(disc_ram,0x300000,1|(3ull<<28)|(0x100000ull<<32));disc_alias.write64(disc_ram,0x300010,1|(7ull<<28));
+        disc_alias.write32(disc_ram,0x300020,0x2468ACE0);
+        disc_alias.ipuWrite(0x1000D420,0);disc_alias.ipuWrite(0x1000D430,0x300000);disc_alias.ipuWrite(0x1000D480,0x200);
+        disc_alias.ipuWrite(0x1000D400,0x105);
+        require(disc_alias.read32(disc_ram,0x70000200)==0x13579BDF && disc_alias.read32(disc_ram,0x70000210)==0x2468ACE0);
+        require(disc_alias.ipuRead(0x1000D400,chcr) && !(chcr&0x100) && disc_alias.ipuRead(0x1000D480,chcr) && chcr==0x220);
 
         PS2Runtime sound_dispatch;
         sound_dispatch.loadMemory(std::vector<std::uint8_t>(PS2Runtime::ram_size));

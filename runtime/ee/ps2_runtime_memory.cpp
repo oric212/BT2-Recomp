@@ -135,6 +135,13 @@ void PS2Runtime::frameVif1Start(std::uint32_t value) {
     v.chcr=value&~0x100u;v.cis=true;++v.starts;
 }
 
+void PS2Runtime::countDisplayFlip() {
+    ++gs_display_flips;
+    if(on_display_flip)on_display_flip(); // Host presentation of the completed flip (viewer mode).
+    // Probe frame budget: stop after this completed flip as a checked boundary.
+    if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(0x120000E0,8);}
+}
+
 void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
     checkMemory(rdram,0,0);
     if(address==0x12001000 && vif_startup.phase==6 && !graph_startup_phase && value==0x200
@@ -149,20 +156,16 @@ void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32
     }
     // Privileged GS display registers after display setup (main's thread): PMODE, SMODE2, DISPFB1/2,
     // DISPLAY1/2, EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
-    // CRT timing registers stay with SetGsCrt. The library flip (0x311860) is counted at its last
-    // store. No presentation is claimed.
+    // CRT timing registers stay with SetGsCrt. A flip is counted at the library flip's last store
+    // (BGCOLOR), or at the VBLANK ending a field whose display update did not include one (the
+    // per-field update used while a movie plays).
     if(current_thread_id==1 && !in_interrupt_ && display_reset_phase==13 && address>=0x12000000 && address<=0x120000E0 && !(address&15)) {
         const auto n=(address-0x12000000)/16;
         if(n!=0 && n!=2 && n!=7 && n!=8 && n!=9 && n!=10 && n!=13 && n!=14)throw UnsupportedGuestMemory(address,8);
         if(n==13 && value)throw UnsupportedGuestMemory(address,8); // EXTWRITE: write-back circuit stays off.
         if(!gs_display_flips && context->pc!=0x3118D0 && !gs_display_writes)throw UnsupportedGuestMemory(address,8); // First write is the library flip.
         gs_privileged[n]=value;++gs_display_writes;
-        if(context->pc==0x311908 && n==14) {
-            ++gs_display_flips;
-            if(on_display_flip)on_display_flip(); // Host presentation of the completed flip (viewer mode).
-            // Probe frame budget: stop after this completed flip (its store is applied) as a checked boundary.
-            if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(address,8);}
-        }
+        if(n==14)countDisplayFlip(); // The library flip ends with BGCOLOR.
         return;
     }
     if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
@@ -463,16 +466,28 @@ bool PS2Runtime::ipuWrite(std::uint32_t address,std::uint32_t value) {
     }
     if((address==0x1000D000 || address==0x1000D400) && (value&0x100u)) {scratchpadTransfer(address,value);return true;}
     ipu.ram=std::span<const std::uint8_t>(memory_.data(),ram_size);
+    ipu.output_ram=std::span<std::uint8_t>(memory_.data(),ram_size);ipu.output_scratchpad=scratchpad_;
     try {return scratchpad_dma.write32(address,value) || ipu.write32(address,value);}
     catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,4);}
 }
 
 // Scratchpad DMA in normal mode (MOD 0), completed synchronously: fromSPR (0x1000D000) copies QWC
-// quadwords from SADR to main RAM at MADR; toSPR (0x1000D400) copies the other way. Chain/interleave
-// modes, transfers that wrap the 16 KB scratchpad and channel interrupts are refused.
+// quadwords from SADR to main RAM at MADR; toSPR (0x1000D400) copies the other way, or in source chain
+// mode (MOD 1) copies each tag's data from TADR's chain to SADR onwards. Other modes, tag transfer,
+// transfers that wrap the 16 KB scratchpad and channel interrupts are refused.
 void PS2Runtime::scratchpadTransfer(std::uint32_t address,std::uint32_t value) {
     auto& c=scratchpad_dma.channels.at(address);
     const bool from_spr=address==0x1000D000;
+    if(!from_spr && (value&0xFFu)==0x05 && !c.qwc) {
+        const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),c.tadr,"toSPR");
+        std::uint32_t sadr=c.sadr;
+        for(const auto& segment:chain.segments) {
+            if(sadr+segment.data.size()>scratchpad_size)throw UnsupportedGuestMemory(address,4);
+            std::copy(segment.data.begin(),segment.data.end(),scratchpad_.begin()+sadr);sadr+=std::uint32_t(segment.data.size());
+        }
+        c.sadr=sadr&0x3FF0u;c.tadr=chain.next_tadr;c.chcr=value&~0x100u;++scratchpad_transfers;
+        return;
+    }
     const std::uint32_t madr=c.madr&0x0FFFFFF0u,bytes=c.qwc*16;
     if(((value>>2)&3) || (value&0xC0u) || !c.qwc || (c.madr&0x80000000u) || c.madr%16 || madr+bytes>ram_size || c.sadr+bytes>scratchpad_size)
         throw UnsupportedGuestMemory(address,4);

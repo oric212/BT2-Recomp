@@ -75,10 +75,8 @@ std::uint32_t IpuInput::bpRegister() const {
     return bit_|(fifoQwords()<<8)|(held_<<16);
 }
 
-bool IpuInput::takeQwords(std::uint8_t* out,unsigned count) {
-    if(bit_)throw std::runtime_error("IPU table command at an unaligned bit pointer");
-    while(queue_.size()<count)if(!pull())return false;
-    for(unsigned n=0;n<count;++n){std::memcpy(out+n*16,queue_.front().data(),16);queue_.pop_front();if(held_)--held_;}
-    topUp();
+bool IpuInput::takeBytes(std::uint8_t* out,unsigned count) {
+    if(!available(count*8))return false;
+    for(unsigned n=0;n<count;++n){out[n]=std::uint8_t(peek(8));skip(8);}
     return true;
 }

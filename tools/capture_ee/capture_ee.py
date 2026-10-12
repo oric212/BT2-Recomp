@@ -163,30 +163,50 @@ def cache_capture_segment(terminal_words,point):
 def j(target):return 0x08000000|(target>>2)
 
 
-def cri_stream_reply_stub():
+def cri_stream_reply_stub(delay=None):
     # At the reply-handler call (a1: returned buffer): halt on channel 0x35FD00 once the upload hook
-    # has flagged a command-carrying upload (STUB_DATA), i.e. at the reply to those commands.
+    # has flagged a command-carrying upload (STUB_DATA), i.e. at the reply to those commands. With
+    # `delay`, that many further replies on the channel pass first (counted at STUB_DATA+8).
     # Otherwise run the displaced JALR v1 / LW a2,0x10(s0) and continue after them.
-    return [0x3C180035,0x3718FD00,0x14B8000E,0,
-            0x3C190100,0x37390300,0x8F390000,0x13200009,0,
+    wait=[] if delay is None else [0x3C190100,0x37390300,0x8F380008,0x27180001,0xAF380008,0x2F180000|(delay+1),0x17000000,0]
+    resume=17+len(wait) # Index of the displaced instructions.
+    if wait:wait[6]|=resume-(9+6)-1
+    return [0x3C180000|(CRI_STREAM_CHANNEL>>16),0x37180000|(CRI_STREAM_CHANNEL&0xFFFF),0x14A00000|(24<<16)|(resume-3),0,
+            0x3C190100,0x37390300,0x8F390000,0x13200000|(resume-8),0,
+            *wait,
             0x3C180038,0x37187E80,0xAF050010,0xAF100014,0x34190000|TEXTURE_POINTS['rpc-cri-stream-reply'][1],0xAF190000,
-            j(FRESH_BIND_STUB+15*4),0,
+            j(FRESH_BIND_STUB+(15+len(wait))*4),0,
             0x0060F809,0x8E060010,j(0x2FCEF0),0]
 
 
-def cri_upload_flag_stub():
+CRI_STREAM_CHANNEL=0x35FD00 # --cri-stream-channel: the stream channel's EE buffer.
+CRI_STREAM_COUNT=None # --cri-stream-count: flag only uploads carrying exactly this many commands.
+CRI_STREAM_DELAY=None # --cri-stream-delay: replies to let pass after the flagged upload (pad presses stop at the flag).
+CRI_STREAM_CODE=None  # --cri-stream-code: flag only uploads whose first command record has this code.
+
+
+def cri_upload_flag_stub(count=None,code=None):
     # Replaces NOP / DADDU a0,s1,zero before the pump's sceSifSetDma: flags (STUB_DATA) an upload
-    # of channel 0x35FD00 whose first word (command count) is nonzero.
-    return [0x8E19000C,0x3C180035,0x3718FD00,0x17380008,0,0x8F390000,0x13200005,0,
-            0x3C180100,0x37180300,0x34190001,0xAF190000,
-            0,0x0220202D,j(0x2FCFBC),0]
+    # of channel 0x35FD00 whose first word (command count) is nonzero or, with `count`, equals it,
+    # and, with `code`, whose first command record (buffer + 0x10) carries that code.
+    SKIP=object() # Branch-to-skip placeholder: (opcode word, SKIP) pairs are resolved below.
+    words=[0x8E19000C,0x3C180000|(CRI_STREAM_CHANNEL>>16),0x37180000|(CRI_STREAM_CHANNEL&0xFFFF),(0x17380000,SKIP),0,0x8F390000]           # LW t9,0xC(s0); BNE t9,channel.
+    if count is None:words+=[(0x13200000,SKIP),0]                                      # BEQZ count.
+    else:words+=[0x27390000|((-count)&0xFFFF),(0x17200000,SKIP),0]                     # ADDIU; BNEZ.
+    if code is not None:words+=[0x8F190010,0x27390000|((-code)&0xFFFF),(0x17200000,SKIP),0] # LW t9,0x10(t8); ADDIU; BNEZ.
+    words+=[0x3C180100,0x37180300,0x34190001,0xAF190000]                               # Flag = 1.
+    skip=len(words)
+    words=[word if isinstance(word,int) else word[0]|(skip-index-1) for index,word in enumerate(words)]
+    return words+[0,0x0220202D,j(0x2FCFBC),0]
 
 
-def pad_inject_stub():
+def pad_inject_stub(stop_at_flag=False):
     # Replaces XORI v1,v1,0xFFFF / NOR a0,zero,a0 in the pad reader (v1 becomes the pressed buttons).
     # Counts reader calls at STUB_DATA+4; inside the window, each 64-call cycle presses LEFT for
     # 16 calls, releases, presses CROSS for 16 calls and releases (the absent-card prompt answer).
-    words=[0x3863FFFF,0x00042027,0x3C180100,0x37180300,0x8F190004,0x27390001,0xAF190004,
+    # With `stop_at_flag`, presses end once the upload hook has set its flag (the movie keeps playing).
+    stop=[0x8F180000,0x17000010,0] if stop_at_flag else [] # LW t8,0(t8); BNEZ t8,exit.
+    words=[0x3863FFFF,0x00042027,0x3C180100,0x37180300,0x8F190004,0x27390001,0xAF190004,*stop,
            0x27390000|((-PAD_INJECT_START)&0xFFFF),0x2F380000|PAD_INJECT_LENGTH,0x1300000C,0,
            0x0019C102,0x33180003,0x17000004,0,0x34630080,0x10000005,0,
            0x2718FFFE,0x17000002,0,0x34634000,
@@ -196,10 +216,10 @@ def pad_inject_stub():
 
 def texture_stub(point):
     if point=='rpc-cri-stream-reply':
-        words=cri_stream_reply_stub()
-        words+= [0]*(PAD_INJECT_OFFSET//4-len(words))+pad_inject_stub()
-        words+= [0]*(CRI_UPLOAD_OFFSET//4-len(words))+cri_upload_flag_stub()
-        words+= [0]*((STUB_DATA-FRESH_BIND_STUB)//4+2-len(words)) # Zeroed flag and pad counter.
+        words=cri_stream_reply_stub(CRI_STREAM_DELAY)
+        words+= [0]*(PAD_INJECT_OFFSET//4-len(words))+pad_inject_stub(CRI_STREAM_DELAY is not None)
+        words+= [0]*(CRI_UPLOAD_OFFSET//4-len(words))+cri_upload_flag_stub(CRI_STREAM_COUNT,CRI_STREAM_CODE)
+        words+= [0]*((STUB_DATA-FRESH_BIND_STUB)//4+3-len(words)) # Zeroed flag, pad counter and reply counter.
         return struct.pack('<'+str(len(words))+'I',*words)
     if point=='rpc-mc-frame-callback':
         # The startup GetInfo requests no outputs (type flag at 0x3A700C is 0); frame-phase queries request
@@ -680,7 +700,15 @@ def main():
     parser.add_argument('--absent-cards',action='store_true',help='Disable both cards in a separate isolated capture profile.')
     parser.add_argument('--timeout', type=float, default=40)
     parser.add_argument('--interactive-pad',action='store_true',help='Show the PCSX2 window and bind pad 1 to keyboard (arrows, Enter=Cross, Backspace=Circle, Space=Start), SDL and XInput controllers, so a person can answer in-game prompts. Requires --timeout >= 120.')
+    parser.add_argument('--cri-stream-count',type=int,help='rpc-cri-stream-reply: halt at the reply to the first upload carrying exactly this many commands.')
+    parser.add_argument('--cri-stream-delay',type=int,help='rpc-cri-stream-reply: let this many replies pass after the flagged upload before halting (0-32766); pad presses stop at the flag.')
+    parser.add_argument('--cri-stream-code',type=lambda text:int(text,0),help='rpc-cri-stream-reply: halt at the reply to the first upload whose first command has this code.')
+    parser.add_argument('--cri-stream-channel',type=lambda text:int(text,0),default=0x35FD00,help='rpc-cri-stream-reply: EE buffer of the stream channel to watch.')
     args = parser.parse_args()
+    global CRI_STREAM_COUNT,CRI_STREAM_CODE,CRI_STREAM_CHANNEL,CRI_STREAM_DELAY
+    CRI_STREAM_DELAY=args.cri_stream_delay
+    CRI_STREAM_CHANNEL=args.cri_stream_channel
+    CRI_STREAM_COUNT,CRI_STREAM_CODE=args.cri_stream_count,args.cri_stream_code
     if args.capture_point in ('rpc-cri-nth-before','rpc-cri-nth-control-after'):
         if args.cri_call_index is None or not 1<=args.cri_call_index<=64 or not args.disc or not args.absent_cards:raise ValueError('Nth CRI capture requires 1..64, local disc and absent cards')
         CRI_CALL_INDEX=args.cri_call_index

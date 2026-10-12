@@ -29,8 +29,8 @@ public:
     // decoder's bit buffer, at most 2).
     std::uint32_t bpRegister() const;
     unsigned fifoQwords() const;
-    // Takes whole quadwords for table commands (SETIQ/SETVQ); requires a quadword-aligned pointer.
-    bool takeQwords(std::uint8_t* out,unsigned count);
+    // Takes `count` bytes at the bit pointer for table commands (SETIQ/SETVQ); false when not all are available.
+    bool takeBytes(std::uint8_t* out,unsigned count);
 
 private:
     std::deque<std::array<std::uint8_t,16>> queue_; // Bit buffer (front) and FIFO.

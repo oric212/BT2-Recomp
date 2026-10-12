@@ -16,6 +16,23 @@ Decode the opening movie's MPEG video with a native implementation of the IPU's 
 - **Reached:** the movie starts the chain and parses the MPEG sequence header with FDEC (start code, then 32, 32 and 30 bits). It then issues no further command; its decoder thread (7) polls IPU_BP, IPU_CMD and IPU_CTRL (ECD, bit 14) in the wait loop at `0x31A3C8` until the probe's execution budget ends.
 - **Next:** find what the wait loop at `0x31A3C8` expects after the header (likely the next FDEC field, an end-code condition or the IPU interrupt), then VDEC and the macroblock commands.
 
+## Progress (2026-10-12, later)
+
+- **The wait was a recompiler defect:** the game reads IPU_CMD as 64 bits and tests BUSY (bit 63) with `bgezl`; the generator emits 32-bit sign tests for BLTZ/BGEZ/BLEZ/BGTZ, so bit 31 of the FDEC result was read as BUSY. `prepare_runtime.py` now widens every such branch to the full register (491 branches in the prepared sources), with a tooling test.
+- **Stream:** MPEG-2 (IDP 2, non-linear quantiser scale, intra VLC table one), not MPEG-1. Sofdec loads the quantiser matrix from the sequence header with SETIQ at an unaligned bit position.
+- **Commands now native** (`runtime/ee/ipu_vlc.*`, `ipu_block.*`, `ipu_csc.*`, `ipu_device.cpp`):
+  - SETIQ/SETVQ read at the bit pointer; SETIQ skips FB bits first.
+  - VDEC: macroblock address increment (with escape and MPEG-1 stuffing), macroblock type (I, P, B), motion code, DMV; ECD on an invalid code.
+  - BDEC: coded block pattern, DC size and coefficient codes (tables B-9, B-12 to B-15), inverse quantisation, a double-precision inverse DCT, RAW16 output (48 quadwords); then the search for a following start code (SCD/ECD).
+  - CSC: RAW8 macroblocks to RGB32 with the SETTH alpha thresholds, resumable per macroblock across input and output.
+  - Output FIFO and fromIPU DMA (channel 3, normal mode) to main RAM or the scratchpad; IPU_CTRL OFC, ECD, SCD; writes to read-only IPU_CTRL fields are ignored.
+- **Reported words follow PCSX2's IPU where the public documentation is silent** (VDEC result layout: the code length only for B-picture macroblock types and motion codes, the frame-motion flag `0x80`, sign-extended motion codes). Deviations from that reference, chosen from the MPEG specification: MPEG-1 results are made odd for every coefficient; no fast path for DC-only blocks. MPEG-2 mismatch control is not applied (as in the reference).
+- **Code tables** are checked at compile time (complete prefix codes) and table B-15 was cross-checked against the reference's lookup tables.
+- **Reference:** PCSX2 `pcsx2/IPU/` at the pinned revision `81526d4dc7cc70e4ae75abb35a789417456c6d43` (kept in ignored `work/references/pcsx2-ipu/`), read for behaviour only.
+- **Around the IPU:** toSPR DMA in source-chain mode; MMI instructions the movie's motion compensation uses (PADDH, PMAXH, PMINH, PPACB, PEXTLB, PEXTUB, QFSRV) and the trapping ADD/ADDI; GIF IMAGE data continuing in later transfers.
+- **Reached:** the movie decodes an I, a P and a B picture (1,088 coded macroblocks, three CSC passes of 896), uploads 16×448 strips straight to the displayed framebuffer and presents them every field. Then no further IPU command is issued: the player waits for audio playback progress ([Sofdec plan](SOFDEC_PLAN.md#progress-2026-10-12-later)).
+- **Not yet:** IDEC, PACK, RGB16 output with dithering, resuming BDEC when the input ends inside a macroblock (refused by name); comparison of decoded frames with PCSX2; Release decode timing.
+
 ## IPU behavior to implement
 
 Public IPU semantics (register layout, command set, MPEG-1/2 decoding from ISO/IEC 11172-2 and 13818-2). Adapt reference behavior; do not copy PCSX2's or libmpeg2's code.

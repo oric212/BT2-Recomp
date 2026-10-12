@@ -64,7 +64,7 @@ void PS2Runtime::nativeCriVblank(const R5900Context* interrupted) {
         if(!c.pending)continue;
         // Commands are consumed (count cleared); unknown command codes stop at this VBlank.
         try {native_cri_commands+=consumeCriStreamCommands(std::span<std::uint8_t>(native_iop_ram_.data()+c.iop,stream_size));}
-        catch(const std::runtime_error& e) {std::cerr<<e.what()<<std::endl;throw UnsupportedSyscall(0x14,interrupted->pc);}
+        catch(const std::runtime_error& e) {std::cerr<<e.what()<<" (channel EE 0x"<<std::hex<<c.ee<<", IOP 0x"<<c.iop<<std::dec<<")"<<std::endl;throw UnsupportedSyscall(0x14,interrupted->pc);}
         std::copy_n(native_iop_ram_.begin()+c.iop,stream_size,memory_.begin()+c.ee);
         std::uint32_t counter;std::memcpy(&counter,memory_.data()+c.ee+stream_size-4,4);++counter;
         std::memcpy(memory_.data()+c.ee+stream_size-4,&counter,4);

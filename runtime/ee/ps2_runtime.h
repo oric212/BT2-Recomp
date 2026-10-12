@@ -79,8 +79,14 @@ struct UnsupportedVuStatus : std::runtime_error {
     UnsupportedVuStatus():std::runtime_error("Unsupported VU0 VPU_STAT read") {}
 };
 
+enum PS2Exception {EXCEPTION_INTEGER_OVERFLOW=0x0C};
+
 class PS2Runtime {
 public:
+    // CPU exceptions raised by generated code (trapping ADD/ADDI) stop at a checked boundary.
+    [[noreturn]] void SignalException(R5900Context*, PS2Exception exception) {
+        throw std::runtime_error("EE exception "+std::to_string(int(exception))+" raised by generated code");
+    }
     // BC2T/BC2F condition (VU activity). In the frame model no VU microprogram is ever started.
     bool cop2Condition(R5900Context*) {
         if(frameGifContext())return false;
@@ -619,9 +625,11 @@ public:
 
     bool eeCheckpointDue() {
         // Runaway guard. One observed null-bind retry executes a 2^20+1-iteration guest loop. Once frames
-        // are presented the guard applies per frame (each display flip restarts the count): run length is
-        // bounded by the frame limit, and a loop that never reaches the next frame still stops.
-        if (gs_display_flips != checkpoint_flips_) {checkpoint_flips_ = gs_display_flips; checkpoints_ = 0;}
+        // are presented the guard applies per frame and per VBLANK field (each restarts the count): run
+        // length is bounded by the frame limit and the flipless-field limit (deliverVblank), and a loop
+        // that never reaches the next field still stops.
+        if (gs_display_flips != checkpoint_flips_ || (gs_display_flips && vblank_deliveries != checkpoint_fields_))
+            {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries; checkpoints_ = 0;}
         if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u))
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
                 +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
@@ -824,7 +832,10 @@ private:
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;
-    unsigned checkpoints_ = 0, checkpoint_flips_ = 0, dispatch_depth_ = 0;
+    unsigned checkpoints_ = 0, checkpoint_flips_ = 0, checkpoint_fields_ = 0, dispatch_depth_ = 0;
+    unsigned flipless_fields_ = 0, flipless_flips_ = 0; // Fields delivered since the last display flip.
+    unsigned field_flips_ = 0, field_writes_ = 0;       // Flip and display-write counts at the last VBLANK.
+    void countDisplayFlip();
     std::uint32_t last_branch_source_ = 0, last_branch_target_ = 0;
     bool timer3_mode_supplied_ = false;
     std::uint32_t timer3_mode_ = 0, timer2_mode_ = 0;

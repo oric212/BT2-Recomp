@@ -66,7 +66,7 @@ The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` a
 
 ## Unattended CRI stream capture
 
-`capture_ee.py --capture-point rpc-cri-stream-reply` (with `--pcsx2`, `--bios`, `--disc`, `--absent-cards`) runs without a user: a pad-reader hook presses LEFT then CROSS in cycles to answer the absent-card prompt, and the trap halts at the reply to the first command-carrying upload of CRI channel `0x35FD00`. The hooks' flag and press counter live in the authored segment. Output stays in ignored `work/pcsx2-capture/`.
+`capture_ee.py --capture-point rpc-cri-stream-reply` (with `--pcsx2`, `--bios`, `--disc`, `--absent-cards`) runs without a user: a pad-reader hook presses LEFT then CROSS in cycles to answer the absent-card prompt, and the trap halts at the reply to the first command-carrying upload of CRI channel `0x35FD00`. The hooks' flag and press counter live in the authored segment. Output stays in ignored `work/pcsx2-capture/`. Triggers for later uploads: `--cri-stream-count N` (an upload with exactly N commands), `--cri-stream-code C` (first command code), `--cri-stream-channel ADDRESS` (the channel's EE buffer, default `0x35FD00`; the audio data channel is `0x365BC0`) and `--cri-stream-delay N` (halt N replies after the flagged upload; pad presses stop at the flag so the movie is not skipped).
 
 ## GPU GS (paraLLEl-GS)
 
@@ -96,7 +96,7 @@ The first command prepares the map, generates code, hashes all source/header out
 
 The probe registers and executes the actual generated `FUN_0032EEE0` from the broad generation set. It verifies selector/operation, syscall resume PC, return target and preserved register bits. Unsupported syscalls, cache modes, guest targets and returns throw errors. It records the cache request; it does not model caches, DMA, MMIO, graphics, or boot the game. No upstream runtime is linked.
 
-Entry preparation copies ELF loads into a bounded main-RAM image and creates an ignored compiler-facing entry source under `game/generated/bt2-runtime/`, routing emitted direct tail calls through runtime dispatch. The original generated set is unchanged. `runtime-preparation.json` records source/image hashes and hook count. Out-of-range guest memory, unaligned word/quadword accesses, unsupported dispatch and unsupported syscalls throw errors; backedges have an execution budget.
+Entry preparation copies ELF loads into a bounded main-RAM image and creates an ignored compiler-facing entry source under `game/generated/bt2-runtime/`, routing emitted direct tail calls through runtime dispatch. The original generated set is unchanged. `runtime-preparation.json` records source/image hashes and hook count. Preparation also widens the generator's 32-bit sign tests of BLTZ/BGEZ/BLEZ/BGTZ branches to the full 64-bit register, as the R5900 compares. Out-of-range guest memory, unaligned word/quadword accesses, unsupported dispatch and unsupported syscalls throw errors; backedges have an execution budget.
 
 The entry probe poisons its observed uninitialized zero-store interval, executes generated CPU initialization/zeroing, and verifies memory coverage and boundary bytes. It currently expects to stop at SetupThread (`0x3C`) and writes `entry-stop.json` with selector, PC, arguments and store counts. This verifies actual entry execution, not successful boot or a syscall implementation. FPU support is deliberately restricted to entry's zero operands.
 

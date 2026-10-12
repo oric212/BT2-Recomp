@@ -19,6 +19,12 @@ inline std::uint32_t ADD32(std::uint32_t left, std::uint32_t right) {
     return left + right;
 }
 
+// ADD/ADDI: 32-bit signed add with the overflow condition that raises the integer overflow exception.
+inline void ADD32_OV(std::uint32_t left, std::uint32_t right, std::uint32_t& result, bool& overflow) {
+    result = left + right;
+    overflow = (~(left ^ right) & (left ^ result)) >> 31;
+}
+
 // HI:LO as one 64-bit accumulator (low words of each) and its 32-bit sign-extended halves, for the
 // R5900 multiply-accumulate instructions (MADD/MADDU/MSUB and pipeline-1 forms).
 inline std::uint64_t Ps2HiLoToU64(std::uint64_t hi, std::uint64_t lo) {
@@ -82,6 +88,45 @@ inline ProbeGpr PS2_POR(ProbeGpr left,ProbeGpr right) {
 }
 inline ProbeGpr PS2_PCPYLD(ProbeGpr left, ProbeGpr right) {
     return {right.low, left.low};
+}
+// Halfword MMI operations (eight 16-bit lanes): wrapping add, signed minimum and maximum.
+template<class Op> inline ProbeGpr ps2_halfwords(ProbeGpr left,ProbeGpr right,Op op) {
+    auto a=std::bit_cast<std::array<std::int16_t,8>>(left);
+    const auto b=std::bit_cast<std::array<std::int16_t,8>>(right);
+    for(unsigned lane=0;lane<8;++lane)a[lane]=op(a[lane],b[lane]);
+    return std::bit_cast<ProbeGpr>(a);
+}
+inline ProbeGpr PS2_PADDH(ProbeGpr left,ProbeGpr right) {
+    return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return static_cast<std::int16_t>(static_cast<std::uint16_t>(a)+static_cast<std::uint16_t>(b));});
+}
+inline ProbeGpr PS2_PMAXH(ProbeGpr left,ProbeGpr right) {
+    return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return a>b?a:b;});
+}
+inline ProbeGpr PS2_PMINH(ProbeGpr left,ProbeGpr right) {
+    return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return a<b?a:b;});
+}
+// PPACB: the low bytes of rt's halfwords fill the low doubleword, those of rs the high doubleword.
+inline ProbeGpr PS2_PPACB(ProbeGpr rs,ProbeGpr rt) {
+    const auto high=std::bit_cast<std::array<std::uint8_t,16>>(rs),low=std::bit_cast<std::array<std::uint8_t,16>>(rt);
+    std::array<std::uint8_t,16> out;
+    for(unsigned n=0;n<8;++n){out[n]=low[n*2];out[n+8]=high[n*2];}
+    return std::bit_cast<ProbeGpr>(out);
+}
+// PEXTLB/PEXTUB: interleave the low (upper) eight bytes, rt's byte first.
+inline ProbeGpr ps2_interleave_bytes(ProbeGpr rs,ProbeGpr rt,unsigned first) {
+    const auto odd=std::bit_cast<std::array<std::uint8_t,16>>(rs),even=std::bit_cast<std::array<std::uint8_t,16>>(rt);
+    std::array<std::uint8_t,16> out;
+    for(unsigned n=0;n<8;++n){out[n*2]=even[first+n];out[n*2+1]=odd[first+n];}
+    return std::bit_cast<ProbeGpr>(out);
+}
+inline ProbeGpr PS2_PEXTLB(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_bytes(rs,rt,0);}
+inline ProbeGpr PS2_PEXTUB(ProbeGpr rs,ProbeGpr rt) {return ps2_interleave_bytes(rs,rt,8);}
+// QFSRV: the 256-bit value rs:rt shifted right by `shift` bits (0-127, from the SA register); low 128 bits.
+inline ProbeGpr PS2_QFSRV(ProbeGpr rs,ProbeGpr rt,std::uint32_t shift) {
+    const std::uint64_t words[5]={rt.low,rt.high,rs.low,rs.high,0};
+    const unsigned word=(shift&127)/64,bit=shift&63;
+    auto part=[&](unsigned n){return bit?(words[n]>>bit)|(words[n+1]<<(64-bit)):words[n];};
+    return {part(word),part(word+1)};
 }
 inline ProbeGpr ps2_paddu32(ProbeGpr left, ProbeGpr right) {
     auto a = std::bit_cast<std::array<std::uint32_t, 4>>(left);

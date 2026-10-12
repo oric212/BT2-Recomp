@@ -3,20 +3,20 @@
   "measured_on": "2026-10-12",
   "scope": "bounded native startup probe with local ISO and prepared inputs",
   "code_state": "bounded startup verified by build/tests and capture comparison",
-  "source_report_sha256": "4d5f5f4c4574ec51b8984d079b03012b67ed8b095b0bc310591ccd7fd763860c",
+  "source_report_sha256": "a43195ce8a580653004f745258d3579b843c1c7056a5c39272b3e9276768bc3a",
   "metrics": {
-    "distinct_ee_entered": 1602,
-    "distinct_ee_completed": 1586,
+    "distinct_ee_entered": 1829,
+    "distinct_ee_completed": 1819,
     "distinct_kernel_entered": 2,
     "distinct_kernel_completed": 2,
-    "calls": 7713095,
-    "returns": 7712610,
+    "calls": 8391378,
+    "returns": 8390758,
     "native_module_loads": 15,
     "ee_thread_count": 6,
     "cri_rpc_calls": 43,
     "heap_calls": 9,
-    "ncmd_read_calls": 187,
-    "native_disc_requests": 566,
+    "ncmd_read_calls": 189,
+    "native_disc_requests": 572,
     "disc_rpc_calls": 6,
     "gs_packets": 5,
     "gs_sprites": 4,
@@ -29,7 +29,7 @@
   },
   "boundary": {
     "selector": "0x0",
-    "pc": "0x31A3C8",
+    "pc": "0x32EB88",
     "target": "0x0"
   }
 }

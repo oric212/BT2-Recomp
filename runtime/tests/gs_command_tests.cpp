@@ -278,5 +278,19 @@ int main() {
     transfer.start(0x101,config_ram,dma.gs);check(transfer.madr==80 && transfer.qwc==0 && transfer.poll()==0x101 && transfer.poll()==1 && transfer.pathComplete()==0);
     check(transfer.completions==1 && transfer.phase==8 && dma.gs.pixels==256);
     rejected=false;try{transfer.poll();}catch(const std::runtime_error&){rejected=true;}check(rejected);
+    {
+        // IMAGE data continuing in later transfers: a 4x2 CT32 upload whose tag carries 2 quadwords,
+        // one in the tag's transfer and one in the next; then a new tag works again.
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        q(0x1000000000000004ULL,0xE);q(1ULL<<48,0x50);q(0,0x51);q(0x0000000200000004ULL,0x52);q(0,0x53);
+        q(0x0800000000000002ULL,0);q(0x0000000200000001ULL,0x0000000400000003ULL);
+        GsCommandSink gs;gs.transfer(t);
+        check(gs.state.image_qwords_left==1 && gs.image_pixels==4 && gs.state.trx);
+        t.clear();q(0x0000000600000005ULL,0x0000000800000007ULL);q(0x1000000000008001ULL,0xE);q(0,0x51);
+        gs.transfer(t);
+        check(gs.state.image_qwords_left==0 && gs.image_pixels==8 && !gs.state.trx && gs.register_writes==5);
+        check(gs.word(GsCommandSink::ct32Word(0,1,0,0)).value==1u && gs.word(GsCommandSink::ct32Word(0,1,3,1)).value==8u);
+    }
     std::cout<<"GS scoped command tests passed\n";
 }

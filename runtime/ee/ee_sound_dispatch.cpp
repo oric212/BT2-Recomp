@@ -159,6 +159,12 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     constexpr std::uint32_t cause=2;
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);
+    // The field that ends here shows what the game set up: a field with display register writes but
+    // no library flip (the per-field update used while a movie plays) presents now.
+    const bool unflipped_update=gs_display_flips && gs_display_flips==field_flips_ && gs_display_writes!=field_writes_;
+    field_writes_=gs_display_writes;
+    if(unflipped_update)countDisplayFlip();
+    field_flips_=gs_display_flips;
     advanceLogicalField();
     // A Timer 2 event inside the elapsed field precedes this VBLANK_START. The library handler
     // only services its alarm list (empty here; callbacks are not modelled) and overflow count.
@@ -173,6 +179,9 @@ void PS2Runtime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
         vsync_flag=vsync_csr=0;++frame_vsync_deliveries;
     }
     ++vblank_deliveries;
+    // Time advancing without any presented frame is bounded: 3,600 fields (a minute) stop the run.
+    if(gs_display_flips!=flipless_flips_) {flipless_flips_=gs_display_flips;flipless_fields_=0;}
+    if(gs_display_flips && ++flipless_fields_>3600)throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for 3600 fields");
     nativePadVblank(rdram);       // Pad state for this field, before EE handlers run.
     nativeCriVblank(interrupted); // CRI stream buffers returned for this field.
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");

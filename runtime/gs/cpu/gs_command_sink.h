@@ -45,6 +45,7 @@ public:
         std::array<std::uint64_t,3> vertex_xyz{};std::array<std::uint64_t,3> vertex_rgbaq{};std::array<std::uint64_t,3> vertex_uv{};unsigned vertices=0;
         std::uint32_t q=0x3F800000; // ST packing sets Q; RGBAQ packing takes it.
         // Host->local transfer in progress (TRXDIR 0): destination and pixel position.
+        unsigned image_qwords_left=0; // IMAGE data of the last tag still to come in later transfers.
         bool trx=false;unsigned trx_bp=0,trx_bw=0,trx_x0=0,trx_y0=0,trx_w=0,trx_h=0,trx_x=0,trx_y=0;
     };
     State state;

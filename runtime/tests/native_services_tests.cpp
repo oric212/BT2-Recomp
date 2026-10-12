@@ -51,7 +51,19 @@ int main() {
     auto before=stream;before[0]=0;
     require(consumeCriStreamCommands(stream)==2 && stream==before,"CRI commands consumed");
     require(consumeCriStreamCommands(stream)==0 && stream==before,"CRI empty buffer");
-    put(0,1);put(0x10,9);bool refused=false;
+    // The movie audio start: 8, 4 (rate), 9 twice (pan) are echoed the same way.
+    put(0,4);put(0x10,8);put(0x18,0);put(0x20,4);put(0x28,0xBB80);put(0x30,9);put(0x34,0xC6D5C);put(0x3C,0xFFFFFFF1);
+    put(0x40,9);put(0x44,0xC6D5C);put(0x48,1);put(0x4C,0xF);
+    before=stream;before[0]=0;
+    require(consumeCriStreamCommands(stream)==4 && stream==before,"CRI audio start consumed");
+    // Audio data: 0x100 with the IOP address and size, one record per audio channel.
+    put(0,2);put(0x10,0x100);put(0x14,0xCD578);put(0x18,0x179140);put(0x1C,0xA00);put(0x20,0x100);put(0x24,0xCD58C);put(0x28,0x17D240);put(0x2C,0xA00);
+    before=stream;before[0]=0;
+    require(consumeCriStreamCommands(stream)==2 && stream==before,"CRI audio data consumed");
+    put(0,1);put(0x10,2);put(0x14,0xC6D5C);put(0x18,1);put(0x1C,0);
+    before=stream;before[0]=0;
+    require(consumeCriStreamCommands(stream)==1 && stream==before,"CRI command 2 consumed");
+    put(0,1);put(0x10,7);bool refused=false;
     try{consumeCriStreamCommands(stream);}catch(const std::runtime_error&){refused=true;}
     require(refused,"unknown CRI command refused");
 

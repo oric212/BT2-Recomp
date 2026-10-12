@@ -1,3 +1,7 @@
+#include <map>
+#include <string>
+#include <cstdio>
+#include <algorithm>
 #include "gs_command_sink.h"
 
 // GsCommandSink implementation: GIF parsing, register writes, image/CLUT transfers and the
@@ -99,6 +103,11 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
 void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
     auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,data.data()+offset,8);return v;};
     std::size_t at=0;
+    // The GIF path keeps its tag across DMA transfers: IMAGE data left over from an earlier transfer comes first.
+    if(state.image_qwords_left) {
+        const std::size_t take=std::min<std::size_t>(state.image_qwords_left,data.size()/16);
+        image(data.subspan(0,take*16));at=take*16;state.image_qwords_left-=unsigned(take);
+    }
     while(at<data.size()) {
         const auto tag=read(at),regs=read(at+8);at+=16;
         const unsigned nloop=unsigned(tag&0x7FFF),flg=unsigned((tag>>58)&3);
@@ -117,8 +126,8 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
             }
             at+=((words+1)/2)*16;
         } else {
-            if(at+std::size_t(nloop)*16>data.size())throw std::runtime_error("GIF IMAGE data exceeds transfer");
-            image(data.subspan(at,std::size_t(nloop)*16));at+=std::size_t(nloop)*16;
+            const std::size_t take=std::min<std::size_t>(nloop,(data.size()-at)/16);
+            image(data.subspan(at,take*16));at+=take*16;state.image_qwords_left=nloop-unsigned(take);
         }
         // EOP ends this GIF packet; any further data in the transfer starts the next packet.
     }
