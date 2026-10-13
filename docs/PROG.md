@@ -68,7 +68,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step); the order of the first four was set by the user on 2026-10-13:
 
-1. **Sound output** ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)), verified stage by stage instead of by ear ([how](plans/sound/SOUND_OUTPUT_PLAN.md#verification)): stream PCM against PCSX2 memory, the original's SPU2 volume settings in place of the measured stream level, request logs; then sound effects (SOUNDS requests, bank format, a voice player) and a host audio device.
+1. **Sound output** ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)): sound effects (log the SOUNDS requests, decode and survey the banks, a native sampler), then a host audio device. Checked by tests and the user's listening; the comparison with the original is an optional final step.
 2. **Saves:** a memory card image behind the native card service; the "create a save file" path.
 3. **Controller support:** host input (keyboard, XInput) into the native controller service, in the viewer.
 4. **Play-testing by the user:** live input with automatic recording of the input as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. Covers the other menu entries and story mode. Needs battles at real-time speed first.

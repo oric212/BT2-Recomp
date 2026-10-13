@@ -17,9 +17,9 @@ From its port log (`docs/port/README.md`) and the names of its port sources (`po
 | How little is needed | Over 361 bank files (18,924 effects): every effect is one note-on, timbre *i* uses sample *i*, all timbres share the same parameter bytes. Conclusion: a sampler is enough — PS2 ADPCM decoding, pitch, pan, 48 voices, one 48 kHz output | The target for BT2's effects, **if BT2's banks show the same regularity**. That survey is to be repeated on BT2's banks before the sampler is written |
 | Sample data | Rates from 8,000 to 24,000 Hz, almost all 16,000; three samples loop | What to expect; BT2's banks decide |
 | Left out there | The envelope's release (an 8 ms fade), the chip's interpolation, reverb | Candidates to leave out here too, but only where a comparison with the original shows no difference above the limits |
-| Effects level | 0.25 of full scale, explained as three volumes of 100/127 and the chip's half-scale voice volume (0.244). Chosen with the user's ear: 0.55 was too loud | A lead for our levels, see below. Our own level is measured, not tuned by ear |
+| Effects level | 0.25 of full scale, explained as three volumes of 100/127 and the chip's half-scale voice volume (0.244). Chosen with the user's ear: 0.55 was too loud | A lead for our levels, see below. Our stream level is measured, not tuned by ear |
 | Music and voices | ADX players for music **and voices**, each on its own output stream: stop, pause, volume in 0.1 dB steps, pan per channel, mono, status. Files are plain ADX at 16, 24 or 48 kHz | Confirms that voices are expected on the stream path, and reads our stream commands: a volume in 0.1 dB steps and a pan per channel are what commands `5` and `9` look like |
-| Verification | The ADX decoder against ffmpeg; effects by the user's ear only. Not verified: individual effects against the console, pitch accuracy, timed and looping effects | Shows the gap our verification plan is meant to close |
+| Verification | The ADX decoder against ffmpeg; effects by the user's ear only. Not verified: individual effects against the console, pitch accuracy, timed and looping effects | The same working check we use (the user's ear); our optional comparison step would go further |
 
 ### BT3-Recomp (recompilation of the next game)
 
@@ -49,7 +49,7 @@ Its runtime (`ps2xRuntime/src/lib`, snapshot `e22a34be`) routes the sound librar
   - Level: the unscaled PCM was 2.53 to 2.58 times too loud at every frequency, a level of 0.388 to 0.395. With a stream voice output at 25/64 (0.391) the RMS ratio is 1.00 to 1.08 and the peaks agree.
   - Waveform: alike in short windows only (coherence about 0.97, sample correlation about 0.5), as a time-stretched recording would be. Not settled.
   - The recording's emulator version and audio settings were not noted. Later references record them.
-- **A lead for the stream level:** one volume of 100/127 times the chip's half-scale voice volume is 0.394, inside the measured range; the reference port explains its effects level with the same two factors (three such volumes there). This is a hypothesis: it is confirmed only when the values the original's modules write are read (order of work, step 1).
+- **A lead for the stream level:** one volume of 100/127 times the chip's half-scale voice volume is 0.394, inside the measured range; the reference port explains its effects level with the same two factors (three such volumes there). This is a hypothesis: it is confirmed only when the values the original's modules write are read (the optional comparison step).
 - **The user's listening checks:** before the level correction, music too loud, voices too quiet, effects too loud; after it, better, but not something the ear can confirm. Bank effects are not played at all yet, so what was heard as effects is stream audio.
 - **Not known:** where the original sets the stream level; whether BT2's voices are streams, as in the reference port; the layout of BT2's banks and whether its effects are as regular as BT3's; the meaning of the SOUNDS request arguments.
 
@@ -64,47 +64,46 @@ Sound is produced where the game asks for it. Two producers feed one mixer.
    - **Requests:** a SOUNDS request starts, changes or stops sounds (expected kinds: play, stop by number, stop by handle, pause, stop bank, reset, mono, bank volume). Each kind is implemented when BT2's arguments for it are understood; until then it stays silent and is listed as such.
    - **Voices:** ADPCM decoding, pitch, per-side volume and looping as the sound chip does them, with PCSX2's mixer as the behavioural reference. The release envelope, the chip's interpolation and reverb are added only if a comparison with the original shows a difference above the verification limits without them.
    - The sampler sits at the request boundary. It does not emulate the sequencer and synthesizer modules or their voice allocation unless the game can observe them (the SOUNDS replies carry a status block; so far nothing in it depends on voices).
-3. **Mixer** (`runtime/services/audio_mixer.h`): 48 kHz stereo, one field of output per VBLANK (800.8 samples, the fraction carried), saturating. Streams and sampler voices add here, each at the level the original's volume chain gives it.
+3. **Mixer** (`runtime/services/audio_mixer.h`): 48 kHz stereo, one field of output per VBLANK (800.8 samples, the fraction carried), saturating. Streams and sampler voices add here. Streams use the measured level; effects start from the level the expected volume chain gives and are adjusted with the user's listening.
 4. **Output:** the runtime hands each field's samples to `on_audio_field`. The probe writes them to a WAV file (`BT2_AUDIO_WAV=<path>`). A host audio device comes with real-time play in the viewer; there the device's clock paces playback, so the mixer needs a queue with drift control between game time and device time. User volume settings for music and effects, as the reference port has, belong to that step.
 
 ## Order of work
 
-1. **Explain the stream level.** Read the volume chain in the pinned PCSX2 mixer and the values the original's modules write (from the earlier SPU2 evidence, or a new capture of the SPU2 registers while a stream plays). Test the 100/127 times one-half hypothesis; replace the measured 25/64 by the original's settings.
-2. **Stream PCM against PCSX2 memory,** byte for byte: closes the waveform question the recording left open.
-3. **Log the SOUNDS requests** of the battle run with their arguments, on the port and on the original; group them by kind against the expected list.
-4. **Bank layout and survey** from the uploaded blocks; a decoder with tests on synthetic banks.
-5. **Sampler voices,** request kind by request kind, each checked against the original's voice parameters at key-on.
-6. **Host audio device** with the viewer, with volume settings.
+1. **Log the SOUNDS requests** of the battle run with their arguments and group them by kind against the expected list.
+2. **Bank layout and survey** from the uploaded blocks; a decoder with tests on synthetic banks.
+3. **Sampler voices,** request kind by request kind, until menus and fights have their effects.
+4. **Host audio device** with the viewer, with volume settings.
+5. **Optional, at the end: comparison with the original** (see Verification). It includes explaining the stream level from the original's settings and the byte-for-byte check of stream PCM.
 
-Steps 1 to 4 need no new playback code and decide what step 5 has to build.
+Steps 1 and 2 need no new playback code and decide what step 3 has to build.
 
 ## Verification
 
-Sound is not judged by ear. Listening found a real fault (the level) but could not confirm the fix, and one loose recording settled level, channel order and timing but not the waveform. Each stage of the sound path is compared where an exact reference exists, with numbers and a pass limit; listening is a last sanity check only. Both BT3 references set their effects by ear; this plan does not.
-
-| Stage | What is compared | Reference in the original | Exact? | Used in step |
-| --- | --- | --- | --- | --- |
-| Requests | The stream commands and SOUNDS calls the game makes: kind, arguments, order (timing within a tolerance, since loading time differs) | PCSX2 call logs (`capture_ee.py --sounds-log`, `--cri-stream-log`) | Yes | 3 |
-| Sample data | The PCM the game uploads for streams; the bank blocks it uploads for effects | PCSX2 IOP memory at the same point (the `rpc-cri-stream-reply` capture point holds a stream's address and size) | Byte for byte | 2, 4 |
-| Voice parameters | Per started voice: pitch, left and right volume, envelope settings; the master volume | The SPU2 registers read from PCSX2 when a voice is keyed on (a capture to be added); their meaning from the pinned PCSX2 SPU2 sources and PS2SDK `spu2regs.h` | Yes | 1, 5 |
-| Output | The mixed signal, with `tools/audio/compare_audio.py` | A PCSX2 recording of the same stretch | Within the limits below | 5, 6 |
-
-**A usable output recording:**
-- PCSX2's audio synchronisation set to none, so samples are not time-stretched.
-- The same input on both sides. Input-free stretches (boot movies, the idle demo fight) need nothing; for menus and battles, one input recording played back in PCSX2 and converted to a pad script for the port (a converter to be written).
-- Logged with the PCSX2 version, its audio settings, the disc hash and the scenario (input used, where it starts and ends). The first recording (2026-10-13) lacks these notes.
-
-**Output limits** (starting values, to be tightened once a clean recording shows the original's own run-to-run variation): offset drift below 5 ms over the stretch; level within 1 dB per frequency band; short-window coherence above 0.95 where the signal is not silent; for effects, onset time, level and pitch of each detected sound. The output cannot be bit-exact: the chip resamples and interpolates, and its reverb is not modelled.
+**Working check (what each step needs to count as done):** unit tests for the code, the run's counters, and the user's listening to the WAV files in `work/audio/`. This is how sound moves forward; a missing comparison with the original does not hold a step back. What the user heard is recorded as the user's judgement, kept apart from anything measured.
 
 **So far:**
 - Unit tests: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates), the comparison tool.
 - Measured (7,000-frame battle run): 10,334 fields give 172.4 s of audio from 19.4 MB of stream PCM; 5,939 samples (0.03%) were missing where a voice ended or ran dry; no clipping at the corrected level (peak 21,315).
-- Output stage for the two boot movies: timing, channel order and level agree with the recording (see the evidence above); the waveform is open until the sample-data stage is done.
+- Against a PCSX2 recording, for the two boot movies: timing, channel order and level agree (see the evidence above); the waveform is not shown identical.
+- The user's listening: recognizable; better after the level correction; accuracy not something the ear can confirm.
 
-A comparison that passes becomes a gate comparison where its reference capture is small enough to keep locally. Captures and recordings are proprietary-derived and stay local; documents record numbers only.
+### Optional final step: comparison with the original
 
-**Asked of the user:** a recording without time stretching when the output stage is reached; an input recording for a menu-and-battle stretch when the converter exists; listening only at the end.
+Decided by the user on 2026-10-13: judging sound by comparison instead of by ear is worth doing, but as a final step, not as a condition for progress. When it is taken up, each stage of the sound path is compared where an exact reference exists:
+
+| Stage | What is compared | Reference in the original | Exact? |
+| --- | --- | --- | --- |
+| Requests | The stream commands and SOUNDS calls the game makes: kind, arguments, order (timing within a tolerance, since loading time differs) | PCSX2 call logs (`capture_ee.py --sounds-log`, `--cri-stream-log`) | Yes |
+| Sample data | The PCM the game uploads for streams; the bank blocks it uploads for effects | PCSX2 IOP memory at the same point (the `rpc-cri-stream-reply` capture point holds a stream's address and size) | Byte for byte |
+| Voice parameters | Per started voice: pitch, left and right volume, envelope settings; the master volume. This is also where the measured stream level of 25/64 would be replaced by the original's settings | The SPU2 registers read from PCSX2 when a voice is keyed on (a capture to be added); their meaning from the pinned PCSX2 SPU2 sources and PS2SDK `spu2regs.h` | Yes |
+| Output | The mixed signal, with `tools/audio/compare_audio.py` | A PCSX2 recording of the same stretch | Within the limits below |
+
+- **A usable output recording:** PCSX2's audio synchronisation set to none (no time stretching); the same input on both sides (nothing for input-free stretches, otherwise one input recording played back in PCSX2 and converted to a pad script, with a converter to be written); logged with the PCSX2 version, its audio settings, the disc hash and the scenario.
+- **Output limits** (starting values): offset drift below 5 ms over the stretch; level within 1 dB per frequency band; short-window coherence above 0.95 where the signal is not silent; for effects, onset time, level and pitch of each detected sound. The output cannot be bit-exact: the chip resamples and interpolates, and its reverb is not modelled.
+- Captures and recordings are proprietary-derived and stay local; documents record numbers only.
+
+Until this step is done, sound is Operational at most, never Verified.
 
 ## Stop conditions
 
-A sampling rate that does not divide 48 kHz, PCM outside IOP memory, a bank layout or a SOUNDS request whose meaning BT2's evidence does not settle: stop at a checked boundary, or stay silent and say so. No invented sound, no level chosen by ear, and no BT3 constant used without BT2 evidence.
+A sampling rate that does not divide 48 kHz, PCM outside IOP memory, a bank layout or a SOUNDS request whose meaning BT2's evidence does not settle: stop at a checked boundary, or stay silent and say so. No invented sound, and no BT3 constant used without BT2 evidence. A level set with the user's ear is allowed and is recorded as such.
