@@ -202,6 +202,8 @@ int main(int argc, char** argv) {
                 store_trace << '\n';
             };
         }
+        // BT2_CARD_FOLDER=<folder>: a memory card folder in slot 1 (the player's run takes it from the settings later).
+        if (const char* card = std::getenv("BT2_CARD_FOLDER")) runtime.memory_card_folder = card;
         // BT2_VU1_INTERPRET: run every VU1 microprogram in the interpreter, also where the build has a native translation.
         if (std::getenv("BT2_VU1_INTERPRET")) runtime.vif1.vu.use_native = false;
         // BT2_VU1_VERIFY: run every start that has a native program in the interpreter as well and stop at the first difference.

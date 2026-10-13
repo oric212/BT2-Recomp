@@ -121,6 +121,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-menu-tests runtime/tests/menu_tests.cpp)
     bt2_target_defaults(bt2-menu-tests)
     add_test(NAME menu COMMAND bt2-menu-tests)
+    add_executable(bt2-card-folder-tests runtime/tests/card_folder_tests.cpp)
+    bt2_target_defaults(bt2-card-folder-tests)
+    add_test(NAME card-folder COMMAND bt2-card-folder-tests)
     # The player's programs (docs/plans/launcher/LAUNCHER_PLAN.md): settings and launcher, then the
     # runtime program as a child process. Small and quick to build; they hold no game code.
     foreach(bt2_player_program bt2-game bt2-launcher)

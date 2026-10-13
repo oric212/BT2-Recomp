@@ -21,7 +21,7 @@ int main() {
         Settings s;check(Settings::parse(s.text())==s,"defaults read back");
         s.disc="D:\\games\\a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
-        s.fast_forward_toggle=true;s.overlay_start_select=true;s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
+        s.fast_forward_toggle=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings::parse("window_scale = 4\r\ndisc =\r\n").window_scale==4,"a short file with CRLF lines and an empty value");
         check(Settings::parse("fast_forward_button = none\n").fast_forward_button==GamepadState::Count,"no fast forward button");
@@ -32,6 +32,7 @@ int main() {
         check(refused([]{Settings::parse("button_cross = none\n");}),"a PS2 button needs a gamepad button");
         check(refused([]{Settings::parse("key_elbow = 65\n");}),"an unknown PS2 button is refused");
         check(refused([]{Settings::parse("window_scale 2\n");}),"a line without = is refused");
+        check(refused([]{Settings::parse("memory_card = ..\\elsewhere\n");}) && refused([]{Settings::parse("memory_card = ..\n");}),"a card is a folder name, not a path");
         const auto path=(std::filesystem::temp_directory_path()/"bt2-menu-tests-settings").string();
         std::filesystem::remove(path);
         check(!Settings::load(path),"no file, no settings");

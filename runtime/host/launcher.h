@@ -44,7 +44,27 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
     });
     start.value=[disc_ready]{return std::string(disc_ready()?"":"choose a game disc first");};
     main.entries.push_back(start);
-    MenuEntry saves;saves.label="Saves";saves.value=[]{return std::string("not available yet");};saves.enabled=false;
+    MenuEntry saves=menuAction("Memory card",[&] {
+        // The card folders under user/memcards; one of them, or none, is in slot 1.
+        MenuScreen screen;screen.title="Memory card (slot 1)";
+        const auto cards_folder=std::filesystem::path(root)/"user"/"memcards";
+        std::error_code error;std::vector<std::string> cards;
+        for(std::filesystem::directory_iterator it(cards_folder,error),end;!error && it!=end;it.increment(error))if(it->is_directory(error))cards.push_back(it->path().filename().string());
+        std::sort(cards.begin(),cards.end());
+        MenuEntry none=menuAction("No card",[&settings,changed]{settings.memory_card.clear();changed();});
+        none.value=[&settings]{return std::string(settings.memory_card.empty()?"in use":"");};
+        screen.entries.push_back(none);
+        for(const auto& card:cards) {
+            unsigned count=0;
+            for(std::filesystem::directory_iterator it(cards_folder/card,error),end;!error && it!=end;it.increment(error))if(it->is_directory(error))++count;
+            MenuEntry e=menuAction(card,[&settings,card,changed]{settings.memory_card=card;changed();},
+                std::to_string(count)+(count==1?" save":" saves")+". Loading works; the game stops if it tries to save (not built yet).");
+            e.value=[&settings,card]{return std::string(settings.memory_card==card?"in use":"");};
+            screen.entries.push_back(e);
+        }
+        host.menu.open(std::move(screen));
+    },"A card is a folder in user/memcards with one folder per save.");
+    saves.value=[&settings]{return settings.memory_card.empty()?std::string("no card"):settings.memory_card;};
     main.entries.push_back(saves);
     main.entries.push_back(menuAction("Controls",[&]{host.menu.open(menu_screens::controls(host,settings,changed));},"Keys and gamepad buttons, fast forward, the in-game menu."));
     main.entries.push_back(menuAction("Display",[&]{host.menu.open(menu_screens::display(settings,changed));}));

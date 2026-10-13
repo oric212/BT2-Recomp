@@ -26,6 +26,7 @@ struct Settings {
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
     bool overlay_start_select=false;
+    std::string memory_card;        // The card folder in slot 1, a name under user/memcards; empty: no card.
     bool operator==(const Settings&) const=default;
 
     std::string text() const {
@@ -34,7 +35,7 @@ struct Settings {
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
-           <<"\noverlay_start_select = "<<overlay_start_select<<"\n";
+           <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -73,6 +74,10 @@ struct Settings {
             else if(key=="fast_forward_button")s.fast_forward_button=button(true);
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
+            else if(key=="memory_card") {
+                if(value.find_first_of("/\\:*?\"<>|")!=std::string::npos || value==".." || value==".")throw std::runtime_error("Setting memory_card is not a folder name: "+value);
+                s.memory_card=value;
+            }
             else {
                 const bool is_key=key.starts_with("key_"),is_button=key.starts_with("button_");
                 unsigned index=16;

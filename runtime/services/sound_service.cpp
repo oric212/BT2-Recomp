@@ -105,9 +105,14 @@ bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const
         if(!native_sounds_started_ || volume>SoundSampler::full_volume)throw UnsupportedSyscall(0x77,context->pc);
         sound_sampler.setVolume(0xFF,volume);break;
     }
-    // Not reached by the runs so far and refused until one needs them: 0x60 selects the synthesizer's
-    // output mode (mono or stereo), 0x80 replaces a loaded bank.
-    case sounds_60: case sounds_80: std::cerr<<"SOUNDS request "<<std::hex<<r.rpc_number<<std::dec<<" is not implemented"<<std::endl;throw UnsupportedSyscall(0x77,context->pc);
+    case sounds_60:
+        // The synthesizer's output mode (the game's stereo/mono option, sent when a save's options are
+        // applied): the module passes 1 for a nonzero first word, else 0, to the synthesizer library.
+        // Which of the two is mono is not established, so the mode is recorded and the mix stays stereo.
+        if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
+        sounds_output_mode=read32(rdram,r.send_source)?1:0;++sounds_output_mode_requests;break;
+    // Not reached by the runs so far and refused until one needs it: 0x80 replaces a loaded bank.
+    case sounds_80: std::cerr<<"SOUNDS request "<<std::hex<<r.rpc_number<<std::dec<<" is not implemented"<<std::endl;throw UnsupportedSyscall(0x77,context->pc);
     default: throw UnsupportedSyscall(0x77,context->pc);
     }
     for(unsigned n=0;n<16;++n)write32(rdram,r.receive+n*4,!native_sounds_started_?0u:n==5?native_sounds_banks_:sounds_status[n]);

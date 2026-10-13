@@ -65,7 +65,7 @@
         {
           "name": "Memory card",
           "status": "incomplete",
-          "note": "Native, no card image or saves"
+          "note": "Card folders; saves load, no writing"
         }
       ]
     },
@@ -120,7 +120,7 @@
         {
           "name": "Tests",
           "status": "verified",
-          "note": "20/20 CTests; Python suites pass"
+          "note": "21/21 CTests; Python suites pass"
         },
         {
           "name": "Original comparisons",
