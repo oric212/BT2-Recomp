@@ -22,7 +22,7 @@ BT2-Recomp is a native Windows x64 port of *Dragon Ball Z: Budokai Tenkaichi 2* 
 ## Correctness and status
 
 - **Game-visible results must match the original:** EE memory, files, replies, frames, sound. Validate with tests and PCSX2 comparisons; add a test for each service request type and generalized behavior.
-- **Compare where it is exact.** Prefer byte-exact comparisons of memory, requests and register values over judging the final picture or sound. Sound is verified stage by stage (`docs/plans/sound/SOUND_VERIFICATION_PLAN.md`), not by ear.
+- **Compare where it is exact.** Prefer byte-exact comparisons of memory, requests and register values over judging the final picture or sound. Sound is verified stage by stage (`docs/plans/sound/SOUND_OUTPUT_PLAN.md`, Verification), not by ear.
 - **The user verifies by inspection.** They know how the game looks and sounds: save frames to `work/frames/` and audio to `work/audio/` and ask. Record what they confirmed, and keep it distinct from a comparison with the original.
 - **Honest status.** Keep Verified separate from Operational or untested. Say what was measured, on which run. Never infer gameplay performance from startup progress; measure Release builds on representative workloads.
 

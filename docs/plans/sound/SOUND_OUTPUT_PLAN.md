@@ -1,6 +1,6 @@
 # Sound output
 
-Make the game audible. Part of the [implementation plan](../../project/IMPLEMENTATION_PLAN.md#current-next-step). How each step is checked is in the [sound verification plan](SOUND_VERIFICATION_PLAN.md). Revised 2026-10-13 against the [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md) and the two BT3 references' sound code and notes.
+Make the game audible. Part of the [implementation plan](../../project/IMPLEMENTATION_PLAN.md#current-next-step). Revised 2026-10-13 against the [reference architecture](../../reference/REFERENCE_ARCHITECTURE.md) and the two BT3 references' sound code and notes.
 
 ## What the references say
 
@@ -80,11 +80,30 @@ Steps 1 to 4 need no new playback code and decide what step 5 has to build.
 
 ## Verification
 
-Per the [sound verification plan](SOUND_VERIFICATION_PLAN.md): requests, sample data and voice parameters are compared exactly against PCSX2; the mixed output within stated limits; listening only as a last check. Both BT3 references set their effects by ear; this plan does not.
+Sound is not judged by ear. Listening found a real fault (the level) but could not confirm the fix, and one loose recording settled level, channel order and timing but not the waveform. Each stage of the sound path is compared where an exact reference exists, with numbers and a pass limit; listening is a last sanity check only. Both BT3 references set their effects by ear; this plan does not.
 
-- Unit tests so far: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates), the comparison tool.
+| Stage | What is compared | Reference in the original | Exact? | Used in step |
+| --- | --- | --- | --- | --- |
+| Requests | The stream commands and SOUNDS calls the game makes: kind, arguments, order (timing within a tolerance, since loading time differs) | PCSX2 call logs (`capture_ee.py --sounds-log`, `--cri-stream-log`) | Yes | 3 |
+| Sample data | The PCM the game uploads for streams; the bank blocks it uploads for effects | PCSX2 IOP memory at the same point (the `rpc-cri-stream-reply` capture point holds a stream's address and size) | Byte for byte | 2, 4 |
+| Voice parameters | Per started voice: pitch, left and right volume, envelope settings; the master volume | The SPU2 registers read from PCSX2 when a voice is keyed on (a capture to be added); their meaning from the pinned PCSX2 SPU2 sources and PS2SDK `spu2regs.h` | Yes | 1, 5 |
+| Output | The mixed signal, with `tools/audio/compare_audio.py` | A PCSX2 recording of the same stretch | Within the limits below | 5, 6 |
+
+**A usable output recording:**
+- PCSX2's audio synchronisation set to none, so samples are not time-stretched.
+- The same input on both sides. Input-free stretches (boot movies, the idle demo fight) need nothing; for menus and battles, one input recording played back in PCSX2 and converted to a pad script for the port (a converter to be written).
+- Logged with the PCSX2 version, its audio settings, the disc hash and the scenario (input used, where it starts and ends). The first recording (2026-10-13) lacks these notes.
+
+**Output limits** (starting values, to be tightened once a clean recording shows the original's own run-to-run variation): offset drift below 5 ms over the stretch; level within 1 dB per frequency band; short-window coherence above 0.95 where the signal is not silent; for effects, onset time, level and pitch of each detected sound. The output cannot be bit-exact: the chip resamples and interpolates, and its reverb is not modelled.
+
+**So far:**
+- Unit tests: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates), the comparison tool.
 - Measured (7,000-frame battle run): 10,334 fields give 172.4 s of audio from 19.4 MB of stream PCM; 5,939 samples (0.03%) were missing where a voice ended or ran dry; no clipping at the corrected level (peak 21,315).
-- Every reference capture or recording is logged with the PCSX2 version, its audio settings, the disc hash and the scenario (input used, where it starts and ends).
+- Output stage for the two boot movies: timing, channel order and level agree with the recording (see the evidence above); the waveform is open until the sample-data stage is done.
+
+A comparison that passes becomes a gate comparison where its reference capture is small enough to keep locally. Captures and recordings are proprietary-derived and stay local; documents record numbers only.
+
+**Asked of the user:** a recording without time stretching when the output stage is reached; an input recording for a menu-and-battle stretch when the converter exists; listening only at the end.
 
 ## Stop conditions
 
