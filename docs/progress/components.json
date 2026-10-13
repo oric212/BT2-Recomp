@@ -14,12 +14,12 @@
     {
       "name": "Memory card",
       "status": "verified",
-      "note": "No-card prompt"
+      "note": "Card folders load"
     },
     {
       "name": "Opening movie",
       "status": "working",
-      "note": "Both movies play"
+      "note": "Both play, with sound"
     },
     {
       "name": "Title screen",
@@ -34,7 +34,7 @@
     {
       "name": "Gameplay",
       "status": "working",
-      "note": "Versus battle runs",
+      "note": "Versus battle, in test",
       "current": true
     }
   ],
@@ -45,7 +45,7 @@
         {
           "name": "EE CPU and kernel services",
           "status": "working",
-          "note": "Recompiled game code runs"
+          "note": "All named code mapped"
         },
         {
           "name": "IOP services",
@@ -65,7 +65,7 @@
         {
           "name": "Memory card",
           "status": "incomplete",
-          "note": "Card folders; saving untried"
+          "note": "Loads; saving untried"
         }
       ]
     },
@@ -90,12 +90,12 @@
         {
           "name": "Audio",
           "status": "working",
-          "note": "Streams, effects, volumes; live"
+          "note": "Streams, effects, volumes"
         },
         {
           "name": "VU microprograms",
           "status": "working",
-          "note": "VU1 native, checked vs interpreter"
+          "note": "Hand-written native, verified"
         }
       ]
     },
@@ -110,12 +110,12 @@
         {
           "name": "Launcher and menus",
           "status": "working",
-          "note": "Launcher, in-game menu, settings"
+          "note": "Launcher, pause menu, cards"
         },
         {
           "name": "Code generation",
           "status": "verified",
-          "note": "Game code recompiled to C++"
+          "note": "11,122 + 494 functions"
         },
         {
           "name": "Tests",
