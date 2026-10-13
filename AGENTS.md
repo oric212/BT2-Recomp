@@ -54,7 +54,7 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 
 ## Code organization
 
-Small focused files with one clear purpose; explicit dependencies; check whether new code belongs in its own file before growing an existing one; no artificial splits; preserve existing behavior and generated-code boundaries. [docs/guides/RUNTIME_LAYOUT.md](docs/guides/RUNTIME_LAYOUT.md) maps the `runtime/` folders and where new code goes; [docs/guides/TOOLS.md](docs/guides/TOOLS.md) describes the tools and diagnostics. The probe is the runner; no second executable. The launcher the user asked for (`docs/plans/launcher/LAUNCHER_PLAN.md`) is the first screen of the runner's window.
+Small focused files with one clear purpose; explicit dependencies; check whether new code belongs in its own file before growing an existing one; no artificial splits; preserve existing behavior and generated-code boundaries. [docs/guides/RUNTIME_LAYOUT.md](docs/guides/RUNTIME_LAYOUT.md) maps the `runtime/` folders and where new code goes; [docs/guides/TOOLS.md](docs/guides/TOOLS.md) describes the tools and diagnostics. The probe is the runner for automated work. The player-facing programs (game, launcher, in-game overlay) follow `docs/plans/launcher/LAUNCHER_PLAN.md`; their files live in the ignored `user/` folder.
 
 ## Documentation
 
