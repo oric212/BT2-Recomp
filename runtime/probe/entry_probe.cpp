@@ -10,6 +10,7 @@
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
 #include "host/input_mapping.h"
+#include "host/player_session.h"
 #include "host/sample_profiler.h"
 #include "host/wav_writer.h"
 #include "vu/vu1_program.h"
@@ -90,7 +91,7 @@ int main(int argc, char** argv) {
                     const double excess = speaker.device ? (double(speaker.device->queuedFrames()) - AudioMixer::rate / 20) / AudioMixer::rate : 0;
                     pacer->fieldStarted(1.0 + excess * 0.1);
                 }
-                if (speaker.device) speaker.device->write(pcm);
+                if (speaker.device && !(pacer && pacer->free_run)) speaker.device->write(pcm); // Fast forward is silent.
             };
         // BT2_SOUND_LOG=<folder>: the sound effects requests as text (requests.txt: field, kind, function,
         // command words) and each loaded bank's two blocks as files. Local evidence, not committed.
@@ -226,6 +227,7 @@ int main(int argc, char** argv) {
         // BT2_PAD_RECORD=<path>: the buttons played, written as a pad script that replays the session
         // (stick positions are not part of a pad script).
         static std::unique_ptr<HostInput> host_input;
+        static std::unique_ptr<PlayerSession> player;
         static std::ofstream pad_record;
         if (std::getenv("BT2_HOST_INPUT")) {
             if (!viewer_mode) throw std::runtime_error("BT2_HOST_INPUT needs the viewer");
@@ -234,6 +236,11 @@ int main(int argc, char** argv) {
                 if (!viewer.focused()) return PadInput{};
                 return mapInput(InputMapping{}, host_input->gamepad(), &HostInput::keyDown);
             };
+            // BT2_PLAYER_SETTINGS=<settings file>: a player's run (host/player_session.h). Set by the game program only.
+            if (const char* settings_path = std::getenv("BT2_PLAYER_SETTINGS")) {
+                player = std::make_unique<PlayerSession>(settings_path, viewer, *host_input, runtime.audio_mixer, pacer.get());
+                runtime.on_pad_input = [] { return player->padInput(); };
+            }
             if (const char* path = std::getenv("BT2_PAD_RECORD")) {
                 pad_record.open(path);
                 if (!pad_record) throw std::runtime_error(std::string("Cannot write ") + path);
@@ -306,6 +313,7 @@ int main(int argc, char** argv) {
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
                 if (pacer) pacer->wait(); // The picture appears at the field's deadline.
                 const auto t_shown = Clock::now();
+                if (player) player->shown(frame);
                 viewer.present(frame, flip);
                 if (stats) {
                     const auto t2 = Clock::now();

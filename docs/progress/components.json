@@ -59,8 +59,8 @@
         },
         {
           "name": "Input",
-          "status": "incomplete",
-          "note": "Native pad service; no host input"
+          "status": "working",
+          "note": "Keyboard and gamepads, remappable"
         },
         {
           "name": "Memory card",
@@ -89,13 +89,13 @@
         },
         {
           "name": "Audio",
-          "status": "incomplete",
-          "note": "Stream flow native; no sound output"
+          "status": "working",
+          "note": "Streams, effects, volumes; live"
         },
         {
           "name": "VU microprograms",
           "status": "working",
-          "note": "VU1 interpreter; not yet compared"
+          "note": "VU1 native, checked vs interpreter"
         }
       ]
     },
@@ -108,9 +108,9 @@
           "note": "MSVC x64; Debug and Release"
         },
         {
-          "name": "Retail validation",
-          "status": "verified",
-          "note": "Disc and embedded ELF confirmed"
+          "name": "Launcher and menus",
+          "status": "working",
+          "note": "Launcher, in-game menu, settings"
         },
         {
           "name": "Code generation",
@@ -120,7 +120,7 @@
         {
           "name": "Tests",
           "status": "verified",
-          "note": "18/18 CTests; Python suites pass"
+          "note": "20/20 CTests; Python suites pass"
         },
         {
           "name": "Original comparisons",

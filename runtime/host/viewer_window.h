@@ -12,24 +12,44 @@
 #include <cstdint>
 #include <string>
 #include <thread>
+#include <utility>
 #include "display_frame.h"
 
 // Minimal Win32 presentation window: shows the latest decoded frame in the client area, either at the
 // largest integer scale that fits (centred, black borders; pixel-exact) or stretched to fill.
 // Messages are pumped by the caller at each presentation; closing the window sets closed(). The
-// window does not pace the run (host/frame_pacer.h does).
+// window does not pace the run (host/frame_pacer.h does). The window's size is a multiple of the game's
+// picture (640 x 448) or the whole screen without a border; both, the scaling and a short status
+// text in the corner (the frame rate display) can change while it is open.
 class ViewerWindow {
 public:
     enum class Scaling {Integer,Stretch};
     explicit ViewerWindow(Scaling scaling=Scaling::Integer):scaling_(scaling) {}
     ~ViewerWindow() {if(hwnd_)DestroyWindow(hwnd_);}
     void present(const DisplayFrame& frame,unsigned flip) {
+        present(frame,"BT2 Recomp - frame "+std::to_string(flip)+(frame.unwritten?" (unwritten pixels)":""));
+    }
+    void present(const DisplayFrame& frame,const std::string& title) {
         if(closed_)return;
         frame_=frame;
-        if(!hwnd_)create(frame.width,frame.height);
-        SetWindowTextA(hwnd_,("BT2 Recomp - frame "+std::to_string(flip)+(frame.unwritten?" (unwritten pixels)":"")).c_str());
+        if(!hwnd_)create();
+        if(title!=title_) {title_=title;SetWindowTextA(hwnd_,title.c_str());}
         InvalidateRect(hwnd_,nullptr,FALSE);UpdateWindow(hwnd_);
         pump();
+    }
+    void setScaling(Scaling scaling) {scaling_=scaling;}
+    void setStatus(std::string text) {status_=std::move(text);} // Drawn in the top left corner; empty for none.
+    // The window's size as a multiple of 640 x 448 (1 to 4), or the whole screen without a border.
+    void setLayout(unsigned scale,bool fullscreen) {
+        if(scale==scale_ && fullscreen==fullscreen_)return;
+        scale_=scale;fullscreen_=fullscreen;
+        if(hwnd_)applyLayout();
+    }
+    // The client area in pixels (640 x 448 times the scale before the window exists).
+    std::pair<unsigned,unsigned> clientSize() const {
+        RECT client{0,0,LONG(640*scale_),LONG(448*scale_)};
+        if(hwnd_)GetClientRect(hwnd_,&client);
+        return {unsigned(std::max<LONG>(client.right,1)),unsigned(std::max<LONG>(client.bottom,1))};
     }
     void pump() {
         MSG msg;
@@ -44,15 +64,31 @@ public:
     bool opened() const {return hwnd_!=nullptr;}
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
-    void create(unsigned width,unsigned height) {
+    unsigned scale_=2;bool fullscreen_=false;std::string title_,status_;
+    void applyLayout() {
+        if(fullscreen_) {
+            MONITORINFO monitor{};monitor.cbSize=sizeof monitor;GetMonitorInfoA(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor);
+            SetWindowLongPtrA(hwnd_,GWL_STYLE,WS_POPUP|WS_VISIBLE);
+            SetWindowPos(hwnd_,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,
+                monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED);
+        } else {
+            RECT r{0,0,LONG(640*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+            SetWindowLongPtrA(hwnd_,GWL_STYLE,WS_OVERLAPPEDWINDOW|WS_VISIBLE);
+            RECT at;GetWindowRect(hwnd_,&at);
+            SetWindowPos(hwnd_,HWND_TOP,std::max<LONG>(at.left,0),std::max<LONG>(at.top,0),r.right-r.left,r.bottom-r.top,SWP_FRAMECHANGED);
+        }
+    }
+    void create() {
+        SetProcessDPIAware(); // One picture pixel is a whole number of screen pixels; the system does not rescale the window.
         WNDCLASSA wc{};wc.lpfnWndProc=&ViewerWindow::proc;wc.hInstance=GetModuleHandleA(nullptr);
         wc.lpszClassName="BT2RecompViewer";wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
         RegisterClassA(&wc);
-        RECT r{0,0,LONG(width*2),LONG(height*2)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+        RECT r{0,0,LONG(640*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
         hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,
             r.right-r.left,r.bottom-r.top,nullptr,nullptr,wc.hInstance,this);
         if(!hwnd_)throw std::runtime_error("Viewer window creation failed");
         SetWindowLongPtrA(hwnd_,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(this));
+        if(fullscreen_)applyLayout();
     }
     void paint(HDC dc) {
         RECT client;GetClientRect(hwnd_,&client);
@@ -71,6 +107,10 @@ private:
         }
         SetStretchBltMode(dc,COLORONCOLOR);
         StretchDIBits(dc,x,y,w,h,0,0,int(frame_.width),int(frame_.height),frame_.bgra.data(),&bi,DIB_RGB_COLORS,SRCCOPY);
+        if(!status_.empty()) {
+            SetBkMode(dc,OPAQUE);SetBkColor(dc,RGB(0,0,0));SetTextColor(dc,RGB(255,255,0));
+            TextOutA(dc,x+6,y+4,status_.c_str(),int(status_.size()));
+        }
     }
     static LRESULT CALLBACK proc(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
         auto* self=reinterpret_cast<ViewerWindow*>(GetWindowLongPtrA(hwnd,GWLP_USERDATA));

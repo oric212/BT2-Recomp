@@ -71,12 +71,12 @@
 <circle cx="41" cy="354" r="3.5" fill="#16835d"/>
 <text x="52" y="358" font-size="13" font-weight="600" fill="#1e293b">Disc / filesystem</text>
 <text x="37" y="376" font-size="11.5" fill="#64748b">Reached reads byte-identical</text></g>
-<g><title>Input: Incomplete. Native pad service; no host input</title>
+<g><title>Input: Operational. Keyboard and gamepads, remappable</title>
 <rect x="24" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="41" cy="416" r="3.5" fill="#b77912"/>
+<rect x="24" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="41" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
-<text x="37" y="438" font-size="11.5" fill="#64748b">Native pad service; no host input</text></g>
+<text x="37" y="438" font-size="11.5" fill="#64748b">Keyboard and gamepads, remappable</text></g>
 <g><title>Memory card: Incomplete. Native, no card image or saves</title>
 <rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
@@ -102,18 +102,18 @@
 <circle cx="351" cy="354" r="3.5" fill="#2b78b8"/>
 <text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
 <text x="347" y="376" font-size="11.5" fill="#64748b">Both movies decode; no IDEC/PACK</text></g>
-<g><title>Audio: Incomplete. Stream flow native; no sound output</title>
+<g><title>Audio: Operational. Streams, effects, volumes; live</title>
 <rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="351" cy="416" r="3.5" fill="#b77912"/>
+<rect x="334" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="351" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">Stream flow native; no sound output</text></g>
-<g><title>VU microprograms: Operational. VU1 interpreter; not yet compared</title>
+<text x="347" y="438" font-size="11.5" fill="#64748b">Streams, effects, volumes; live</text></g>
+<g><title>VU microprograms: Operational. VU1 native, checked vs interpreter</title>
 <rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="351" cy="478" r="3.5" fill="#2b78b8"/>
 <text x="362" y="482" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
-<text x="347" y="500" font-size="11.5" fill="#64748b">VU1 interpreter; not yet compared</text></g>
+<text x="347" y="500" font-size="11.5" fill="#64748b">VU1 native, checked vs interpreter</text></g>
 <text x="644" y="196" font-size="15" font-weight="600" fill="#334155">Pipeline and verification</text>
 <g><title>Native Windows host: Verified. MSVC x64; Debug and Release</title>
 <rect x="644" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -121,24 +121,24 @@
 <circle cx="661" cy="230" r="3.5" fill="#16835d"/>
 <text x="672" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
 <text x="657" y="252" font-size="11.5" fill="#64748b">MSVC x64; Debug and Release</text></g>
-<g><title>Retail validation: Verified. Disc and embedded ELF confirmed</title>
+<g><title>Launcher and menus: Operational. Launcher, in-game menu, settings</title>
 <rect x="644" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="661" cy="292" r="3.5" fill="#16835d"/>
-<text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Retail validation</text>
-<text x="657" y="314" font-size="11.5" fill="#64748b">Disc and embedded ELF confirmed</text></g>
+<rect x="644" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="661" cy="292" r="3.5" fill="#2b78b8"/>
+<text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
+<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, in-game menu, settings</text></g>
 <g><title>Code generation: Verified. Game code recompiled to C++</title>
 <rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="354" r="3.5" fill="#16835d"/>
 <text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
 <text x="657" y="376" font-size="11.5" fill="#64748b">Game code recompiled to C++</text></g>
-<g><title>Tests: Verified. 18/18 CTests; Python suites pass</title>
+<g><title>Tests: Verified. 20/20 CTests; Python suites pass</title>
 <rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="416" r="3.5" fill="#16835d"/>
 <text x="672" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
-<text x="657" y="438" font-size="11.5" fill="#64748b">18/18 CTests; Python suites pass</text></g>
+<text x="657" y="438" font-size="11.5" fill="#64748b">20/20 CTests; Python suites pass</text></g>
 <g><title>Original comparisons: Incomplete. 42 of 46 pass at this checkpoint</title>
 <rect x="644" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>

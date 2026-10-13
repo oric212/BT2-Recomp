@@ -23,6 +23,9 @@ public:
     // frequency (SOUND_OUTPUT_PLAN.md). Where the original applies it (voice or master volume) is open.
     static constexpr std::int32_t stream_level_num=25,stream_level_den=64;
     unsigned underruns=0;            // Samples a started voice could not supply.
+    // The player's volumes in percent: the stream voices, the further sources (`extra`) and the whole
+    // mix. At 100 the output is the measured level, sample for sample.
+    unsigned stream_percent=100,extra_percent=100,master_percent=100;
     std::uint64_t voice_samples=0;   // Output samples taken from voices.
 
     // `bytes` of 16-bit little-endian mono PCM at `hertz` for voice `key`, heard on `side` (0 left, 1 right).
@@ -48,13 +51,18 @@ public:
         for(auto& [key,v]:voices_) {
             if(!v.running)continue;
             const auto have=std::min(count,v.queue.size());
-            for(std::size_t n=0;n<have;++n)mix[n*2+v.side]+=v.queue[n]*stream_level_num/stream_level_den;
+            for(std::size_t n=0;n<have;++n)mix[n*2+v.side]+=v.queue[n]*stream_level_num/stream_level_den*std::int32_t(stream_percent)/100;
             v.queue.erase(v.queue.begin(),v.queue.begin()+std::ptrdiff_t(have));
             voice_samples+=have;
             // A voice that runs dry has stopped (or stalled): it starts again with a block of silence.
             if(have<count) {v.running=false;v.last=0;underruns+=unsigned(count-have);}
         }
-        if(extra)extra(mix);
+        if(extra && extra_percent==100)extra(mix);
+        else if(extra) {
+            std::vector<std::int32_t> added(mix.size());extra(added);
+            for(std::size_t n=0;n<mix.size();++n)mix[n]+=added[n]*std::int32_t(extra_percent)/100;
+        }
+        if(master_percent!=100)for(auto& sample:mix)sample=std::int32_t(std::int64_t(sample)*master_percent/100);
         std::vector<std::int16_t> out(mix.size());
         for(std::size_t n=0;n<mix.size();++n)out[n]=std::int16_t(std::clamp(mix[n],-32768,32767));
         return out;

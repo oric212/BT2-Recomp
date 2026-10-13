@@ -40,18 +40,23 @@ Requested by the user on 2026-10-13 as the final stage before play-testing: a la
 
 ### Programs
 
-Two executables built from the same code:
+Three executables (state of 2026-10-13):
 
 | Program | Behaviour |
 | --- | --- |
-| Game | Reads `user/settings`. If the file is missing, it shows the launcher first. Otherwise it starts the game at once with the stored settings. |
-| Launcher | Always shows the launcher. "Start" runs the game in the same window. |
+| `bt2-game` | Reads `user/settings`. If the file is missing, it shows the launcher first. Otherwise it starts the game at once with the stored settings. |
+| `bt2-launcher` | Always shows the launcher; "Start game" runs the game. |
+| `bt2-entry-probe` (the runtime) | Runs the game. The two programs above start it as a child process with `BT2_PLAYER_SETTINGS=<settings file>`, which makes the run a player's run: window, sound, live input, GPU renderer, the settings, the in-game menu. Its messages go to `user/last-run.log`. |
 
-The probe stays the tool for automated runs (the gate, the discovery loop, pad scripts); it never shows the launcher or the overlay and does not read `user/`. The game program is the first player-facing executable; it uses the same runtime and the same host code as the probe's viewer mode.
+`bt2-game` and `bt2-launcher` are one small source file (`runtime/game/game_main.cpp`) with the host code; they hold no game code and build in seconds. The game code stays in one executable because linking its ten thousand objects three times was not worth the same-window start the first design asked for: the launcher's window closes and the game's opens. "Quit to the launcher" in the in-game menu ends the run with a code that brings the launcher back.
+
+Automated runs (the gate, the discovery loop, pad scripts) never set `BT2_PLAYER_SETTINGS`: they show no launcher and no in-game menu and do not read `user/`.
+
+**Limit today:** the runtime still starts from the captured startup inputs in `work/bt2-generation`, so the programs run from a prepared repository only (they look for that folder above their own). `bt2-launcher --preview-paused` shows the in-game menu over a stand-in picture without starting the game.
 
 ### Style
 
-The look of the PS2 system menu is the model: a dark background with slowly drifting translucent shapes, a short vertical list with one highlighted entry, a line at the bottom that names the buttons. Everything is drawn by our own code with a system font. No Sony artwork, logos, sounds or fonts are used or imitated; the screen carries this project's name. The overlay uses the same drawing over the dimmed game picture.
+The console's system menu is the model, as in the user's reference pictures (`work/launcher_ui_ref/`, local): the first screen is a near-black haze with a ring of glowing points turning beside the list; the screens below it have a violet haze with a slowly turning fan of translucent bars around a dark sphere, the date and time in the corners and a yellow title. The list has no bar: the chosen entry is bright cyan, the others grey, unavailable ones dark. The bottom line names the buttons with their symbols (cross, circle, arrows). The in-game menu is shown on the plain dark haze (the user asked for black or opaque grey), not over the game's picture. Everything is drawn by our own code (`runtime/host/menu_renderer.h`) with a system font. No Sony artwork, logos, sounds or fonts are used; the screen carries this project's name. A first version with a highlighted bar on a blue gradient was rejected by the user as ugly.
 
 ### Drawing
 
@@ -116,14 +121,14 @@ Until both work, the launcher shows the checkbox as unavailable instead of accep
 
 ## Order of work
 
-1. **Host input and controller support — done 2026-10-13:** the keyboard, the first XInput pad and a DualSense read directly over HID (USB and Bluetooth) feed the native controller service through a default mapping (`runtime/host/host_input.h`, `input_mapping.h`, `dualsense_report.h`). `run_startup_probe.py --play` plays in the viewer with sound; `--record <file>` writes the buttons played as a pad script. Checked: unit tests for the mapping, the DualSense report layouts and live input on the pad device; a short live run in which keyboard presses reached the game and were recorded. Not checked: an XInput pad and a DualSense on real hardware (none was available to the run; the user tries them).
-2. **Launcher shell:** settings file, menu model, renderer, loop; the game and launcher programs; Main, Display (scaling, fullscreen, window size, frame rate display) and Game disc screens. From here the game is started from the launcher with a controller.
-3. **Overlay:** the combination, pause, Resume and Quit; volumes (with the mixer's volume controls and the launcher's Sound screen); fast forward.
-4. **Controls screen:** remapping of the game buttons, the fast forward buttons and the overlay combination.
-5. **Saves:** a memory card image behind the native card service ([memory card plan](../memory-card/MEMORY_CARD_PLAN.md)), then the Saves screen. This is the implementation plan's step "Saves".
-6. **HD textures:** the investigation above, then the feature, then the checkbox.
+1. **Host input and controller support — done 2026-10-13:** the keyboard, the first XInput pad and a DualSense read directly over HID (USB and Bluetooth) feed the native controller service (`runtime/host/host_input.h`, `input_mapping.h`, `dualsense_report.h`). Not checked: an XInput pad and a DualSense on real hardware (the user tries them).
+2. **Launcher shell — done 2026-10-13:** settings file (`settings.h`), menu model (`menu_model.h`), presses from held buttons (`menu_input.h`), renderer (`menu_renderer.h`), the loop and the shared settings screens (`menu_host.h`), the launcher (`launcher.h`), the two programs. Screens: Main, Controls, Display (integer scaling, fullscreen, window size, frame rate display), Sound, Game disc.
+3. **In-game menu — done 2026-10-13** (`overlay.h`, `player_session.h`): the combination, pause, Resume, Sound, Display, Fast forward, Controls, Quit to the launcher, Quit game. Volumes are the mixer's (`AudioMixer::master_percent`, `stream_percent`, `extra_percent`). Fast forward: the pacer stops waiting and the sound is not sent to the device.
+4. **Controls screen — done 2026-10-13:** each PS2 button's key and gamepad button, the fast forward key and button (held or switching), the choice between both stick buttons and Start + Select for the in-game menu, reset to defaults.
+5. **Saves — next:** a memory card image behind the native card service ([memory card plan](../memory-card/MEMORY_CARD_PLAN.md)), then the Saves screen, then bringing in a save-exchange file (the user's is a `.cbs`). The launcher shows Saves as not available until then.
+6. **HD textures:** the investigation above, then the feature, then the checkbox (shown as not available).
 
-Play-testing by the user can begin after step 2 for anything that does not save, and fully after step 5. HD textures do not hold it back.
+**Checked so far:** unit tests (settings read back and refused, the menu model under presses, repeats, the combination, fast forward, the mixer's volumes); the launcher's screens and the in-game menu seen drawn in a window (`work/frames/launcher/`); the game started through `bt2-game.exe` to its first dialogue. **Not checked:** the in-game menu opened inside a running game, fast forward, any gamepad, fullscreen. These are the user's to try first.
 
 ## Verification
 

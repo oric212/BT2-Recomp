@@ -170,6 +170,15 @@ int main() {
             sum.drop(1);
             // Further sources are added before clamping.
             AudioMixer plus;require(plus.field([](std::span<std::int32_t> mix){mix[0]=70000;mix[1]=-5;})[0]==32767,"extra sources join the mix");
+            // The player's volumes: streams, further sources and the whole mix, each in percent.
+            const auto level=[&](unsigned stream,unsigned extra,unsigned master) {
+                AudioMixer m;m.stream_percent=stream;m.extra_percent=extra;m.master_percent=master;
+                m.push(1,0,48000,loud);
+                return m.field([](std::span<std::int32_t> mix){mix[512*2]+=1000;})[512*2];
+            };
+            require(level(100,100,100)==30000*25/64+1000,"full volume is the measured level");
+            require(level(50,100,100)==30000*25/64/2+1000 && level(100,50,100)==30000*25/64+500,"streams and further sources separately");
+            require(level(100,100,50)==(30000*25/64+1000)/2 && level(0,0,100)==0,"the whole mix; silence at zero");
         }
         {
             // SPU2 ADPCM: shift and filter per block; the end flag stops, the repeat flag marks a loop.

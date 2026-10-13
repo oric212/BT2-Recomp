@@ -25,6 +25,7 @@ public:
     static constexpr double field_seconds=1001.0/60000.0; // 59.94 fields per second.
     double waited_seconds=0; // Time spent waiting, for statistics: a field's work is its length minus this.
     unsigned late_fields=0;  // Fields whose deadline had passed when they asked.
+    bool free_run=false;     // Fast forward: nothing is waited for; pacing starts afresh when it ends.
 
     FramePacer() {
         timeBeginPeriod(1);
@@ -45,6 +46,7 @@ public:
     }
     // Waits for the current field's deadline, once per field (a second call in the same field returns at once).
     void wait() {
+        if(free_run) {started_=false;return;}
         if(!started_ || waited_)return;
         waited_=true;
         const auto begin=Clock::now();
