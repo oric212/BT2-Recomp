@@ -40,13 +40,14 @@ public:
     }
     void setScaling(Scaling scaling) {scaling_=scaling;}
     void setStatus(std::string text) {status_=std::move(text);} // Drawn in the top left corner; empty for none.
-    // The largest multiple of 640 x 448 that fits the screen the window is on (the main screen
-    // before it exists).
+    // The multiple of 640 x 448 nearest to the screen the window is on (the main screen before it
+    // exists): the largest that fits, or one more when that is closer, which cuts a little off the
+    // picture's edges.
     unsigned largestScale() const {
         MONITORINFO monitor{};monitor.cbSize=sizeof monitor;
         LONG width=GetSystemMetrics(SM_CXSCREEN),height=GetSystemMetrics(SM_CYSCREEN);
         if(hwnd_ && GetMonitorInfoA(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor)) {width=monitor.rcMonitor.right-monitor.rcMonitor.left;height=monitor.rcMonitor.bottom-monitor.rcMonitor.top;}
-        return unsigned(std::max<LONG>(1,std::min(width/640,height/448)));
+        return nearestScale(width,height,640,448);
     }
     // The window's size as a multiple of 640 x 448, or the whole screen without a border.
     void setLayout(unsigned scale,bool fullscreen) {
@@ -75,6 +76,12 @@ public:
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
     unsigned scale_=2;bool fullscreen_=false;std::string title_,status_;
+    static unsigned nearestScale(LONG width,LONG height,LONG picture_width,LONG picture_height) {
+        // The tighter of the two directions, rounded to the nearest whole number.
+        const bool by_width=std::int64_t(width)*picture_height<=std::int64_t(height)*picture_width;
+        const LONG have=by_width?width:height,unit=by_width?picture_width:picture_height;
+        return unsigned(std::max<LONG>(1,(have+unit/2)/unit));
+    }
     void applyLayout() {
         if(fullscreen_) {
             MONITORINFO monitor{};monitor.cbSize=sizeof monitor;GetMonitorInfoA(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor);
@@ -109,7 +116,9 @@ private:
         // size of the same proportions that fits; the rest of the window is black.
         int w,h;
         if(scaling_==Scaling::Integer) {
-            const int scale=std::max(1,int(std::min(client.right/LONG(frame_.width),client.bottom/LONG(frame_.height))));
+            // A window holds whole pictures; the whole screen takes the nearest multiple.
+            const int scale=fullscreen_?int(nearestScale(client.right,client.bottom,LONG(frame_.width),LONG(frame_.height)))
+                :std::max(1,int(std::min(client.right/LONG(frame_.width),client.bottom/LONG(frame_.height))));
             w=int(frame_.width)*scale;h=int(frame_.height)*scale;
         } else if(std::int64_t(client.right)*frame_.height<=std::int64_t(client.bottom)*frame_.width) {
             w=std::max(1,int(client.right));h=std::max(1,int(std::int64_t(client.right)*frame_.height/frame_.width));
@@ -134,6 +143,9 @@ private:
         switch(message) {
         case WM_PAINT: {PAINTSTRUCT ps;HDC dc=BeginPaint(hwnd,&ps);if(self)self->paint(dc);EndPaint(hwnd,&ps);return 0;}
         case WM_ERASEBKGND: return 1;
+        case WM_GETMINMAXINFO: { // A window may be larger than the screen (a size chosen as a multiple).
+            auto* limits=reinterpret_cast<MINMAXINFO*>(l);limits->ptMaxTrackSize.x=limits->ptMaxTrackSize.y=32000;return 0;
+        }
         case WM_CLOSE: if(self)self->closed_=true;DestroyWindow(hwnd);return 0;
         case WM_DESTROY: if(self)self->hwnd_=nullptr;return 0;
         default: return DefWindowProcA(hwnd,message,w,l);

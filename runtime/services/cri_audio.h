@@ -47,10 +47,17 @@ public:
     }
 
     // RPC 0x409. A movie that ends is stopped first (logged); a skipped movie destroys its player while it
-    // plays: playback ends without further reports and the announced data is dropped (not captured).
+    // plays. The announced data is then reported back as a stop reports it, without being heard: the
+    // game's decoder gets its buffer space back only through those reports, and the sources go on to
+    // the next film (seen as the film after a skipped one never starting; the reports themselves are
+    // not captured from the original).
     void playerDestroyed(std::uint32_t handle) {
         const auto& p=known(players_,handle,"CRI destroy of an unknown player");
-        if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {s.due=s.flush=0;s.written.clear();if(on_silenced)on_silenced(source);}
+        if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {
+            s.due=0;
+            for(const auto& stretch:s.written)s.flush+=stretch.bytes;
+            if(on_silenced)on_silenced(source);
+        }
         players_.erase(handle);destroyed_.insert(handle);
     }
 

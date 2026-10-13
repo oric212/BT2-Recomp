@@ -13,6 +13,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include "host/utf8.h"
 #include <windows.h>
 #include <algorithm>
 #include <cmath>
@@ -121,14 +122,16 @@ private:
     // Text with a soft dark edge below and to the right.
     void text(const std::string& s,int x,int y,HFONT font,COLORREF colour) {
         SelectObject(dc_,font);const int offset=std::max(int(height_)/400,1);
-        SetTextColor(dc_,RGB(0,0,0));TextOutA(dc_,x+offset,y+offset,s.c_str(),int(s.size()));
-        SetTextColor(dc_,colour);TextOutA(dc_,x,y,s.c_str(),int(s.size()));
+        const std::wstring wide=wideFromUtf8(s);
+        SetTextColor(dc_,RGB(0,0,0));TextOutW(dc_,x+offset,y+offset,wide.c_str(),int(wide.size()));
+        SetTextColor(dc_,colour);TextOutW(dc_,x,y,wide.c_str(),int(wide.size()));
     }
-    int extent(const std::string& s,HFONT font) {SelectObject(dc_,font);SIZE size{};GetTextExtentPoint32A(dc_,s.c_str(),int(s.size()),&size);return size.cx;}
+    int extent(const std::string& s,HFONT font) {const std::wstring wide=wideFromUtf8(s);SelectObject(dc_,font);SIZE size{};GetTextExtentPoint32W(dc_,wide.c_str(),int(wide.size()),&size);return size.cx;}
     // `s`, or its beginning with three dots, within `width` pixels.
     std::string fit(std::string s,HFONT font,int width) {
         if(extent(s,font)<=width)return s;
-        while(s.size()>1 && extent(s+"...",font)>width)s.pop_back();
+        // Whole characters go: a UTF-8 character's continuation bytes with their lead byte.
+        while(s.size()>1 && extent(s+"...",font)>width) {while(s.size()>1 && (static_cast<unsigned char>(s.back())&0xC0)==0x80)s.pop_back();s.pop_back();}
         return s+"...";
     }
     void textRight(const std::string& s,int right,int y,HFONT font,COLORREF colour) {text(s,right-extent(s,font),y,font,colour);}

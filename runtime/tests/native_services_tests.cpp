@@ -281,10 +281,13 @@ int main() {
             require(refused,"unload without a bank is refused");
         }
         wrap.play(9,0);
-        // A player destroyed while playing (a skipped movie) ends without reports; a queued stop for it
-        // is ignored, a start for it refused.
+        // A player destroyed while playing (a skipped movie) hands its announced data back once, as a
+        // stop does, and then reports nothing; queued commands for it are dropped.
         wrap.play(9,1);wrap.dataWritten(1,0x179540,0x800,1);wrap.playerDestroyed(9);wrap.field();
-        require(wrap.played(1).empty(),"a destroyed player reports nothing");
+        const auto returned=wrap.played(1);
+        std::uint32_t handed_back=0;for(const auto& m:returned)if(m.address<=0x179540 && m.address+m.bytes>=0x179540+0x800)handed_back=0x800;
+        require(handed_back==0x800,"a destroyed player's data is reported back");
+        wrap.field();require(wrap.played(1).empty(),"and nothing after that");
         wrap.play(9,0);
         wrap.play(9,1);wrap.field(); // A start queued before the destruction is dropped (seen when a film is skipped).
         require(wrap.played(1).empty() && wrap.commands_for_destroyed_players==2,"a destroyed player does not start");

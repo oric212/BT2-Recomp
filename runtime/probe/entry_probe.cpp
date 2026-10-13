@@ -203,7 +203,12 @@ int main(int argc, char** argv) {
             };
         }
         // BT2_CARD_FOLDER=<folder>: a memory card folder in slot 1 (the player's run takes it from the settings later).
-        if (const char* card = std::getenv("BT2_CARD_FOLDER")) runtime.memory_card_folder = card;
+        {
+            // The folder may have a name outside the system's code page: read it as wide characters.
+            wchar_t card[1024];
+            const DWORD length = GetEnvironmentVariableW(L"BT2_CARD_FOLDER", card, DWORD(std::size(card)));
+            if (length && length < std::size(card)) runtime.memory_card_folder = std::filesystem::path(card);
+        }
         // BT2_VU1_INTERPRET: run every VU1 microprogram in the interpreter, also where the build has a native translation.
         if (std::getenv("BT2_VU1_INTERPRET")) runtime.vif1.vu.use_native = false;
         // BT2_VU1_NO_HAND_WRITTEN: leave the hand-written VU1 programs out (translations and the interpreter only).

@@ -124,7 +124,7 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
     if(s.window_scale>largest)s.window_scale=largest;
     screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"On: whole multiples of the picture, sharp. Off: stretched to the window."));
     screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed));
-    screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448, up to "+std::to_string(largest)+"x on this screen."));
+    screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
     screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
     MenuEntry hd;hd.label="HD textures";hd.value=[]{return std::string("not available yet");};hd.enabled=false;
     screen.entries.push_back(hd);
