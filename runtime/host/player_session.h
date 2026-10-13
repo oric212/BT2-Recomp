@@ -20,12 +20,27 @@ public:
         :path_(std::move(path)),window_(window),input_(input),mixer_(mixer),pacer_(pacer) {
         if(auto loaded=Settings::load(path_))settings=*loaded;else throw std::runtime_error("No settings file at "+path_);
         apply();
+        // BT2_PAUSE_TEST=<field>:<milliseconds>[:<picture file>]: the in-game menu opens by itself at
+        // that field, closes after that time and writes the last picture it drew (to reproduce what a
+        // pause at a certain moment does, without a key press).
+        if(const char* test=std::getenv("BT2_PAUSE_TEST")) {
+            const std::string text(test);const auto first=text.find(':'),second=text.find(':',first+1);
+            if(first==std::string::npos)throw std::runtime_error("BT2_PAUSE_TEST is <field>:<milliseconds>[:<picture file>]");
+            pause_test_field_=unsigned(std::stoul(text.substr(0,first)));pause_test_ms_=unsigned(std::stoul(text.substr(first+1,second==std::string::npos?second:second-first-1)));
+            if(second!=std::string::npos)pause_test_picture_=text.substr(second+1);
+        }
     }
     bool fastForward() const {return fast_;}
 
     // Once per field: the controller state for the game. Opens the in-game menu when its combination
     // is pressed (the game stands still meanwhile) and follows the fast forward key and button.
     PadInput padInput() {
+        if(pause_test_field_ && ++fields_==pause_test_field_) {
+            DisplayFrame drawn;
+            runOverlay(settings,path_,window_,input_,picture_,[this]{apply();},pause_test_ms_,&drawn);
+            if(!pause_test_picture_.empty() && drawn.width)writePpm(pause_test_picture_,drawn);
+            std::fprintf(stderr,"Pause test: menu shown at field %u over a picture of %u x %u\n",fields_,picture_.width,picture_.height);
+        }
         if(!window_.focused())return {};
         const auto pad=input_.gamepad();
         if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
@@ -57,6 +72,7 @@ public:
 private:
     std::string path_;ViewerWindow& window_;HostInput& input_;AudioMixer& mixer_;FramePacer* pacer_;
     OverlayTrigger trigger_;FastForward fast_switch_;bool fast_=false,swallow_=false;
+    unsigned pause_test_field_=0,pause_test_ms_=0,fields_=0;std::string pause_test_picture_;
     DisplayFrame picture_;unsigned pictures_=0;std::chrono::steady_clock::time_point window_start_=std::chrono::steady_clock::now();
 
     void apply() {

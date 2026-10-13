@@ -20,6 +20,9 @@ public:
     struct Captured {unsigned key=0;unsigned button=GamepadState::Count;}; // One of the two is set.
     Menu menu;
     bool finished=false; // Set by an entry to end `run`.
+    // For the pause test (BT2_PAUSE_TEST): `run` ends by itself after this many milliseconds, and the
+    // last picture it drew is kept.
+    unsigned close_after_ms=0;DisplayFrame last_drawn;
 
     MenuHost(ViewerWindow& window,HostInput& input):window_(window),input_(input) {}
     ViewerWindow& window() {return window_;}
@@ -37,6 +40,7 @@ public:
         now_=ms();steps_.swallow(held(),now_);finished=false;
         while(!finished && !menu.empty()) {
             now_=ms();
+            if(close_after_ms && now_>=close_after_ms)break;
             window_.pump();
             if(window_.closed())return false;
             if(window_.focused() || !window_.opened()) {
@@ -48,7 +52,9 @@ public:
             // Drawn at the window's size, halved while that is larger than a screen needs.
             auto [width,height]=window_.clientSize();
             while(height>1200) {width/=2;height/=2;}
-            window_.present(renderer_.draw(menu.screen(),width,height,double(ms())/1000.0,menu.depth()==1,prompt_,backdrop),title);
+            auto drawn=renderer_.draw(menu.screen(),width,height,double(ms())/1000.0,menu.depth()==1,prompt_,backdrop);
+            if(close_after_ms)last_drawn=drawn;
+            window_.present(drawn,title);
             Sleep(15);
         }
         return !window_.closed();
@@ -112,11 +118,13 @@ inline MenuEntry number(std::string label,unsigned& value,unsigned low,unsigned 
     MenuEntry e=menuNumber(std::move(label),value,low,high,step,std::move(unit),std::move(note));
     const auto adjust=e.adjust;e.adjust=[adjust,changed](int direction){adjust(direction);changed();};return e;
 }
-inline MenuScreen display(Settings& s,std::function<void()> changed) {
+inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> changed) {
     MenuScreen screen;screen.title="Display";
+    const unsigned largest=std::min(host.window().largestScale(),Settings::max_window_scale);
+    if(s.window_scale>largest)s.window_scale=largest;
     screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"On: whole multiples of the picture, sharp. Off: stretched to the window."));
     screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed));
-    screen.entries.push_back(number("Window size",s.window_scale,1,4,1,"x",changed,"A multiple of 640 x 448."));
+    screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448, up to "+std::to_string(largest)+"x on this screen."));
     screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
     MenuEntry hd;hd.label="HD textures";hd.value=[]{return std::string("not available yet");};hd.enabled=false;
     screen.entries.push_back(hd);
@@ -142,10 +150,11 @@ inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> c
     screen.entries.push_back(toggle("Switch instead of hold",s.fast_forward_toggle,changed,"Off: fast while held. On: each press switches it."));
     return screen;
 }
-inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> changed) {
+// Which key and which gamepad button each PS2 button is.
+inline MenuScreen buttonMapping(MenuHost& host,Settings& s,std::function<void()> changed) {
     static constexpr const char* labels[16]={"Select","L3","R3","Start","Up","Right","Down","Left","L2","R2","L1","R1","Triangle","Circle","Cross","Square"};
     static constexpr unsigned order[16]={14,13,15,12,4,6,7,5,10,11,8,9,3,0,1,2}; // Face buttons first.
-    MenuScreen screen;screen.title="Controls";
+    MenuScreen screen;screen.title="Button mapping";
     for(const unsigned n:order) {
         MenuEntry e;e.label=labels[n];
         e.value=[&s,n]{return MenuHost::keyName(s.mapping.keys[n])+"  -  "+std::string(GamepadState::labels[s.mapping.buttons[n]]);};
@@ -158,10 +167,17 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
         e.note="Keyboard key  -  gamepad button. Confirm, then press the new one.";
         screen.entries.push_back(e);
     }
+    screen.entries.push_back(menuAction("Reset to defaults",[&s,changed] {
+        const unsigned sensitivity=s.mapping.stick_sensitivity;s.mapping=InputMapping{};s.mapping.stick_sensitivity=sensitivity;changed();
+    },"The keys and gamepad buttons as the program came."));
+    return screen;
+}
+inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> changed) {
+    MenuScreen screen;screen.title="Controls";
+    screen.entries.push_back(menuAction("Button mapping",[&host,&s,changed]{host.menu.open(buttonMapping(host,s,changed));},"The key and the gamepad button of each PS2 button."));
     screen.entries.push_back(number("Stick sensitivity",s.mapping.stick_sensitivity,50,200,10,"%",changed,"How far the game sees the sticks pushed. 100%: as they are."));
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
-    screen.entries.push_back(menuAction("Reset to defaults",[&s,changed]{s.mapping=InputMapping{};const Settings d;s.fast_forward_key=d.fast_forward_key;s.fast_forward_button=d.fast_forward_button;changed();}));
     return screen;
 }
 }

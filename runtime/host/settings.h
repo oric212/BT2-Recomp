@@ -8,13 +8,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 struct Settings {
     std::string disc;               // Path of the game's disc image.
     std::string disc_folder;        // A further folder the launcher lists disc images from; empty: none.
     bool integer_scaling=true;      // Off: the picture is stretched to the window.
     bool fullscreen=false;
-    unsigned window_scale=2;        // Window size as a multiple of the game's picture, 1..4.
+    unsigned window_scale=2;        // Window size as a multiple of the game's picture; the launcher offers what fits the screen.
     bool show_frame_rate=false;
     unsigned master_volume=100,music_volume=100,effects_volume=100; // Percent.
     bool hd_textures=false;
@@ -30,6 +31,8 @@ struct Settings {
     // The card folder in slot 1: a name under user/memcards, or the full path of a card folder
     // elsewhere; empty: no card.
     std::string memory_card;
+    std::vector<std::string> card_folders; // Card folders elsewhere that the launcher lists (full paths).
+    static constexpr unsigned max_window_scale=16;
     bool operator==(const Settings&) const=default;
 
     std::string text() const {
@@ -39,6 +42,7 @@ struct Settings {
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
+        for(const auto& folder:card_folders)out<<"card_folder = "<<folder<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -69,7 +73,7 @@ struct Settings {
             else if(key=="stick_sensitivity")s.mapping.stick_sensitivity=number(50,200);
             else if(key=="integer_scaling")s.integer_scaling=number(0,1);
             else if(key=="fullscreen")s.fullscreen=number(0,1);
-            else if(key=="window_scale")s.window_scale=number(1,4);
+            else if(key=="window_scale")s.window_scale=number(1,max_window_scale);
             else if(key=="show_frame_rate")s.show_frame_rate=number(0,1);
             else if(key=="master_volume")s.master_volume=number(0,100);
             else if(key=="music_volume")s.music_volume=number(0,100);
@@ -79,6 +83,7 @@ struct Settings {
             else if(key=="fast_forward_button")s.fast_forward_button=button(true);
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
+            else if(key=="card_folder") {if(!value.empty())s.card_folders.push_back(value);}
             else if(key=="memory_card") {
                 // A full path (drive or network) is taken as it is; anything else must be one folder name.
                 const bool full=(value.size()>2 && value[1]==':' && (value[2]=='\\' || value[2]=='/')) || value.starts_with("\\\\");

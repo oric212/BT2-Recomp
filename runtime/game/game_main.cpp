@@ -109,6 +109,14 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
                 if(runLauncher(settings,settings_path.string(),root.string(),window,input)!=LauncherResult::Start)return 0;
             }
             if(settings.disc.empty()) {launcher=true;continue;} // A settings file without a disc: choose one.
+            {
+                // The game always has a card to save to: without one in the slot, or when its folder is
+                // gone, a new empty card is made. Existing cards are never replaced.
+                const fs::path named(settings.memory_card);std::error_code missing;
+                if(settings.memory_card.empty() || !fs::is_directory(named.is_absolute()?named:root/"user"/"memcards"/named,missing)) {
+                    settings.memory_card=newCardFolder(root.string());settings.save(settings_path.string());
+                }
+            }
             const DWORD code=runGame(root,settings_path,settings,log);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}

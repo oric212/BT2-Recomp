@@ -519,7 +519,7 @@ public:
     }
     std::uint32_t vsync_flag=0,vsync_csr=0;unsigned frame_vsync_deliveries=0;
     std::uint32_t display_intc_stat=0;
-    bool display_field=true; // Toggles per polled VBlank; anchored to the original 0x271178 sample (field 1).
+    bool display_field=true; // Toggles at every VBlank; anchored to the original 0x271178 sample (field 1).
     std::optional<GifDmaStaging> clear_repeat_gif;
     // Frame-phase GS reset (the GS library reset routine 0x30FDC0, mode 0, called again after display
     // setup for a new scene): CSR reset, CSR read, PutIMR, VSync handler removal, SetGsCrt. Separate

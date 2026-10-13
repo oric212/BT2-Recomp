@@ -173,8 +173,11 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
         runIntcHandlers(rdram,interrupted,11,"Timer 2 handler");++timer2_deliveries;
         if(timer2.interruptPending())throw UnsupportedSyscall(0x14,interrupted->pc); // Handler must acknowledge.
     }
+    // The field alternates at every VBlank, waited for or not: code that samples it once per field
+    // without a pending wait (a film's frame timing) sees it change as on the console.
+    display_field=!display_field;
     if(vsync_flag) {
-        display_intc_stat|=0xC;display_field=!display_field;
+        display_intc_stat|=0xC;
         write32(rdram,vsync_flag,1);write32(rdram,vsync_csr,0x551B400Cu|(display_field?0x2000u:0u));write32(rdram,vsync_csr+4,0);
         vsync_flag=vsync_csr=0;++frame_vsync_deliveries;
     }

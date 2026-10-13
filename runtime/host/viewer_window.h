@@ -40,7 +40,15 @@ public:
     }
     void setScaling(Scaling scaling) {scaling_=scaling;}
     void setStatus(std::string text) {status_=std::move(text);} // Drawn in the top left corner; empty for none.
-    // The window's size as a multiple of 640 x 448 (1 to 4), or the whole screen without a border.
+    // The largest multiple of 640 x 448 that fits the screen the window is on (the main screen
+    // before it exists).
+    unsigned largestScale() const {
+        MONITORINFO monitor{};monitor.cbSize=sizeof monitor;
+        LONG width=GetSystemMetrics(SM_CXSCREEN),height=GetSystemMetrics(SM_CYSCREEN);
+        if(hwnd_ && GetMonitorInfoA(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor)) {width=monitor.rcMonitor.right-monitor.rcMonitor.left;height=monitor.rcMonitor.bottom-monitor.rcMonitor.top;}
+        return unsigned(std::max<LONG>(1,std::min(width/640,height/448)));
+    }
+    // The window's size as a multiple of 640 x 448, or the whole screen without a border.
     void setLayout(unsigned scale,bool fullscreen) {
         if(scale==scale_ && fullscreen==fullscreen_)return;
         scale_=scale;fullscreen_=fullscreen;
