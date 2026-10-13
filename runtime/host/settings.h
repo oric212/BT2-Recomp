@@ -32,6 +32,7 @@ struct Settings {
     // elsewhere; empty: no card.
     std::string memory_card;
     std::vector<std::string> card_folders; // Card folders elsewhere that the launcher lists (full paths).
+    std::vector<std::string> hidden_cards; // Cards of user/memcards taken off the launcher's list (names); their files stay.
     static constexpr unsigned max_window_scale=16;
     bool operator==(const Settings&) const=default;
 
@@ -43,6 +44,7 @@ struct Settings {
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
         for(const auto& folder:card_folders)out<<"card_folder = "<<folder<<"\n";
+        for(const auto& card:hidden_cards)out<<"hidden_card = "<<card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -84,6 +86,7 @@ struct Settings {
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
             else if(key=="card_folder") {if(!value.empty())s.card_folders.push_back(value);}
+            else if(key=="hidden_card") {if(!value.empty())s.hidden_cards.push_back(value);}
             else if(key=="memory_card") {
                 // A full path (drive or network) is taken as it is; anything else must be one folder name.
                 const bool full=(value.size()>2 && value[1]==':' && (value[2]=='\\' || value[2]=='/')) || value.starts_with("\\\\");

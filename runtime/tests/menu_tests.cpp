@@ -22,7 +22,7 @@ int main() {
         s.disc="D:\\games\\a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
-        s.disc_folder="E:\\discs";s.mapping.stick_sensitivity=150;s.window_scale=9;s.card_folders={"E:\\saves\\One","F:\\Two cards"};
+        s.disc_folder="E:\\discs";s.mapping.stick_sensitivity=150;s.window_scale=9;s.card_folders={"E:\\saves\\One","F:\\Two cards"};s.hidden_cards={"Card 2","Old card"};
         check(Settings::parse(s.text())==s,"changed settings read back");
         s.memory_card="E:\\saves\\My card";check(Settings::parse(s.text())==s,"a card folder elsewhere is a full path");
         check(refused([]{Settings::parse("stick_sensitivity = 10\n");}),"stick sensitivity has its range");

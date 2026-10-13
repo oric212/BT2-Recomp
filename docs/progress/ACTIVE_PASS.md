@@ -13,7 +13,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 - **Special moves and ultimates** (R2 + triangle, full charge): the stop was an unmapped function; 324 missed functions were mapped in one pass, one more switch-shaped function in the overlay after that.
 - **Saving:** write, create, flush, set entry data and delete on the card folder follow the public library's layout and pass the unit test; no run has saved yet. A request beyond those stops the run by number. Ask the user to save, quit and start again.
 - **The film after the logos** (black screen): fixed by flipping the GS field flag at every VBlank; checked on scripted runs and with the pause test.
-- **Launcher and in-game menu:** card list (cards of `user/memcards`, folders added from elsewhere, new empty card, removing an added folder from the list), a new card made automatically when none is in the slot, folder chooser for disc images, Controls with "Button mapping" and "Stick sensitivity", window size up to the screen, the picture keeping its proportions in a resized window, sliders "Music" and "Effects and voices".
+- **Launcher and in-game menu:** card list (cards of `user/memcards`, folders added from elsewhere, new empty card, "Remove a card from the list" for any listed card: only the entry goes, kept as `hidden_card` or by dropping the `card_folder` line), a new card made automatically when none is in the slot, folder chooser for disc images, Controls with "Button mapping" and "Stick sensitivity", window size up to the screen, the picture keeping its proportions in a resized window, sliders "Music" and "Effects and voices".
 - **Camera in fights** (fixed earlier the same day: sign extension of float moves): the user was asked to confirm.
 
 **Open:**

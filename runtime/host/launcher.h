@@ -74,7 +74,9 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
         MenuScreen screen;screen.title="Memory card (slot 1)";
         const auto cards_folder=std::filesystem::path(root)/"user"/"memcards";
         std::error_code error;std::vector<std::string> cards;
-        for(std::filesystem::directory_iterator it(cards_folder,error),end;!error && it!=end;it.increment(error))if(it->is_directory(error))cards.push_back(it->path().filename().string());
+        const auto hidden=[&settings](const std::string& card) {return std::find(settings.hidden_cards.begin(),settings.hidden_cards.end(),card)!=settings.hidden_cards.end();};
+        for(std::filesystem::directory_iterator it(cards_folder,error),end;!error && it!=end;it.increment(error))
+            if(it->is_directory(error) && !hidden(it->path().filename().string()))cards.push_back(it->path().filename().string());
         std::sort(cards.begin(),cards.end());
         const auto saves_in=[](const std::filesystem::path& card) {
             unsigned count=0;std::error_code failed;
@@ -99,26 +101,36 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
             if(chosen.empty())return;
             // A card of the program's own folder goes by its name, as when it is picked from the list.
             const std::filesystem::path picked(chosen);std::error_code same;
-            if(std::filesystem::equivalent(picked.parent_path(),cards_folder,same))settings.memory_card=picked.filename().string();
+            if(std::filesystem::equivalent(picked.parent_path(),cards_folder,same)) {
+                // One of the program's own cards: it is on the list again if it was taken off.
+                settings.memory_card=picked.filename().string();
+                auto& off=settings.hidden_cards;off.erase(std::remove(off.begin(),off.end(),settings.memory_card),off.end());
+            }
             else {
                 if(std::find(settings.card_folders.begin(),settings.card_folders.end(),chosen)==settings.card_folders.end())settings.card_folders.push_back(chosen);
                 settings.memory_card=chosen;
             }
             changed();reopen(card_screen);
         },"Opens the system's folder dialog (mouse and keyboard). An empty folder is an empty card."));
-        if(!settings.card_folders.empty())screen.entries.push_back(menuAction("Remove a folder from this list",[&] {
+        MenuEntry removing=menuAction("Remove a card from the list",[&,cards] {
+            // Every card on the list; picking one takes its entry away and leaves its files alone.
             MenuScreen removal;removal.title="Remove from the list";
-            for(const auto& folder:settings.card_folders) {
-                removal.entries.push_back(menuAction(std::filesystem::path(folder).filename().string(),[&,folder] {
-                    auto& list=settings.card_folders;
-                    list.erase(std::remove(list.begin(),list.end(),folder),list.end());
-                    if(settings.memory_card==folder)settings.memory_card.clear();
+            const auto entry=[&](const std::string& label,const std::string& value,bool elsewhere,const std::string& where) {
+                removal.entries.push_back(menuAction(label,[&,value,elsewhere] {
+                    if(elsewhere) {auto& list=settings.card_folders;list.erase(std::remove(list.begin(),list.end(),value),list.end());}
+                    else settings.hidden_cards.push_back(value);
+                    if(settings.memory_card==value)settings.memory_card.clear();
                     changed();
                     host.later([&]{host.menu.press(MenuKey::Back);host.menu.press(MenuKey::Back);host.menu.open(card_screen());});
-                },"Only the entry goes: the folder and its saves stay where they are. In "+std::filesystem::path(folder).parent_path().string()));
-            }
+                },"Only the entry goes: the folder and its saves stay where they are. In "+where));
+            };
+            for(const auto& card:cards)entry(card,card,false,(std::filesystem::path(root)/"user"/"memcards").string());
+            for(const auto& folder:settings.card_folders)entry(std::filesystem::path(folder).filename().string(),folder,true,std::filesystem::path(folder).parent_path().string());
             host.menu.open(std::move(removal));
-        },"Takes a card folder that was added from elsewhere off this list. Nothing is deleted."));
+        },"Takes a card off this list. Nothing is deleted; the folder chooser brings it back.");
+        removing.enabled=!cards.empty() || !settings.card_folders.empty();
+        if(!removing.enabled)removing.value=[]{return std::string("no cards listed");};
+        screen.entries.push_back(removing);
         return screen;
     };
     MenuEntry saves=menuAction("Memory card",[&]{host.menu.open(card_screen());},"A card is a folder with one folder per save; user/memcards holds the cards listed here.");
