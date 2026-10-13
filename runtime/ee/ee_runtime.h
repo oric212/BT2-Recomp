@@ -110,6 +110,8 @@ public:
     // iterations (backward branches) since the last VBLANK a field has elapsed (logical CPU time; busy-wait
     // loops and long computations such as decompression rely on it). Delivered only with interrupts enabled.
     static constexpr unsigned main_calls_per_field=100000,main_checkpoints_per_field=500000;
+    static constexpr unsigned frame_checkpoint_limit=400000000; // Loop iterations within one field once frames are presented.
+    unsigned checkpoint_limit=0; // Diagnostic override of the runaway guard (BT2_EE_LOOP_LIMIT); 0 keeps the default.
     unsigned main_calls_since_field_=0,main_checkpoints_since_field_=0,busy_main_vblanks=0;
     R5900Context* main_context_=nullptr; // Main's context as last seen at a guest branch.
     // VU0 data memory (4 KB) and the macro-mode instructions that address it (vu0_macro.cpp).
@@ -258,6 +260,7 @@ public:
     ProbeGpr read128(std::uint8_t* rdram,std::uint32_t address) {
         if(auto* spr=scratchpadAt(address,16)){ProbeGpr value;std::memcpy(&value,spr,16);return value;}
         address=uncachedWideAddress(address,16);
+        if(address==0x10005000)[[unlikely]]return vif1FifoRead(); // VIF1 FIFO: local->host GS data.
         checkMemory(rdram,address,sizeof(ProbeGpr));
         if(address%16)throw std::runtime_error("Unsupported unaligned quadword load");
         ProbeGpr value;std::memcpy(&value,memory_.data()+address,sizeof(value));return value;
@@ -445,9 +448,23 @@ public:
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes run by the VIF1 interpreter, which owns VU1 (VU1_PIPELINE_PLAN.md).
     Vif1 vif1;
-    struct FrameVif1 {std::uint32_t chcr=0,tadr=0,qwc=0;bool cis=false;unsigned starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
+    struct FrameVif1 {std::uint32_t chcr=0,madr=0,tadr=0,qwc=0;bool cis=false;unsigned sends=0,starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
         std::uint32_t blocked_code=0,blocked_tag=0,blocked_tadr=0;unsigned unsupported=0;} frame_vif1;
     struct FrameVif1Unsupported {std::uint32_t code,tag;};
+    // GS readback (ee_gs_readback.cpp): FIFO and bus direction, the FINISH events already cleared in
+    // CSR, and counters. gs_download_source supplies local->host pixels when the GPU renderer holds VRAM.
+    struct GsReadback {bool fdr=false,busdir=false;unsigned finishes_cleared=0,downloads=0;std::uint64_t dma_qwords=0,fifo_qwords=0;} gs_readback;
+    std::function<void(std::span<std::uint8_t>)> gs_download_source;
+    bool gsFinishPending() const {return gif_dma.gs.state.finishes!=gs_readback.finishes_cleared;}
+    void frameVif1Codes(std::span<const std::uint32_t> words);
+    void frameVif1Send(std::uint32_t value);
+    void frameVif1Receive(std::uint32_t value);
+    void gsDownload(std::span<std::uint8_t> out);
+    bool gsReadbackStore32(std::uint32_t address,std::uint32_t value);
+    bool gsReadbackStore64(std::uint32_t address,std::uint64_t value);
+    std::uint32_t vif1Status() const;
+    ProbeGpr vif1FifoRead();
+    void vif1FifoWrite(const ProbeGpr& value);
     void frameVif1Start(std::uint32_t value);void frameGifChainStart(std::uint32_t value);
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
     LogicalTimer1 timer1;unsigned timer1_frame_writes=0,timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
@@ -591,6 +608,7 @@ public:
             std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
             vif_startup.consume(words);++vif_startup.phase;return;
         }
+        if(address==0x10005000 && frameGifContext()) {checkMemory(rdram,0,0);vif1FifoWrite(value);return;}
         if(address==0x10007010 && ipuContext()) {
             std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
             try {ipu.writeFifo(address,words);} catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,16);}
@@ -618,10 +636,13 @@ public:
         // Runaway guard. One observed null-bind retry executes a 2^20+1-iteration guest loop. Once frames
         // are presented the guard applies per frame and per VBLANK field (each restarts the count): run
         // length is bounded by the frame limit and the flipless-field limit (deliverVblank), and a loop
-        // that never reaches the next field still stops.
+        // that never reaches the next field still stops. A worker thread above main runs to its next
+        // wait within one field (logical time does not advance for it), so the frame-phase bound has to
+        // hold a whole burst of loading work: battle loading copies and unpacks for tens of millions
+        // of iterations in one go.
         if (gs_display_flips != checkpoint_flips_ || (gs_display_flips && vblank_deliveries != checkpoint_fields_))
             {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries; checkpoints_ = 0;}
-        if (++checkpoints_ > (post_cd.supplied ? 2000000u : 1000000u))
+        if (++checkpoints_ > (checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u))
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
                 +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
         if (current_thread_id == 1 && ++main_checkpoints_since_field_ > main_checkpoints_per_field) busyMainField();

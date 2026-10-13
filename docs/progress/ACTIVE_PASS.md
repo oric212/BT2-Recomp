@@ -2,40 +2,44 @@
 
 Updated: 2026-10-13. **No pass in progress.**
 
-The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (10,680) is compiled into the probe. The long Release run with the movies skipped shows the title screen and the game's idle cycle (demo fight, title, second demo fight) in 3D and ends at its 9,000-frame budget (4,854 / 4,847 functions). History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../guides/RUNTIME_LAYOUT.md).
+The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (10,682, plus the 473 of the `DBZP.BIN` overlay) is compiled into the probe. The long Release run with scripted input goes from the title screen through the menus, character and map selection and loading into a 1P-vs-COM battle and ends at its 9,000-frame budget (4,936 / 4,927 functions). History: [2026-10](2026-10.md). Source layout: [RUNTIME_LAYOUT.md](../guides/RUNTIME_LAYOUT.md).
 
-## Goal of the next pass
+## Goal of the next passes
 
-Menus and battle setup, per [PROG.md](../PROG.md#next-steps):
+Order set by the user on 2026-10-13, per [PROG.md](../PROG.md#next-steps):
 
-1. Find the input that leaves the title screen. The pad script's Start presses (every 150 fields from 1100 to 4000) skip the movies, but the frames afterwards show the title/demo cycle, never the New Game/Continue choice. Check the press timing against the title screen's own frames (a snapshot every 50 frames around the title) and the pad data the game reads.
-2. Follow New Game through its boundaries with the discovery loop.
-3. Verify the 3D output against PCSX2: a VU1 memory capture point in `capture_ee.py`, and a GS dump or screenshot of a demo frame.
+1. **Sound output:** ADX decoding and sound bank playback behind the sound and CRI services ([sound plans](../plans/sound/)). Start by listing what the services already receive in the battle run (stream announcements, SOUNDS requests) and writing the plan for the output path.
+2. **Saves:** a memory card image behind the native card service. The game asks "Do you wish to create a save file on the memory card (PS2)?" after New Game; the script answers No. The Yes path is untested.
+3. **Controller support:** host input (keyboard, XInput) into the native controller service.
+4. **Play-testing by the user:** live input in the viewer, recorded as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. This replaces scripted presses and screenshots for the other menu entries and story mode. Battles run at about 19 presented frames per second of wall-clock time, so the VU1 path needs a performance pass before live play in fights.
 
 ## Frames to inspect
 
-Saved under `work/frames/` (local, ignored), from the long Release run on the GPU renderer:
+Saved under `work/frames/` (local, ignored), from the long Release run on the GPU renderer; `battle-sheet.png` shows them together:
 
-- `demo-3450.png`, `demo-4300.png`: first demo fight (Yamcha against a Saibaman, rocky plain).
-- `demo-5600.png`: title screen between the fights.
-- `demo-7000.png`, `demo-8300.png`, `demo-8990.png`: second demo fight (Goku against Ginyu, Namek).
+- `battle-2100.png`, `battle-2400.png`: the two New Game dialogues and the main menu.
+- `battle-2800.png`, `battle-3300.png`: the Dueling menu and character selection.
+- `battle-3600.png` to `battle-4450.png`: character selection steps, map selection, the loading screen.
+- `battle-4700.png` to `battle-8990.png`: stage fly-over, intro poses and the fight.
 
-The user knows how the game should look; ask them to confirm these before the demo fight is called Verified.
+The user confirmed the title dialogues, the menus and character selection on 2026-10-13. Map selection, the loading screen and the battle frames are not confirmed yet.
 
-## How to run the long run
+## How to run
 
-- Movies skipped (about 3.5 minutes to 9,000 frames): `run_startup_probe.py --config Release --frames 9000 --pad-script "<default>,1100:start,1108:-,1250:start,1258:-,..."` (Start every 150 fields from 1100 to 4000).
-- Frames: `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM.
-- A hang (no display flip): `BT2_STALL_FIELDS=120` ends the run within seconds; `stop_returns` in the report is the call chain. A bad float: `BT2_EE_WATCH_FLOAT=<address>:<limit>` names the first call after the write ([TOOLS.md](../guides/TOOLS.md)).
-- Discovery loop: with every mapped function bound, a stop at an unbound entry is a map gap: `inspect_blocker.py`, `analyze_game.py --discover-blocker` (or `--discover-prologues` for a bulk pass; add `--program dbzp` for the overlay), `prepare_map.py`, `generate_game.py --candidate-map ...`, refresh the receipt, `expand_startup.py --all`, `prepare_runtime.py`, build. This pass drove it with a scratch script (run, classify, discover, regenerate, rebuild, repeat, with a live log); it is worth adding to `tools/ps2recomp/` as a tool with tests. When a tail jump's target becomes a function of its own, the raw source of the jumping function changes (dispatch call to direct call): check the diff, then refresh its hash in the receipt.
-- A candidate the prover rejects ("map did not grow"): trace which rule of `has_branch_nop_gaps` / `has_switch_case_gaps` returns, read the code at that address and generalize the rule with a test.
+- **Battle run** (about 4.5 minutes): `run_startup_probe.py --config Release --frames 9000 --pad-script "<contents of work/bt2-generation/pad-fight.txt>"`. The pad scripts are local and ignored: `pad-new-game.txt` (to the main menu), `pad-duel.txt`, `pad-versus.txt`, `pad-select.txt` (character selection), `pad-battle.txt` (Cross every 150 fields from 4200 to 6000: through the selections into the fight), `pad-fight.txt` (the same plus Up and Square during the fight).
+- **Writing a pad script:** Start opens the title's option list and Cross confirms. Scripts count fields; snapshots count flips and print `Snapshot: flip N at field M`. Menus present one frame per field (field = flip + about 700 after the movies), the battle one per two fields.
+- **Frames:** `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM.
+- **Discovery loop:** `python tools/ps2recomp/discovery_loop.py --disc <iso> --frames <n> --pad-script-file <file>` ([TOOLS.md](../guides/TOOLS.md)); its log is `work/bt2-generation/discovery-loop.log`. A stop it does not handle (not a map gap, or "map did not grow") is named in the log.
+- **A hang:** `BT2_STALL_FIELDS=120` ends a run without display flips within seconds; a loop that never ends inside one field stops at the runaway guard (`BT2_EE_LOOP_LIMIT` to change its bound). A bad float: `BT2_EE_WATCH_FLOAT=<address>:<limit>`.
 
 ## Notes
 
-- Build with `python tools/build/msvc.py cmake --build build/probe --config Release --target bt2-entry-probe` (Ninja). Times: runtime header (`ee_runtime.h`) edit about 16 s, one file about 12 s, full rebuild about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`). A change to a rewrite in `prepare_runtime.py` recompiles the generated files it touches (about 200 files: 2 minutes).
+- Build with `python tools/build/msvc.py cmake --build build/probe --config Release --target bt2-entry-probe` (Ninja). Times: runtime header (`ee_runtime.h`) edit about 16 s, one file about 12 s, full rebuild about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`).
 - Gate: `python tools/gate/run_gate.py --disc <iso>` (about 80 s plus the build).
 - The 3D frames exist only on the GPU renderer: the CPU GS model refuses perspective texturing and fog, so `--gs cpu` and `--gs mirror` stop at the first 3D frame. The gate's CPU run ends before any 3D frame.
-- VU1 counts one cycle per instruction pair without stalls. The report's `vu1_early_q_reads` and `vu1_early_clip_reads` count reads that fell inside a pipeline delay; both are 0 in the long run. A nonzero value means a program depends on timing the model does not have.
+- GS readback is untested against the original: the destination buffers of the 12 store-image calls in battle loading are not compared with a PCSX2 capture. In GPU-only mode paraLLEl-GS supplies the pixels; the CPU model reads CT32 and CT24 only.
+- VU1 counts one cycle per instruction pair without stalls. The report's `vu1_early_q_reads` and `vu1_early_clip_reads` are 0 in the battle run too.
+- The battle presents one frame per two fields of game time. Whether the original runs this scene at 60 or 30 frames per second is not checked; if it is 60, look at what consumes the second field in the frame loop.
 - SOUNDS functions `0x60`, `0x80` and `0x100` are answered with the unchanged status block by inference (not in the PCSX2 call log); capture them if a difference shows.
 - The gate runs 22 comparisons on the full run and 9 at phase stops; the 15 that need their own inputs or an earlier stop, or that differ as recorded in [PROG.md](../PROG.md#verification-2026-10-13), are listed in `NOT_IN_GATE` in `tools/gate/run_gate.py`.
-- Kept local captures: `work/pcsx2-capture/cri-stream-kept/` (stream captures and logs), `work/pcsx2-capture/sounds-log/` and `sounds-function-*`; reference movie frames in `work/movie-ref/`; the five VU1 microprograms of the first demo list in `work/vu1-programs/`.
+- Kept local captures: `work/pcsx2-capture/cri-stream-kept/`, `work/pcsx2-capture/sounds-log/` and `sounds-function-*`; reference movie frames in `work/movie-ref/`; the five VU1 microprograms of the first demo list in `work/vu1-programs/`.

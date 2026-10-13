@@ -17,6 +17,8 @@ public:
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.
     std::span<const std::uint32_t> readVram();
+    // The next quadwords of the local->host transfer the last TRXDIR started (zero past its end).
+    void readFifo(std::span<std::uint8_t> out);
     // Submits queued work at a frame boundary (each flip) and advances the frame context.
     void flush();
     // Privileged register by its index in the 0x12000000 block (address offset / 16).

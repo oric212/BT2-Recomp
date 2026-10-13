@@ -33,8 +33,8 @@
     },
     {
       "name": "Gameplay",
-      "status": "not_reached",
-      "note": "Menu path next",
+      "status": "working",
+      "note": "Versus battle runs",
       "current": true
     }
   ],

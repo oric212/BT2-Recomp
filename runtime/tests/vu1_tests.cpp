@@ -287,7 +287,7 @@ void vif() {
         try {v.check(words);} catch(const Vif1Unsupported& u) {return u.code==code && u.index==index && v.codes==codes && v.r.base==before.base && v.r.cycle==before.cycle;}
         return false;
     };
-    check(refused({0x03000001,0x06008000},0x06008000,1),"MSKPATH3");
+    check(refused({0x03000001,0x08000000},0x08000000,1),"undefined command");
     check(refused({0x64010000,1,2},0x64010000,0) && refused({0x68010000,1,2,3},0x68010000,0),"UNPACK V2 and V3");
     check(refused({0x7C010000,1,2,3,4},0x7C010000,0),"UNPACK with masking");
     check(refused({0x05000001,0x6C010000,1,2,3,4},0x6C010000,1),"UNPACK with an addition mode");
@@ -295,6 +295,10 @@ void vif() {
     check(refused({0x6C020000,1,2,3,4},0x6C020000,0) && refused({0x50000001,1},0x50000001,0) && refused({0x4A010000,1},0x4A010000,0),"data continuing in the next transfer");
     check(refused({0x80000000},0x80000000,0) && refused({0x00000000,0x1C000000},0x1C000000,1),"interrupt bit and unknown command");
     check(v.r.mode==0 && v.r.cycle==0x404,"a refused check changes nothing");
+    // MSKPATH3 holds or releases PATH3; the check leaves the register alone.
+    v.check(std::vector<std::uint32_t>{0x06008000});check(!v.r.mskpath3,"MSKPATH3 check has no effect");
+    v.run(std::vector<std::uint32_t>{0x06008000},Vu1::Kick{},Vu1::Kick{});check(v.r.mskpath3,"MSKPATH3 mask");
+    v.run(std::vector<std::uint32_t>{0x06000000},Vu1::Kick{},Vu1::Kick{});check(!v.r.mskpath3,"MSKPATH3 release");
 }
 }
 

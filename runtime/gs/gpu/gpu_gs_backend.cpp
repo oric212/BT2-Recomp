@@ -38,6 +38,11 @@ std::span<const std::uint32_t> GpuGsBackend::readVram() {
     return {words,size/4};
 }
 
+void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
+    if(out.size()%16)throw std::runtime_error("GPU GS: FIFO read size is not a multiple of 16");
+    state_->gs.read_transfer_fifo(out.data(),std::uint32_t(out.size()/16));
+}
+
 void GpuGsBackend::flush() {
     state_->gs.flush();
     state_->device.next_frame_context();

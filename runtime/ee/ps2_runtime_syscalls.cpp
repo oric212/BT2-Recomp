@@ -162,6 +162,12 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
         return;
     }
+    if(code==0 && (selector==0x70 || selector==0x71) && frameGifContext() && display_reset_phase==13 && !frame_gs_reset_step) {
+        // GsGetIMR / GsPutIMR in the frame phase: the GS interrupt mask; PutIMR returns the previous mask.
+        const auto previous=gs_imr;
+        if(selector==0x71) {if(context->r[4].low&~0xFF00ull)throw UnsupportedSyscall(selector,context->pc);gs_imr=std::uint32_t(context->r[4].low);}
+        context->r[2].low=previous;context->r[2].high=0;return;
+    }
     if(code==0 && selector==0x71 && gs_imr_supplied_) {
         if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C && frameGsResetStep(context,2,0x32EFA8)) {
             gs_imr=0xFF00;frame_gs_reset_step=3;context->r[2].low=0xFF00;return;

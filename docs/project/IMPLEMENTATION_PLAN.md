@@ -44,11 +44,12 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames before the movie; 1,000 with its first fields |
 | Opening movie | 🟢 Operational | Logo and opening movies play to the end (native IPU, native ADX flow, no sound) |
-| Title screen | 🟢 Operational | Renders with its options; reached with scripted input |
-| Demo fight | 🟢 Operational | Two idle demo fights render in 3D through VIF1/VU1 on the GPU renderer and play to their end; frames inspected, not compared with the original |
-| Menus | ⏳ Not Reached | The scripted Start presses did not leave the title/demo cycle |
-| Character selection and battle loading | ⏳ Not Reached | |
-| Playable versus battle | ⏳ Not Reached | First major gameplay goal |
+| Title screen | 🟢 Operational | Option list and New Game dialogues respond to scripted input; pictures confirmed by the user |
+| Demo fight | 🟢 Operational | Two idle demo fights render in 3D through VIF1/VU1 on the GPU renderer and play to their end; frames confirmed by the user, not compared with the original |
+| Menus | 🟢 Operational | Main menu and Dueling menu render and respond; only the 1P-vs-COM path has been entered |
+| Character selection and battle loading | 🟢 Operational | Character, colour and map selection; loading with GS readback |
+| Versus battle | 🟢 Operational | A 1P-vs-COM duel runs with scripted input controlling the fighter; GPU renderer only, no sound, about 19 frames per second of wall-clock time |
+| Playable versus battle | ⏳ Not Reached | First major gameplay goal: needs host input, sound and real-time speed |
 | Audio and a full match | ⏳ Not Reached | |
 
 ## Current next step
@@ -62,7 +63,14 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md), [IPU plan](../plans/video/IPU_PLAN.md)), operational: the native IPU decodes both movies and the native CRI service paces them with the player's played-data reports. Next: the SOUNDS request after the movies (`0x50`, to be captured), then systematic frame comparison with ffmpeg.
 
 6. **3D pipeline** ([plan](../plans/graphics/VU1_PIPELINE_PLAN.md)), operational since 2026-10-13: VIF1 display lists and a VU1 microprogram interpreter feed the GS; the demo fights render on the GPU renderer. Next: comparison with PCSX2 (VU1 memory, a frame), the CPU renderer's 3D drawing states, measured frame time.
-7. **Menus and battle setup** — next: the input that leaves the title screen, then New Game through its boundaries toward character selection.
+7. **Menus and battle setup** — operational since 2026-10-13: scripted input goes from the title screen through New Game, the main menu, Dueling, character and map selection and loading into a 1P-vs-COM battle ([GS readback plan](../plans/graphics/GS_READBACK_PLAN.md)).
+
+Order of the following passes (set by the user on 2026-10-13):
+
+8. **Sound output** (item 2 above): ADX decoding and sound bank playback.
+9. **Saves:** a memory card image behind the native card service.
+10. **Controller support:** host input (keyboard, XInput) into the native controller service.
+11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first (VU1 performance).
 
 ## Working method
 

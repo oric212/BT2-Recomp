@@ -23,6 +23,7 @@ public:
         std::uint32_t cycle=0,mode=0,mask=0,base=0,ofst=0,tops=0,top=0,itops=0,itop=0,mark=0;
         std::array<std::uint32_t,4> row{},col{};
         bool dbf=false; // Double buffer flag: TOPS is BASE+OFST.
+        bool mskpath3=false; // MSKPATH3: transfers on PATH3 (the GIF channel) are held.
     } r;
     Vu1 vu;
     unsigned codes=0,unpacks=0,programs=0,calls=0,directs=0;

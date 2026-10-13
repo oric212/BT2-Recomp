@@ -312,5 +312,35 @@ int main() {
         check(gs.state.image_qwords_left==0 && gs.image_pixels==8 && !gs.state.trx && gs.register_writes==5);
         check(gs.word(GsCommandSink::ct32Word(0,1,0,0)).value==1u && gs.word(GsCommandSink::ct32Word(0,1,3,1)).value==8u);
     }
+    {
+        // Local->host transfer (TRXDIR 1): a 4x2 rectangle at (2,1) of a CT32 buffer is read back in
+        // row order; FINISH writes are counted; reads past the end give zero.
+        GsCommandSink gs;
+        for(unsigned y=0;y<4;++y)for(unsigned x=0;x<8;++x)gs.seedForTest(GsCommandSink::ct32Word(0x40,1,x,y),0x11000000u|(y<<8)|x);
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        q(0x1000000000008005ULL,0xE);q(0x40ULL|(1ULL<<16),0x50);q(2ULL|(1ULL<<16),0x51);q(0x0000000200000004ULL,0x52);q(0,0x61);q(1,0x53);
+        check(!gs.downloadQwords());
+        gs.transfer(t);
+        check(gs.state.download && gs.state.finishes==1 && gs.downloadQwords()==2 && !gs.state.trx);
+        std::array<std::uint8_t,16> row{};gs.readDownload(row);
+        std::array<std::uint32_t,4> words;std::memcpy(words.data(),row.data(),16);
+        check(words==std::array<std::uint32_t,4>{0x11000102,0x11000103,0x11000104,0x11000105} && gs.downloadQwords()==1);
+        std::array<std::uint8_t,32> rest{};gs.readDownload(rest);std::memcpy(words.data(),rest.data(),16);
+        check(words[0]==0x11000202 && words[3]==0x11000205 && rest[16]==0 && rest[31]==0 && !gs.downloadQwords());
+        // CT24 drops the high byte: three bytes per pixel.
+        t.clear();q(0x1000000000008002ULL,0xE);q(0x40ULL|(1ULL<<16)|(1ULL<<24),0x50);q(1,0x53);gs.transfer(t);
+        std::array<std::uint8_t,16> packed{};gs.readDownload(packed);
+        check(gs.state.finishes==1 && packed[0]==0x02 && packed[1]==0x01 && packed[2]==0x00 && packed[3]==0x03 && packed[4]==0x01);
+        // A format this model does not read is refused while it draws, and nothing changes; with the
+        // GPU drawing, the transfer is tracked and the bytes come from the renderer.
+        t.clear();q(0x1000000000008002ULL,0xE);q(0x40ULL|(1ULL<<16)|(0x13ULL<<24),0x50);q(1,0x53);
+        bool refused=false;try{gs.transfer(t);}catch(const std::runtime_error&){refused=true;}
+        check(refused && gs.state.dl_psm==1);
+        GsCommandSink gpu;gpu.rasterize=false;
+        t.clear();q(0x1000000000008004ULL,0xE);q(0x40ULL|(1ULL<<16)|(0x13ULL<<24),0x50);q(0,0x51);q(0x0000002000000010ULL,0x52);q(1,0x53);gpu.transfer(t);
+        check(gpu.downloadQwords()==32);gpu.readDownload(row);check(gpu.downloadQwords()==31);
+        GsCommandSink idle;refused=false;try{idle.readDownload(row);}catch(const std::runtime_error&){refused=true;}check(refused);
+    }
     std::cout<<"GS scoped command tests passed\n";
 }

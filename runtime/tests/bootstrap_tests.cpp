@@ -1647,13 +1647,46 @@ int main() {
                 require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gif_dma.gs.transfers==transfers
                     && vf.frame_vif1.blocked_code==code && vf.frame_vif1.unsupported==before+1);
             };
-            tag(0x3000,0x10000001,0x0600800000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x06008000); // MSKPATH3.
+            tag(0x3000,0x10000001,0x0800000000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x08000000); // Undefined VIF command.
             // DIRECT 2 whose second quadword is the next tag's upper half and the first half of its data.
             tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0,0);
             vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gif_dma.gs.transfers==2 && vf.frame_vif1.tadr==0x3140);
             tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x0800000000008001ull,0);tag(0x3220,0x70000000,0);
             refuse(0x3200,0x50000000); // DIRECT IMAGE without a host-to-local transfer: refused by the GS.
+        }
+        {
+            // GS readback (the library's store-image sequence): a normal-mode VIF1 packet starts a
+            // local->host transfer and raises FINISH; with the FIFO and the bus turned around, a DMA
+            // to memory and FIFO reads deliver the rectangle in order.
+            EeRuntime rb;rb.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=rb.memory().data();rb.gs_display_flips=1;
+            for(unsigned y=0;y<4;++y)for(unsigned x=0;x<8;++x)rb.gif_dma.gs.seedForTest(GsCommandSink::ct32Word(0x40,1,x,y),0x22000000u|(y<<8)|x);
+            auto qword=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
+            qword(0x4000,0x1300000006008000ull,0x5000000600000000ull); // MSKPATH3 on, FLUSHA, NOP, DIRECT 6.
+            qword(0x4010,0x1000000000008005ull,0xE);qword(0x4020,0x40ull|(1ull<<16),0x50);qword(0x4030,0,0x51);
+            qword(0x4040,0x0000000400000008ull,0x52);qword(0x4050,0,0x61);qword(0x4060,1,0x53);
+            require(!rb.gsFinishPending() && rb.vif1Status()==0x40);
+            rb.frame_vif1.madr=0x4000;rb.frame_vif1.qwc=7;rb.frameVif1Send(0x101);
+            require(rb.frame_vif1.sends==1 && !rb.frame_vif1.qwc && rb.frame_vif1.madr==0x4070 && rb.frame_vif1.chcr==1 && rb.vif1.r.mskpath3
+                && rb.gsFinishPending() && rb.gif_dma.gs.downloadQwords()==8);
+            require(rb.gsReadbackStore64(0x12001000,2) && !rb.gsFinishPending() && !rb.gsReadbackStore64(0x12000000,0));
+            // Nothing is delivered before both directions are turned; the GIF channel stays held.
+            rb.frame_vif1.madr=0x5000;rb.frame_vif1.qwc=6;reject([&]{rb.frameVif1Receive(0x100);});reject([&]{rb.vif1FifoRead();});
+            rb.frame_gif.tadr=0x4010;reject([&]{rb.frameGifChainStart(0x105);});
+            reject([&]{rb.gsReadbackStore32(0x10003C00,0x40);});
+            require(rb.gsReadbackStore32(0x10003C00,0x800000) && !rb.gsReadbackStore32(0x10003C10,0) && (rb.vif1Status()>>24)==0);
+            reject([&]{rb.gsReadbackStore64(0x12001040,2);});
+            require(rb.gsReadbackStore64(0x12001040,1) && rb.vif1Status()==(0x40u|0x800000u|(8u<<24)) && rb.gs_readback.downloads==1);
+            rb.frameVif1Receive(0x100);
+            std::uint32_t first,last;std::memcpy(&first,ram+0x5000,4);std::memcpy(&last,ram+0x505C,4);
+            require(first==0x22000000 && last==0x22000207 && rb.frame_vif1.madr==0x5060 && !rb.frame_vif1.qwc && (rb.vif1Status()>>24)==2 && rb.gs_readback.dma_qwords==6);
+            const auto a=rb.vif1FifoRead(),b=rb.vif1FifoRead();
+            require(std::uint32_t(a.low)==0x22000300 && std::uint32_t(b.high>>32)==0x22000307 && (rb.vif1Status()>>24)==0 && rb.gs_readback.fifo_qwords==2);
+            reject([&]{rb.vif1FifoRead();}); // The transfer is exhausted.
+            reject([&]{rb.vif1FifoWrite(ProbeGpr{});}); // No VIF codes while the FIFO runs toward the EE.
+            require(rb.gsReadbackStore32(0x10003C00,0) && rb.gsReadbackStore64(0x12001040,0) && rb.vif1Status()==0x40);
+            ProbeGpr release{};release.low=0x06000000;rb.vif1FifoWrite(release);
+            require(!rb.vif1.r.mskpath3);
         }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;

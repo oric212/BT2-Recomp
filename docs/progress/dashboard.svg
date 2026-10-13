@@ -47,10 +47,10 @@
 <text x="744.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Demo fight</text>
 <text x="744.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Renders in 3D</text>
 </g>
-<g><title>Gameplay: Not Reached. Menu path next</title>
-<rect x="816.0" y="106" width="120.0" height="44" rx="22" fill="#fff" stroke="#8793a5" stroke-width="2"/>
+<g><title>Gameplay: Operational. Versus battle runs</title>
+<rect x="816.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="2"/>
 <text x="876.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Gameplay</text>
-<text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#8793a5">Menu path next</text>
+<text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#2b78b8">Versus battle runs</text>
 </g>
 <text x="24" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
 <g><title>EE CPU and kernel services: Operational. Recompiled game code runs</title>

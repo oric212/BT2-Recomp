@@ -158,7 +158,18 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
     // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS.
     // GPU-only: the GPU performs every transfer that needs no readback, so a form this model does
     // not draw is only left untracked; local-to-host (dir 1) is refused in both modes.
-    state.trx=false;
+    state.trx=false;state.download=false;
+    if((dir&3)==1) {
+        // Local->host: the source rectangle is read back through the FIFO. This model reads CT32 and
+        // CT24 buffers; the GPU renderer reads every format itself.
+        const unsigned sbp=unsigned(bitblt&0x3FFF),sbw=unsigned((bitblt>>16)&63),spsm=unsigned((bitblt>>24)&63);
+        const unsigned sx=unsigned(pos&0x7FF),sy=unsigned((pos>>16)&0x7FF);
+        if(!w || !h || !sbw || (rasterize && spsm>1))
+            throw std::runtime_error("Unsupported GS local-to-host transfer: spsm "+std::to_string(spsm)+" "+std::to_string(w)+"x"+std::to_string(h)
+                +" at "+std::to_string(sx)+","+std::to_string(sy)+" sbw "+std::to_string(sbw));
+        state.download=true;state.dl_bp=sbp;state.dl_bw=sbw;state.dl_psm=spsm;state.dl_x=sx;state.dl_y=sy;state.dl_w=w;state.dl_h=h;state.dl_at=0;
+        return;
+    }
     const bool unsupported=(dir&3)!=0 || dpsm!=0 || order || !w || !h
         || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048;
     if(unsupported && !rasterize && (dir&3)!=1)return;
@@ -166,6 +177,42 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
         throw std::runtime_error("Unsupported GS image transfer: dir "+std::to_string(dir&3)+" dpsm "+std::to_string(dpsm)
             +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));
     state.trx=true;state.trx_bp=dbp;state.trx_bw=dbw;state.trx_x0=dx;state.trx_y0=dy;state.trx_w=w;state.trx_h=h;state.trx_x=state.trx_y=0;
+}
+
+namespace {
+// Bits per pixel of a transfer format (PSMCT32 0, CT24 1, CT16 2, CT16S 0xA, T8 0x13, T4 0x14, the
+// high-byte formats 0x1B/0x24/0x2C and the depth formats 0x30-0x3A).
+unsigned transferBits(unsigned psm) {
+    switch(psm) {
+    case 0x00:case 0x30:return 32;
+    case 0x01:case 0x31:return 24;
+    case 0x02:case 0x0A:case 0x32:case 0x3A:return 16;
+    case 0x13:case 0x1B:return 8;
+    case 0x14:case 0x24:case 0x2C:return 4;
+    default:throw std::runtime_error("Unsupported GS transfer format "+std::to_string(psm));
+    }
+}
+}
+
+std::size_t GsCommandSink::downloadQwords() const {
+    if(!state.download)return 0;
+    const std::size_t bytes=(std::size_t(state.dl_w)*state.dl_h*transferBits(state.dl_psm)+7)/8;
+    return bytes>state.dl_at?(bytes-state.dl_at+15)/16:0;
+}
+
+void GsCommandSink::readDownload(std::span<std::uint8_t> out) {
+    if(!state.download)throw std::runtime_error("GS FIFO read without a local-to-host transfer");
+    std::fill(out.begin(),out.end(),std::uint8_t(0));
+    if(rasterize) {
+        const std::size_t size=state.dl_psm?3:4,pixels=std::size_t(state.dl_w)*state.dl_h;
+        for(std::size_t n=0;n<out.size();++n) {
+            const std::size_t at=state.dl_at+n,pixel=at/size;
+            if(pixel>=pixels)break;
+            const auto word=vram_[ct32Word(state.dl_bp,state.dl_bw,state.dl_x+unsigned(pixel%state.dl_w),state.dl_y+unsigned(pixel/state.dl_w))].value;
+            out[n]=std::uint8_t(word>>(8*(at%size)));
+        }
+    }
+    state.dl_at+=out.size();
 }
 
 void GsCommandSink::loadClut(std::uint64_t texture0) {
@@ -214,6 +261,7 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
         throw std::runtime_error("Unsupported GS register write");
     state.regs[reg]=value;if(apply)++register_writes;
     if(reg==0x53) {startTransfer(value);return;}
+    if(reg==0x61) {++state.finishes;return;}
     if(reg==0x06 || reg==0x07) {
         const unsigned cld=unsigned((value>>61)&7);
         if(cld==1)loadClut(value);else if(cld)throw std::runtime_error("Unsupported GS CLUT load control");

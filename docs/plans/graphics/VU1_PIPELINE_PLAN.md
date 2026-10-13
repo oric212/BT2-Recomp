@@ -18,6 +18,7 @@ Steps 1 to 3 of the order below are done and the first 3D frames are presented (
 - **Microprograms:** five in the first list (101 to 451 instructions), more later (48,963 uploads in the long run). Modelled instructions: the set those programs use, listed in `vu1.cpp`; every other one stops by name.
 - **Pipeline model:** one cycle per instruction pair; Q is visible 7 cycles after DIV, the clip flags 4 cycles after CLIP; no stall cycles. Reads that fall inside such a delay are counted (`vu1_early_q_reads`, `vu1_early_clip_reads` in the probe report): both are 0 over 4.43 billion instructions, so the programs reached so far do not depend on stall timing. A branch on an integer register written by the previous instruction is refused unless that instruction is a flag instruction (the programs pair `FCOR` with `IBNE` directly).
 - **Rendering:** GPU renderer only. The CPU GS model refuses the 3D drawing states; in GPU-only mode it checks packet framing only.
+- **Battle (2026-10-13):** a 1P-vs-COM duel runs on the same interpreter (5.77 billion instructions in the 9,000-frame run, no early Q or clip read) at about 19 presented frames per second of wall-clock time, so step 5 (translation of the hot microprograms) is needed before live play.
 - **Open:** VU1 memory against a PCSX2 capture, a frame comparison with the original, the CPU renderer's 3D states, and measured frame time (the 9,000-frame long run takes 214 s with the interpreter).
 
 ## Design

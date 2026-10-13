@@ -58,6 +58,7 @@ void Vif1::process(std::span<const std::uint32_t> words,Registers& r,Vif1* self,
             case 0x03:r.base=imm&0x3FF;++at;break;                  // BASE
             case 0x04:r.itops=imm&0x3FF;++at;break;                 // ITOP
             case 0x05:r.mode=imm&3;++at;break;                      // STMOD
+            case 0x06:r.mskpath3=(imm&0x8000)!=0;++at;break;        // MSKPATH3
             case 0x07:r.mark=imm;++at;break;                        // MARK
             case 0x10:case 0x11:case 0x13:++at;break;               // FLUSHE, FLUSH, FLUSHA: nothing runs behind a code.
             case 0x14:case 0x15:case 0x17:                          // MSCAL, MSCALF, MSCNT

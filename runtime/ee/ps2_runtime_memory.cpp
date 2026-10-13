@@ -81,7 +81,7 @@ void EeRuntime::frameGifChainStart(std::uint32_t value) {
     // Source chain (MOD 1, no tag transfer): the data of every tag, in order, is PATH3 GIF data.
     // GIF packets may continue across tags, so the data is joined and sent as one GS transaction.
     auto& g=frame_gif;
-    if(g.qwc || (value&0xC0))throw UnsupportedGuestMemory(0x1000A000,4); // Pending MADR data, TTE or TIE.
+    if(g.qwc || (value&0xC0) || vif1.r.mskpath3)throw UnsupportedGuestMemory(0x1000A000,4); // Pending MADR data, TTE or TIE; PATH3 masked.
     const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),g.tadr,"GIF");
     std::vector<std::uint8_t> data;
     for(const auto& c:chain.segments)data.insert(data.end(),c.data.begin(),c.data.end());
@@ -152,6 +152,7 @@ void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_
     if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
         gif_dma.gs.resetDrawingState();++display_reset_phase;return;
     }
+    if(frameGifContext() && display_reset_phase==13 && !frame_gs_reset_step && gsReadbackStore64(address,value))return;
     // Privileged GS display registers after display setup (main's thread): PMODE, SMODE2, DISPFB1/2,
     // DISPLAY1/2, EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
     // CRT timing registers stay with SetGsCrt. A flip is counted at the library flip's last store
@@ -206,7 +207,8 @@ std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std:
         && !frame_gs_reset_step && display_reset_phase==13) {
         // Frame-phase CSR sample on main: revision 0x1B, the latched status bits and the field the
         // logical VBlank model last published (the same FIELD the VSync callback receives).
-        ++frame_csr_reads;return 0x551B4000u|(display_intc_stat&0x1Fu)|(display_field?0x2000u:0u);
+        // FINISH (bit 1) is set by a FINISH register write and stays until it is cleared.
+        ++frame_csr_reads;return 0x551B4000u|(display_intc_stat&0x1Du)|(gsFinishPending()?2u:0u)|(display_field?0x2000u:0u);
     }
     if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes!=1 || gs_csr_reads
             || context->pc!=0x30FE50 || context->r[29].low!=initial_sp-688)
@@ -220,14 +222,19 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
         checkMemory(rdram,0,0);timer1_mode=value;timer1.configure(value);++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
     }
-    if(frameGifContext() && (address==0x10009000 || address==0x10009020 || address==0x10009030 || (address==0x1000E010 && value==2))) {
+    if(frameGifContext() && (address==0x10009000 || address==0x10009010 || address==0x10009020 || address==0x10009030 || (address==0x1000E010 && value==2))) {
         checkMemory(rdram,0,0);auto& v=frame_vif1;
         if(address==0x1000E010) {v.cis=false;return;} // W1C of CIS1 only.
         if(v.chcr&0x100)throw UnsupportedGuestMemory(address,4);
         if(address==0x10009020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);v.qwc=value;return;}
+        if(address==0x10009010) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);v.madr=value&0x0FFFFFFF;return;} // No scratchpad transfers.
         if(address==0x10009030) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);v.tadr=value&0x0FFFFFFF;return;}
-        frameVif1Start(value);return;
+        // Normal mode (the GS readback sequence): 0x101 sends VIF codes from memory, 0x100 receives
+        // local->host data; a display list is a source chain with tag transfer (0x145).
+        if(value==0x101)frameVif1Send(value);else if(value==0x100)frameVif1Receive(value);else frameVif1Start(value);
+        return;
     }
+    if(frameGifContext() && gsReadbackStore32(address,value)) {checkMemory(rdram,0,0);return;}
     if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
         checkMemory(rdram,0,0);auto& g=frame_gif;
         if(g.chcr&0x100)throw UnsupportedGuestMemory(address,4); // Writes while a transfer runs.
@@ -236,7 +243,7 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         if(address==0x1000A030) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);g.tadr=value&0x0FFFFFFF;return;}
         // CHCR bits 16-31 (TAG) are read-only: a read-modify-write start carries the last tag back.
         if((value&0xFFFF)==0x105) {frameGifChainStart(value);return;}
-        if((value&0xFFFF)!=0x101 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
+        if((value&0xFFFF)!=0x101 || vif1.r.mskpath3 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
         gif_dma.gs.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
         g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;return;
     }
@@ -325,7 +332,7 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         if(address==0x10009000 || address==0x10009020 || address==0x10009030) {
             checkMemory(rdram,0,0);return address==0x10009000?frame_vif1.chcr:address==0x10009020?frame_vif1.qwc:frame_vif1.tadr;
         }
-        if(address==0x10003C00) {checkMemory(rdram,0,0);return 0x40u|(vif1.r.dbf?0x80u:0u);} // DBF follows the microprogram starts.
+        if(address==0x10003C00) {checkMemory(rdram,0,0);return vif1Status();} // DBF follows the microprogram starts.
         if(address==0x10003020) {checkMemory(rdram,0,0);return 0;}
     }
     if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {

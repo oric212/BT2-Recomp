@@ -46,6 +46,8 @@ int main(int argc, char** argv) {
         }
         // BT2_STALL_FIELDS: fields without a display flip before the run stops (default 3600).
         if (const char* limit = std::getenv("BT2_STALL_FIELDS")) runtime.flipless_field_limit = static_cast<unsigned>(std::stoul(limit));
+        // BT2_EE_LOOP_LIMIT: loop iterations one thread may run within a field before the runaway guard stops it.
+        if (const char* limit = std::getenv("BT2_EE_LOOP_LIMIT")) runtime.checkpoint_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32
         // Viewer mode: present the displayed framebuffer at each flip; keep the last frame visible after
         // the run stops until the window is closed. Closing the window during a run ends the process.
@@ -70,6 +72,8 @@ int main(int argc, char** argv) {
             const bool gpu_only = std::string_view(gpu_mode) == "on";
             gpu_mirror.attach(runtime.gif_dma.gs);
             runtime.gif_dma.gs.rasterize = !gpu_only;
+            // GPU-only: VRAM lives in the renderer, which also answers local->host transfers.
+            if (gpu_only) runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
             // BT2_GPU_GS_SNAPSHOT=<flip>:<path> writes that flip's GPU scanout as a binary PPM.
             // Several flips: <flip>:<path> entries separated by ';'.
@@ -90,7 +94,11 @@ int main(int argc, char** argv) {
                 const auto snapshot = snapshots.find(flip);
                 if (!viewer_mode && snapshot == snapshots.end()) return;
                 const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
-                if (snapshot != snapshots.end()) writePpm(snapshot->second, frame);
+                if (snapshot != snapshots.end()) {
+                    // The field is what a pad script counts in; flips are what snapshots count in.
+                    writePpm(snapshot->second, frame);
+                    std::cerr << "Snapshot: flip " << flip << " at field " << runtime.vblank_deliveries << std::endl;
+                }
                 if (!viewer_mode || !frame.width) return;
                 viewer.present(frame, flip);
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}

@@ -47,7 +47,15 @@ public:
         // Host->local transfer in progress (TRXDIR 0): destination and pixel position.
         unsigned image_qwords_left=0; // IMAGE data of the last tag still to come in later transfers.
         bool trx=false;unsigned trx_bp=0,trx_bw=0,trx_x0=0,trx_y0=0,trx_w=0,trx_h=0,trx_x=0,trx_y=0;
+        // Local->host transfer (TRXDIR 1): source rectangle and the bytes already read from the FIFO.
+        bool download=false;unsigned dl_bp=0,dl_bw=0,dl_psm=0,dl_x=0,dl_y=0,dl_w=0,dl_h=0;std::size_t dl_at=0;
+        unsigned finishes=0; // FINISH register writes: each raises the FINISH event (CSR bit 1).
     };
+    // Local->host data still to be read, in quadwords (the transfer's size rounded up).
+    std::size_t downloadQwords() const;
+    // The next bytes of the local->host transfer, in transfer order; zero past its end. With
+    // rasterize off the pixels live in the GPU renderer and only the position advances.
+    void readDownload(std::span<std::uint8_t> out);
     State state;
     unsigned transfers=0,frame_sprites=0,frame_triangles=0,register_writes=0,clut_loads=0;
     std::uint64_t frame_pixels=0,image_pixels=0;

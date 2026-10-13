@@ -60,7 +60,8 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ipu_block.cpp
     runtime/ee/ipu_csc.cpp
     runtime/vu/vu1.cpp
-    runtime/vu/vif1.cpp)
+    runtime/vu/vif1.cpp
+    runtime/ee/ee_gs_readback.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)

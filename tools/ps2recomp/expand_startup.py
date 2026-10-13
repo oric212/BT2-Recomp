@@ -114,7 +114,12 @@ def select_overlay(program, target):
     if any(row['start'] == target for row in selection.get(program, [])):
         raise ValueError('Reached overlay entry was already selected; inspect actual dispatch failure.')
     selection.setdefault(program, []).append({'start': target, 'end': int(rows[0]['End'], 0)})
-    receipt = {'programs': {}, 'limitations': 'Actually reached overlay entries; registered with the bytes they were generated from.'}
+    write_overlays(selection)
+    print(f'Selected neutral overlay entry FUN_{target:08X} ({program}); bindings remain ignored.')
+
+
+def write_overlays(selection):
+    receipt = {'programs': {}, 'limitations': 'Mapped overlay entries (reached ones first); registered with the bytes they were generated from.'}
     for name, functions in selection.items():
         manifest = overlay_programs.verify_generated(name)
         files = {f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp": manifest['files'][f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp"] for row in functions}
@@ -123,7 +128,29 @@ def select_overlay(program, target):
     OVERLAY_CMAKE.write_text(cmake, encoding='utf-8')
     OVERLAY_HEADER.write_text(header, encoding='utf-8')
     OVERLAY_RECEIPT.write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
-    print(f'Selected neutral overlay entry FUN_{target:08X} ({program}); bindings remain ignored.')
+
+
+def remaining_overlay(rows, selected, generated):
+    """Exact, unique mapped overlay entries with a generated source that are not yet selected, by address."""
+    counts = collections.Counter(int(row['Start'], 0) for row in rows)
+    return [{'start': int(row['Start'], 0), 'end': int(row['End'], 0)} for row in sorted(rows, key=lambda r: int(r['Start'], 0))
+            if counts[int(row['Start'], 0)] == 1 and int(row['Start'], 0) not in selected
+            and f"FUN_{int(row['Start'], 0):08X}_0x{int(row['Start'], 0):x}.cpp" in generated]
+
+
+def select_all_overlays():
+    """Bind every remaining mapped entry of every generated overlay program."""
+    selection, added = verify_overlays(), 0
+    for program in overlay_programs.PROGRAMS:
+        if not (overlay_programs.paths(program)['generation'] / 'candidates.csv').exists():
+            continue
+        manifest = overlay_programs.verify_generated(program)
+        functions = selection.setdefault(program, [])
+        new = remaining_overlay(overlay_rows(program), {row['start'] for row in functions}, manifest['files'])
+        functions += new; added += len(new)
+    if added:
+        write_overlays(selection)
+    return added
 
 
 def select_target(target, rows):
@@ -179,12 +206,12 @@ def main():
     parser.add_argument('--report', type=Path, default=FOLDER / 'entry-stop.json')
     parser.add_argument('--callees', type=int, default=0, help='Also bind up to this many static callees of the reached entry.')
     parser.add_argument('--neighbours', type=lambda text: int(text, 0), default=0, help='Also bind every mapped entry within this many bytes of the reached entry.')
-    parser.add_argument('--all', action='store_true', help='Bind every mapped main-ELF entry not yet selected (no reached entry needed).')
+    parser.add_argument('--all', action='store_true', help='Bind every mapped main-ELF and overlay entry not yet selected (no reached entry needed).')
     args = parser.parse_args()
     verify_generated()
     addresses = verify_extra()
     stop = json.loads(args.report.read_text(encoding='utf-8'))
-    program = overlay_programs.program_for(stop.get('target'))
+    program = None if args.all else overlay_programs.program_for(stop.get('target'))
     if program:
         select_overlay(program, stop['target'])
         return
@@ -217,7 +244,7 @@ def main():
                        'they are reached, or mapped entries next to one); boundaries remain provisional; no runtime behavior inferred.'
     }, indent=2) + '\n', encoding='utf-8')
     if target is None:
-        print(f'Selected all {len(callees)} remaining mapped entries; bindings remain ignored.')
+        print(f'Selected all {len(callees)} remaining mapped entries and {select_all_overlays()} overlay entries; bindings remain ignored.')
         return
     print(f'Selected neutral generated entry FUN_{target:08X} and {len(callees)} static callees or neighbours; bindings remain ignored.')
 

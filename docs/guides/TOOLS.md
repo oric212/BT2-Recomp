@@ -638,7 +638,15 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Stall budget.** `BT2_STALL_FIELDS=<n>` (default 3600) sets how many fields may pass without a display flip before the run stops. A busy main thread takes about a quarter second per field, so a small value (for example 120) turns a hang into a report within seconds; the report's `stop_returns` show the call chain.
 
+**Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).
+
 **Float watch.** `BT2_EE_WATCH_FLOAT=<hex address>:<limit>` stops the run at the first guest call that finds the float at that EE address non-finite or above the limit in magnitude, and names that call, the previous call and the main registers. An address below 32 watches the x field of that VU0 float register (`1F` is `vf31`). Following a bad value from its reader to its writer takes one run per step.
+
+**Snapshot fields.** Each `BT2_GPU_GS_SNAPSHOT` flip prints `Snapshot: flip N at field M`. Pad scripts count fields and snapshots count flips, and the two drift apart while the game loads (about 695 fields by the title screen with the movies skipped), so this line is how a button press is timed against a picture.
+
+**Discovery loop.** `python tools/ps2recomp/discovery_loop.py --disc <iso> --frames <n> [--pad-script-file <file>] [--rounds <n>] [--regenerate [dbzp]]` runs the Release probe and, while it stops at an unmapped function, repeats: classify the stop, discover the function with Ghidra (in the overlay program when the target lies there), rebuild that program's map, regenerate, refresh the receipt, bind every mapped entry, prepare the sources, build, rerun. It ends at the frame budget, at a stop that is not a map gap, or when the prover rejects the function ("map did not grow"). A selected raw source may change only where a tail jump became a direct call (its target is now a function of its own); any other difference stops the loop. Only the latest `previous-output-*` folder of a program is kept. Progress goes to `work/bt2-generation/discovery-loop.log` with timestamps; follow it with `Get-Content "<absolute path>" -Wait -Tail 30`.
+
+**Overlay entries.** `expand_startup.py --all` also binds every mapped overlay entry that has a generated source (457 for `dbzp`), each still registered with the bytes it was generated from.
 
 **Map and generation.**
 - `prepare_runtime.py` keeps `VF0` constant (`keep_vf0_constant`): an instruction with `VF0` as destination has only its flag effects (the game's clip tests subtract into it), but the generator emits the register write, after which every routine that uses `vf0` as (0, 0, 0, 1) computes garbage. 34 sites (`vf0_writes_dropped`).

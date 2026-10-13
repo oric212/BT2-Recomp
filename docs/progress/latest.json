@@ -2,8 +2,8 @@
   "schema_version": 1,
   "measured_on": "2026-10-13",
   "scope": "bounded native startup probe with local ISO and prepared inputs",
-  "code_state": "bounded startup verified by build/tests and capture comparison",
-  "source_report_sha256": "c9dc33750a9af03b69e6e218fdd80c92d8dcac1700dd2a188196437009851727",
+  "code_state": "local implementation; final pass verification incomplete",
+  "source_report_sha256": "f05070204218e5ba9264f7035ccd4e41815b02c0bea53ceff407d118408ce78b",
   "metrics": {
     "distinct_ee_entered": 2007,
     "distinct_ee_completed": 1998,

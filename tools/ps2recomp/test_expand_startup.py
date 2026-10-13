@@ -1,5 +1,5 @@
 import unittest
-from expand_startup import select_target, render, neighbours
+from expand_startup import select_target, render, neighbours, remaining_overlay
 
 
 class StartupExpansionTests(unittest.TestCase):
@@ -17,6 +17,14 @@ class StartupExpansionTests(unittest.TestCase):
         self.assertEqual(neighbours(0x1000, rows, set(), 0), [])
         # 0x1080 is duplicated and no generated source exists for these synthetic addresses.
         self.assertEqual(neighbours(0x1000, rows, set(), 0x1000), [])
+
+    def test_remaining_overlay_entries_are_unique_generated_and_not_yet_selected(self):
+        rows = [{'Start': '0x3000', 'End': '0x3040'}, {'Start': '0x2000', 'End': '0x2040'}, {'Start': '0x4000', 'End': '0x4040'},
+                {'Start': '0x5000', 'End': '0x5040'}, {'Start': '0x5000', 'End': '0x5080'}, {'Start': '0x6000', 'End': '0x6040'}]
+        generated = {f'FUN_{a:08X}_0x{a:x}.cpp' for a in (0x2000, 0x3000, 0x4000, 0x5000)}
+        # 0x4000 is selected, 0x5000 is duplicated and 0x6000 has no generated source.
+        self.assertEqual(remaining_overlay(rows, {0x4000}, generated),
+                         [{'start': 0x2000, 'end': 0x2040}, {'start': 0x3000, 'end': 0x3040}])
 
     def test_neutral_bindings_and_source_selection(self):
         cmake, header = render([0x1000, 0x2000])
