@@ -640,6 +640,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Audio.** `BT2_AUDIO_WAV=<path>` writes the run's mixed stream audio (movies, music) as a 48 kHz stereo WAV: 800.8 samples per field, so its length is the run's game time. The report's `audio_stream_bytes`, `audio_voice_samples` and `audio_underruns` count the PCM consumed, the samples output from voices and the samples a voice could not supply.
 
+**Sound effects log.** `BT2_SOUND_LOG=<existing folder>` writes `requests.txt` (per line: field, `sounds` or `driver`, the RPC function, the command words in hex) and, per loaded bank, `bank-N-samples.bin`, `bank-N-head.bin` and `bank-N-body.bin`. The report's `sound_effects_played`, `sound_effects_silent_loops`, `sound_effects_silent_flags`, `sound_voices_peak` and `sound_voices_stolen` count what the sampler did. The files are proprietary-derived and stay local.
+
 **Audio comparison.** `python tools/audio/compare_audio.py <port.wav> <reference.wav> [--segment s] [--search s]` locates the port's audio in a recording of the original (both 16-bit stereo, same rate) and prints per segment the offset, the level ratio port/reference (RMS and least-squares gain), the waveform correlation with the same and with the swapped channel, and the peaks. Needs numpy and scipy. The recordings stay local.
 
 **Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).

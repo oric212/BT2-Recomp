@@ -95,5 +95,5 @@ void EeRuntime::nativeCriVblank(const R5900Context* interrupted) {
         std::memcpy(memory_.data()+c.ee+stream_size-4,&counter,4);
         c.pending=false;++native_cri_returns;
     }
-    if(on_audio_field) {const auto pcm=audio_mixer.field();on_audio_field(pcm);++audio_fields;}
+    if(on_audio_field) {const auto pcm=audio_mixer.field([this](std::span<std::int32_t> mix){sound_sampler.render(mix);});on_audio_field(pcm);++audio_fields;}
 }

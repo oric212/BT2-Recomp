@@ -32,6 +32,7 @@
 #include "services/iop_heap.h"
 #include "services/cri_audio.h"
 #include "services/audio_mixer.h"
+#include "services/sound_sampler.h"
 #include "stopped_dma_channels.h"
 #include "vu/vif1.h"
 #include <memory>
@@ -793,7 +794,11 @@ public:
     CriAudioFlow native_cri_audio; // What the IOP player reports back while a stream plays.
     // Sound output (docs/plans/sound/SOUND_OUTPUT_PLAN.md): with a receiver set, the stream PCM the
     // player consumes is mixed and handed over as 48 kHz stereo, one field per VBLANK.
+    // Evidence for the sound effects path (BT2_SOUND_LOG): every SOUNDS and sound driver request with
+    // its command bytes, and the two IOP blocks of each loaded bank. `number` is the RPC function.
+    std::function<void(std::string_view kind,std::uint32_t number,std::span<const std::uint8_t> data)> on_sound_evidence;
     AudioMixer audio_mixer;
+    SoundSampler sound_sampler; // Effects: banks, sound memory and voices behind SOUNDS and the sound driver.
     std::function<void(std::span<const std::int16_t>)> on_audio_field;
     std::uint64_t audio_fields=0,audio_stream_bytes=0;
     void nativePadVblank(std::uint8_t* rdram);

@@ -23,6 +23,8 @@ public:
     }
     bool release(std::uint32_t address) {return blocks_.erase(address)>0;}
     bool isBlock(std::uint32_t address) const {return blocks_.contains(address);}
+    // Rounded size of the block at `address`, or 0.
+    std::uint32_t size(std::uint32_t address) const {const auto found=blocks_.find(address);return found==blocks_.end()?0:found->second;}
     // True when [address, address+size) lies inside one allocated block.
     bool covers(std::uint32_t address,std::uint32_t size) const {
         const auto block=blocks_.upper_bound(address);

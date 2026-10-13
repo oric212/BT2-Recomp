@@ -33,7 +33,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirmed the frames; not compared with the original by capture); no sound effects |
 | Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
 | Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); frames confirmed by the user; GPU renderer, stream audio only, slower than real time, not compared with the original by capture |
-| Audio | 🔧 Incomplete — stream audio (movie and music PCM) is mixed and written to a WAV file; level, channel order and timing of the boot movies match a PCSX2 recording (waveform not shown identical); no bank sound effects, no audio device |
+| Audio | 🔧 Incomplete — stream audio (movies, music) and one-shot sound effects are mixed and written to a WAV file; stream level, channel order and timing match a PCSX2 recording for the boot movies; effects not yet heard by the user; looping effects and an audio device are missing |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
 **Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **10,682 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.

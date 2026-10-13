@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <map>
 #include <span>
 #include <stdexcept>
@@ -40,7 +41,8 @@ public:
 
     // One field of output: interleaved stereo. A field is 800.8 samples (48,000 Hz at 59.94 fields/s);
     // the fraction is carried, so five fields give 4,004 samples.
-    std::vector<std::int16_t> field() {
+    // `extra` adds further sources (the effects sampler) to the field's mix before it is clamped.
+    std::vector<std::int16_t> field(const std::function<void(std::span<std::int32_t>)>& extra={}) {
         ticks_+=4004;const std::size_t count=ticks_/5;ticks_%=5;
         std::vector<std::int32_t> mix(count*2);
         for(auto& [key,v]:voices_) {
@@ -52,6 +54,7 @@ public:
             // A voice that runs dry has stopped (or stalled): it starts again with a block of silence.
             if(have<count) {v.running=false;v.last=0;underruns+=unsigned(count-have);}
         }
+        if(extra)extra(mix);
         std::vector<std::int16_t> out(mix.size());
         for(std::size_t n=0;n<mix.size();++n)out[n]=std::int16_t(std::clamp(mix[n],-32768,32767));
         return out;

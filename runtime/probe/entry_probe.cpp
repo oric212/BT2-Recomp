@@ -54,6 +54,27 @@ int main(int argc, char** argv) {
             wav = std::make_unique<WavWriter>(path, AudioMixer::rate, 2);
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) { wav->write(pcm); };
         }
+        // BT2_SOUND_LOG=<folder>: the sound effects requests as text (requests.txt: field, kind, function,
+        // command words) and each loaded bank's two blocks as files. Local evidence, not committed.
+        std::ofstream sound_log;
+        if (const char* folder = std::getenv("BT2_SOUND_LOG")) {
+            const std::string base = folder;
+            sound_log.open(base + "/requests.txt");
+            if (!sound_log) throw std::runtime_error("Cannot write the sound log in " + base);
+            runtime.on_sound_evidence = [&runtime, &sound_log, base](std::string_view kind, std::uint32_t number, std::span<const std::uint8_t> data) {
+                static unsigned banks = 0;
+                if (kind == "bank-head" || kind == "bank-body" || kind == "samples") {
+                    if (kind == "samples") ++banks; // The sample transfer precedes its bank load.
+                    std::ofstream(base + "/bank-" + std::to_string(banks) + (kind == "bank-head" ? "-head.bin" : kind == "samples" ? "-samples.bin" : "-body.bin"), std::ios::binary)
+                        .write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
+                    sound_log << runtime.vblank_deliveries << ' ' << kind << ' ' << std::hex << number << ' ' << data.size() << std::dec << '\n';
+                    return;
+                }
+                sound_log << runtime.vblank_deliveries << ' ' << kind << ' ' << std::hex << number;
+                for (std::size_t n = 0; n + 4 <= data.size(); n += 4) { std::uint32_t word; std::memcpy(&word, data.data() + n, 4); sound_log << ' ' << word; }
+                sound_log << std::dec << '\n';
+            };
+        }
         // BT2_EE_LOOP_LIMIT: loop iterations one thread may run within a field before the runaway guard stops it.
         if (const char* limit = std::getenv("BT2_EE_LOOP_LIMIT")) runtime.checkpoint_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32

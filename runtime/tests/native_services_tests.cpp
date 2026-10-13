@@ -1,4 +1,7 @@
 #include "services/audio_mixer.h"
+#include "services/sound_sampler.h"
+#include <cmath>
+#include <functional>
 #include "services/iop_heap.h"
 #include "services/pad_block.h"
 #include "services/cri_stream.h"
@@ -165,6 +168,81 @@ int main() {
             bool refused=false;try{sum.push(3,0,44100,loud);}catch(const std::runtime_error&){refused=true;}
             require(refused,"a rate that does not divide 48 kHz is refused");
             sum.drop(1);
+            // Further sources are added before clamping.
+            AudioMixer plus;require(plus.field([](std::span<std::int32_t> mix){mix[0]=70000;mix[1]=-5;})[0]==32767,"extra sources join the mix");
+        }
+        {
+            // SPU2 ADPCM: shift and filter per block; the end flag stops, the repeat flag marks a loop.
+            std::vector<std::uint8_t> block(16);block[0]=0x0C;block[1]=1;block[2]=0x21;block[3]=0x0F;
+            auto sample=decodeSpuAdpcm(block);
+            require(sample.pcm.size()==28 && sample.pcm[0]==1 && sample.pcm[1]==2 && sample.pcm[2]==-1 && sample.pcm[3]==0 && !sample.loops,"plain block");
+            block[0]=0x10;block[2]=0x01;block[3]=0;sample=decodeSpuAdpcm(block);
+            require(sample.pcm[0]==4096 && sample.pcm[1]==3840 && sample.pcm[2]==3600,"first-order filter");
+            std::vector<std::uint8_t> two(32);two[1]=4;two[16+1]=3;sample=decodeSpuAdpcm(two);
+            require(sample.pcm.size()==56 && sample.loops && sample.loop_start==0,"loop flags");
+            bool refused=false;two[16+1]=0;try{decodeSpuAdpcm(two);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"a sample without an end flag is refused");
+            refused=false;block[0]=0x50;try{decodeSpuAdpcm(block);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"an undefined filter is refused");
+        }
+        {
+            // A synthetic bank in the layout of the game's banks: two samples, two timbres, two sounds.
+            const auto put=[](std::vector<std::uint8_t>& d,std::size_t at,std::uint32_t v){std::memcpy(d.data()+at,&v,4);};
+            constexpr std::uint32_t scei=0x53434549;
+            std::vector<std::uint8_t> head(0x200),sequences(0x100);
+            put(head,0,scei);put(head,4,0x56657273);put(head,0x10,scei);put(head,0x14,0x48656164);
+            put(head,0x20,0x40);for(std::size_t at=0x24;at<0x30;at+=4)put(head,at,UINT32_MAX);
+            put(head,0x30,0x50);put(head,0x34,0x80);
+            put(head,0x50,scei);put(head,0x54,0x56616769);put(head,0x5C,1);put(head,0x60,0x18);put(head,0x64,0x20);
+            put(head,0x68,0x10);put(head,0x6C,0xFF00BB80);          // Sample 0: offset 0x10, 48,000 Hz.
+            put(head,0x70,0x20);put(head,0x74,0xFF015DC0);          // Sample 1: offset 0x20, 24,000 Hz, looping.
+            put(head,0x80,scei);put(head,0x84,0x53657462);put(head,0x90,0x14);
+            head[0x94+12]=0x32;head[0x94+14]=1;                      // Two timbres of 0x32 bytes from set + 16.
+            head[0xA4+0]=0;head[0xA4+3]=100;head[0xA4+4]=64;
+            head[0xA4+0x32]=1;head[0xA4+0x32+3]=100;head[0xA4+0x32+4]=64;
+            put(sequences,0,scei);put(sequences,4,0x56657273);put(sequences,0x10,scei);put(sequences,0x14,0x53657175);put(sequences,0x28,0x30);
+            put(sequences,0x30,scei);put(sequences,0x34,0x53657371);sequences[0x44]=127;sequences[0x45]=64;put(sequences,0x54,2);
+            put(sequences,0x64,0x50);put(sequences,0x68,0x70);put(sequences,0x6C,UINT32_MAX); // Sound 2 is absent.
+            for(unsigned n=0;n<2;++n) {
+                const std::size_t at=0x80+n*0x20;put(sequences,at,0x10);sequences[at+4]=100;sequences[at+5]=64;put(sequences,at+8,7);
+                const std::uint8_t data[7]={0,0x90,0,std::uint8_t(n),100,0,0xFF};std::memcpy(sequences.data()+at+0x10,data,7);
+            }
+            const auto bank=SoundBank::parse(head,sequences);
+            require(bank.sample_bytes==0x40 && bank.sounds.size()==3 && bank.sounds[0] && bank.sounds[1] && !bank.sounds[2],"bank sounds");
+            require(bank.sounds[0]->sample_offset==0x10 && bank.sounds[0]->rate==48000 && !bank.sounds[0]->loop && bank.sounds[0]->set_volume==127
+                && bank.sounds[0]->sequence_volume==100 && bank.sounds[0]->velocity==100 && bank.sounds[0]->timbre_volume==100
+                && bank.sounds[1]->sample_offset==0x20 && bank.sounds[1]->rate==24000 && bank.sounds[1]->loop,"bank fields");
+            auto broken=sequences;broken[0x80+0x11]=0x80; // Not a note-on.
+            bool refused=false;try{SoundBank::parse(head,broken);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"a sequence that is not a single note-on is refused");
+            auto programs=head;put(programs,0x24,0x100);refused=false;try{SoundBank::parse(programs,sequences);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"a bank with program chunks is refused");
+
+            // Sampler: the bank's samples lie in sound memory; a request plays a sound at the product
+            // of its volumes and half scale, panned with constant power.
+            SoundSampler sampler;
+            std::vector<std::uint8_t> memory(0x40);memory[0x10]=0x10;memory[0x11]=1;memory[0x12]=0x01; // 4096, 3840, 3600, ...
+            memory[0x20]=0x10;memory[0x21]=3;memory[0x22]=0x01;
+            sampler.upload(0x1000,memory);sampler.load(0x1000,head,sequences);
+            require(sampler.banks()==1 && !sampler.voices(),"bank loaded");
+            sampler.play(0,0,127,64,0);
+            std::vector<std::int32_t> mix(8);sampler.render(mix);
+            const double level=100.0/127*100/127*100/127*0.5;
+            require(std::abs(mix[0]-4096*level*std::cos(64/127.0*1.5707963267948966))<=1 && mix[1]>mix[0] && mix[1]-mix[0]<12
+                && std::abs(double(mix[2])/mix[0]-3840.0/4096)<0.01 && sampler.played==1 && sampler.voices()==1,"voice level, pan and order");
+            sampler.play(0,0,127,0,1200); // Hard left, one octave up: every second sample.
+            std::vector<std::int32_t> left(4);SoundSampler solo;solo.upload(0x1000,memory);solo.load(0x1000,head,sequences);solo.play(0,0,127,0,1200);solo.render(left);
+            require(left[1]==0 && std::abs(left[0]-4096*level)<=1 && std::abs(left[2]-3600*level)<=1,"pan to one side and pitch");
+            std::vector<std::int32_t> rest(200);sampler.render(rest);require(!sampler.voices(),"voices end with their sample");
+            sampler.play(0,1,127,64,0);sampler.play(0x41,0,127,64,0);
+            require(sampler.silent_loops==1 && sampler.silent_flags==1 && !sampler.voices(),"looping samples and flagged slots stay silent, counted");
+            for(const auto& bad:{std::function<void()>([&]{sampler.play(1,0,127,64,0);}),std::function<void()>([&]{sampler.play(0,2,127,64,0);}),std::function<void()>([&]{sampler.play(0,0,128,64,0);})}) {
+                refused=false;try{bad();}catch(const std::runtime_error&){refused=true;}
+                require(refused,"requests outside the loaded banks are refused");
+            }
+            sampler.play(0,0,127,64,0);sampler.unload();require(!sampler.banks() && !sampler.voices(),"unload removes the bank and its voices");
+            refused=false;try{sampler.unload();}catch(const std::runtime_error&){refused=true;}
+            require(refused,"unload without a bank is refused");
         }
         wrap.play(9,0);
         // A player destroyed while playing (a skipped movie) ends without reports; a queued stop for it
