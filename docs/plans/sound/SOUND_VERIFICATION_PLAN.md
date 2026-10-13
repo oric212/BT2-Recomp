@@ -16,7 +16,7 @@ Sound passes through four stages. Each has its own reference in the original, an
 | --- | --- | --- | --- |
 | 1. Requests | The sound requests the game makes, in order, with their arguments and the field they occur in | PCSX2 call logs (`capture_ee.py --sounds-log`, `--cri-stream-log`) | Yes |
 | 2. Sample data | The PCM the game uploads for streams; the bank data it uploads for effects | PCSX2 IOP memory at the same point | Yes, byte for byte |
-| 3. Voice parameters | For every started voice: pitch, left/right volume, envelope settings; the master volume | SPU2 registers read from PCSX2 at the moment a voice starts | Yes |
+| 3. Voice parameters | For every started voice: pitch, left/right volume, envelope settings; the master volume | SPU2 registers read from PCSX2 at the moment a voice starts; their meaning from the pinned PCSX2 SPU2 sources and PS2SDK `spu2regs.h` ([reference architecture](../../reference/REFERENCE_ARCHITECTURE.md)) | Yes |
 | 4. Output | The mixed signal | A PCSX2 recording made without time stretching, with the same input | Within stated limits |
 
 ### 1. Requests
@@ -54,6 +54,10 @@ The limits are starting values, to be tightened once a clean recording shows wha
 5. Output recordings without time stretching (stage 4), first the input-free stretches, then with a shared input recording.
 
 Each comparison that passes becomes a gate comparison where its reference capture is small enough to keep locally.
+
+## Recording the reference
+
+Every capture and recording is logged with the PCSX2 version, its audio settings, the disc hash and the scenario (input used, where it starts and ends), as the reference architecture takes over from Chronicle's practice. The first recording (2026-10-13) lacks these notes.
 
 ## What the user is asked for
 
