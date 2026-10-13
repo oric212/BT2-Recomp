@@ -300,8 +300,13 @@ class SwitchCaseGapTests(unittest.TestCase):
         candidate={'start':0x1000,'end_exclusive':0x103C,'body_size':44,'contiguous_aligned':False,'body_ranges':['1000-1023','1034-103b']}
         pack=lambda w:struct.pack('<21I',*w)
         self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
-        loaded=words.copy();loaded[2]=0x8E840008 # LW a0 in the delay slot rewrites the index.
-        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(loaded)))
+        # LW a0 in the delay slot rewrites the index: the bound no longer proves the table's length.
+        # The table is then read by scanning (six aligned entries inside the candidate) and the
+        # holes still pass their own checks; with fewer than four entries nothing is accepted.
+        loaded=words.copy();loaded[2]=0x8E840008
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(loaded)))
+        short=loaded.copy();short[18]=short[19]=short[20]=0x2000
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(short)))
 
     def test_switch_candidate_may_also_have_a_padding_hole(self):
         # As above, plus a second hole that is only a NOP after JR RA and its delay slot (0x23CDF8 shape).
@@ -346,9 +351,14 @@ class SwitchCaseGapTests(unittest.TestCase):
         # ... but not a branch at the hole's end, whose delay slot would leave the hole.
         fall[11]=0x1000FFFE
         self.assertFalse(has_switch_case_gaps(self.candidate,self.metadata,pack(fall)))
-        # Each change breaks the proof: bound, guard, table target outside, padding that is not NOP,
-        # a control instruction in the delay slot, no table target in the hole.
-        for index,value in [(0,0x2C820000),(1,0x1440000A),(16,0x1040),(9,0x24020001),(11,0x03E00008),(16,0x1030)]:
+        # A broken bound or guard leaves the table to be read by scanning, which this fixture's table
+        # is long enough for; the holes are still checked.
+        for index,value in [(0,0x2C820000),(1,0x1440000A)]:
+            changed=self.words.copy();changed[index]=value
+            self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(changed)))
+        # Each of these still breaks it: a table target outside, padding that is not NOP, a control
+        # instruction in the delay slot, no table target in the hole.
+        for index,value in [(16,0x1040),(9,0x24020001),(11,0x03E00008),(16,0x1030)]:
             changed=self.words.copy();changed[index]=value
             if index==16:changed[17]=value
             self.assertFalse(has_switch_case_gaps(self.candidate,self.metadata,pack(changed)))

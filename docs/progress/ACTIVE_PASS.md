@@ -2,7 +2,7 @@
 
 Updated: 2026-10-13. **No pass in progress.**
 
-The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (10,990, plus the 490 of the `DBZP.BIN` overlay) is generated and compiled. History of how this state was reached: [2026-10.md](2026-10.md).
+The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (11,122, plus the 494 of the `DBZP.BIN` overlay) is generated and compiled. History of how this state was reached: [2026-10.md](2026-10.md).
 
 ## Where the work stands
 
@@ -10,7 +10,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 
 **Waiting for the user's test** (all built, gate passed, none confirmed in play yet):
 
-- **Special moves and ultimates** (R2 + triangle, full charge): the stop was an unmapped function; 324 missed functions were mapped in one pass, one more switch-shaped function in the overlay after that.
+- **Special moves and ultimates** (R2 + triangle, full charge): the stop was an unmapped function; since then everything the programs name is mapped (see Open, Unmapped code).
 - **Saving:** write, create, flush, set entry data and delete on the card folder follow the public library's layout and pass the unit test; no run has saved yet. A request beyond those stops the run by number. Ask the user to save, quit and start again.
 - **The film after the logos** (black screen): fixed by flipping the GS field flag at every VBlank; checked on scripted runs and with the pause test.
 - **The opening film after a skipped first film** (Start during the logos): it never started, because a film's sound player destroyed while playing dropped its announced data instead of reporting it back; it is reported back now, as a stop does. Checked on scripted runs with Start pressed at four moments.
@@ -23,7 +23,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 
 - **"Mono sound happens sometimes"** (the user; they want stereo only). Not reproduced: the music is as wide in stereo with the user's save as without, the port's mix has no mono mode (SOUNDS request `0x60`, value 1 with the save, is recorded and not acted on), and no one-channel stream occurs (`audio_single_stream_bytes` is 0; the port would play one on the left only). Ask where and when it happens, and whether it is the music or the effects, before changing anything.
 - **Performance, next step:** the GPU renderer's intake of packets is the largest graphics cost (3.7 s of the 14.7 s scripted fight, `BT2_PROFILE_TOTALS=1`). It is the library's own work; the step is a graphics thread, which needs its plan first ([performance plan](../plans/ee/PERFORMANCE_PLAN.md)). The fight's frame rate in the window with sound has not been measured since the VU1 work.
-- **Unmapped code:** 99 pieces remain in the main program (8 referenced from data), most inside 61 functions Ghidra merged across tail jumps. A stop at one is repaired by the discovery loop, one at a time.
+- **Unmapped code:** `map_gaps.py` reports nothing uncovered in the main program (11,122 functions) or the overlay (494): every call, jump and data pointer target is a function. A stop at an unmapped function can now only come from a pointer computed at run time; `discover.cmd` (`discovery_loop.py --player-stop`) then maps that target and everything it leads to in one go. After a change to the map rules run `python tools/ps2recomp/discovery_loop.py --map-all`.
 - **Not compared with the original:** the memory card replies, GS readback buffers, a 3D frame, VU1 memory (the deferred 3D verification).
 
 ## How the user runs things

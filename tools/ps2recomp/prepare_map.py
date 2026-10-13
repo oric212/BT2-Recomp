@@ -247,7 +247,9 @@ def switch_targets(address,start,end,spans,metadata,data,word):
         if load&0xFFFF0000!=0x8C000000|(a<<21)|(j<<16) or 0 in (c,i,b,sreg,a,j) or b in (i,sreg) or c==i:return None
         hi,disp=lui&65535,sign(addiu&65535)+sign(load&65535) # LW displacement is part of the table address.
     count=bound&65535
-    if not 1<=count<=256:return None
+    # The bound itself, the table lying in file-backed bytes and every target inside the function
+    # are what make a table safe; its length is not (302 cases seen in the overlay).
+    if not 1<=count<=4096:return None
     immediate=word(branch)&65535;immediate=immediate-65536 if immediate&32768 else immediate
     default=branch+4+immediate*4
     if not any(a<=default<b for a,b in spans):return None
@@ -258,6 +260,35 @@ def switch_targets(address,start,end,spans,metadata,data,word):
     if at<0 or at+count*4>len(data):return None
     targets=struct.unpack_from('<'+str(count)+'I',data,at)
     return targets if all(t%4==0 and any(a<=t<b for a,b in spans) for t in targets) else None
+
+
+def scanned_table_targets(address,start,end,metadata,data,word):
+    """The table of a JR whose bound is not next to it (the guard is reached from elsewhere in the
+    function, or the index comes back from the stack): SLL s,i,2 / LUI b / ADDU b,b,s / LW j,d(b) /
+    JR j, with the table read as far as its words are aligned addresses inside the candidate.
+
+    Without the bound the length is not proven, so the result may hold more words than the game
+    uses; that only names more places of the candidate as possible targets. What makes it safe to
+    take the holes as this function's code is checked by the caller as for a proven switch: every
+    hole starts at a table target and holds straight-line case blocks, and nothing else branches in.
+    At least four entries are required, so that stray data is not taken for a table."""
+    if address-start<16 or address+8>end or word(address+4)!=0:return None
+    jr=word(address);sll,lui,addu,load=(word(address+n) for n in (-16,-12,-8,-4))
+    if not (jr&0xFC1FFFFF==8 and sll&0xFFE0003F==0 and (sll>>6)&31==2 and lui&0xFFE00000==0x3C000000
+            and addu&0xFC0007FF==0x21 and (addu>>11)&31==(lui>>16)&31 and {(addu>>21)&31,(addu>>16)&31}=={(lui>>16)&31,(sll>>11)&31}
+            and load>>26==35 and (load>>21)&31==(lui>>16)&31 and (load>>16)&31==(jr>>21)&31):return None
+    disp=load&65535;disp=disp-65536 if disp&32768 else disp
+    table=((lui&65535)<<16)+disp
+    regions=[x for x in metadata['sections'] if x.get('occupies_file_bytes') and x['address']<=table<x['address']+x['size']]
+    if len(regions)!=1 or table%4:return None
+    targets=[]
+    while len(targets)<4096 and table+len(targets)*4+4<=regions[0]['address']+regions[0]['size']:
+        at=regions[0]['file_offset']+table-regions[0]['address']+len(targets)*4
+        if at<0 or at+4>len(data):break
+        entry=struct.unpack_from('<I',data,at)[0]
+        if entry%4 or not start<=entry<end:break
+        targets.append(entry)
+    return tuple(targets) if len(targets)>=4 else None
 
 
 def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
@@ -313,8 +344,9 @@ def has_branch_nop_gaps(candidate, metadata, data, external_text=()):
 def has_switch_case_gaps(candidate, metadata, data):
     """Accept holes that hold case blocks of a proven jump-table switch Ghidra did not follow.
 
-    The body must contain at least one bounded switch (switch_targets, with every table target inside
-    the candidate); several switches share the same rules. Each hole must contain at least one table target; its words are NOP padding before
+    The body must contain at least one switch: bounded (switch_targets, with every table target inside
+    the candidate) or, where the bound is not next to the jump, with its table read by scanning
+    (scanned_table_targets); several switches share the same rules. Each hole must contain at least one table target; its words are NOP padding before
     the first target, then straight-line case blocks (calls included), each starting exactly at a table
     target (or inside the previous block when that one falls through into it, never in a delay slot) and ending in JR RA, a tail jump (J) into this program's code or an unconditional branch to the candidate, with a non-control delay slot,
     all inside the hole (conditional branches into the candidate may occur inside a block); the last block may instead fall through into the span after the hole. Between blocks only NOP padding is allowed. Nothing else may branch into a hole."""
@@ -334,7 +366,7 @@ def has_switch_case_gaps(candidate, metadata, data):
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
     whole=[(start,end)]
     switches=[(a,t) for a in range(start,end,4) if any(x<=a<y for x,y in spans) and word(a)&0xFC1FFFFF==8 and word(a)!=0x03E00008
-              for t in [switch_targets(a,start,end,whole,metadata,data,word)] if t is not None]
+              for t in [switch_targets(a,start,end,whole,metadata,data,word) or scanned_table_targets(a,start,end,metadata,data,word)] if t is not None]
     if not switches:return False
     jumps={address for address,_ in switches};targets={t for _,table in switches for t in table}
     holes=[(left[1],right[0]) for left,right in zip(spans,spans[1:])]
@@ -407,9 +439,78 @@ def has_switch_case_gaps(candidate, metadata, data):
     return True
 
 
+def split_merged(candidate, metadata, data, owned):
+    """The separate pieces of a candidate the analysis merged from code that is not one function.
+
+    A body range that ends in a completed transfer (J or JR RA with its delay slot) followed by a
+    gap that is not NOP padding ends a piece: what the analysis attached beyond it (a shared tail the
+    function jumps to, often far away, before or after it) is code of its own. The piece at the
+    candidate's start is the function; another piece becomes a candidate only where no other candidate's extent holds its start
+    (`owned`: sorted (start, end) extents), so a jump into the middle of another function adds
+    nothing. Returns the pieces as candidates, or None when the candidate is not such a merge."""
+    try:
+        spans = sorted((int(a, 16), int(b, 16) + 1) for a, b in (r.split("-") for r in candidate.get("body_ranges", [])))
+    except (ValueError, TypeError):
+        return None
+    if len(spans) < 2 or all(a != candidate["start"] for a, b in spans) or any(a % 4 or b % 4 for a, b in spans):
+        return None
+    sections = [row for row in metadata["sections"] if row.get("occupies_file_bytes")]
+    def word(address):
+        for row in sections:
+            if row["address"] <= address <= row["address"] + row["size"] - 4:
+                at = row["file_offset"] + address - row["address"]
+                return struct.unpack_from("<I", data, at)[0] if 0 <= at <= len(data) - 4 else None
+        return None
+    pieces = [[spans[0]]]
+    for previous, span in zip(spans, spans[1:]):
+        transfer = word(previous[1] - 8) if previous[1] - previous[0] >= 8 else None
+        gap = [word(at) for at in range(previous[1], span[0], 4)]
+        completed = transfer is not None and (transfer == 0x03E00008 or transfer >> 26 == 2)
+        padding = len(gap) <= 3 and all(w == 0 for w in gap)
+        if completed and not padding and span[0] > previous[1]:
+            pieces.append([span])
+        else:
+            pieces[-1].append(span)
+    if len(pieces) < 2:
+        return None
+    def held(address):
+        import bisect
+        at = bisect.bisect_right(owned, (address, 1 << 62)) - 1
+        return at >= 0 and owned[at][0] <= address < owned[at][1] and owned[at] != (candidate["start"], candidate["end_exclusive"])
+    result = []
+    if all(piece[0][0] != candidate["start"] for piece in pieces):
+        return None # The start lies inside a piece: not the simple merge this takes apart.
+    for piece in pieces:
+        start, end = piece[0][0], piece[-1][1]
+        if start != candidate["start"] and held(start):
+            continue
+        size = sum(b - a for a, b in piece)
+        result.append({"start": start, "end_exclusive": end, "body_size": size, "contiguous_aligned": len(piece) == 1,
+                       "body_ranges": ["%08x-%08x" % (a, b - 1) for a, b in piece]})
+    return result
+
+
 def select_candidates(report, metadata, max_size=0x5000, data=None, external_text=()):
     rows, excluded = [], []
-    for candidate in report["functions"]:
+    functions = report["functions"]
+    if data is not None:
+        # Candidates merged from separate code are taken apart first; a piece that another candidate
+        # already starts at is not added twice.
+        owned = sorted((c["start"], c["end_exclusive"]) for c in functions if 0 < c["end_exclusive"] - c["start"] <= max_size)
+        starts = {c["start"] for c in functions}
+        expanded = []
+        for candidate in functions:
+            pieces = None if candidate.get("contiguous_aligned") else split_merged(candidate, metadata, data, owned)
+            if pieces is None:
+                expanded.append(candidate)
+                continue
+            for piece in pieces:
+                if piece["start"] != candidate["start"] and piece["start"] in starts:
+                    continue
+                starts.add(piece["start"])
+                expanded.append(piece)
+        functions = expanded
+    for candidate in functions:
         start, end = candidate["start"], candidate["end_exclusive"]
         reason = None
         padding = data is not None and (has_tail_nop_gap(candidate, metadata, data) or has_branch_nop_gaps(candidate, metadata, data, external_text)
@@ -446,6 +547,87 @@ def select_candidates(report, metadata, max_size=0x5000, data=None, external_tex
     return selected, excluded
 
 
+def add_entries(selected, entries, metadata, data, max_size=0x5000):
+    """Functions at entry addresses the analysis did not make functions of: targets of calls, jumps
+    and pointers found by tools/ps2recomp/map_gaps.py, and addresses a run stopped at.
+
+    An entry in unmapped code becomes a function from there to its end: instructions are followed in
+    address order, conditional and unconditional branches must stay at or after the entry, and the
+    function ends after the first completed transfer (JR RA or J with its delay slot) that no
+    earlier branch reaches beyond; it must end before the next function begins. An entry inside a
+    selected function splits it there, provided the code before the entry is complete (a transfer
+    and its delay slot, then at most three NOPs) and no branch crosses the entry in either
+    direction. Anything else is left alone and reported. Returns (rows, notes): the map with the new
+    rows, and for each entry what was done."""
+    sign = lambda v: v - 65536 if v & 32768 else v
+    sections = [row for row in metadata["sections"] if row["name"] == ".text" and row["flags"] & 4 and row["occupies_file_bytes"]]
+    def word(address):
+        for row in sections:
+            if row["address"] <= address <= row["address"] + row["size"] - 4:
+                at = row["file_offset"] + address - row["address"]
+                return struct.unpack_from("<I", data, at)[0] if 0 <= at <= len(data) - 4 else None
+        return None
+    def branch_target(at, ins):
+        op = ins >> 26
+        if op in (4, 5, 6, 7, 20, 21, 22, 23) or (op == 1 and (ins >> 16) & 31 in (0, 1, 2, 3, 16, 17, 18, 19)) or cop_branch(ins):
+            return at + 4 + sign(ins & 65535) * 4
+        return None
+    def complete_before(address, lowest):
+        at = address
+        for _ in range(3):
+            if at - 4 >= lowest and word(at - 4) == 0 and word(at - 8) not in (0x03E00008,) and (word(at - 8) or 0) >> 26 != 2:
+                at -= 4
+            else:
+                break
+        transfer = word(at - 8) if at - 8 >= lowest else None
+        return transfer is not None and (transfer == 0x03E00008 or transfer >> 26 == 2)
+    rows = sorted(({"start": r["start"], "end": r["end"]} for r in selected), key=lambda r: r["start"])
+    notes = []
+    for entry in sorted(set(entries)):
+        starts = [r["start"] for r in rows]
+        import bisect
+        index = bisect.bisect_right(starts, entry) - 1
+        inside = rows[index] if index >= 0 and rows[index]["start"] <= entry < rows[index]["end"] else None
+        if entry % 4 or word(entry) is None:
+            notes.append({"entry": entry, "result": "not aligned code of this program"}); continue
+        if inside and inside["start"] == entry:
+            notes.append({"entry": entry, "result": "already a function"}); continue
+        if inside:
+            if not complete_before(entry, inside["start"]):
+                notes.append({"entry": entry, "result": "inside a function whose code runs into it"}); continue
+            crossing = False
+            for at in range(inside["start"], inside["end"], 4):
+                target = branch_target(at, word(at))
+                if target is not None and (at < entry) != (target < entry):
+                    crossing = True; break
+            if crossing:
+                notes.append({"entry": entry, "result": "inside a function that branches across it"}); continue
+            rows.insert(index + 1, {"start": entry, "end": inside["end"]}); inside["end"] = entry
+            notes.append({"entry": entry, "result": "split from the function at 0x%08X" % inside["start"]}); continue
+        limit = rows[index + 1]["start"] if index + 1 < len(rows) else None
+        end, reach, at, failure = None, entry, entry, None
+        while True:
+            if (limit is not None and at >= limit) or at - entry >= max_size:
+                failure = "runs into the next function" if limit is not None and at >= limit else "too long"; break
+            ins = word(at)
+            if ins is None:
+                failure = "leaves the code section"; break
+            target = branch_target(at, ins)
+            if target is not None:
+                if target < entry or (limit is not None and target >= limit):
+                    failure = "branches outside itself"; break
+                reach = max(reach, target)
+            if ins == 0x03E00008 or ins >> 26 == 2:
+                if at + 8 > reach:
+                    end = at + 8; break
+            at += 4
+        if end is None or (limit is not None and end > limit):
+            notes.append({"entry": entry, "result": "not taken: " + (failure or "runs into the next function")}); continue
+        rows.insert(index + 1, {"start": entry, "end": end})
+        notes.append({"entry": entry, "result": "new function of %u bytes" % (end - entry)})
+    return rows, notes
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
@@ -474,6 +656,13 @@ def main():
         external_text=tuple((x['address'],x['address']+x['size']) for x in inspector.inspect(main_data)['sections'] if x['name']=='.text')
     selected, excluded = select_candidates(report, metadata, data=data, external_text=external_text)
     folder.mkdir(parents=True, exist_ok=True)
+    # Entry addresses to make functions of (map_gaps.py, discovery_loop.py): a list of numbers.
+    entries_path = folder / "entries.json"
+    entries = json.loads(entries_path.read_text(encoding="utf-8")) if entries_path.exists() else []
+    # A candidate the rules above refused is tried the same way: its start is an entry address.
+    selected, entry_notes = add_entries(selected, sorted(set(entries) | {row["start"] for row in excluded}), metadata, data)
+    taken_starts = {row["start"] for row in selected}
+    excluded = [row for row in excluded if row["start"] not in taken_starts]
     path = folder / "candidates.csv"
     text = "Name,Start,End,Size\n" + "".join(
         f"FUN_{row['start']:08X},0x{row['start']:08X},0x{row['end']:08X},{row['end']-row['start']}\n" for row in selected)
@@ -486,9 +675,13 @@ def main():
                 "nop_padding_candidates": [row["start"] for row in report["functions"]
                     if has_tail_nop_gap(row, metadata, data)],
                 "branch_nop_padding_candidates": [row["start"] for row in report["functions"] if has_branch_nop_gaps(row,metadata,data,external_text)],
-                "max_function_bytes": 0x5000, "limitations": "Boundaries are provisional. Upstream may discover additional functions. No VU map or overlay assumed."}
+                "entries": entry_notes, "max_function_bytes": 0x5000, "limitations": "Boundaries are provisional. Upstream may discover additional functions. No VU map or overlay assumed."}
     path.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared {len(selected)} provisional EE functions; quarantined {len(excluded)}. Map: {path}")
+    taken = sum(1 for note in entry_notes if note["result"].startswith(("new function", "split")))
+    for note in entry_notes:
+        if not note["result"].startswith(("new function", "split", "already")):
+            print(f"Entry 0x{note['entry']:08X}: {note['result']}")
+    print(f"Prepared {len(selected)} provisional EE functions ({taken} from entry addresses); quarantined {len(excluded)}. Map: {path}")
 
 
 if __name__ == "__main__":
