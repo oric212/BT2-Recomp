@@ -6,7 +6,9 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 ## Goal of the next passes
 
-**Performance comes first** ([plan](../plans/ee/PERFORMANCE_PLAN.md), with the user's requirements: fights a flat 30, menus a flat 60, also on a mid- to low-end PC). State: menus flat at 60 with the clock-based pacer; the fight at 25 to 39 ms of work per picture over the extended run (`--frames 7400` with `pad-fight.txt`, `BT2_VIEWER_STATS=1`, viewer and sound), not flat yet. Next: VU1 as native code, then graphics on its own thread. Every VU1 or VIF1 change must keep `vu1_kick_hash` (`f3da74e43010e423` for 5,100 frames, headless). Profile with `BT2_SAMPLE_PROFILE` and `tools/perf/`.
+**Performance comes first** ([plan](../plans/ee/PERFORMANCE_PLAN.md), with the user's requirements: fights a flat 30, menus a flat 60, also on a mid- to low-end PC). State: menus flat at 60; the fight averages 30 over the extended run (`--frames 7400` with `pad-fight.txt`, `BT2_VIEWER_STATS=1`, viewer and sound) with native VU1 programs, 18 to 31.5 ms of work per picture, single pictures still late. Next: the late pictures, graphics on its own thread, presenting without readback. Every VU1 or VIF1 change must keep `vu1_kick_hash` (`f3da74e43010e423` for 5,100 frames, headless). Profile with `BT2_SAMPLE_PROFILE` and `tools/perf/`.
+
+**Native VU1 programs are local build inputs:** `game/generated/vu1/vu1_native.cpp` is generated from `work/perf/vu1-census/` by `tools/vu1/translate_programs.py` (see the plan). Without the file the build interprets every program and is slower; after a fresh checkout or a clean, regenerate it and configure again.
 
 **Reported by the user on 2026-10-13, not investigated:** camera bugs in the fight (details asked for), and sound breaking up during slowdowns (expected while the fight misses its budget: the device runs dry).
 

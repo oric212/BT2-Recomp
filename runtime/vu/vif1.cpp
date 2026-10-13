@@ -80,7 +80,7 @@ void Vif1::process(std::span<const std::uint32_t> words,Registers& r,Vif1* self,
                 const unsigned count=num?num:256;
                 const auto data=operands(std::size_t(count)*2);
                 if(!self)break;
-                for(unsigned n=0;n<count;++n)std::memcpy(self->vu.program.data()+((imm+n)&Vu1::program_mask)*8,data.data()+n*2,8);
+                for(unsigned n=0;n<count;++n)self->vu.writeProgram(imm+n,data.data()+n*2);
                 ++self->programs;
                 break;
             }

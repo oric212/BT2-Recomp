@@ -5,6 +5,8 @@
 // denormals, infinities or NaNs. MAC and status flags are not computed (no modelled instruction
 // reads them); the instructions that read them stop by name.
 #include "vu1.h"
+#include "vu1_program.h"
+#include "vu1_simd.h"
 #include <algorithm>
 #include <bit>
 #include <cfenv>
@@ -16,8 +18,10 @@
 #pragma fenv_access(on)
 #pragma fp_contract(off)
 
+using namespace vu1_simd;
+
 namespace {
-constexpr std::uint64_t run_limit=16'000'000; // Instructions per start; a program that never ends stops here.
+constexpr std::uint64_t run_limit=Vu1::run_limit; // Instructions per start; a program that never ends stops here.
 
 [[noreturn]] void refuse(const char* what,std::uint32_t word,std::uint32_t at) {
     char text[128];std::snprintf(text,sizeof text,"VU1 %s 0x%08X is not modelled (instruction %u)",what,word,at);
@@ -42,14 +46,6 @@ struct ChopRounding {
     ChopRounding() {_mm_setcsr((saved&~0x6000u)|vu_csr_mode);}
     ~ChopRounding() {_mm_setcsr(saved);}
 };
-// Four lanes at once: infinities and NaNs become the largest magnitude of their sign.
-inline __m128 clamp(__m128 v) {
-    const __m128i x=_mm_castps_si128(v),exponent=_mm_set1_epi32(0x7F800000);
-    const __m128i special=_mm_cmpeq_epi32(_mm_and_si128(x,exponent),exponent);
-    const __m128i largest=_mm_or_si128(_mm_and_si128(x,_mm_set1_epi32(int(0x80000000u))),_mm_set1_epi32(0x7F7FFFFF));
-    return _mm_castsi128_ps(_mm_or_si128(_mm_andnot_si128(special,x),_mm_and_si128(special,largest)));
-}
-inline __m128 lanes(const std::array<std::uint32_t,4>& v) {return _mm_castsi128_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(v.data())));}
 enum : unsigned {Add,Sub,Madd,Msub,Mul};       // Arithmetic families.
 enum : unsigned {Vector,Field,RegisterQ,RegisterI}; // Second operand: ft, one field of ft, Q, I.
 // Codes 0x1C-0x2D, shared by the register forms and the accumulator forms (ADDq/ADDAq ...).
@@ -238,21 +234,6 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
     }
 }
 
-namespace {
-// Lane n is selected when the instruction's dest mask has bit 8>>n.
-inline __m128i laneMask(unsigned mask) {
-    static constexpr auto table=[] {
-        std::array<std::array<std::int32_t,4>,16> t{};
-        for(unsigned m=0;m<16;++m)for(unsigned lane=0;lane<4;++lane)t[m][lane]=m&(8u>>lane)?-1:0;
-        return t;
-    }();
-    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(table[mask&15].data()));
-}
-inline __m128i select(__m128i keep,__m128i take,__m128i mask) {return _mm_or_si128(_mm_andnot_si128(mask,keep),_mm_and_si128(mask,take));}
-inline __m128i load4(const void* at) {return _mm_loadu_si128(static_cast<const __m128i*>(at));}
-inline void store4(void* at,__m128i v) {_mm_storeu_si128(static_cast<__m128i*>(at),v);}
-}
-
 void Vu1::decode(Decoded& d,std::uint32_t low,std::uint32_t high) const {
     d=Decoded{};d.low=low;d.high=high;d.valid=true;
     d.i_bit=(high&0x80000000u)!=0;d.ending=((high>>30)&1)!=0;d.debug_bits=(high&0x18000000u)!=0;
@@ -296,6 +277,20 @@ void Vu1::decode(Decoded& d,std::uint32_t low,std::uint32_t high) const {
 void Vu1::run(std::uint32_t start,const Kick& kick) {
     const ChopRounding rounding;host_csr_=rounding.saved;
     pc=start&program_mask;++runs;branch_=false;
+    if(entry_generation_[pc]!=program_generation) {
+        // The first start from here since program memory changed: which program is it?
+        entry_generation_[pc]=program_generation;
+        native_[pc]=nullptr;
+        const auto natives=nativePrograms();
+        if(use_native && !natives.empty()) {
+            const auto key=Vu1Program::reachable(program,pc).key;
+            for(const auto& n:natives)if(n.key==key) {native_[pc]=n.run;break;}
+        }
+        if(on_entry)on_entry(pc);
+    }
+    // A native translation runs the program to its end, or returns early with `pc` at a pair it
+    // does not contain; the interpreter goes on from there.
+    if(native_[pc]) {++native_runs;if(native_[pc](*this,kick)) {settle(true);clip_latest_=clip;vi_written_=0;return;}}
     bool ending=false;
     for(std::uint64_t executed=0;;++executed) {
         if(executed>=run_limit)throw std::runtime_error("VU1 microprogram does not end");

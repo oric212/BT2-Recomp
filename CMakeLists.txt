@@ -63,6 +63,15 @@ set(BT2_EE_HOT_SOURCES
     runtime/vu/vif1.cpp
     runtime/ee/ee_gs_readback.cpp)
 
+# Native translations of VU1 microprograms, when tools/vu1/translate_programs.py has generated them
+# (local, ignored); otherwise every program is interpreted. Tests always interpret.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/vu1/vu1_native.cpp")
+    list(APPEND BT2_EE_HOT_SOURCES game/generated/vu1/vu1_native.cpp)
+    message(STATUS "VU1: native microprogram translations from game/generated/vu1")
+else()
+    list(APPEND BT2_EE_HOT_SOURCES runtime/vu/vu1_native_none.cpp)
+endif()
+
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
     set(BT2_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2" CACHE PATH "Ignored generated BT2 sources")
@@ -112,8 +121,10 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
     bt2_target_defaults(bt2-dma-chain-tests)
     add_test(NAME dma-chain COMMAND bt2-dma-chain-tests)
-    add_executable(bt2-vu1-tests runtime/tests/vu1_tests.cpp runtime/vu/vu1.cpp runtime/vu/vif1.cpp)
+    add_executable(bt2-vu1-tests runtime/tests/vu1_tests.cpp runtime/vu/vu1.cpp runtime/vu/vif1.cpp runtime/vu/vu1_native_none.cpp)
     bt2_target_defaults(bt2-vu1-tests)
+    # Its main keeps many Vu1 objects (each over 100 KB with the decoded-pair table) as locals.
+    target_link_options(bt2-vu1-tests PRIVATE /STACK:67108864)
     add_test(NAME vu1 COMMAND bt2-vu1-tests)
     # GPU GS through paraLLEl-GS (docs/plans/graphics/GPU_RENDERING_PLAN.md); fetch it with
     # tools/graphics/gpu/fetch_parallel_gs.py. Off until it matches the CPU model.

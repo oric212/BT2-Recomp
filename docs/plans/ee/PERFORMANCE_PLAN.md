@@ -45,7 +45,9 @@ VU1 runs about 1.1 to 1.3 million instruction pairs per flip in this scene. The 
 
 **5. Single hitches at screen changes** (0.11 to 0.3 s, and 0.2 s entering the fight): the game loads data and the port does all of it within one field. Not addressed yet.
 
-**6. A longer fight is heavier than the first 20 seconds.** Over about 100 seconds of the scripted fight the work per picture is 25 to 31 ms in most stretches and 35 to 39 ms in the heaviest (flips 5,280 to 5,880), where the rate falls to 23 to 28 pictures per second. In the heaviest stretches VU1 with its packets takes 23 to 24.5 ms, of which about 6 ms are GS packets (5 ms in the GPU renderer). So the fight does not hold a flat 30 yet, even on the user's machine.
+**6. A longer fight is heavier than the first 20 seconds.** Over about 100 seconds of the scripted fight, with the interpreter, the work per picture was 25 to 31 ms in most stretches and 35 to 39 ms in the heaviest (flips 5,280 to 5,880), where the rate fell to 23 to 28 pictures per second; VU1 with its packets took 23 to 24.5 ms there.
+
+**7. With native VU1 programs the fight averages 30 throughout.** Every 120-flip window of the same run holds 29.8 to 30.0 pictures per second. The work per picture is 18 to 27 ms in most stretches and 29 to 31.5 ms in the heaviest; VU1 with its packets is 7 to 12 ms and 15 to 17 ms. Single pictures still take 37 to 59 ms now and then (the slowest per window), so it is not yet even; and the heaviest stretch leaves almost no margin on this machine, which a slower processor does not have.
 
 ## Done
 
@@ -62,19 +64,30 @@ All with the same instruction count, call count and output hash on the fight run
 - **The EE FPU helpers set the rounding mode in MXCSR** for their one operation instead of through the C library.
 - **The CPU GS model follows only A+D registers in GPU-only mode** (transfers, FINISH); vertices, primitives and CLUT loads are the renderer's. Its primitive counters stay at zero in that mode.
 - **Frame timers cost nothing unless the statistics are on.**
+- **VU1 microprograms as native code.** A census of the extended fight run found 14 distinct programs with 1,720 instruction pairs in all (a program is the set of pairs reachable from a start address, `runtime/vu/vu1_program.h`). `tools/vu1/translate_programs.py` turns each into a C++ function: arithmetic, loads and stores are written out with their operands as constants, every other instruction calls the interpreter's own code, and branches become labels and gotos. A start looks its program up by key when program memory has changed; a program without a translation, or a jump out of a translated one, runs in the interpreter. On the fight script all 2,501,695 starts ran native code with the same instruction count and output hash. The translations are derived from the game's programs: generated locally into the ignored `game/generated/vu1/`, like the EE code.
 - **A clock-based pacer** (`runtime/host/frame_pacer.h`): each field has a deadline one period after the last and is waited for once, when its picture is shown or at its end, with a high-resolution timer. The period follows the sound device's queue within 1%, so the device no longer paces the run and its queue stays near 50 ms.
 
 ## Next, in order of expected gain
 
-Against the requirements the fight needs its work cut from 25 to 39 ms per picture to about 16 ms.
+Against the requirements the fight needs its work cut from 18 to 31.5 ms per picture to about 16 ms, and its slow single pictures explained.
 
-1. **VU1 as native code.** VU1's own work is 11 to 18 ms per picture, spread evenly over the interpreter's loop (no single hot line), so the interpreter is at its limit. Translate the game's microprograms to C++ (generated locally from the programs the game uploads, like the EE code, with the interpreter as fallback and as the reference for the output hash).
-2. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about two thirds of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
+1. **The slow single pictures in the fight** (37 to 59 ms while the average is in budget): find whether it is the work of single frames (uploads, the renderer) or the pacing.
+2. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about half of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
 3. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
-4. **Game code and services** (about 5 to 7 ms): the other access widths and the per-call checks, guided by a new profile.
-5. **Loading hitches at screen changes:** spread the load over fields or do it off the game's thread.
+4. **VU1, further:** the translations still call the interpreter's code for integer instructions, branches, DIV, the flag instructions and conversions, and keep every register in memory. Writing more of them out is the next step there.
+5. **Game code and services** (about 5 to 7 ms): the other access widths and the per-call checks, guided by a new profile.
+6. **Loading hitches at screen changes:** spread the load over fields or do it off the game's thread.
 
 Each step: measure with `BT2_VIEWER_STATS` over the extended fight run (7,400 frames of `pad-fight.txt`), compare `vu1_kick_hash` and the run's counters with the baseline (5,100 frames), run the gate, record before and after in the monthly history.
+
+## Native VU1 programs: how they are made
+
+1. **Census:** run with `BT2_VU1_CENSUS=<existing folder>`; every distinct program the run starts is written there (`<key>.vu1`). `work/perf/vu1-census/` holds the fight run's.
+2. **Translate:** `python tools/vu1/translate_programs.py <census folder> game/generated/vu1/vu1_native.cpp`. A program the translator cannot follow exactly (a branch or an E bit in a delay slot, a debug bit) is left to the interpreter, with the reason printed.
+3. **Build:** configure again so CMake picks the file up (it is chosen when it exists), then build.
+4. **Check:** the report's `vu1_native_runs` against `vu1_runs`, and `vu1_kick_hash` against a run with `BT2_VU1_INTERPRET=1`.
+
+A program met later that is not in the census is simply interpreted; `vu1_runs` minus `vu1_native_runs` shows how much that is. New programs are added by a new census.
 
 ## Verification
 

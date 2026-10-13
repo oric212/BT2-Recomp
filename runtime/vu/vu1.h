@@ -6,6 +6,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <span>
 #include <vector>
@@ -24,11 +25,29 @@ public:
     std::uint32_t pc=0;           // Instruction index where MSCNT continues.
     std::uint32_t top=0,itop=0;   // Set by VIF1 at each start (XTOP, XITOP).
     std::uint64_t instructions=0;
-    unsigned runs=0,kicks=0;
+    unsigned runs=0,kicks=0,native_runs=0; // `native_runs`: starts that ran a native translation.
     std::uint64_t kick_hash=0xCBF29CE484222325ull; // Over every XGKICK packet's bytes, in order: equal hashes mean equal output.
     // Reads of Q or the clipping flags while a newer result was still in the pipeline. The model
     // counts one cycle per instruction (no stalls), so a nonzero count marks timing-sensitive code.
     unsigned early_q_reads=0,early_clip_reads=0;
+
+    // Called with the start address the first time a start runs from it since program memory last
+    // changed (the program census, native program lookup).
+    std::function<void(std::uint32_t)> on_entry;
+    std::uint32_t program_generation=1; // Advances with every write to program memory through `writeProgram`.
+    // One instruction pair (8 bytes) to program memory at instruction index `index`.
+    void writeProgram(std::uint32_t index,const void* pair) {std::memcpy(program.data()+(index&program_mask)*8,pair,8);++program_generation;}
+
+    // Native translations of microprograms (generated locally from the game's own programs by
+    // tools/vu1/translate_programs.py; none in a build without them). A translation is chosen by the
+    // key of the program reachable from the start address (vu1_program.h) and behaves exactly as the
+    // interpreter does on it. It returns true when the program has ended, false with `pc` set when
+    // it reached a pair outside itself.
+    using NativeProgram=bool(*)(Vu1&,const Kick&);
+    struct NativeEntry {std::uint64_t key;NativeProgram run;};
+    static std::span<const NativeEntry> nativePrograms();
+    bool use_native=true; // Off: every program is interpreted.
+    static constexpr std::uint64_t run_limit=16'000'000; // Instruction pairs per start; a program that never ends stops here.
 
     Vu1() {vf[0][3]=0x3F800000;}
     void run(std::uint32_t start,const Kick& kick); // MSCAL/MSCALF: from instruction `start`.
@@ -37,6 +56,7 @@ public:
     std::vector<std::uint8_t> gifPacket(std::uint32_t address) const;
 
 private:
+    friend struct Vu1Native; // The generated translations.
     struct Result {enum Target {None,Register,Accumulator} target=None;unsigned reg=0,mask=0;std::array<std::uint32_t,4> value{};};
     Result upper(std::uint32_t word,std::uint32_t at);
     void lower(std::uint32_t word,std::uint32_t at,const Kick& kick);
@@ -53,6 +73,8 @@ private:
     std::array<ClipEntry,4> clip_queue_{};unsigned clip_count_=0;std::uint32_t clip_latest_=0; // CLIP: 4 cycles.
     unsigned vi_written_=0;std::uint64_t vi_written_cycle_=0; // Last VI write other than by a flag instruction.
     bool branch_=false;std::uint32_t branch_target_=0;
+    std::array<std::uint32_t,program_mask+1> entry_generation_{}; // The generation each start address was last looked up in.
+    std::array<NativeProgram,program_mask+1> native_{};          // Its native translation, if any.
     unsigned host_csr_=0; // The float mode outside the run, restored around XGKICK.
     // An instruction pair decoded once: what the run loop needs without taking the words apart again.
     // An entry is current while its words equal program memory, so no writer has to invalidate it.

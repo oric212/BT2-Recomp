@@ -12,6 +12,7 @@
 #include "host/input_mapping.h"
 #include "host/sample_profiler.h"
 #include "host/wav_writer.h"
+#include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
@@ -110,6 +111,35 @@ int main(int argc, char** argv) {
                 sound_log << std::dec << '\n';
             };
         }
+        // BT2_VU1_CENSUS=<existing folder>: every distinct VU1 microprogram the run starts (the pairs
+        // reachable from each start address), one file per program named by its key: the start address,
+        // the pair count and the pairs as address, lower word, upper word. Local evidence, not committed.
+        struct Vu1Census {
+            std::string folder;std::map<std::uint64_t,std::size_t> programs;unsigned entries=0,indirect=0;
+            ~Vu1Census() {
+                if(folder.empty())return;
+                std::size_t pairs=0;for(const auto& [key,count]:programs)pairs+=count;
+                std::cerr<<std::dec<<"VU1 census: "<<entries<<" new entries, "<<programs.size()<<" distinct programs ("<<indirect<<" with register jumps), "<<pairs<<" pairs in all."<<std::endl;
+            }
+        };
+        static Vu1Census census;
+        if (const char* folder = std::getenv("BT2_VU1_CENSUS")) {
+            census.folder = folder;
+            runtime.vif1.vu.on_entry = [&runtime](std::uint32_t start) {
+                const auto program = Vu1Program::reachable(runtime.vif1.vu.program, start);
+                ++census.entries;
+                if (!census.programs.emplace(program.key, program.pairs.size()).second) return;
+                if (program.indirect) ++census.indirect;
+                char name[32];std::snprintf(name, sizeof name, "/%016llx.vu1", static_cast<unsigned long long>(program.key));
+                std::ofstream out(census.folder + name, std::ios::binary);
+                const std::uint32_t head[2] = {program.start, static_cast<std::uint32_t>(program.pairs.size())};
+                out.write(reinterpret_cast<const char*>(head), 8);
+                out.write(reinterpret_cast<const char*>(program.pairs.data()), std::streamsize(program.pairs.size() * sizeof(Vu1Program::Pair)));
+                if (!out) throw std::runtime_error("Cannot write the VU1 census in " + census.folder);
+            };
+        }
+        // BT2_VU1_INTERPRET: run every VU1 microprogram in the interpreter, also where the build has a native translation.
+        if (std::getenv("BT2_VU1_INTERPRET")) runtime.vif1.vu.use_native = false;
         // BT2_EE_LOOP_LIMIT: loop iterations one thread may run within a field before the runaway guard stops it.
         if (const char* limit = std::getenv("BT2_EE_LOOP_LIMIT")) runtime.checkpoint_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32

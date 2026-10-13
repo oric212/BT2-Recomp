@@ -1,5 +1,6 @@
 // VIF1 codes and VU1 microprogram instructions (synthetic lists and programs; no game data).
 #include "vu/vif1.h"
+#include "vu/vu1_program.h"
 #include <bit>
 #include <cfenv>
 #include <cstring>
@@ -30,7 +31,7 @@ constexpr Pair up(std::uint32_t word) {return {LNOP,word};}
 constexpr Pair nop{LNOP,UNOP};
 
 void loadProgram(Vu1& vu,const std::vector<Pair>& code,unsigned at=0) {
-    for(std::size_t n=0;n<code.size();++n)std::memcpy(vu.program.data()+(at+n)*8,&code[n],8);
+    for(std::size_t n=0;n<code.size();++n)vu.writeProgram(std::uint32_t(at+n),&code[n]);
 }
 // Runs `code` from instruction 0, followed by an E-bit instruction and its delay slot.
 void exec(Vu1& vu,std::vector<Pair> code,const Vu1::Kick& kick={}) {
@@ -302,6 +303,32 @@ void vif() {
 }
 }
 
+// The program a start runs, as told from program memory (vu1_program.h), and the entry hook.
+void programs() {
+    Vu1 vu;
+    // 0: a pair; 1: IBNE back to 0; 2: its delay pair; 3: E bit; 4: the pair after it; 5: never run.
+    loadProgram(vu,{nop,lo(branch(0x29,1,2,1,0)),nop,{LNOP,UNOP|E},nop,nop});
+    const auto first=Vu1Program::reachable(vu.program,0);
+    check(first.start==0 && first.pairs.size()==5 && first.pairs.front().address==0 && first.pairs.back().address==4 && !first.indirect,"reachable pairs end after the E bit's delay pair");
+    const Pair other{LNOP,upperSpecial(0,1,2,0x2F)};
+    vu.writeProgram(5,&other);check(Vu1Program::reachable(vu.program,0).key==first.key,"a pair outside the program does not change its key");
+    vu.writeProgram(4,&other);check(Vu1Program::reachable(vu.program,0).key!=first.key,"a pair inside the program changes its key");
+    check(Vu1Program::reachable(vu.program,3).pairs.size()==2 && Vu1Program::reachable(vu.program,3).key!=first.key,"another start is another program");
+    // An unconditional branch: its delay pair runs, the pair after that does not belong.
+    Vu1 jump;loadProgram(jump,{lo(branch(0x20,0,0,0,3)),nop,nop,{LNOP,UNOP|E},nop});
+    const auto jumped=Vu1Program::reachable(jump.program,0);
+    check(jumped.pairs.size()==4 && jumped.pairs[2].address==3,"the pair after an unconditional branch's delay pair is not reached");
+    // A call and a register jump: the return address is taken as the jump's target.
+    Vu1 call;loadProgram(call,{lo(branch(0x21,15,0,0,4)),nop,{LNOP,UNOP|E},nop,lo(lower(0x24,0,0,15,0)),nop});
+    const auto called=Vu1Program::reachable(call.program,0);
+    check(called.indirect && called.pairs.size()==6,"a register jump reaches the return address of the program's call");
+    // The entry hook fires once per start address until program memory changes.
+    unsigned entries=0;vu.on_entry=[&](std::uint32_t start){check(start==0,"entry address");++entries;};
+    vu.vi[1]=vu.vi[2]=0;vu.run(0,{});vu.run(0,{});check(entries==1,"one entry while the program is unchanged");
+    vu.writeProgram(5,&other);vu.run(0,{});check(entries==2,"a write to program memory makes the next start a new entry");
+    check(vu.native_runs==0 && Vu1::nativePrograms().empty(),"no native translations in this build");
+}
+
 int main() {
     memoryAndIntegers();
     arithmetic();
@@ -309,6 +336,7 @@ int main() {
     controlFlow();
     kicks();
     vif();
+    programs();
     std::cout<<"VU1 tests passed\n";
     return 0;
 }
