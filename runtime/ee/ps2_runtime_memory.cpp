@@ -218,6 +218,7 @@ std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std:
 }
 
 void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
+    if(auto* ram=ramWord(rdram,address)) {std::memcpy(ram,&value,4);++word_writes;return;} // Main RAM first, as in Load32.
     if(ipuWrite(address,value)) {checkMemory(rdram,0,0);return;}
     if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
         && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
@@ -321,6 +322,8 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
 }
 
 std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+    // Main RAM first: none of the device and checkpoint cases below is a RAM address.
+    if(const auto* ram=ramWord(rdram,address)) {std::uint32_t value;std::memcpy(&value,ram,4);return value;}
     if(std::uint32_t value=0;ipuRead(address,value)) {checkMemory(rdram,0,0);return value;}
     if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
         checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;

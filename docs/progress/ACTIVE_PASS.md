@@ -6,7 +6,7 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 ## Goal of the next passes
 
-**Performance comes first** (the user reported a laggy window on 2026-10-13): see the [performance plan](../plans/ee/PERFORMANCE_PLAN.md). Done: pacing (menus at 60), VU1 arithmetic with SSE (fight 48 to 58 ms per flip, from 59 to 73). Next: predecode VU1 programs, then GS packet handling. Measure with `BT2_VIEWER_STATS=1` and the viewer; compare `vu1_kick_hash` (baseline `f3da74e43010e423` for 5,100 frames of `pad-fight.txt`). Open question for the user: whether the original shows 30 or 60 pictures per second in fights (the code reads as 30).
+**Performance comes first** (the user reported a laggy window on 2026-10-13): see the [performance plan](../plans/ee/PERFORMANCE_PLAN.md). Done: pacing (menus at 60), VU1 arithmetic with SSE and pairs decoded once, no CPU copy of texture uploads in GPU-only mode, RAM-first word accesses, cheaper call bookkeeping: the fight takes 32 to 38 ms per flip, from 59 to 73. Next: the rest of VU1 (see the plan's list). A sample profile is taken with `BT2_SAMPLE_PROFILE` and `tools/perf/profile_report.py`. Measure with `BT2_VIEWER_STATS=1` and the viewer; compare `vu1_kick_hash` (baseline `f3da74e43010e423` for 5,100 frames of `pad-fight.txt`). Open question for the user: whether the original shows 30 or 60 pictures per second in fights (the code reads as 30).
 
 **Launcher work in progress, uncommitted:** `runtime/host/settings.h` and `runtime/host/menu_model.h` are written but have no tests and no users yet (launcher plan, step 2).
 

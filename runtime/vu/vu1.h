@@ -40,7 +40,6 @@ private:
     struct Result {enum Target {None,Register,Accumulator} target=None;unsigned reg=0,mask=0;std::array<std::uint32_t,4> value{};};
     Result upper(std::uint32_t word,std::uint32_t at);
     void lower(std::uint32_t word,std::uint32_t at,const Kick& kick);
-    void arithmetic(Result& result,unsigned operation,unsigned source,std::uint32_t word);
     void setVi(unsigned reg,std::uint16_t value,bool flag_instruction=false);
     std::uint16_t branchVi(unsigned reg,std::uint32_t at) const;
     std::uint8_t* cell(std::uint32_t address) {return data.data()+(address&data_mask)*16;}
@@ -55,6 +54,20 @@ private:
     unsigned vi_written_=0;std::uint64_t vi_written_cycle_=0; // Last VI write other than by a flag instruction.
     bool branch_=false;std::uint32_t branch_target_=0;
     unsigned host_csr_=0; // The float mode outside the run, restored around XGKICK.
+    // An instruction pair decoded once: what the run loop needs without taking the words apart again.
+    // An entry is current while its words equal program memory, so no writer has to invalidate it.
+    // `Slow` kinds go through `upper` and `lower`, which also refuse what is not modelled.
+    struct Decoded {
+        enum Upper : std::uint8_t {UpperSlow,UpperNop,UpperRegister,UpperAccumulator};
+        enum Lower : std::uint8_t {LowerSlow,LowerNop,LowerLq,LowerSq,LowerLqi,LowerSqi};
+        std::uint32_t low=0,high=0;
+        Upper upper=UpperSlow;Lower lower=LowerSlow;
+        std::uint8_t operation=0,source=0,fs=0,ft=0,reg=0,field=0,mask=0; // Upper arithmetic.
+        std::uint8_t lower_vf=0,lower_vi=0,lower_mask=0;std::int16_t lower_imm=0; // Lower loads and stores.
+        bool valid=false,i_bit=false,ending=false,debug_bits=false,skip_lower=false;
+    };
+    std::array<Decoded,program_mask+1> decoded_{};
+    void decode(Decoded& d,std::uint32_t low,std::uint32_t high) const;
     std::vector<std::uint8_t> packet_; // The XGKICK packet being sent; kept to reuse its storage.
     void gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const;
 };

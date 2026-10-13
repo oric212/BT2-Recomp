@@ -9,6 +9,7 @@
 #include "host/audio_device.h"
 #include "host/host_input.h"
 #include "host/input_mapping.h"
+#include "host/sample_profiler.h"
 #include "host/wav_writer.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
@@ -166,6 +167,12 @@ int main(int argc, char** argv) {
             }
             runtime.on_display_flip = [&runtime, viewer_mode, gpu_only] {
                 const auto flip = runtime.gs_display_flips;
+                // BT2_SAMPLE_PROFILE=<path>: sample where this thread executes, from flip
+                // BT2_SAMPLE_FROM (default 1) to the end of the run (host/sample_profiler.h).
+                static std::unique_ptr<SampleProfiler> profiler;
+                static const char* profile_path = std::getenv("BT2_SAMPLE_PROFILE");
+                static const unsigned profile_from = std::getenv("BT2_SAMPLE_FROM") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SAMPLE_FROM"))) : 1;
+                if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
                 const auto snapshot = snapshots.find(flip);
                 if (!viewer_mode && snapshot == snapshots.end()) return;
@@ -192,7 +199,7 @@ int main(int argc, char** argv) {
                         const double wall = std::chrono::duration<double>(t2 - window_start).count();
                         std::cerr << std::dec << "Viewer stats at flip " << flip << ": " << 120 / wall << " flips/s, " << (runtime.vblank_deliveries - window_fields) / wall
                             << " fields/s; per flip " << wall / 120 * 1000 << " ms, of it readback " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
-                            << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000
+                            << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000 << " ms, of it in the GPU renderer " << frame_profile.renderer / 120 * 1000
                             << " ms, GPU flush " << frame_profile.flush / 120 * 1000 << " ms" << std::endl;
                         window_start = t2;scanout_s = present_s = 0;window_fields = runtime.vblank_deliveries;frame_profile = {};
                     }

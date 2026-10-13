@@ -97,38 +97,12 @@ std::uint16_t Vu1::branchVi(unsigned reg,std::uint32_t at) const {
     return vi[reg];
 }
 
-void Vu1::arithmetic(Result& result,unsigned operation,unsigned source,std::uint32_t w) {
-    const unsigned ft=(w>>16)&31,fs=(w>>11)&31;
-    // All four lanes are computed; the caller commits the masked ones. Denormals are handled by the
-    // run's float mode, so the model's per-lane normalization reduces to the clamp.
-    const __m128 a=clamp(lanes(vf[fs]));
-    const __m128 b=clamp(source==Vector?lanes(vf[ft]):_mm_castsi128_ps(_mm_set1_epi32(int(source==Field?vf[ft][w&3]:source==RegisterQ?readQ():i))));
-    __m128 r;
-    switch(operation) {
-        case Add:r=_mm_add_ps(a,b);break;
-        case Sub:r=_mm_sub_ps(a,b);break;
-        case Mul:r=_mm_mul_ps(a,b);break;
-        default: {
-            const __m128 product=clamp(_mm_mul_ps(a,b)),sum=clamp(lanes(acc));
-            r=operation==Madd?_mm_add_ps(sum,product):_mm_sub_ps(sum,product);
-        }
-    }
-    _mm_storeu_si128(reinterpret_cast<__m128i*>(result.value.data()),_mm_castps_si128(clamp(r)));
-}
-
 Vu1::Result Vu1::upper(std::uint32_t w,std::uint32_t at) {
-    const unsigned ft=(w>>16)&31,fs=(w>>11)&31,fd=(w>>6)&31,op=w&0x3F;
+    const unsigned ft=(w>>16)&31,fs=(w>>11)&31,op=w&0x3F;
+    // The arithmetic forms (to a register below 0x3C, to the accumulator above) are decoded and run
+    // by the run loop; what reaches this function with such a code is not an instruction of the model.
     Result result;result.mask=(w>>21)&15;
-    unsigned operation=0,source=0;
-    if(op<0x3C) {
-        // ADDbc, SUBbc, MADDbc, MSUBbc (0x00-0x0F), MULbc (0x18-0x1B) and the q, i and vector forms.
-        if(op<0x10) {operation=op>>2;source=Field;}
-        else if(op>=0x18 && op<0x1C) {operation=Mul;source=Field;}
-        else if(!sharedArithmetic(op,operation,source))refuse("upper instruction",w,at);
-        result.target=Result::Register;result.reg=fd;
-        arithmetic(result,operation,source,w);
-        return result;
-    }
+    if(op<0x3C)refuse("upper instruction",w,at);
     const unsigned code=(((w>>6)&0x1F)<<2)|(w&3);
     if(code==0x2F)return result; // NOP.
     if(code>=0x10 && code<0x18) {
@@ -165,13 +139,7 @@ Vu1::Result Vu1::upper(std::uint32_t w,std::uint32_t at) {
         clip_queue_[clip_count_++]={cycle_+4,clip_latest_};
         return result;
     }
-    // ADDAbc ... MSUBAbc (0x00-0x0F), MULAbc (0x18-0x1B) and the q, i and vector forms, into ACC.
-    if(code<0x10) {operation=code>>2;source=Field;}
-    else if(code>=0x18 && code<0x1C) {operation=Mul;source=Field;}
-    else if(!sharedArithmetic(code,operation,source))refuse("upper instruction",w,at);
-    result.target=Result::Accumulator;
-    arithmetic(result,operation,source,w);
-    return result;
+    refuse("upper instruction",w,at);
 }
 
 void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
@@ -270,6 +238,61 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
     }
 }
 
+namespace {
+// Lane n is selected when the instruction's dest mask has bit 8>>n.
+inline __m128i laneMask(unsigned mask) {
+    static constexpr auto table=[] {
+        std::array<std::array<std::int32_t,4>,16> t{};
+        for(unsigned m=0;m<16;++m)for(unsigned lane=0;lane<4;++lane)t[m][lane]=m&(8u>>lane)?-1:0;
+        return t;
+    }();
+    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(table[mask&15].data()));
+}
+inline __m128i select(__m128i keep,__m128i take,__m128i mask) {return _mm_or_si128(_mm_andnot_si128(mask,keep),_mm_and_si128(mask,take));}
+inline __m128i load4(const void* at) {return _mm_loadu_si128(static_cast<const __m128i*>(at));}
+inline void store4(void* at,__m128i v) {_mm_storeu_si128(static_cast<__m128i*>(at),v);}
+}
+
+void Vu1::decode(Decoded& d,std::uint32_t low,std::uint32_t high) const {
+    d=Decoded{};d.low=low;d.high=high;d.valid=true;
+    d.i_bit=(high&0x80000000u)!=0;d.ending=((high>>30)&1)!=0;d.debug_bits=(high&0x18000000u)!=0;
+    const unsigned ft=(high>>16)&31,fs=(high>>11)&31,fd=(high>>6)&31,op=high&0x3F;
+    d.fs=std::uint8_t(fs);d.ft=std::uint8_t(ft);d.field=std::uint8_t(high&3);d.mask=std::uint8_t((high>>21)&15);
+    unsigned operation=0,source=0,target=0; // `target`: the float register the upper instruction writes.
+    if(op<0x3C) {
+        // ADDbc, SUBbc, MADDbc, MSUBbc (0x00-0x0F), MULbc (0x18-0x1B) and the q, i and vector forms, to fd.
+        bool known=true;
+        if(op<0x10) {operation=op>>2;source=Field;}
+        else if(op>=0x18 && op<0x1C) {operation=Mul;source=Field;}
+        else known=sharedArithmetic(op,operation,source);
+        if(known) {d.upper=Decoded::UpperRegister;d.reg=std::uint8_t(fd);target=fd;}
+    } else {
+        const unsigned code=(((high>>6)&0x1F)<<2)|(high&3);
+        if(code==0x2F)d.upper=Decoded::UpperNop;
+        else if((code>=0x10 && code<0x18) || code==0x1D)target=ft; // ITOF, FTOI, ABS: through `upper`.
+        else if(code!=0x1F) {                                        // Not CLIP: the accumulator forms.
+            bool known=true;
+            if(code<0x10) {operation=code>>2;source=Field;}
+            else if(code>=0x18 && code<0x1C) {operation=Mul;source=Field;}
+            else known=sharedArithmetic(code,operation,source);
+            if(known)d.upper=Decoded::UpperAccumulator;
+        }
+    }
+    d.operation=std::uint8_t(operation);d.source=std::uint8_t(source);
+    if(d.i_bit)return; // The lower word is a float for I.
+    const unsigned lop=low>>25,it=(low>>16)&31,is=(low>>11)&31;
+    const unsigned lower_code=lop==0x40 && (low&0x3F)>=0x3C?(((low>>6)&31)<<2)|(low&3):0x100u;
+    // A lower instruction writing the float register the upper one writes is discarded.
+    const bool writes_float=lop==0 || lower_code==0x30 || lower_code==0x31 || lower_code==0x34 || lower_code==0x36;
+    d.skip_lower=target && writes_float && it==target;
+    d.lower_mask=std::uint8_t((low>>21)&15);d.lower_imm=std::int16_t(imm11(low));
+    if(lop==0x00 && is<16) {d.lower=Decoded::LowerLq;d.lower_vf=std::uint8_t(it);d.lower_vi=std::uint8_t(is);}
+    else if(lop==0x01 && it<16) {d.lower=Decoded::LowerSq;d.lower_vf=std::uint8_t(is);d.lower_vi=std::uint8_t(it);}
+    else if(lower_code==0x34 && is<16) {d.lower=Decoded::LowerLqi;d.lower_vf=std::uint8_t(it);d.lower_vi=std::uint8_t(is);}
+    else if(lower_code==0x35 && it<16) {d.lower=Decoded::LowerSqi;d.lower_vf=std::uint8_t(is);d.lower_vi=std::uint8_t(it);}
+    else if(lower_code==0x30 && !it)d.lower=Decoded::LowerNop; // MOVE to VF0.
+}
+
 void Vu1::run(std::uint32_t start,const Kick& kick) {
     const ChopRounding rounding;host_csr_=rounding.saved;
     pc=start&program_mask;++runs;branch_=false;
@@ -277,25 +300,66 @@ void Vu1::run(std::uint32_t start,const Kick& kick) {
     for(std::uint64_t executed=0;;++executed) {
         if(executed>=run_limit)throw std::runtime_error("VU1 microprogram does not end");
         const std::uint32_t at=pc,low=word(program.data()+at*8),high=word(program.data()+at*8+4);
-        if(high&0x18000000u)refuse("D/T bit in",high,at);
+        auto& d=decoded_[at];
+        if(!d.valid || d.low!=low || d.high!=high)decode(d,low,high);
+        if(d.debug_bits)refuse("D/T bit in",high,at);
         pc=(pc+1)&program_mask;
         const bool last=ending,branching=branch_;const std::uint32_t target=branch_target_;
-        ending=(high>>30)&1;branch_=false;
-        settle(false);
-        if(high&0x80000000u)i=low; // I bit: the lower word is a float for I; the upper instruction sees it.
-        const Result result=upper(high,at);
-        if(!(high&0x80000000u)) {
-            // A lower instruction writing the float register the upper one writes is discarded.
-            const unsigned lower_code=(low>>25)==0x40 && (low&0x3F)>=0x3C?(((low>>6)&31)<<2)|(low&3):0x100u;
-            const bool writes_float=(low>>25)==0 || lower_code==0x30 || lower_code==0x31 || lower_code==0x34 || lower_code==0x36;
-            const bool same=result.target==Result::Register && result.reg && writes_float && ((low>>16)&31)==result.reg;
-            if(!same)lower(low,at,kick);
+        ending=d.ending;branch_=false;
+        if(q_pending_ || clip_count_)settle(false);
+        if(d.i_bit)i=low; // I bit: the lower word is a float for I; the upper instruction sees it.
+        // The upper result is computed from the state before the pair and committed after the lower instruction.
+        __m128i value=_mm_setzero_si128();unsigned commit=Result::None,commit_reg=0,commit_mask=d.mask;
+        switch(d.upper) {
+            case Decoded::UpperNop:break;
+            case Decoded::UpperRegister:case Decoded::UpperAccumulator: {
+                const __m128 a=clamp(lanes(vf[d.fs]));
+                const __m128 b=clamp(d.source==Vector?lanes(vf[d.ft]):_mm_castsi128_ps(_mm_set1_epi32(int(d.source==Field?vf[d.ft][d.field]:d.source==RegisterQ?readQ():i))));
+                __m128 r;
+                switch(d.operation) {
+                    case Add:r=_mm_add_ps(a,b);break;
+                    case Sub:r=_mm_sub_ps(a,b);break;
+                    case Mul:r=_mm_mul_ps(a,b);break;
+                    default: {
+                        const __m128 product=clamp(_mm_mul_ps(a,b)),sum=clamp(lanes(acc));
+                        r=d.operation==Madd?_mm_add_ps(sum,product):_mm_sub_ps(sum,product);
+                    }
+                }
+                value=_mm_castps_si128(clamp(r));
+                commit=d.upper==Decoded::UpperRegister?Result::Register:Result::Accumulator;commit_reg=d.reg;
+                break;
+            }
+            default: {
+                const Result result=upper(high,at);
+                value=load4(result.value.data());commit=result.target;commit_reg=result.reg;commit_mask=result.mask;
+            }
         }
-        if(result.target==Result::Register && result.reg) {
-            for(unsigned lane=0;lane<4;++lane)if(result.mask&(8u>>lane))vf[result.reg][lane]=result.value[lane];
-        } else if(result.target==Result::Accumulator) {
-            for(unsigned lane=0;lane<4;++lane)if(result.mask&(8u>>lane))acc[lane]=result.value[lane];
+        if(!d.i_bit && !d.skip_lower) {
+            switch(d.lower) {
+                case Decoded::LowerNop:break;
+                case Decoded::LowerLq:
+                    if(d.lower_vf)store4(vf[d.lower_vf].data(),select(load4(vf[d.lower_vf].data()),load4(cell(vi[d.lower_vi]+d.lower_imm)),laneMask(d.lower_mask)));
+                    break;
+                case Decoded::LowerSq: {
+                    auto* to=cell(vi[d.lower_vi]+d.lower_imm);
+                    store4(to,select(load4(to),load4(vf[d.lower_vf].data()),laneMask(d.lower_mask)));
+                    break;
+                }
+                case Decoded::LowerLqi:
+                    if(d.lower_vf)store4(vf[d.lower_vf].data(),select(load4(vf[d.lower_vf].data()),load4(cell(vi[d.lower_vi])),laneMask(d.lower_mask)));
+                    setVi(d.lower_vi,std::uint16_t(vi[d.lower_vi]+1));
+                    break;
+                case Decoded::LowerSqi: {
+                    auto* to=cell(vi[d.lower_vi]);
+                    store4(to,select(load4(to),load4(vf[d.lower_vf].data()),laneMask(d.lower_mask)));
+                    setVi(d.lower_vi,std::uint16_t(vi[d.lower_vi]+1));
+                    break;
+                }
+                default:lower(low,at,kick);
+            }
         }
+        if(commit==Result::Register && commit_reg)store4(vf[commit_reg].data(),select(load4(vf[commit_reg].data()),value,laneMask(commit_mask)));
+        else if(commit==Result::Accumulator)store4(acc.data(),select(load4(acc.data()),value,laneMask(commit_mask)));
         ++cycle_;++instructions;
         if(branching) {
             if(branch_)refuse("branch in a branch delay slot,",low,at);

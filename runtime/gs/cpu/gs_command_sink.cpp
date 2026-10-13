@@ -156,8 +156,8 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
     const unsigned w=unsigned(reg&0xFFF),h=unsigned((reg>>32)&0xFFF);
     // Host->local, CT32 destination, upper-left order, inside the buffer (one page when DBW is 0).
     // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS.
-    // GPU-only: the GPU performs every transfer that needs no readback, so a form this model does
-    // not draw is only left untracked; local-to-host (dir 1) is refused in both modes.
+    // GPU-only: the GPU performs every host-to-local transfer and this model does not follow them;
+    // local-to-host (dir 1) is set up in both modes.
     state.trx=false;state.download=false;
     if((dir&3)==1) {
         // Local->host: the source rectangle is read back through the FIFO. This model reads CT32 and
@@ -172,7 +172,7 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
     }
     const bool unsupported=(dir&3)!=0 || dpsm!=0 || order || !w || !h
         || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048;
-    if(unsupported && !rasterize && (dir&3)!=1)return;
+    if(!rasterize)return; // GPU-only: host-to-local data goes to the GPU's memory only; this model keeps no copy.
     if(unsupported)
         throw std::runtime_error("Unsupported GS image transfer: dir "+std::to_string(dir&3)+" dpsm "+std::to_string(dpsm)
             +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));

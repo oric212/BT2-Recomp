@@ -5,7 +5,7 @@
 #include <chrono>
 
 struct FrameProfile {
-    double vif1=0,vu1=0,gs=0,flush=0; // `vif1` contains `vu1`; `vu1` contains the GS time of its packets.
+    double vif1=0,vu1=0,gs=0,renderer=0,flush=0; // `vif1` contains `vu1`; `vu1` contains the GS time of its packets; `gs` contains `renderer`, the GPU renderer's share.
     struct Scope {
         double& total;std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now();
         explicit Scope(double& t):total(t) {}

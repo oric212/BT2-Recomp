@@ -91,14 +91,14 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
     } depth_guard(dispatch_depth_);
     if (phase_stop && target == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
     if (kind == GuestBranchKind::TailJump) {
-        entered_functions.insert(target);
+        noteEntered(target);
         context->pc = target;
         found->second(rdram, context, this);
-        completed_functions.insert(target);
+        noteCompleted(target);
         return true;
     }
     if (!resume || (resume & 3)) throw std::runtime_error("Invalid guest return address");
-    entered_functions.insert(target);
+    noteEntered(target);
     call_returns_.push_back(resume);
     ++guest_calls;
     context->pc = target;
@@ -107,7 +107,7 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
         if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller: target "+std::to_string(target)+" source "+std::to_string(source)+" resume "+std::to_string(resume)+" pc "+std::to_string(context->pc));
     } catch (...) { if (stop_returns.empty()) stop_returns = call_returns_; call_returns_.pop_back(); throw; }
     call_returns_.pop_back();
-    completed_functions.insert(target);
+    noteCompleted(target);
     if (phase_stop && resume == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
     return true;
 }

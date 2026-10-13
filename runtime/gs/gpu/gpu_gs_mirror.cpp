@@ -3,7 +3,7 @@
 
 void GpuGsMirror::attach(GsCommandSink& cpu) {
     gpu_.init();
-    cpu.on_accepted=[this](std::span<const std::uint8_t> data){gpu_.transfer(data);};
+    cpu.on_accepted=[this](std::span<const std::uint8_t> data){FrameProfile::Scope timed(frame_profile.renderer);gpu_.transfer(data);};
     attached_=true;
 }
 

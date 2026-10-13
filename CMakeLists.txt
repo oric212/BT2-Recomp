@@ -269,6 +269,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_STARTUP_KERNEL_PAYLOAD=1)
     endif()
     target_link_libraries(bt2-entry-probe PRIVATE bt2-ee-runtime winmm xinput hid setupapi)
+    target_link_options(bt2-entry-probe PRIVATE /MAP) # Function addresses for tools/perf/profile_report.py.
     bt2_ee_target(bt2-entry-probe)
     if(BT2_GPU_GS)
         target_link_libraries(bt2-entry-probe PRIVATE bt2-gpu-gs)

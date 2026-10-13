@@ -720,6 +720,10 @@ public:
     unsigned returns = 0, guest_calls = 0;
     // Distinct registered entry addresses; completion means a normal invocation return.
     std::set<std::uint32_t> entered_functions,completed_functions;
+    // The targets last added to the two sets, by address slot: a call to a function already recorded skips the set.
+    std::array<std::uint32_t,4096> recently_entered_{},recently_completed_{};
+    void noteEntered(std::uint32_t target) {auto& slot=recently_entered_[(target>>2)&4095];if(slot!=target){slot=target;entered_functions.insert(target);}}
+    void noteCompleted(std::uint32_t target) {auto& slot=recently_completed_[(target>>2)&4095];if(slot!=target){slot=target;completed_functions.insert(target);}}
     std::uint64_t halfword_writes=0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
@@ -853,6 +857,11 @@ private:
     void verifyKernelBinding(std::uint32_t address);
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> kernel_code_bindings_;
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> overlay_code_bindings_;
+    // An aligned word of main RAM, or null for every other address (devices, scratchpad, kernel
+    // views, unaligned or out-of-range accesses), which take the checked paths.
+    std::uint8_t* ramWord(std::uint8_t* rdram,std::uint32_t address) {
+        return address<=ram_size-4 && !(address&3) && rdram==memory_.data() && memory_.size()==ram_size?rdram+address:nullptr;
+    }
     void checkMemory(std::uint8_t* rdram, std::uint32_t address, std::size_t count) const {
         if (memory_.empty() || rdram != memory_.data() || address > memory_.size() || count > memory_.size() - address)
             throw UnsupportedGuestMemory(address, count);
