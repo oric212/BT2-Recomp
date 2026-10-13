@@ -1,3 +1,4 @@
+#include "services/audio_mixer.h"
 #include "services/iop_heap.h"
 #include "services/pad_block.h"
 #include "services/cri_stream.h"
@@ -125,6 +126,45 @@ int main() {
         const auto flushed=stop.played(1);
         require(flushed.size()==2 && flushed[0].address==0x17C540 && flushed[0].bytes==0xC00 && flushed[1].address==0x179140 && flushed[1].bytes==0x2000,"stop reports the remaining data");
         stop.field();require(stop.played(1).empty(),"a stopped player reports nothing more");
+        {
+            // Sound output: played blocks are passed on with source, side and rate; what a stop only
+            // reports is not, and a destroyed player silences its sources.
+            CriAudioFlow heard;heard.sourceCreated(1,0x11,0x100);heard.sourceCreated(2,0x12,0x200);heard.playerCreated(9,0x11,0x12);heard.rate(9,24000);
+            struct Piece {std::uint32_t source;unsigned side;std::uint32_t hertz,address,bytes;};std::vector<Piece> pieces;std::vector<std::uint32_t> silenced;
+            heard.on_audible=[&](std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes){pieces.push_back({source,side,hertz,address,bytes});};
+            heard.on_silenced=[&](std::uint32_t source){silenced.push_back(source);};
+            heard.dataWritten(1,0x1000,0x1000,1);heard.dataWritten(2,0x3000,0x1000,1);heard.play(9,1);heard.field();
+            const auto first=heard.played(1);
+            require(first.size()==2 && pieces.size()==2 && pieces[0].source==1 && pieces[0].side==0 && pieces[0].hertz==24000 && pieces[0].address==0x1000
+                && pieces[0].bytes==first[0].bytes && pieces[1].source==2 && pieces[1].side==1 && pieces[1].address==0x3000,"audible stretches");
+            heard.play(9,0);heard.field();
+            require(heard.played(1).size()==2 && pieces.size()==2,"a stop's report is not heard");
+            heard.play(9,1);heard.dataWritten(1,0x1000,0x400,1);heard.playerDestroyed(9);
+            require(silenced==std::vector<std::uint32_t>{1,2},"a destroyed player silences its sources");
+        }
+        {
+            // Mixer: a voice starts with one block of silence; 24 kHz is doubled with interpolation;
+            // sides are routed left and right; five fields give 4,004 samples; a dry voice counts
+            // its missing samples and starts over.
+            AudioMixer mixer;
+            std::vector<std::uint8_t> pcm(4000);
+            for(std::size_t n=0;n<pcm.size();n+=2){const std::int16_t v=std::int16_t(1000+n);std::memcpy(pcm.data()+n,&v,2);}
+            mixer.push(7,0,48000,pcm);
+            std::vector<std::uint8_t> slow(4);const std::int16_t pair[2]={200,400};std::memcpy(slow.data(),pair,4);
+            mixer.push(8,1,24000,slow);
+            const auto out=mixer.field();
+            require(out.size()==800*2 && out[0]==0 && out[511*2]==0 && out[512*2]==1000 && out[513*2]==1002,"left voice after its silent block");
+            require(out[511*2+1]==0 && out[512*2+1]==100 && out[513*2+1]==200 && out[514*2+1]==300 && out[515*2+1]==400 && out[516*2+1]==0,"right voice doubled with interpolation");
+            require(mixer.underruns==800-516,"the short voice ran dry");
+            std::size_t samples=out.size()/2;for(unsigned n=0;n<4;++n)samples+=mixer.field().size()/2;
+            require(samples==4004,"five fields are 4,004 samples");
+            std::vector<std::uint8_t> loud(2);const std::int16_t top=30000;std::memcpy(loud.data(),&top,2);
+            AudioMixer sum;sum.push(1,0,48000,loud);sum.push(2,0,48000,loud);
+            require(sum.field()[512*2]==32767,"voices on one side add and saturate");
+            bool refused=false;try{sum.push(3,0,44100,loud);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"a rate that does not divide 48 kHz is refused");
+            sum.drop(1);
+        }
         wrap.play(9,0);
         // A player destroyed while playing (a skipped movie) ends without reports; a queued stop for it
         // is ignored, a start for it refused.

@@ -36,6 +36,7 @@ inline unsigned consumeCriStreamCommands(std::span<std::uint8_t> buffer,CriAudio
     }
     if(audio)for(std::uint32_t i=0;i<count;++i) {
         std::uint32_t words[4];std::memcpy(words,buffer.data()+0x10+i*0x10,16);
+        if(words[0]!=0x100)audio->note(words[0],words[2],words[3]);
         if(words[0]==2)audio->play(words[1],words[2]);
         else if(words[0]==4)audio->rate(words[1],words[2]);
         else if(words[0]==0x100)audio->dataWritten(words[1],words[2],words[3],channel);

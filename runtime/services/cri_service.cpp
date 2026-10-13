@@ -74,6 +74,13 @@ bool EeRuntime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,
 
 void EeRuntime::nativeCriVblank(const R5900Context* interrupted) {
     // The IOP consumes each uploaded buffer and returns it with the sequence counter advanced.
+    if(on_audio_field && !native_cri_audio.on_audible) {
+        native_cri_audio.on_audible=[this](std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes) {
+            if(address>native_iop_ram_.size() || bytes>native_iop_ram_.size()-address)throw std::runtime_error("CRI audio data outside IOP memory");
+            audio_mixer.push(source,side,hertz,std::span<const std::uint8_t>(native_iop_ram_.data()+address,bytes));audio_stream_bytes+=bytes;
+        };
+        native_cri_audio.on_silenced=[this](std::uint32_t source) {audio_mixer.drop(source);};
+    }
     native_cri_audio.field(); // The IOP's player advances one field.
     for(auto& c:native_cri_channels_) {
         if(!c.pending)continue;
@@ -88,4 +95,5 @@ void EeRuntime::nativeCriVblank(const R5900Context* interrupted) {
         std::memcpy(memory_.data()+c.ee+stream_size-4,&counter,4);
         c.pending=false;++native_cri_returns;
     }
+    if(on_audio_field) {const auto pcm=audio_mixer.field();on_audio_field(pcm);++audio_fields;}
 }

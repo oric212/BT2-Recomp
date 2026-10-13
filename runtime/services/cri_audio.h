@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -21,6 +22,18 @@ class CriAudioFlow {
 public:
     struct Message {std::uint32_t ee_object=0,address=0,bytes=0;};
     unsigned played_blocks=0,announced_bytes=0;
+    // Sound output: each stretch of PCM a playing player consumed, as {source, side (0: the player's
+    // first buffer, 1: its second), sampling rate, IOP address, bytes}. Data a stop only reports back
+    // is not heard and is not passed on. `on_silenced` names a source whose player was destroyed.
+    std::function<void(std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes)> on_audible;
+    std::function<void(std::uint32_t source)> on_silenced;
+    // Evidence for the stream commands that are not decoded yet: each distinct {code, argument 1,
+    // argument 2} other than a data announcement, with its count (at most 256 kinds).
+    std::map<std::array<std::uint32_t,3>,unsigned> commands;
+    void note(std::uint32_t code,std::uint32_t first,std::uint32_t second) {
+        const std::array<std::uint32_t,3> key{code,first,second};
+        if(commands.size()<256 || commands.count(key))++commands[key];
+    }
 
     // RPC 0x400 created a source (one audio channel) on an IOP buffer object for an EE object; RPC 0x408
     // a player over two buffer objects.
@@ -36,7 +49,7 @@ public:
     // plays: playback ends without further reports and the announced data is dropped (not captured).
     void playerDestroyed(std::uint32_t handle) {
         const auto& p=known(players_,handle,"CRI destroy of an unknown player");
-        if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {s.due=0;s.written.clear();}
+        if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {s.due=s.flush=0;s.written.clear();if(on_silenced)on_silenced(source);}
         players_.erase(handle);
     }
 
@@ -56,7 +69,7 @@ public:
         if(!argument) {
             p.playing=false;
             for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1])
-                for(const auto& stretch:s.written)s.due+=stretch.bytes;
+                for(const auto& stretch:s.written)s.flush+=stretch.bytes;
         }
     }
     // One field elapses: playing players advance and their sources consume the blocks that ended.
@@ -74,17 +87,20 @@ public:
         std::vector<Message> out;
         for(auto& [handle,s]:sources_) {
             if(s.channel!=channel)continue;
-            while(s.due && !s.written.empty()) {
-                auto& front=s.written.front();
-                const auto take=front.bytes<s.due?front.bytes:s.due;
+            // Played blocks first (heard), then what a stop reports without playing it.
+            while((s.due || s.flush) && !s.written.empty()) {
+                auto& front=s.written.front();auto& budget=s.due?s.due:s.flush;
+                const auto take=front.bytes<budget?front.bytes:budget;
                 if(!out.empty() && out.back().ee_object==s.ee_object && out.back().address+out.back().bytes==front.address)out.back().bytes+=take;
                 else out.push_back({s.ee_object,front.address,take});
-                front.address+=take;front.bytes-=take;s.due-=take;
+                if(&budget==&s.due && on_audible)for(const auto& [player,p]:players_)for(unsigned side=0;side<2;++side)
+                    if(p.buffers[side]==s.buffer)on_audible(handle,side,std::uint32_t(std::uint64_t(p.block)*48000/block_bytes),front.address,take);
+                front.address+=take;front.bytes-=take;budget-=take;
                 if(!front.bytes)s.written.pop_front();
             }
             // Blocks that ended without announced data play nothing (not seen in the logs, where data
             // always precedes the start).
-            s.due=0;
+            s.due=s.flush=0;
         }
         return out;
     }
@@ -95,7 +111,7 @@ private:
     // Clock in fifths of a sample: a field is 800.8 samples (48,000 Hz at 59.94 fields/s), a block 512.
     static constexpr std::uint64_t field_ticks=4004,block_ticks=2560,initial_phase=1440; // Phase as captured.
     struct Stretch {std::uint32_t address=0,bytes=0;};
-    struct Source {std::uint32_t buffer=0,ee_object=0,due=0;unsigned channel=0;std::deque<Stretch> written;};
+    struct Source {std::uint32_t buffer=0,ee_object=0,due=0,flush=0;unsigned channel=0;std::deque<Stretch> written;};
     struct Player {std::array<std::uint32_t,2> buffers{};bool playing=false;std::uint64_t clock=0;std::uint32_t block=block_bytes;};
     std::map<std::uint32_t,Source> sources_;
     std::map<std::uint32_t,Player> players_;

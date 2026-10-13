@@ -6,12 +6,14 @@
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
+#include "host/wav_writer.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 
 // Entry probe: runs the generated BT2 entry on a prepared guest image with the supplied evidence,
 // classifies the checked boundary where it stops, validates the reached checkpoint and writes the
@@ -46,6 +48,12 @@ int main(int argc, char** argv) {
         }
         // BT2_STALL_FIELDS: fields without a display flip before the run stops (default 3600).
         if (const char* limit = std::getenv("BT2_STALL_FIELDS")) runtime.flipless_field_limit = static_cast<unsigned>(std::stoul(limit));
+        // BT2_AUDIO_WAV=<path>: the mixed stream audio of the run as a 48 kHz stereo WAV file.
+        std::unique_ptr<WavWriter> wav;
+        if (const char* path = std::getenv("BT2_AUDIO_WAV")) {
+            wav = std::make_unique<WavWriter>(path, AudioMixer::rate, 2);
+            runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) { wav->write(pcm); };
+        }
         // BT2_EE_LOOP_LIMIT: loop iterations one thread may run within a field before the runaway guard stops it.
         if (const char* limit = std::getenv("BT2_EE_LOOP_LIMIT")) runtime.checkpoint_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32

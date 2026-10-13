@@ -8,7 +8,7 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 Order set by the user on 2026-10-13, per [PROG.md](../PROG.md#next-steps):
 
-1. **Sound output:** ADX decoding and sound bank playback behind the sound and CRI services ([sound plans](../plans/sound/)). Start by listing what the services already receive in the battle run (stream announcements, SOUNDS requests) and writing the plan for the output path.
+1. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)). Done: stream audio (movies, music) is mixed and written to a WAV file. The user listened to `work/audio/battle-run.wav`: recognizable, but music too loud, voices too quiet, effects too loud. Next: compare with a PCSX2 audio recording of the input-free boot run (`work/audio/boot-run.wav` is the port's side) and fix the stream level from that; then sound effects. Log the SOUNDS requests of the battle run with their arguments, identify the bank layout from the uploaded blocks, then a voice player; after that a host audio device.
 2. **Saves:** a memory card image behind the native card service. The game asks "Do you wish to create a save file on the memory card (PS2)?" after New Game; the script answers No. The Yes path is untested.
 3. **Controller support:** host input (keyboard, XInput) into the native controller service.
 4. **Play-testing by the user:** live input in the viewer, recorded as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. This replaces scripted presses and screenshots for the other menu entries and story mode. Battles run at about 19 presented frames per second of wall-clock time, so the VU1 path needs a performance pass before live play in fights.
@@ -28,6 +28,7 @@ The user confirmed the title dialogues, the menus and character selection on 202
 
 - **Battle run** (about 4.5 minutes): `run_startup_probe.py --config Release --frames 9000 --pad-script "<contents of work/bt2-generation/pad-fight.txt>"`. The pad scripts are local and ignored: `pad-new-game.txt` (to the main menu), `pad-duel.txt`, `pad-versus.txt`, `pad-select.txt` (character selection), `pad-battle.txt` (Cross every 150 fields from 4200 to 6000: through the selections into the fight), `pad-fight.txt` (the same plus Up and Square during the fight).
 - **Writing a pad script:** Start opens the title's option list and Cross confirms. Scripts count fields; snapshots count flips and print `Snapshot: flip N at field M`. Menus present one frame per field (field = flip + about 700 after the movies), the battle one per two fields.
+- **Audio:** `BT2_AUDIO_WAV=<absolute path>` writes the run's stream audio as a 48 kHz stereo WAV.
 - **Frames:** `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM.
 - **Discovery loop:** `python tools/ps2recomp/discovery_loop.py --disc <iso> --frames <n> --pad-script-file <file>` ([TOOLS.md](../guides/TOOLS.md)); its log is `work/bt2-generation/discovery-loop.log`. A stop it does not handle (not a map gap, or "map did not grow") is named in the log.
 - **A hang:** `BT2_STALL_FIELDS=120` ends a run without display flips within seconds; a loop that never ends inside one field stops at the runaway guard (`BT2_EE_LOOP_LIMIT` to change its bound). A bad float: `BT2_EE_WATCH_FLOAT=<address>:<limit>`.

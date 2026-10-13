@@ -638,6 +638,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Stall budget.** `BT2_STALL_FIELDS=<n>` (default 3600) sets how many fields may pass without a display flip before the run stops. A busy main thread takes about a quarter second per field, so a small value (for example 120) turns a hang into a report within seconds; the report's `stop_returns` show the call chain.
 
+**Audio.** `BT2_AUDIO_WAV=<path>` writes the run's mixed stream audio (movies, music) as a 48 kHz stereo WAV: 800.8 samples per field, so its length is the run's game time. The report's `audio_stream_bytes`, `audio_voice_samples` and `audio_underruns` count the PCM consumed, the samples output from voices and the samples a voice could not supply.
+
 **Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).
 
 **Float watch.** `BT2_EE_WATCH_FLOAT=<hex address>:<limit>` stops the run at the first guest call that finds the float at that EE address non-finite or above the limit in magnitude, and names that call, the previous call and the main registers. An address below 32 watches the x field of that VU0 float register (`1F` is `vf31`). Following a bad value from its reader to its writer takes one run per step.

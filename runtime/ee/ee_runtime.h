@@ -31,6 +31,7 @@
 #include "services/sif_rpc.h"
 #include "services/iop_heap.h"
 #include "services/cri_audio.h"
+#include "services/audio_mixer.h"
 #include "stopped_dma_channels.h"
 #include "vu/vif1.h"
 #include <memory>
@@ -790,6 +791,11 @@ public:
     unsigned native_disc_requests=0,native_fileio_requests=0,native_card_requests=0,native_pad_requests=0,native_pad_transfers=0,native_other_binds=0;
     unsigned native_cri_requests=0,native_cri_returns=0,native_cri_commands=0;
     CriAudioFlow native_cri_audio; // What the IOP player reports back while a stream plays.
+    // Sound output (docs/plans/sound/SOUND_OUTPUT_PLAN.md): with a receiver set, the stream PCM the
+    // player consumes is mixed and handed over as 48 kHz stereo, one field per VBLANK.
+    AudioMixer audio_mixer;
+    std::function<void(std::span<const std::int16_t>)> on_audio_field;
+    std::uint64_t audio_fields=0,audio_stream_bytes=0;
     void nativePadVblank(std::uint8_t* rdram);
     void nativeCriVblank(const R5900Context* interrupted);
     bool handleNativeDmaStat(R5900Context* context);
