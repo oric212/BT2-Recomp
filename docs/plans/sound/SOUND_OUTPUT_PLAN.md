@@ -84,14 +84,15 @@ Sound is produced where the game asks for it. Two producers feed one mixer.
    - **Not modelled:** the envelope, reverb, the chip's interpolation. Refused by name until a run needs them: requests `0x60` and `0x80`, a request that keeps and stops at once.
    - The sampler does not emulate the sequencer and synthesizer modules or their voice allocation; nothing the game can observe depends on them so far.
 3. **Mixer** (`runtime/services/audio_mixer.h`): 48 kHz stereo, one field of output per VBLANK (800.8 samples, the fraction carried), saturating. Streams and sampler voices add here. Streams use the measured level; effects start from the level the expected volume chain gives and are adjusted with the user's listening.
-4. **Output:** the runtime hands each field's samples to `on_audio_field`. The probe writes them to a WAV file (`BT2_AUDIO_WAV=<path>`). A host audio device comes with real-time play in the viewer; there the device's clock paces playback, so the mixer needs a queue with drift control between game time and device time. User volume settings for music and effects, as the reference port has, belong to that step.
+4. **Output:** the runtime hands each field's samples to `on_audio_field`. The probe writes them to a WAV file (`BT2_AUDIO_WAV=<path>`) and plays them on the default audio device (`--sound`, `BT2_AUDIO_DEVICE`; `runtime/host/audio_device.h`, Win32 waveOut). The device's clock paces the run: a field is queued behind those still playing, and while more than a tenth of a second waits the run sleeps. So a run that is faster than real time is held at the game's speed, in the viewer too. A run that is slower lets the device run dry, heard as gaps and counted. Not done: user volume settings for music and effects, as the reference port has.
 
 ## Order of work
 
-1. **Done:** streams, one-shot effects (heard by the user), looping effects and the stop, fade and silence requests.
+1. **Done:** streams, one-shot effects (heard by the user), looping effects and the stop, fade and silence requests, the host audio device.
 2. **The user listens** to the new `work/audio/battle-run.wav`: do the looping sounds in the fight start and end where they should?
-3. **Host audio device** with the viewer, with volume settings.
-4. **Optional, at the end: comparison with the original** (see Verification). It includes explaining the stream level from the original's settings and the byte-for-byte check of stream PCM.
+3. **The user plays with sound** (`run_startup_probe.py --viewer --sound`): is the sound in step with the picture where the run keeps the game's speed?
+4. **Later:** volume settings; gaps in fights end with the performance work (the fight runs below the game's speed).
+5. **Optional, at the end: comparison with the original** (see Verification). It includes explaining the stream level from the original's settings and the byte-for-byte check of stream PCM.
 
 ## Verification
 
@@ -101,6 +102,7 @@ Sound is produced where the game asks for it. Two producers feed one mixer.
 - Unit tests: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates, extra sources), the ADPCM decoder, the bank parser on a synthetic bank, the sampler (level, pan, pitch, voice end, looping, keep and stop, slot volume, silencing, refusals, unload), the comparison tool.
 - Measured (9,000-frame battle run): 14,334 fields give 239.1 s of audio from 29.4 MB of stream PCM. 457 effects played, at most 16 voices at once, none dropped. 9 sounds were kept and each was followed by its stop request: 7 stops ended a playing voice, 2 came after the sound had ended by itself. The looping sound played 3 times and was stopped each time. The silence requests ended 2 voices.
 - The user's listening (2026-10-13, the earlier 7,000-frame run with one-shot effects): sounds good, effects present. The looping and stopped sounds have not been listened to. Nothing of the effects is compared with the original.
+- Audio device, measured: a standalone check queued 120 fields (2.0 s) in 1.93 s, so the device paces the writer. A 900-frame boot run with the device played all 1,283 fields without running dry and waited for the device 1,301 times, so boot and movies run faster than the game's speed and are held to it. Not measured with the device: menus and the fight (the fight runs at about two thirds of the game's speed, so gaps are expected there). The user has not yet listened live.
 - Against a PCSX2 recording, for the two boot movies: timing, channel order and level agree (see the evidence above); the waveform is not shown identical.
 - The user's listening: recognizable; better after the level correction; accuracy not something the ear can confirm.
 

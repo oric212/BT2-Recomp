@@ -6,6 +6,7 @@
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
+#include "host/audio_device.h"
 #include "host/wav_writer.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
@@ -48,12 +49,27 @@ int main(int argc, char** argv) {
         }
         // BT2_STALL_FIELDS: fields without a display flip before the run stops (default 3600).
         if (const char* limit = std::getenv("BT2_STALL_FIELDS")) runtime.flipless_field_limit = static_cast<unsigned>(std::stoul(limit));
-        // BT2_AUDIO_WAV=<path>: the mixed stream audio of the run as a 48 kHz stereo WAV file.
+        // BT2_AUDIO_WAV=<path>: the mixed audio of the run as a 48 kHz stereo WAV file.
         std::unique_ptr<WavWriter> wav;
         if (const char* path = std::getenv("BT2_AUDIO_WAV")) {
             wav = std::make_unique<WavWriter>(path, AudioMixer::rate, 2);
-            runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) { wav->write(pcm); };
         }
+        // BT2_AUDIO_DEVICE: play the mixed audio on the default audio device. The device's clock then
+        // paces the run at the game's speed (at most a tenth of a second waits in the device).
+        struct Speaker {
+            std::unique_ptr<AudioDevice> device;
+            ~Speaker() {
+                if (device) std::cerr << std::dec << "Audio device: " << device->fields << " fields played, ran dry before " << device->dry
+                    << ", waited " << device->waits << " times for the device." << std::endl;
+            }
+        };
+        static Speaker speaker; // Static, so the summary is also printed when the viewer's closing ends the run.
+        if (std::getenv("BT2_AUDIO_DEVICE")) speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 10);
+        if (wav || speaker.device)
+            runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
+                if (wav) wav->write(pcm);
+                if (speaker.device) speaker.device->write(pcm);
+            };
         // BT2_SOUND_LOG=<folder>: the sound effects requests as text (requests.txt: field, kind, function,
         // command words) and each loaded bank's two blocks as files. Local evidence, not committed.
         std::ofstream sound_log;
