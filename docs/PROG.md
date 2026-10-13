@@ -30,7 +30,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 | Item | Count |
 | --- | --- |
 | EE functions mapped and generated | 11,122, all compiled into the probe, plus all 494 mapped functions of the `DBZP.BIN` overlay |
-| EE functions entered / completed | 2,007 / 1,998 in the gate run (1,000 frames); 4,936 / 4,927 in the long Release run to a battle (4,854 / 4,847 in the idle run of the demo fights) |
+| EE functions entered / completed | 2,007 / 1,998 in the gate's Debug run (1,000 frames, the one compared with the original); 3,732 entered in the gate's Release battle run (5,100 frames to a fight, checked against its own baseline, not against the original); 4,936 / 4,927 in the long Release run to a battle (4,854 / 4,847 in the idle run of the demo fights) |
 | Presented frames / logical VBlanks | Gate run: 1,000 (frame budget) / 1,398. Long Release run (scripted input to a battle): 9,000 (frame budget) / 14,334. In the battle one frame is presented every two fields; whether the original does the same is not checked |
 | Native service requests (long run to a battle) | 1,013 disc requests, 48 CRI calls, 76 memory card queries (no IOP code runs) |
 | 3D pipeline (long run to a battle) | 8,903 VIF1 display lists: 27.6 million UNPACKs, 65,334 microprogram uploads, 16.8 million VU1 program starts (5.77 billion VU1 instructions), 20.7 million XGKICK packets; 117 million triangles and 3.9 million sprites reach the GS. No VU1 read of Q or the clip flags fell inside a pipeline delay |

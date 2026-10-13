@@ -43,7 +43,7 @@ Never download or commit proprietary game/BIOS content, retail executables, disc
 
 - **Narrow checks first:** unit tests, offline tools, targeted builds. Batch related changes. Every pass completes the full gate before commit.
 - **Build with Ninja:** `python tools/build/msvc.py cmake --build build/probe --config <Debug|Release> [--target bt2-entry-probe]`. Keep the precompiled headers; no unity builds; never merge generated units.
-- **Gate:** `python tools/gate/run_gate.py --disc <iso>` builds Debug and runs the unit tests, the Python suites, the probe runs and the original comparisons.
+- **Gate:** `python tools/gate/run_gate.py --disc <iso>` builds Debug and Release and runs the unit tests, the Python suites, the Debug probe runs with the original comparisons, and the Release battle run (the scripted fight against its recorded baseline, `tools/gate/battle_run.py`).
 - **Long runs use Release:** `run_startup_probe.py --config Release --frames <n> --pad-script <script>`. Pad scripts count fields; snapshots count flips.
 - **New code the game reaches:** `python tools/ps2recomp/discovery_loop.py` runs, discovers, regenerates and rebuilds until the run passes or a stop needs a decision.
 - **Headers reached by generated code** (`ps2_runtime.h`, `ps2_runtime_macros.h`, `ps2_fpu.h`) hold only the CPU context and the entry points generated code calls; an edit recompiles every generated unit (about 6 minutes). Runtime state goes in `ee_runtime.h` (`EeRuntime`), implementation in focused `.cpp` files. A new entry point for generated code is declared in `ps2_runtime.h` and forwarded in `guest_interface.cpp`.

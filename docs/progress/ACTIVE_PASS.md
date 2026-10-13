@@ -36,7 +36,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 
 - **Build the player programs, not single targets, before handing a build to the user:** `python tools/build/msvc.py cmake --build build/probe --config Release`. `bt2-game` and `bt2-launcher` depend on `bt2-entry-probe` since a settings change left the runtime behind and the game refused its settings file. A build fails to link while a game window is open.
 - **Runs with a window appear on the user's screen.** Use `BT2_VIEWER_CLOSE=1` so they close at their end, and never leave one open. The in-game menu can be opened without key presses with `BT2_PAUSE_TEST` ([TOOLS.md](../guides/TOOLS.md)).
-- **Every VU1 or VIF1 change keeps the baseline:** 5,100 frames of `work/bt2-generation/pad-fight.txt`, headless: `vu1_kick_hash` **`5a4960667d4a3dff`**, 724,698,589 instruction pairs, 2,140,195 starts; the same with `BT2_VU1_INTERPRET=1` and `BT2_VU1_NO_HAND_WRITTEN=1`, and `BT2_VU1_VERIFY=1` passes with `vu1_verified_runs` equal to `vu1_runs`.
+- **Every VU1 or VIF1 change keeps the baseline, which the gate now checks** (`tools/gate/battle_run.py`, with `BT2_VU1_VERIFY`; a change that alters the 3D output on purpose updates `BASELINE` there): 5,100 frames of `tools/gate/pad-fight.txt`, headless: `vu1_kick_hash` **`5a4960667d4a3dff`**, 724,698,589 instruction pairs, 2,140,195 starts; the same with `BT2_VU1_INTERPRET=1` and `BT2_VU1_NO_HAND_WRITTEN=1`, and `BT2_VU1_VERIFY=1` passes with `vu1_verified_runs` equal to `vu1_runs`.
 - **Native VU1 translations are local build inputs:** `game/generated/vu1/vu1_native.cpp` is generated from `work/perf/vu1-census/` by `tools/vu1/translate_programs.py`; without it the build interprets what the hand-written programs do not cover, and the baseline hash is the same.
 - **After a change to `prepare_runtime.py`:** run it, then build; the prepared sources are rewritten and recompiled.
 - **Shell heredocs corrupt backslashes:** write files that contain them with the file tools.
@@ -47,7 +47,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 - **With a memory card:** `BT2_CARD_FOLDER=<folder>`; the default pad script answers the no-card dialogue, which does not appear then.
 - **Frames:** `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM. **Audio:** `BT2_AUDIO_WAV=<absolute path>`.
 - **Following a value:** `BT2_EE_CALL_TRACE`, `BT2_EE_WATCH_QUADWORD`; **a hang:** `BT2_STALL_FIELDS=120`; all in [TOOLS.md](../guides/TOOLS.md).
-- **Build times:** a runtime header (`ee_runtime.h`) about 16 s, one file about 12 s, everything about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`). **Gate:** `python tools/gate/run_gate.py --disc <iso>` (about 80 s plus the build).
+- **Build times:** a runtime header (`ee_runtime.h`) about 16 s, one file about 12 s, everything about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`). **Gate:** `python tools/gate/run_gate.py --disc <iso>` (about 75 s plus the builds; it includes the 30 s battle run).
 
 ## Notes
 

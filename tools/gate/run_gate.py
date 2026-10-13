@@ -1,4 +1,5 @@
-"""Pre-commit gate: Debug build, CTest, Python suites, the Debug probe runs and the original comparisons.
+"""Pre-commit gate: Debug and Release builds, CTest, Python suites, the Debug probe runs with the original
+comparisons, and the Release battle run (battle_run.py: the scripted fight against its recorded baseline).
 
 Independent steps run concurrently (each probe run writes its own report), so the gate takes about as
 long as its longest probe run plus the build. Exit status is non-zero when any step fails.
@@ -39,15 +40,17 @@ def main():
     def report(results,verbose=True):
         for label,ok,seconds,text in results:
             if not ok:failed.append(label)
-            if verbose or not ok:print(f"{'ok  ' if ok else 'FAIL'} {label} ({seconds:.0f} s){'' if ok else ': '+last_line(text)}",flush=True)
+            if verbose or not ok:print(f"{'ok  ' if ok else 'FAIL'} {label} ({seconds:.0f} s){': '+last_line(text) if not ok or label.startswith('battle run') else ''}",flush=True)
     if not a.skip_build:
         msvc=[sys.executable,str(ROOT/'tools/build/msvc.py'),'cmake','--build','build/probe','--config','Debug']
-        report([run('build Debug',msvc,env),run('build Debug entry probe',msvc+['--target','bt2-entry-probe'],env)])
+        release=[sys.executable,str(ROOT/'tools/build/msvc.py'),'cmake','--build','build/probe','--config','Release']
+        report([run('build Debug',msvc,env),run('build Debug entry probe',msvc+['--target','bt2-entry-probe'],env),run('build Release',release,env)])
         if failed:sys.exit('Gate failed: '+', '.join(failed))
     probe=[sys.executable,str(ROOT/'tools/ps2recomp/run_startup_probe.py'),'--disc',str(disc)]
     steps=[('ctest',['ctest','--test-dir','build/probe','-C','Debug','-j',str(a.jobs),'--output-on-failure'],env),
            ('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe+['--gs','cpu'],env)]
     steps+=[(f'probe: phase {ph}',probe+['--report',str(WORK/f'phase-{ph}/entry-stop.json')],dict(env,BT2_PHASE_STOP=ph)) for ph in PHASES]
+    steps.append(('battle run (Release)',[sys.executable,str(ROOT/'tools/gate/battle_run.py'),'--disc',str(disc)],env))
     steps+=[(f'python: {s}',[sys.executable,'-m','unittest','discover','-s',f'tools/{s}'],env) for s in SUITES]
     with ThreadPoolExecutor(a.jobs) as pool:
         report(pool.map(lambda s:run(*s),steps))
