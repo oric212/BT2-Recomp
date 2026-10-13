@@ -102,7 +102,7 @@ Decided by the user on 2026-10-13: judging sound by comparison instead of by ear
 - **Output limits** (starting values): offset drift below 5 ms over the stretch; level within 1 dB per frequency band; short-window coherence above 0.95 where the signal is not silent; for effects, onset time, level and pitch of each detected sound. The output cannot be bit-exact: the chip resamples and interpolates, and its reverb is not modelled.
 - Captures and recordings are proprietary-derived and stay local; documents record numbers only.
 
-Until this step is done, sound is Operational at most, never Verified.
+Status does not wait for this step: sound that works in the runs and that the user has heard is marked Operational, like the other subsystems.
 
 ## Stop conditions
 
