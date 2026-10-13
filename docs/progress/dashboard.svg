@@ -27,15 +27,15 @@
 <text x="216.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Controller check</text>
 <text x="216.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native pad service</text>
 </g>
-<g><title>Memory card: Verified. No-card prompt</title>
+<g><title>Memory card: Verified. Card folders load</title>
 <rect x="288.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">No-card prompt</text>
+<text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Card folders load</text>
 </g>
-<g><title>Opening movie: Operational. Both movies play</title>
+<g><title>Opening movie: Operational. Both play; sound</title>
 <rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Opening movie</text>
-<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Both movies play</text>
+<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Both play; sound</text>
 </g>
 <g><title>Title screen: Operational. Options shown</title>
 <rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
@@ -53,12 +53,12 @@
 <text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#2b78b8">Versus battle runs</text>
 </g>
 <text x="24" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
-<g><title>EE CPU and kernel services: Operational. Recompiled game code runs</title>
+<g><title>EE CPU and kernel services: Operational. All named code mapped</title>
 <rect x="24" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="41" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="52" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel services</text>
-<text x="37" y="252" font-size="11.5" fill="#64748b">Recompiled game code runs</text></g>
+<text x="37" y="252" font-size="11.5" fill="#64748b">All named code mapped</text></g>
 <g><title>IOP services: Operational. Native; no IOP code runs</title>
 <rect x="24" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
@@ -77,12 +77,12 @@
 <circle cx="41" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
 <text x="37" y="438" font-size="11.5" fill="#64748b">Keyboard and gamepads, remappable</text></g>
-<g><title>Memory card: Incomplete. Card folders; saving untried</title>
+<g><title>Memory card: Incomplete. Loads; saving untried</title>
 <rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="41" cy="478" r="3.5" fill="#b77912"/>
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="37" y="500" font-size="11.5" fill="#64748b">Card folders; saving untried</text></g>
+<text x="37" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
 <g><title>GS: Operational. GPU renderer; frames confirmed</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -102,18 +102,18 @@
 <circle cx="351" cy="354" r="3.5" fill="#2b78b8"/>
 <text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
 <text x="347" y="376" font-size="11.5" fill="#64748b">Both movies decode; no IDEC/PACK</text></g>
-<g><title>Audio: Operational. Streams, effects, volumes; live</title>
+<g><title>Audio: Operational. Streams, effects, volumes</title>
 <rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="351" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">Streams, effects, volumes; live</text></g>
-<g><title>VU microprograms: Operational. VU1 native, checked vs interpreter</title>
+<text x="347" y="438" font-size="11.5" fill="#64748b">Streams, effects, volumes</text></g>
+<g><title>VU microprograms: Operational. Hand-written native, verified</title>
 <rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="351" cy="478" r="3.5" fill="#2b78b8"/>
 <text x="362" y="482" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
-<text x="347" y="500" font-size="11.5" fill="#64748b">VU1 native, checked vs interpreter</text></g>
+<text x="347" y="500" font-size="11.5" fill="#64748b">Hand-written native, verified</text></g>
 <text x="644" y="196" font-size="15" font-weight="600" fill="#334155">Pipeline and verification</text>
 <g><title>Native Windows host: Verified. MSVC x64; Debug and Release</title>
 <rect x="644" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -121,18 +121,18 @@
 <circle cx="661" cy="230" r="3.5" fill="#16835d"/>
 <text x="672" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
 <text x="657" y="252" font-size="11.5" fill="#64748b">MSVC x64; Debug and Release</text></g>
-<g><title>Launcher and menus: Operational. Launcher, in-game menu, settings</title>
+<g><title>Launcher and menus: Operational. Launcher, pause menu, cards</title>
 <rect x="644" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="661" cy="292" r="3.5" fill="#2b78b8"/>
 <text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
-<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, in-game menu, settings</text></g>
-<g><title>Code generation: Verified. Game code recompiled to C++</title>
+<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, pause menu, cards</text></g>
+<g><title>Code generation: Verified. 11,122 + 494 functions</title>
 <rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="354" r="3.5" fill="#16835d"/>
 <text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
-<text x="657" y="376" font-size="11.5" fill="#64748b">Game code recompiled to C++</text></g>
+<text x="657" y="376" font-size="11.5" fill="#64748b">11,122 + 494 functions</text></g>
 <g><title>Tests: Verified. 21/21 CTests; Python suites pass</title>
 <rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>

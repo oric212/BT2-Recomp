@@ -19,7 +19,7 @@
     {
       "name": "Opening movie",
       "status": "working",
-      "note": "Both play, with sound"
+      "note": "Both play; sound"
     },
     {
       "name": "Title screen",
@@ -34,7 +34,7 @@
     {
       "name": "Gameplay",
       "status": "working",
-      "note": "Versus battle, in test",
+      "note": "Versus battle runs",
       "current": true
     }
   ],

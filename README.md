@@ -27,14 +27,14 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Main frame loop | ✅ Verified — key startup states match original captures |
 | First presented frame | ✅ Verified — 1,000 frames in the gate run; 9,000 (the budget) in the long Release run |
 | Controller check | ✅ Verified — passed with the native controller service |
-| Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
-| Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end (decoded natively, no sound); frames match an independent decoder at spot checks |
+| Memory card check | ✅ Verified — without a card the prompt is answered by scripted input (compared with the original); with a card folder in the slot the game reads the save and shows no prompt (the user's play) |
+| Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end with their sound, from any start moment and after the first one is skipped (decoded natively); frames match an independent decoder at spot checks |
 | Title screen | 🟢 Operational — the title screen, its option list and the New Game dialogues render and respond to scripted input (the user confirms the pictures) |
 | Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirmed the frames; not compared with the original by capture); their sound has not been listened to |
 | Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
-| Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); frames confirmed by the user; GPU renderer, with music and sound effects in the run's WAV file, slower than real time, not compared with the original by capture |
+| Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with a controller or scripted input, with music and sound effects; frames confirmed by the user; GPU renderer; special moves and ultimates stopped the game at unmapped code, which is mapped now and waits for the user's test; not compared with the original by capture |
 | Audio | 🟢 Operational — volumes for the whole mix, music and effects in the launcher and the in-game menu; stream audio (movies, music) and sound effects, including looping and stopped ones, are mixed, written to a WAV file and played on the audio device (`--sound`), which holds the run at the game's speed; the user listened to a WAV of menus and a fight and confirmed it; stream level, channel order and timing match a PCSX2 recording for the boot movies; live sound not yet heard by the user, gaps expected in fights (slower than real time) |
-| Saves | 🔧 Incomplete — the user's 100% save on a memory card folder loads (confirmed by the user); writing saves is implemented and unit-tested, not yet tried in the game |
+| Saves | 🔧 Incomplete — the user's 100% save on a memory card folder loads (confirmed by the user); writing saves is implemented and unit-tested, not yet tried in the game; a new empty card is made when none is chosen |
 
 **Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **11,122 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
