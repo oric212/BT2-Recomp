@@ -17,6 +17,10 @@
 class AudioMixer {
 public:
     static constexpr unsigned rate=48000,block_samples=512;
+    // Level of a stream voice on the output, 25/64 (0.39, -8.2 dB). Measured, not derived: against a
+    // PCSX2 recording of the boot movies the unscaled PCM is 2.53 to 2.58 times too loud at every
+    // frequency (SOUND_OUTPUT_PLAN.md). Where the original applies it (voice or master volume) is open.
+    static constexpr std::int32_t stream_level_num=25,stream_level_den=64;
     unsigned underruns=0;            // Samples a started voice could not supply.
     std::uint64_t voice_samples=0;   // Output samples taken from voices.
 
@@ -42,7 +46,7 @@ public:
         for(auto& [key,v]:voices_) {
             if(!v.running)continue;
             const auto have=std::min(count,v.queue.size());
-            for(std::size_t n=0;n<have;++n)mix[n*2+v.side]+=v.queue[n];
+            for(std::size_t n=0;n<have;++n)mix[n*2+v.side]+=v.queue[n]*stream_level_num/stream_level_den;
             v.queue.erase(v.queue.begin(),v.queue.begin()+std::ptrdiff_t(have));
             voice_samples+=have;
             // A voice that runs dry has stopped (or stalled): it starts again with a block of silence.

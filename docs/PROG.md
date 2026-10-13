@@ -17,7 +17,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirms the frames; not compared with the original); no sound |
 | Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
 | Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); GPU renderer only, no sound, slower than real time, not compared with the original |
-| Audio | 🔧 Incomplete — stream audio (movie and music PCM) is mixed and written to a WAV file; the user finds it recognizable but wrongly balanced; not compared with the original; no bank sound effects, no audio device |
+| Audio | 🔧 Incomplete — stream audio (movie and music PCM) is mixed and written to a WAV file; level, channel order and timing of the boot movies match a PCSX2 recording (waveform not shown identical); no bank sound effects, no audio device |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
 **Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **10,682 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
@@ -50,7 +50,7 @@ The gate run ends at its frame budget (1,000 frames, just after the logo movie).
 | GIF / VIF | 🟢 Operational | GIF normal and chain-mode DMA (image data may continue across transfers), DMA CALL/RET tags; VIF1 display lists with tag transfer: state codes, MPG, UNPACK (S and V4 forms, plain write cycle), MSCAL/MSCALF/MSCNT with the double buffer, DIRECT/DIRECTHL, MSKPATH3; VIF1 normal-mode DMA in both directions and the VIF1 FIFO for GS readback. V2/V3 UNPACK, masking, addition modes and code interrupts are refused by name (not reached) |
 | VU | 🟢 Operational | VU0 macro mode (float registers, ACC, Q, masked arithmetic, VU0 data memory instructions, clip-test status flags); VU1 microprogram interpreter for the instructions the game's programs use, with Q and clip-flag latency and XGKICK to the GS ([plan](plans/graphics/VU1_PIPELINE_PLAN.md)); VU1 memory not yet compared with a PCSX2 capture |
 | IPU / video | 🟢 Operational | MPEG-2 decoding through the game's Sofdec library: FDEC, VDEC, BDEC, CSC (RGB32), toIPU/fromIPU DMA; both movies play; IDEC, PACK and RGB16 refused; spot frames match ffmpeg and PCSX2 memory captures, no systematic comparison yet |
-| Audio | 🔧 Incomplete | ADX stream flow native at 48 and 24 kHz (data announcements, played-block reports, start/stop, player destroy), which paces movies and music; SOUNDS bank load/unload and requests answered as logged. Stream PCM is mixed to 48 kHz stereo per field and written to a WAV file by the probe ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)); sound effects and a host audio device are missing |
+| Audio | 🔧 Incomplete | ADX stream flow native at 48 and 24 kHz (data announcements, played-block reports, start/stop, player destroy), which paces movies and music; SOUNDS bank load/unload and requests answered as logged. Stream PCM is mixed to 48 kHz stereo per field and written to a WAV file by the probe ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)); at the level measured against a PCSX2 recording; sound effects and a host audio device are missing |
 | Input | 🔧 Incomplete | Native controller service with scripted input, which drives the menus and a fighter in battle; no host input yet |
 | Memory card | 🔧 Incomplete | No card image or saves; the game's "create a save file?" dialogue is answered No by the script |
 | Disc / filesystem | ✅ Verified | ISO-backed reads and file I/O; archive table and overlay byte-identical to the original |
@@ -68,7 +68,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step); the order of the first four was set by the user on 2026-10-13:
 
-1. **Sound output** ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)): compare the stream audio with a PCSX2 recording and correct its level; then sound effects (decode the SOUNDS requests and the bank format, a voice player), then a host audio device.
+1. **Sound output** ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)): the user listens again at the corrected stream level; then sound effects (decode the SOUNDS requests and the bank format, a voice player), then a host audio device.
 2. **Saves:** a memory card image behind the native card service; the "create a save file" path.
 3. **Controller support:** host input (keyboard, XInput) into the native controller service, in the viewer.
 4. **Play-testing by the user:** live input with automatic recording of the input as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. Covers the other menu entries and story mode. Needs battles at real-time speed first.

@@ -153,14 +153,15 @@ int main() {
             std::vector<std::uint8_t> slow(4);const std::int16_t pair[2]={200,400};std::memcpy(slow.data(),pair,4);
             mixer.push(8,1,24000,slow);
             const auto out=mixer.field();
-            require(out.size()==800*2 && out[0]==0 && out[511*2]==0 && out[512*2]==1000 && out[513*2]==1002,"left voice after its silent block");
-            require(out[511*2+1]==0 && out[512*2+1]==100 && out[513*2+1]==200 && out[514*2+1]==300 && out[515*2+1]==400 && out[516*2+1]==0,"right voice doubled with interpolation");
+            require(out.size()==800*2 && out[0]==0 && out[511*2]==0 && out[512*2]==390 && out[513*2]==391,"left voice after its silent block, at the stream level");
+            require(out[511*2+1]==0 && out[512*2+1]==39 && out[513*2+1]==78 && out[514*2+1]==117 && out[515*2+1]==156 && out[516*2+1]==0,"right voice doubled with interpolation");
             require(mixer.underruns==800-516,"the short voice ran dry");
             std::size_t samples=out.size()/2;for(unsigned n=0;n<4;++n)samples+=mixer.field().size()/2;
             require(samples==4004,"five fields are 4,004 samples");
             std::vector<std::uint8_t> loud(2);const std::int16_t top=30000;std::memcpy(loud.data(),&top,2);
             AudioMixer sum;sum.push(1,0,48000,loud);sum.push(2,0,48000,loud);
-            require(sum.field()[512*2]==32767,"voices on one side add and saturate");
+            AudioMixer three;for(unsigned key=1;key<=3;++key)three.push(key,0,48000,loud);
+            require(sum.field()[512*2]==2*(30000*25/64) && three.field()[512*2]==32767,"voices on one side add and saturate");
             bool refused=false;try{sum.push(3,0,44100,loud);}catch(const std::runtime_error&){refused=true;}
             require(refused,"a rate that does not divide 48 kHz is refused");
             sum.drop(1);

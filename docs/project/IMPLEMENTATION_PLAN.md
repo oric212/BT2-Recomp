@@ -67,7 +67,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 
 Order of the following passes (set by the user on 2026-10-13):
 
-8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)): stream audio is mixed and written to a WAV file since 2026-10-13 (the EE decodes ADX itself, so no native decoder is needed). The user's listening check found the balance wrong. Next: a comparison with a PCSX2 audio recording to set the stream level, sound effects (SOUNDS requests and banks), a host audio device.
+8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)): stream audio is mixed and written to a WAV file since 2026-10-13 (the EE decodes ADX itself, so no native decoder is needed). A PCSX2 recording set the stream level and confirmed channel order and timing for the boot movies. Next: sound effects (SOUNDS requests and banks), a host audio device.
 9. **Saves:** a memory card image behind the native card service.
 10. **Controller support:** host input (keyboard, XInput) into the native controller service.
 11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first (VU1 performance).

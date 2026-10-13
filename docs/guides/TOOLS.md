@@ -640,6 +640,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Audio.** `BT2_AUDIO_WAV=<path>` writes the run's mixed stream audio (movies, music) as a 48 kHz stereo WAV: 800.8 samples per field, so its length is the run's game time. The report's `audio_stream_bytes`, `audio_voice_samples` and `audio_underruns` count the PCM consumed, the samples output from voices and the samples a voice could not supply.
 
+**Audio comparison.** `python tools/audio/compare_audio.py <port.wav> <reference.wav> [--segment s] [--search s]` locates the port's audio in a recording of the original (both 16-bit stereo, same rate) and prints per segment the offset, the level ratio port/reference (RMS and least-squares gain), the waveform correlation with the same and with the swapped channel, and the peaks. Needs numpy and scipy. The recordings stay local.
+
 **Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).
 
 **Float watch.** `BT2_EE_WATCH_FLOAT=<hex address>:<limit>` stops the run at the first guest call that finds the float at that EE address non-finite or above the limit in magnitude, and names that call, the previous call and the main registers. An address below 32 watches the x field of that VU0 float register (`1F` is `vf31`). Following a bad value from its reader to its writer takes one run per step.
