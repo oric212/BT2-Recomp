@@ -1,56 +1,72 @@
 # BT2 project working instructions
 
-Use this repository as the project root. Before work, read docs/PROG.md and docs/project/IMPLEMENTATION_PLAN.md; consult docs/reference/REFERENCE_ARCHITECTURE.md and its linked sources before architecture or unfamiliar PS2 subsystem work.
+Use this repository as the project root.
+
+## Start of a session
+
+1. Read `docs/PROG.md` (current state), `docs/progress/ACTIVE_PASS.md` (handoff and how to run) and `docs/project/IMPLEMENTATION_PLAN.md` (order of work).
+2. Before architecture or unfamiliar PS2 subsystem work, consult `docs/reference/REFERENCE_ARCHITECTURE.md` and its linked sources, and the subsystem's plan in `docs/plans/`.
 
 ## Goal and architecture
 
-BT2-Recomp is a native Windows x64 port with a minimal compatibility layer, not a PS2 emulator. Details and verification requirements are in the implementation plan.
+BT2-Recomp is a native Windows x64 port of *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441) with a minimal compatibility layer, not a PS2 emulator.
 
-- **Recompiled game code is the base.** EE code runs as generated native C++. Replace individual functions with hand-written C++ only where it pays off. No full decompilation, EE interpreter or full-system emulation.
-- **Native services over emulation.** Replace PS2 services with host code at the highest boundary BT2's evidence supports: SIF RPC services (disc, files, sound, controller, memory card, CRI) instead of emulated IOP modules and hardware. Emulate only what the game drives directly (EE DMA to the GS, VIF packets, the EE kernel).
-- **GPU rendering through paraLLEl-GS**, fed with the game's GIF/VIF output. The CPU renderer stays as the fallback for systems without a suitable Vulkan GPU (for example some integrated graphics) and as the test reference.
+- **Recompiled game code is the base.** EE code runs as generated native C++ (the main executable and the `DBZP.BIN` overlay). Replace individual functions with hand-written C++ only where it pays off. No full decompilation, EE interpreter or full-system emulation.
+- **Native services over emulation.** PS2 services are answered by host code at the highest boundary BT2's evidence supports: SIF RPC services (disc, files, sound, controller, memory card, CRI) instead of IOP modules and hardware. No IOP code runs. Emulate only what the game drives directly: EE DMA, GIF and VIF packets, VU1 microprograms, the IPU, the EE kernel.
+- **Graphics:** the game's own GIF/VIF output is rendered on the GPU through paraLLEl-GS. The CPU GS model validates packets, draws the 2D screens and is their test reference; 3D on the CPU renderer is an optional extra for the end of the project.
+- **Sound:** the game decodes its streams itself; the port mixes what the native services receive. Sound effects and a host audio device are still to come (`docs/plans/sound/`).
 - **Smallest layer.** Implement only what BT2 reaches, in the simplest native form. One implementation per behavior; generalize verified special cases instead of adding handlers gated on guest PCs, stack offsets or call counts; remove code a replacement makes obsolete.
-- **Fail explicitly.** Unsupported requests stop at a checked boundary; never fake success.
-- **Correctness first.** Game-visible results (EE memory, files, replies, frames) must match the original. Validate with tests and PCSX2 comparisons, and add a test for each service request type and generalized behavior.
-- **Honest status.** Keep Verified separate from Operational or untested. Never infer gameplay performance from startup progress; measure Release builds on representative workloads.
+- **Fail explicitly.** Unsupported requests stop at a checked boundary that names them; never fake success.
 - **References:** adapt behavior, never copy implementations 1:1, and never copy decompiled game code (for example Tenkaichi3Decomp's `src/`). Keep unknown function names neutral.
+
+## Correctness and status
+
+- **Game-visible results must match the original:** EE memory, files, replies, frames, sound. Validate with tests and PCSX2 comparisons; add a test for each service request type and generalized behavior.
+- **Compare where it is exact.** Prefer byte-exact comparisons of memory, requests and register values over judging the final picture or sound. Sound is verified stage by stage (`docs/plans/sound/SOUND_VERIFICATION_PLAN.md`), not by ear.
+- **The user verifies by inspection.** They know how the game looks and sounds: save frames to `work/frames/` and audio to `work/audio/` and ask. Record what they confirmed, and keep it distinct from a comparison with the original.
+- **Honest status.** Keep Verified separate from Operational or untested. Say what was measured, on which run. Never infer gameplay performance from startup progress; measure Release builds on representative workloads.
 
 ## Meaning of "continue"
 
-A plain "continue" (any spelling or case) runs an aggressive, goal-driven pass, automatically and across sessions. Work through "Current next step" in the implementation plan, in order, toward the next functional milestone: inspect -> gather evidence (captures, tooling, references) -> implement the native replacement or general behavior -> tests and original comparisons -> Release rerun -> next item. A new execution boundary is input to the plan: decide whether it belongs behind a native service or needs general EE-side behavior, and implement it at subsystem scale. Finishing one item or fix is not a stopping point. Stop only when:
+A plain "continue" (any spelling or case) runs a goal-driven pass, automatically and across sessions. Work through "Current next step" in the implementation plan, in order, toward the next functional milestone: inspect -> gather evidence (captures, tooling, references) -> implement the native replacement or general behavior -> tests and original comparisons -> Release rerun -> next item. A new execution boundary is input to the plan: decide whether it belongs behind a native service or needs general EE-side behavior, and implement it at subsystem scale.
 
-- a new major subsystem needs its own plan (write it in docs/plans/; if actionable, follow it and continue);
-- required information or access is unavailable in this session;
-- the next change would be speculative after consulting the evidence.
-
-When stopping, state the condition and evidence. At the end of each pass, update docs/PROG.md and the monthly history, review the diff/staged files, commit and push.
-
-Reduce pass scope for the five-hour usage allowance only when the actual remaining usage is low.
+- **Scope follows the request.** By default finishing one item or fix is not a stopping point. When the user asks for a small pass, do one item and stop at its verified, committed checkpoint. When the user says not to start a pass, do only what was asked.
+- **Stop only when** a new major subsystem needs its own plan (write it in `docs/plans/`; if actionable, follow it and continue), required information or access is unavailable in this session, or the next change would be speculative after consulting the evidence. State the condition and the evidence.
+- **End of every pass:** run the gate, update `docs/PROG.md`, the handoff and the monthly history, review the diff and staged files, commit and push.
+- Reduce pass scope for the usage allowance only when the actual remaining usage is low.
 
 ## Content rules
 
-Never download or commit proprietary game/BIOS content, retail executables, disc images, extracted assets or proprietary-derived generated code. Keep local content, captures, prepared/generated code and build output ignored. README.md stays at the root; documentation stays in docs/.
+Never download or commit proprietary game/BIOS content, retail executables, disc images, extracted assets, captures, recordings or proprietary-derived generated code. Local content (`rom/`, `game_data/`), analysis output (`work/`, `research/`), generated code (`game/generated/`) and build output stay ignored. Documents record numbers and descriptions only. `README.md` stays at the root; documentation stays in `docs/`.
 
-## Builds
+## Builds and runs
 
-- **Narrow checks first:** unit tests, offline tools and data checks, subsystem tests, targeted builds. Batch related changes; run the full build/probe only for an integration gate or before commit. Every pass still completes the full build, test and probe gate before commit.
-- **Headers reached by generated code** (`ps2_runtime.h`, `ps2_runtime_macros.h`, `ps2_fpu.h`) hold only the CPU context and the entry points generated code calls; an edit recompiles every generated unit (about 6 minutes). Runtime state and declarations go in `ee_runtime.h` (`EeRuntime`), implementation in the focused `.cpp` files of `runtime/ee/`, `runtime/gs/`, `runtime/services/`. A new entry point for generated code is declared in `ps2_runtime.h` and forwarded in `guest_interface.cpp`.
-- **Build with Ninja** through `python tools/build/msvc.py cmake --build build/probe --config <Debug|Release>`. Keep the precompiled headers; no unity builds; never merge generated units.
-- **Gate:** `python tools/gate/run_gate.py --disc <iso>` builds Debug and runs the tests, probe runs and original comparisons concurrently.
-- **Long probe runs use Release** (`run_startup_probe.py --config Release`); the pre-commit gate runs Debug.
+- **Narrow checks first:** unit tests, offline tools, targeted builds. Batch related changes. Every pass completes the full gate before commit.
+- **Build with Ninja:** `python tools/build/msvc.py cmake --build build/probe --config <Debug|Release> [--target bt2-entry-probe]`. Keep the precompiled headers; no unity builds; never merge generated units.
+- **Gate:** `python tools/gate/run_gate.py --disc <iso>` builds Debug and runs the unit tests, the Python suites, the probe runs and the original comparisons.
+- **Long runs use Release:** `run_startup_probe.py --config Release --frames <n> --pad-script <script>`. Pad scripts count fields; snapshots count flips.
+- **New code the game reaches:** `python tools/ps2recomp/discovery_loop.py` runs, discovers, regenerates and rebuilds until the run passes or a stop needs a decision.
+- **Headers reached by generated code** (`ps2_runtime.h`, `ps2_runtime_macros.h`, `ps2_fpu.h`) hold only the CPU context and the entry points generated code calls; an edit recompiles every generated unit (about 6 minutes). Runtime state goes in `ee_runtime.h` (`EeRuntime`), implementation in focused `.cpp` files. A new entry point for generated code is declared in `ps2_runtime.h` and forwarded in `guest_interface.cpp`.
+- **One at a time:** no concurrent native builds or probe runs.
+- **Long-running commands:** make them write a timestamped log, and each time one starts give the user a working command to follow it, with the absolute path, for PowerShell and for cmd.
+- **Writing files from a shell:** shell heredocs in this environment corrupt backslash escapes. Write or edit files that contain backslashes with the file tools, or with a script file created that way.
 - **After a pass,** keep only intentional build outputs and required diagnostic artifacts; delete temporary residue, stale logs, abandoned builds, old dumps and backups. Never delete source inputs, probe inputs, reference data or test artifacts without verifying they are unused.
 
 ## Code organization
 
-Small focused files with one clear purpose; explicit dependencies; check whether new code belongs in its own file before growing an existing one; no artificial splits; preserve existing behavior and generated-code boundaries. [docs/guides/RUNTIME_LAYOUT.md](docs/guides/RUNTIME_LAYOUT.md) maps the `runtime/` folders and where new code goes.
+Small focused files with one clear purpose; explicit dependencies; check whether new code belongs in its own file before growing an existing one; no artificial splits; preserve existing behavior and generated-code boundaries. [docs/guides/RUNTIME_LAYOUT.md](docs/guides/RUNTIME_LAYOUT.md) maps the `runtime/` folders and where new code goes; [docs/guides/TOOLS.md](docs/guides/TOOLS.md) describes the tools and diagnostics. No standalone executable or launcher until the game is playable; the probe is the runner.
 
 ## Documentation
 
-- **Layout:** `docs/PROG.md` (current progress; read by `tools/docs/sync_progress.py`, keep the path), `docs/progress/` (active handoff, monthly history, dashboard data), `docs/guides/` (BUILDING, TOOLS, RUNTIME_LAYOUT), `docs/project/` (implementation plan, progress tracking, legal), `docs/reference/` (reference architecture, reverse-engineering evidence), `docs/plans/<subsystem>/` (`ee`, `iop`, `graphics`, `sound`, `disc`, `input`, `memory-card`; add a folder such as `video` only when none fits). Never leave a document loose in `docs/`.
+- **Layout:** `docs/PROG.md` (current progress; read by `tools/docs/sync_progress.py`, keep the path), `docs/progress/` (active handoff, monthly history, dashboard data), `docs/guides/` (BUILDING, TOOLS, RUNTIME_LAYOUT), `docs/project/` (implementation plan, progress tracking, legal), `docs/reference/` (reference architecture, reverse-engineering evidence), `docs/plans/<subsystem>/` (`ee`, `iop`, `graphics`, `sound`, `video`, `disc`, `input`, `memory-card`; add a folder only when none fits). Never leave a document loose in `docs/`.
+- **Progress tracking:** follow `docs/project/PROGRESS_TRACKING.md`. Record pending changes and remaining verification in the handoff before an interruption. Export only allowlisted counters. Before a progress commit run `tools/docs/render_status.py` and `tools/docs/sync_progress.py`, each also with `--check`. Never count isolated service coverage as full startup coverage.
 - **Links:** when a file moves, update every relative link and `docs/...` path to it (Markdown, code comments, CMake messages) and check that all links resolve. Historical entries change only in such paths.
 - **Encoding:** read and write docs as UTF-8; check changed files for replacement characters and mojibake before committing.
-- **Progress tracking:** follow docs/project/PROGRESS_TRACKING.md. Read docs/progress/ACTIVE_PASS.md when resuming, and record pending changes and remaining verification before an interruption. Keep the verified checkpoint distinct from unverified work; export only allowlisted counters; run `tools/docs/sync_progress.py` and its `--check` before progress commits. Never count isolated service coverage as full startup coverage.
+
+## Commits
+
+Review the staged files before each commit: no proprietary or generated content, no stray artifacts. Commit messages describe the change; no tool or assistant attribution lines.
 
 ## Parallel work
 
-Use sub-agents for independent investigation, reference comparison, capture analysis or test design, with clear file ownership. The primary agent coordinates scheduler, RPC and runtime state changes; avoid speculative parallel runtime edits and concurrent native builds or probes.
+Use sub-agents only when the user asks for them, for independent investigation, reference comparison, capture analysis or test design, with clear file ownership. The primary agent coordinates scheduler, RPC and runtime state changes; avoid speculative parallel runtime edits.
