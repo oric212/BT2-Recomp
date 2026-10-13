@@ -136,7 +136,10 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
 void GsCommandSink::image(std::span<const std::uint8_t> data) {
     // Host->local PSMCT32 pixels in transfer order (left to right, top to bottom).
     auto& t=state;
-    if(!t.trx)throw std::runtime_error("GIF IMAGE without an active host-to-local transfer");
+    if(!t.trx) {
+        if(!rasterize)return; // GPU-only: a transfer this model does not track; the data is the GPU's.
+        throw std::runtime_error("GIF IMAGE without an active host-to-local transfer");
+    }
     for(std::size_t i=0;i<data.size();i+=4) {
         if(t.trx_y>=t.trx_h)throw std::runtime_error("GIF IMAGE data exceeds the transfer region");
         std::uint32_t v;std::memcpy(&v,data.data()+i,4);
@@ -153,8 +156,13 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
     const unsigned w=unsigned(reg&0xFFF),h=unsigned((reg>>32)&0xFFF);
     // Host->local, CT32 destination, upper-left order, inside the buffer (one page when DBW is 0).
     // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS.
-    if((dir&3)!=0 || dpsm!=0 || order || !w || !h
-        || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048)
+    // GPU-only: the GPU performs every transfer that needs no readback, so a form this model does
+    // not draw is only left untracked; local-to-host (dir 1) is refused in both modes.
+    state.trx=false;
+    const bool unsupported=(dir&3)!=0 || dpsm!=0 || order || !w || !h
+        || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048;
+    if(unsupported && !rasterize && (dir&3)!=1)return;
+    if(unsupported)
         throw std::runtime_error("Unsupported GS image transfer: dir "+std::to_string(dir&3)+" dpsm "+std::to_string(dpsm)
             +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));
     state.trx=true;state.trx_bp=dbp;state.trx_bw=dbw;state.trx_x0=dx;state.trx_y0=dy;state.trx_w=w;state.trx_h=h;state.trx_x=state.trx_y=0;
@@ -166,7 +174,9 @@ void GsCommandSink::loadClut(std::uint64_t texture0) {
     // swapped in the layout).
     const unsigned psm=unsigned((texture0>>20)&63),cbp=unsigned((texture0>>37)&0x3FFF),cpsm=unsigned((texture0>>51)&15);
     const unsigned csm=unsigned((texture0>>55)&1),csa=unsigned((texture0>>56)&31);
-    if((psm!=0x14 && psm!=0x13) || cpsm!=0 || csm || csa>15 || (psm==0x13 && csa))
+    const bool unsupported=(psm!=0x14 && psm!=0x13) || cpsm!=0 || csm || csa>15 || (psm==0x13 && csa);
+    if(unsupported && !rasterize)return; // GPU-only: the CLUT of this model is not used.
+    if(unsupported)
         throw std::runtime_error("Unsupported GS CLUT load: psm "+std::to_string(psm)+" cpsm "+std::to_string(cpsm)+" csm "+std::to_string(csm)+" csa "+std::to_string(csa)+" cbp "+std::to_string(cbp));
     if(psm==0x14) {
         for(unsigned i=0;i<16;++i) {
@@ -215,7 +225,10 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     // Vertex queue: sprites and triangles restart after each primitive; a triangle strip keeps the
     // last two vertices and a fan keeps the first and the last. XYZ3/XYZF3 queue without drawing.
     const unsigned type=unsigned(state.regs[0x00]&7),needed=type==6?2:(type>=3 && type<=5)?3:0;
-    if(!needed)throw std::runtime_error("Unsupported GS primitive type "+std::to_string(type));
+    if(!needed) {
+        if(!rasterize)return; // GPU-only: points and lines are drawn by the GPU.
+        throw std::runtime_error("Unsupported GS primitive type "+std::to_string(type));
+    }
     if(state.vertices>=needed) {
         if(type==4) {for(unsigned k=0;k<2;++k){state.vertex_xyz[k]=state.vertex_xyz[k+1];state.vertex_rgbaq[k]=state.vertex_rgbaq[k+1];state.vertex_uv[k]=state.vertex_uv[k+1];}state.vertices=2;}
         else if(type==5) {state.vertex_xyz[1]=state.vertex_xyz[2];state.vertex_rgbaq[1]=state.vertex_rgbaq[2];state.vertex_uv[1]=state.vertex_uv[2];state.vertices=2;}
@@ -333,6 +346,9 @@ void GsCommandSink::plot(const Draw& d,int px,int py,Rgba vertex,int u,int v,std
 }
 
 void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
+    // GPU-only: the primitive is counted; the drawing state is the GPU's to handle, so the limits
+    // of this rasterizer (prepare) do not apply.
+    if(!rasterize) {if(apply)++frame_sprites;return;}
     const auto d=prepare(prim);
     auto x=[&](unsigned v){return int(v&0xFFFF)-int(d.ox);};auto y=[&](unsigned v){return int((v>>16)&0xFFFF)-int(d.oy);};
     const auto v0=state.vertex_xyz[0],v1=state.vertex_xyz[1];
@@ -347,7 +363,6 @@ void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
     const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
     const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
     if(!apply)return;
-    if(!rasterize){++frame_sprites;return;}
     const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
     const std::uint32_t z=std::uint32_t(v1>>32);
     // U depends only on the column and V only on the row: each is computed once.
@@ -361,6 +376,7 @@ void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
 }
 
 void GsCommandSink::triangle(std::uint64_t prim,bool apply) {
+    if(!rasterize) {if(apply)++frame_triangles;return;} // GPU-only, as for sprites.
     const auto d=prepare(prim);
     const bool gouraud=(prim>>3)&1;
     std::array<std::int64_t,3> X{},Y{};
@@ -372,7 +388,6 @@ void GsCommandSink::triangle(std::uint64_t prim,bool apply) {
     const int x0=std::max(int((minx+15)>>4),d.sx0),x1=std::min(int((maxx>>4)+1),d.sx1);
     const int y0=std::max(int((miny+15)>>4),d.sy0),y1=std::min(int((maxy>>4)+1),d.sy1);
     if(!apply)return;
-    if(!rasterize){++frame_triangles;return;}
     // Edge k is opposite vertex order[k]. With positive area (y down), a point is inside when every
     // edge function is >= 0; on an edge (== 0) only top edges (horizontal, above the triangle) and
     // left edges own the pixel, so pixels shared by neighbouring triangles are drawn once.

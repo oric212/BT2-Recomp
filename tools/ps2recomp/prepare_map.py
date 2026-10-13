@@ -77,6 +77,87 @@ def cop_control(ins):
     return cop_branch(ins) or (op==16 and rs>=16) or (op in (16,17,18) and 8<rs<16)
 
 
+def fpu_only(ins):
+    """COP1 instructions that write no integer register: S/W-format arithmetic, conversions and
+    compares (rs 16 or 20) and MTC1 (rs 4)."""
+    return (ins>>26==17 and (ins>>21)&31 in (4,16,20)) or ins>>26 in (0x31,0x36) # Also LWC1 and LQC2 loads.
+
+
+def spilled_bound(address,start,end,c,i,word,control,writes):
+    """The bound of a switch whose index is reloaded from the stack frame in the guard's delay slot:
+    BEQ c,zero / LW i,I(sp) (delay) / SLL ... / JR at `address`. Returns the SLTIU word.
+
+    Proven from the whole candidate: the frame is fixed (ADDIU sp,sp,-N first; sp otherwise only
+    restored) and slot I is stored once, before any branch. The condition is SLTIU r,x,N of x
+    reloaded from slot I, and reaches the guard in one of two ways:
+    - through slot C (LW c,C(sp) right before the guard, seen at 0x1519A8): stored once, from r;
+    - in a callee-saved register (r = c, seen at 0x23AE34): the only SLTIU into c, nothing between it
+      and the guard writes c, no branch from outside enters that stretch, and every other table jump
+      of the candidate lies inside it.
+    No other store overlaps a slot or takes its address. Writes through pointers to other locals are
+    assumed not to reach the slots."""
+    sign=lambda v:v-65536 if v&32768 else v
+    guard=address-24
+    load_c,load_i,frame=word(address-28),word(address-20),word(start)
+    if load_i>>16!=(0x8FA0|i) or frame>>16!=0x27BD:return None
+    slot_i,size=sign(load_i&65535),-sign(frame&65535)
+    slot_c=sign(load_c&65535) if load_c>>16==(0x8FA0|c) else None
+    slots=[slot_i]+([slot_c] if slot_c is not None else [])
+    if size<=0 or len(set(slots))!=len(slots) or min(slots)<0 or max(slots)+4>size or any(x%4 for x in slots):return None
+    call=lambda ins:ins>>26==3 or (ins>>26==0 and ins&0x1FFFFF==0xF809 and (ins>>21)&31!=0)
+    widths={0x28:1,0x29:2,0x2B:4,0x39:4,0x3F:8,0x3D:8,0x1F:16,0x3E:16}
+    stores={slot:[] for slot in slots}
+    for at in range(start+4,end,4):
+        ins=word(at);op,rs,rt=ins>>26,(ins>>21)&31,(ins>>16)&31
+        if op in (0,28) and (ins>>11)&31==29 and ins:return None # R-type or MMI result in sp.
+        if rt==29 and (op in (8,9,10,11,12,13,14,15,24,25,26,27,0x37) or 0x20<=op<=0x27):
+            if not (op==9 and rs==29 and sign(ins&65535)==size):return None # Only the frame's release.
+        if op==9 and rs==29 and rt!=29 and sign(ins&65535) in stores:return None # Address of a slot taken.
+        if rs!=29 or not (op in widths or op in (0x2A,0x2C,0x2D,0x2E)):continue
+        offset=sign(ins&65535)
+        low,high=(offset,offset+widths[op]) if op in widths else (offset-7,offset+8) # Unaligned stores: both ways.
+        for slot in stores:
+            if low<slot+4 and slot<high:
+                if op!=0x2B or offset!=slot:return None
+                stores[slot].append(at)
+    if any(len(found)!=1 for found in stores.values()):return None
+    if any(control(word(at)) and not call(word(at)) for at in range(start,stores[slot_i][0]+4,4)):return None
+    def from_index_slot(back,bound):
+        # x of SLTIU r,x,N at `back` was just reloaded from slot I.
+        x=(bound>>21)&31
+        for earlier in range(back-4,max(back-20,start),-4):
+            ins=word(earlier)
+            if ins==(0x8FA00000|(x<<16)|slot_i):return True
+            # The SLTIU may sit in the delay slot of a conditional, non-likely branch: it runs either way.
+            slot_of_branch=earlier==back-4 and (ins>>26 in (4,5,6,7) or (ins>>26==1 and (ins>>16)&31 in (0,1)))
+            if not slot_of_branch and (control(ins) or writes(ins,x)):return False
+        return False
+    if slot_c is not None:
+        at=stores[slot_c][0];r=(word(at)>>16)&31
+        for back in range(at-4,max(at-20,start),-4):
+            bound=word(back)
+            if bound>>26==11 and (bound>>16)&31==r:break
+            if control(bound) or writes(bound,r):return None
+        else:return None
+        return bound if from_index_slot(back,bound) else None
+    if c not in (16,17,18,19,20,21,22,23,30):return None
+    bounds=[at for at in range(start,end,4) if word(at)>>26==11 and (word(at)>>16)&31==c]
+    if len(bounds)!=1 or not bounds[0]<guard or not from_index_slot(bounds[0],word(bounds[0])):return None
+    back=bounds[0]
+    for at in range(back+4,guard,4):
+        ins=word(at)
+        if not control(ins) and writes(ins,c):return None # Calls and branches leave a callee-saved register.
+    for at in range(start,end,4):
+        ins=word(at);op=ins>>26
+        if op in (1,4,5,6,7,20,21,22,23) or cop_branch(ins):target=at+4+sign(ins&65535)*4
+        elif op==2:target=((at+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)
+        else:
+            if op==0 and ins&0xFC1FFFFF==8 and ins!=0x03E00008 and at!=address and not back<at<guard:return None
+            continue
+        if back<target<=guard and not back-4<=at<=guard:return None # A branch with the SLTIU in its delay slot passes it.
+    return word(back)
+
+
 def bounded_word_switch(address,start,end,spans,metadata,data,word):
     return switch_targets(address,start,end,spans,metadata,data,word) is not None
 
@@ -104,11 +185,13 @@ def switch_targets(address,start,end,spans,metadata,data,word):
     if first:
         i,sreg,b=(sll>>16)&31,(sll>>11)&31,(lui>>16)&31
         if 0 in (i,sreg,b) or b==sreg:return None
+        spilled=False
         def keeps_index(ins):
             # A delay slot that runs on both paths must not write the index: I-type ALU/load
             # write rt, R-type ALU writes rd, stores (SB/SH/SW/SD/SQ) write no register. Anything
             # else is not proven.
             op=ins>>26
+            if fpu_only(ins):return True
             if op==0:return ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03) and (ins>>11)&31!=i
             if op in (0x28,0x29,0x2B,0x3F,0x1F,0x39,0x3D):return True # Stores, including SWC1/SDC1.
             return op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37) and (ins>>16)&31!=i
@@ -117,6 +200,8 @@ def switch_targets(address,start,end,spans,metadata,data,word):
         elif address-start>=32 and beq_zero(word(address-24),20) and not control(word(address-20)):branch=address-24
         elif address-start>=28 and beq_zero(word(address-24),4) and not control(word(address-20)) and keeps_index(word(address-20)):
             branch=address-24 # BEQ whose delay slot (both paths) leaves the index intact; SLL follows it.
+        elif address-start>=32 and beq_zero(word(address-24),4):
+            branch=address-24;spilled=True # Bound and index reloaded from the stack frame; proven below.
         else:return None
         # The index producer precedes the bound; at the function start the index is an incoming argument.
         # The bound may instead sit in the delay slot of a conditional, non-likely branch (a sign test
@@ -126,23 +211,27 @@ def switch_targets(address,start,end,spans,metadata,data,word):
         # writes rd, I-type ALU and loads write rt. Anything else is not proven.
         def writes(ins,reg):
             op=ins>>26
-            if op in (0x28,0x29,0x2B,0x3F,0x1F,0x39,0x3D):return False
+            if op in (0x28,0x29,0x2B,0x3F,0x1F,0x39,0x3D) or fpu_only(ins):return False
             if op==0 and ins&63 in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x2A,0x2B,0x2C,0x2D,0x00,0x02,0x03):return (ins>>11)&31==reg
             if op in (8,9,10,11,12,13,14,15,0x20,0x21,0x23,0x24,0x25,0x37):return (ins>>16)&31==reg
             return True
         c=(word(branch)>>21)&31
         if c in (0,i):return None
-        at=branch-4
-        while True:
-            if at<start or branch-at>64:return None
-            bound=word(at)
-            if bound>>26==11 and (bound>>21)&31==i and (bound>>16)&31==c:break
-            if control(bound) or writes(bound,c) or writes(bound,i):return None
-            at-=4
-        index=word(at-4) if at-4>=start else 0
-        op,rs,rt=index>>26,(index>>21)&31,(index>>16)&31
-        falls_through=op in (5,6,7) or (op==4 and rs!=rt) or (op==1 and rt in (0,1))
-        if control(index) and not falls_through:return None
+        if spilled:
+            bound=spilled_bound(address,start,end,c,i,word,control,writes)
+            if bound is None:return None
+        else:
+            at=branch-4
+            while True:
+                if at<start or branch-at>64:return None
+                bound=word(at)
+                if bound>>26==11 and (bound>>21)&31==i and (bound>>16)&31==c:break
+                if control(bound) or writes(bound,c) or writes(bound,i):return None
+                at-=4
+            index=word(at-4) if at-4>=start else 0
+            op,rs,rt=index>>26,(index>>21)&31,(index>>16)&31
+            falls_through=op in (5,6,7) or (op==4 and rs!=rt) or (op==1 and rt in (0,1))
+            if control(index) and not falls_through:return None
         hi,disp=lui&65535,sign(load&65535)
     else:
         # Second layout: SLTIU c,i,N / BEQ c,zero / LUI b (delay) / SLL s,i,2 / ADDIU b,b,lo /
@@ -253,13 +342,16 @@ def has_switch_case_gaps(candidate, metadata, data):
         inside=sorted(t for t in targets if h0<=t<h1)
         if not inside:
             # A hole without case blocks: only NOP padding after an unconditional transfer (B into the
-            # candidate, J or JR RA) and its non-control delay slot. The scan below rejects branches into it.
+            # candidate, J, JR RA or a proven switch jump) and its non-control delay slot. The scan below rejects branches into it.
             before=word(h0-8) if h0-start>=8 else 0
             local=before&0xFFFF0000==0x10000000 and start<=h0-4+((before&65535)-(65536 if before&32768 else 0))*4<end
-            if any(word(a)!=0 for a in range(h0,h1,4)) or control(word(h0-4)) or not (local or before>>26==2 or before==0x03E00008):return False
+            if any(word(a)!=0 for a in range(h0,h1,4)) or control(word(h0-4)) or not (local or before>>26==2 or before==0x03E00008 or h0-8 in jumps):return False
             hole_words.update(range(h0,h1,4));continue
-        address=h0;slots=set()
-        for target in inside:
+        # Blocks start at the table targets and at the targets of branches inside this hole's own
+        # blocks (the other arm of a condition inside a case, placed after the arm's closing branch).
+        address=h0;slots=set();block_starts=set(inside);visited=set()
+        while block_starts-visited:
+            target=min(block_starts-visited);visited.add(target)
             if target<address:
                 # A target inside an earlier block: a case that the previous one falls through into.
                 # It is another entry of that straight-line code unless it is a delay slot.
@@ -279,14 +371,18 @@ def has_switch_case_gaps(candidate, metadata, data):
                 if call and not control(word(address+4)):address+=8;continue
                 # A conditional branch into the candidate keeps the block going after its delay slot; a
                 # target inside a hole must be an instruction of a case block (checked below).
-                if (ins>>26 in (5,6,7,21,22,23) or (ins>>26 in (4,20) and (ins>>21)&31!=(ins>>16)&31) or (ins>>26==1 and (ins>>16)&31 in (0,1,2,3))) and not control(word(address+4)):
+                if (ins>>26 in (5,6,7,21,22,23) or (ins>>26 in (4,20) and (ins>>21)&31!=(ins>>16)&31) or (ins>>26==1 and (ins>>16)&31 in (0,1,2,3)) or cop_branch(ins)) and not control(word(address+4)):
                     immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
                     if not start<=address+4+immediate*4<end:return False
-                    inner_branches.append(address+4+immediate*4);address+=8;continue
+                    inner_branches.append(address+4+immediate*4)
+                    if h0<=address+4+immediate*4<h1:block_starts.add(address+4+immediate*4)
+                    address+=8;continue
                 if ins==0x03E00008:pass
                 elif ins&0xFFFF0000==0x10000000:
                     immediate=ins&65535;immediate=immediate-65536 if immediate&32768 else immediate
                     if not start<=address+4+immediate*4<end:return False
+                    inner_branches.append(address+4+immediate*4)
+                    if h0<=address+4+immediate*4<h1:block_starts.add(address+4+immediate*4)
                 elif ins>>26==2:
                     # A tail jump (J) to code of this program ends the block like a return.
                     target=((address+4)&0xF0000000)|((ins&0x03FFFFFF)<<2)

@@ -96,42 +96,40 @@ void EeRuntime::frameGifChainStart(std::uint32_t value) {
 void EeRuntime::frameVif1Start(std::uint32_t value) {
     auto& v=frame_vif1;
     if(value!=0x145 || v.qwc)throw std::runtime_error("Unsupported VIF1 DMA start");
-    // Walk the whole chain first. Each DMA tag contributes its upper 64 bits (two VIF codes at
-    // qword positions 2-3) and then its data qwords; codes are parsed with their real lengths.
-    // NOP and FLUSH/FLUSHE/FLUSHA (no VU1 program or other path is running) have no effect;
-    // DIRECT/DIRECTHL hand quadword-aligned PATH2 data to the GS. Any other code, or a DIRECT
-    // payload that crosses a tag, stops at the channel start before any effect.
-    struct Word {std::uint32_t value,tag;unsigned segment,phase;const std::uint8_t* at;};
+    // Walk the whole chain first. Each DMA tag contributes its upper 64 bits (two VIF codes) and then
+    // its data qwords. The list is checked as a whole, so a code that is not modelled stops at the
+    // channel start before any effect; then it runs in order: UNPACK and MPG fill VU1 memory,
+    // microprograms run to their end and their XGKICK packets (PATH1) reach the GS between the
+    // DIRECT data (PATH2).
     const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),v.tadr,"VIF1");
-    std::vector<Word> stream;const std::uint32_t next_tadr=chain.next_tadr;const unsigned tags=unsigned(chain.segments.size());unsigned segment=0;
+    std::vector<std::uint32_t> words;std::vector<std::pair<std::size_t,std::uint32_t>> tags; // First word index and address of each tag.
     for(const auto& c:chain.segments) {
-        ++segment;for(unsigned k=2;k<4;++k){std::uint32_t w;std::memcpy(&w,c.tag_words+(k-2)*4,4);stream.push_back({w,c.tag,segment,k,c.tag_words+(k-2)*4});}
-        if(c.data.empty())continue;
-        ++segment;for(std::size_t k=0;k<c.data.size()/4;++k){std::uint32_t w;std::memcpy(&w,c.data.data()+k*4,4);stream.push_back({w,c.tag,segment,unsigned(k%4),c.data.data()+k*4});}
+        const auto at=words.size();tags.emplace_back(at,c.tag);
+        words.resize(at+2+c.data.size()/4);std::memcpy(words.data()+at,c.tag_words,8);
+        if(!c.data.empty())std::memcpy(words.data()+at+2,c.data.data(),c.data.size());
     }
-    std::vector<std::span<const std::uint8_t>> directs;std::uint64_t direct_qwords=0;
-    try {
-        for(std::size_t i=0;i<stream.size();) {
-            const auto& w=stream[i];const unsigned cmd=(w.value>>24)&0x7F;
-            if(cmd==0 || cmd==0x10 || cmd==0x11 || cmd==0x13) {++i;continue;}
-            if(cmd==0x50 || cmd==0x51) {
-                const std::size_t qwords=(w.value&0xFFFF)?(w.value&0xFFFF):65536,first=i+1,last=first+qwords*4;
-                if(last>stream.size() || stream[first].phase || stream[first].segment!=stream[last-1].segment)
-                    throw FrameVif1Unsupported{w.value,w.tag};
-                directs.emplace_back(stream[first].at,qwords*16);direct_qwords+=qwords;i=last;continue;
-            }
-            throw FrameVif1Unsupported{w.value,w.tag};
-        }
-        gif_dma.gs.transferAll(directs); // One GS transaction: refused as a whole, without effects.
-    } catch(const FrameVif1Unsupported& u) {
-        v.blocked_code=u.code;v.blocked_tag=u.tag;v.blocked_tadr=v.tadr;++v.unsupported;
+    if(!v.starts) {
+        // The registers as the startup FIFO writes left them.
+        auto& r=vif1.r;const auto& s=vif_startup;
+        r.cycle=s.cycle;r.mode=s.mode;r.mask=s.mask;r.base=s.base;r.ofst=s.offset;r.itops=s.itops;r.tops=s.tops;
+    }
+    auto blocked=[&](std::uint32_t code,std::uint32_t tag) {
+        v.blocked_code=code;v.blocked_tag=tag;v.blocked_tadr=v.tadr;++v.unsupported;
         throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
+    };
+    const auto codes=vif1.codes,directs=vif1.directs;const auto direct_qwords=vif1.direct_qwords;
+    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {gif_dma.gs.transfer(data);};
+    try {vif1.check(words);vif1.run(words,to_gs,to_gs);}
+    catch(const Vif1Unsupported& u) {
+        std::uint32_t tag=v.tadr;
+        for(const auto& [first,address]:tags)if(first<=u.index)tag=address;
+        std::cerr<<u.what()<<'\n';blocked(u.code,tag);
     } catch(const std::runtime_error& e) {
-        std::cerr<<"VIF1 DIRECT refused by the GS model: "<<e.what()<<"\n";
-        v.blocked_code=0x50000000;v.blocked_tag=v.tadr;v.blocked_tadr=v.tadr;++v.unsupported;
-        throw UnsupportedGuestMemory(0x10009000,4);
+        // The GS model refused a packet or a microprogram reached an instruction that is not modelled.
+        std::cerr<<"VIF1 display list stopped: "<<e.what()<<'\n';blocked(0x50000000,v.tadr);
     }
-    v.tadr=next_tadr;v.tags+=tags;v.codes+=unsigned(stream.size());v.directs+=unsigned(directs.size());v.direct_qwords+=direct_qwords;
+    v.tadr=chain.next_tadr;v.tags+=unsigned(chain.segments.size());v.codes+=vif1.codes-codes;
+    v.directs+=vif1.directs-directs;v.direct_qwords+=vif1.direct_qwords-direct_qwords;
     v.chcr=value&~0x100u;v.cis=true;++v.starts;
 }
 
@@ -327,7 +325,7 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         if(address==0x10009000 || address==0x10009020 || address==0x10009030) {
             checkMemory(rdram,0,0);return address==0x10009000?frame_vif1.chcr:address==0x10009020?frame_vif1.qwc:frame_vif1.tadr;
         }
-        if(address==0x10003C00) {checkMemory(rdram,0,0);return 0x40;}
+        if(address==0x10003C00) {checkMemory(rdram,0,0);return 0x40u|(vif1.r.dbf?0x80u:0u);} // DBF follows the microprogram starts.
         if(address==0x10003020) {checkMemory(rdram,0,0);return 0;}
     }
     if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {

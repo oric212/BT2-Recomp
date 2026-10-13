@@ -34,6 +34,26 @@ int main() {
         check(rejected && gs.transfers==1 && gs.state.regs==regs && gs.word(inside).value==0xDEADBEEF);
         bool odd=false;try{gs.transfer(std::span<const std::uint8_t>(t.data(),8));}catch(const std::runtime_error&){odd=true;}
         check(odd);
+        // GPU-only validation (rasterize off): the same packet with the line kick is accepted, since
+        // the GPU draws; so are a perspective-textured, fogged triangle, a PSMT8 host-to-local
+        // transfer with its IMAGE data and a CT16 CLUT load. Packet framing, undefined registers and
+        // local-to-host transfers are still refused.
+        GsCommandSink gpu;gpu.rasterize=false;gpu.transfer(bad);
+        check(gpu.transfers==1 && gpu.frame_sprites==0 && gpu.frame_pixels==0);
+        std::vector<std::uint8_t> p;
+        auto g=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);p.insert(p.end(),b,b+16);};
+        g(0x1000000000000005ULL,0xE);
+        g(0x33,0x00);g(0,0x04);g(0,0x04);g(0,0x04); // PRIM triangle, TME, FGE (STQ): three XYZF2 kicks.
+        g(0x13ULL<<56,0x50);                         // BITBLTBUF: PSMT8 destination.
+        g(0x1000000000000003ULL,0xE);g(0x0000000400000010ULL,0x52);g(0,0x53);g((1ULL<<61)|(2ULL<<51)|(0x13ULL<<20),0x06); // TRXREG 16x4, TRXDIR 0; TEX0 CLD 1, CT16 CLUT.
+        g(0x0800000000008004ULL,0);g(0,0);g(0,0);g(0,0);g(0,0); // IMAGE, 4 quadwords, EOP.
+        gpu.transfer(p);
+        check(gpu.transfers==2 && gpu.frame_triangles==1 && gpu.image_pixels==0 && gpu.clut_loads==0 && !gpu.state.trx);
+        auto refusedByGpu=[&](std::vector<std::uint8_t> packet) {try{gpu.transfer(packet);}catch(const std::runtime_error&){return true;}return false;};
+        p.clear();g(0x1000000000008001ULL,0xE);g(1,0x53);check(refusedByGpu(p)); // TRXDIR 1: local to host.
+        p.clear();g(0x1000000000008001ULL,0xE);g(0,0x12);check(refusedByGpu(p)); // Undefined register.
+        p.clear();g(0x1000000000008002ULL,0xE);g(0,0x00);check(refusedByGpu(p)); // PACKED data exceeds the transfer.
+        check(gpu.transfers==2);
     }
     {
         // Triangles. An 8x8 square drawn as a two-triangle strip, then as a two-triangle fan, covers each

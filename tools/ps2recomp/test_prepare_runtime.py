@@ -107,6 +107,45 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertEqual(text.count('runtime->vu0UpdateFlags(ctx, 0x4bab282cu);'),1)
         self.assertIn('vsub.xyw    $vf0, $vf5, $vf11\n    runtime->vu0UpdateFlags(ctx, 0x4bab282cu);\n    ctx->pc = 0x129484u;',text)
 
+    def test_sqrt_takes_its_operand_from_ft(self):
+        from prepare_runtime import fix_sqrt_operand
+        source=('    // 0x144314: 0x460c0084  c1          0xC0084\n    ctx->pc = 0x144314u;\n    ctx->f[2] = FPU_SQRT_S(ctx->f[0]);\n'
+                '        // 0x13b4c8: 0x46140044  c1          0x140044 (Delay Slot)\n        ctx->f[1] = FPU_SQRT_S(ctx->f[0]);\n')
+        text,count=fix_sqrt_operand(source)
+        self.assertEqual(count,2)
+        self.assertIn('    ctx->f[2] = FPU_SQRT_S(ctx->f[12]);\n',text)
+        self.assertIn('        ctx->f[1] = FPU_SQRT_S(ctx->f[20]);\n',text)
+        self.assertEqual(fix_sqrt_operand('    ctx->f[1] = FPU_ADD_S(ctx->f[1], ctx->f[0]);\n')[1],0)
+        with self.assertRaises(ValueError):fix_sqrt_operand('    ctx->f[2] = FPU_SQRT_S(ctx->f[0]);\n')
+        with self.assertRaises(ValueError):fix_sqrt_operand('    // 0x100000: 0x46000840  add.s\n    ctx->f[2] = FPU_SQRT_S(ctx->f[0]);\n')
+
+    def test_unresolved_jump_table_reenters_the_function(self):
+        from prepare_runtime import route_local_indirect_jumps
+        jump=('    {\n        const uint32_t jumpTarget = GPR_U32(ctx, 3);\n        ctx->pc = jumpTarget;\n'
+              '        if (!runtime->dispatchGuestBranch(rdram, ctx, jumpTarget, 0x1004u, 0x0u, PS2Runtime::GuestBranchKind::IndirectJump, "JR")) {\n            return;\n        }\n    }\n')
+        source=('void f(uint8_t* rdram, R5900Context* ctx, PS2Runtime *runtime) {\n\n    switch (ctx->pc) {\n        case 0x1000u: goto label_1000;\n'
+                '        case 0x100cu: goto label_100c;\n        default: break;\n    }\n'+jump+'label_100c:\n}\n')
+        text,count=route_local_indirect_jumps(source)
+        self.assertEqual(count,1)
+        self.assertIn('\nbt2_reenter:\n    switch (ctx->pc) {\n',text)
+        self.assertIn('        switch (jumpTarget) { case 0x1000u: case 0x100cu: goto bt2_reenter; default: break; }\n        if (!runtime->dispatchGuestBranch(rdram, ctx, jumpTarget,',text)
+        # Without entry labels (a plain function-pointer jump) nothing changes.
+        plain='void f() {\n'+jump+'}\n'
+        self.assertEqual(route_local_indirect_jumps(plain),(plain,0))
+        with self.assertRaises(ValueError):route_local_indirect_jumps(source.replace('case 0x100cu: goto label_100c;','case 0x100cu: return;'))
+
+    def test_vf0_stays_constant(self):
+        from prepare_runtime import keep_vf0_constant
+        source=('    { __m128 res = PS2_VSUB(ctx->vu0_vf[5], ctx->vu0_vf[11]); __m128i mask = _mm_set_epi32(-1, 0, -1, -1); '
+                'ctx->vu0_vf[0] = PS2_VBLEND(ctx->vu0_vf[0], res, _mm_castsi128_ps(mask)); }\n'
+                '    ctx->vu0_vf[10] = PS2_VADD(ctx->vu0_vf[0], ctx->vu0_vf[1]);\n')
+        text,count=keep_vf0_constant(source)
+        self.assertEqual(count,1)
+        self.assertIn('(void)PS2_VBLEND(ctx->vu0_vf[0], res, _mm_castsi128_ps(mask)); }\n',text)
+        self.assertIn('ctx->vu0_vf[10] = PS2_VADD(ctx->vu0_vf[0], ctx->vu0_vf[1]);',text)
+        with self.assertRaises(ValueError):keep_vf0_constant('    std::memcpy(&ctx->vu0_vf[0], &bits, 16);\n')
+        with self.assertRaises(ValueError):keep_vf0_constant('    ctx->vu0_vf[0]  = x;\n')
+
     def test_vu0_memory_instructions_run_natively(self):
         source=('    // 0x128ef0: 0x4bef837d  vsqi.xyzw   $vf16, ($vi15++)\n    ctx->pc = 0x128ef0u;\n'
                 '    { uint32_t addr = ((uint32_t)(ctx->vi[16] & 0x3FF)) << 4; WRITE128(addr, x); }\n'

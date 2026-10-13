@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-12",
+  "updated": "2026-10-13",
   "flow": [
     {
       "name": "Startup",
@@ -28,13 +28,13 @@
     },
     {
       "name": "Demo fight",
-      "status": "not_reached",
-      "note": "If no Start"
+      "status": "working",
+      "note": "Renders in 3D"
     },
     {
       "name": "Gameplay",
-      "status": "blocked",
-      "note": "Needs 3D pipeline",
+      "status": "not_reached",
+      "note": "Menu path next",
       "current": true
     }
   ],
@@ -75,12 +75,12 @@
         {
           "name": "GS",
           "status": "working",
-          "note": "GPU (paraLLEl-GS) or CPU renderer"
+          "note": "GPU draws 3D; CPU renderer 2D only"
         },
         {
           "name": "GIF / VIF",
           "status": "working",
-          "note": "Chain DMA, call/ret; no VIF unpack"
+          "note": "Display lists run; V4/S unpack"
         },
         {
           "name": "IPU / video",
@@ -94,8 +94,8 @@
         },
         {
           "name": "VU microprograms",
-          "status": "blocked",
-          "note": "VU0 inline code runs; VU1 next"
+          "status": "working",
+          "note": "VU1 interpreter; not yet compared"
         }
       ]
     },
@@ -120,7 +120,7 @@
         {
           "name": "Tests",
           "status": "verified",
-          "note": "17/17 CTests; Python suites pass"
+          "note": "18/18 CTests; Python suites pass"
         },
         {
           "name": "Original comparisons",

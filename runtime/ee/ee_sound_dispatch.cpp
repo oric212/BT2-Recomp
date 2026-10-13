@@ -181,7 +181,7 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     ++vblank_deliveries;main_calls_since_field_=main_checkpoints_since_field_=0;
     // Time advancing without any presented frame is bounded: 3,600 fields (a minute) stop the run.
     if(gs_display_flips!=flipless_flips_) {flipless_flips_=gs_display_flips;flipless_fields_=0;}
-    if(gs_display_flips && ++flipless_fields_>3600)throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for 3600 fields");
+    if(gs_display_flips && ++flipless_fields_>flipless_field_limit)throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for "+std::to_string(flipless_field_limit)+" fields");
     nativePadVblank(rdram);       // Pad state for this field, before EE handlers run.
     nativeCriVblank(interrupted); // CRI stream buffers returned for this field.
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");

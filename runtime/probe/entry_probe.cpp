@@ -40,6 +40,12 @@ int main(int argc, char** argv) {
         const bool viewer_mode = std::getenv("BT2_VIEWER") != nullptr;
         runtime.frame_limit = viewer_mode ? 0 : 1000;
         if (const char* limit = std::getenv("BT2_FRAME_LIMIT")) runtime.frame_limit = static_cast<unsigned>(std::stoul(limit));
+        if (const char* watch = std::getenv("BT2_EE_WATCH_FLOAT")) {
+            runtime.float_watch_address = static_cast<std::uint32_t>(std::stoul(watch, nullptr, 16));
+            runtime.float_watch_limit = std::strchr(watch, ':') ? std::stof(std::strchr(watch, ':') + 1) : 1e9f;
+        }
+        // BT2_STALL_FIELDS: fields without a display flip before the run stops (default 3600).
+        if (const char* limit = std::getenv("BT2_STALL_FIELDS")) runtime.flipless_field_limit = static_cast<unsigned>(std::stoul(limit));
 #ifdef _WIN32
         // Viewer mode: present the displayed framebuffer at each flip; keep the last frame visible after
         // the run stops until the window is closed. Closing the window during a run ends the process.
@@ -66,15 +72,25 @@ int main(int argc, char** argv) {
             runtime.gif_dma.gs.rasterize = !gpu_only;
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
             // BT2_GPU_GS_SNAPSHOT=<flip>:<path> writes that flip's GPU scanout as a binary PPM.
-            const char* snapshot = std::getenv("BT2_GPU_GS_SNAPSHOT");
-            const unsigned snapshot_flip = snapshot ? static_cast<unsigned>(std::stoul(snapshot)) : 0;
-            const std::string snapshot_path = snapshot && std::strchr(snapshot, ':') ? std::strchr(snapshot, ':') + 1 : "";
-            runtime.on_display_flip = [&runtime, viewer_mode, gpu_only, snapshot_flip, snapshot_path] {
+            // Several flips: <flip>:<path> entries separated by ';'.
+            static std::map<unsigned, std::string> snapshots;
+            if (const char* snapshot = std::getenv("BT2_GPU_GS_SNAPSHOT")) {
+                std::string list = snapshot;
+                for (std::size_t at = 0; at < list.size();) {
+                    const auto end = std::min(list.find(';', at), list.size());
+                    const auto entry = list.substr(at, end - at);
+                    const auto colon = entry.find(':');
+                    if (colon != std::string::npos) snapshots[static_cast<unsigned>(std::stoul(entry))] = entry.substr(colon + 1);
+                    at = end + 1;
+                }
+            }
+            runtime.on_display_flip = [&runtime, viewer_mode, gpu_only] {
                 const auto flip = runtime.gs_display_flips;
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
-                if (!viewer_mode && flip != snapshot_flip) return;
+                const auto snapshot = snapshots.find(flip);
+                if (!viewer_mode && snapshot == snapshots.end()) return;
                 const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
-                if (flip == snapshot_flip && !snapshot_path.empty()) writePpm(snapshot_path, frame);
+                if (snapshot != snapshots.end()) writePpm(snapshot->second, frame);
                 if (!viewer_mode || !frame.width) return;
                 viewer.present(frame, flip);
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}

@@ -9,6 +9,17 @@ Run the game's 3D drawing path natively: VIF1 display lists unpack vertex data i
 - **Whole-game surface of generated VU0 macro code** (surveyed in the generated sources): `vu0_vf` (5,791 uses), `vu0_acc` (1,428), `vu0_q` (105), `vu0_r` (30), status flags (12, in clip tests), clip flags (3), four arithmetic helpers and eight VU0 memory instructions. VU0 micro mode (VCALLMS) has not been seen.
 - **Not yet known:** which VIFcodes the lists use, how many VU1 microprograms the game has and how large they are, and whether VU1 output reaches the GS only through XGKICK.
 
+## Progress (2026-10-13)
+
+Steps 1 to 3 of the order below are done and the first 3D frames are presented (step 4 without the PCSX2 comparison):
+
+- **Display lists:** the first list uses MPG, BASE, OFFSET, UNPACK V4-32 (plain write cycle), MSCALF, MSCNT, FLUSHE and DIRECT. It was the idle demo fight's list, not New Game's.
+- **Code:** `runtime/vu/vif1.*` (VIFcodes; a transfer is checked as a whole before it runs) and `runtime/vu/vu1.*` (memory, interpreter, XGKICK packets). `EeRuntime::frameVif1Start` walks the DMA chain and feeds the words; XGKICK and DIRECT data reach the GS in list order.
+- **Microprograms:** five in the first list (101 to 451 instructions), more later (48,963 uploads in the long run). Modelled instructions: the set those programs use, listed in `vu1.cpp`; every other one stops by name.
+- **Pipeline model:** one cycle per instruction pair; Q is visible 7 cycles after DIV, the clip flags 4 cycles after CLIP; no stall cycles. Reads that fall inside such a delay are counted (`vu1_early_q_reads`, `vu1_early_clip_reads` in the probe report): both are 0 over 4.43 billion instructions, so the programs reached so far do not depend on stall timing. A branch on an integer register written by the previous instruction is refused unless that instruction is a flag instruction (the programs pair `FCOR` with `IBNE` directly).
+- **Rendering:** GPU renderer only. The CPU GS model refuses the 3D drawing states; in GPU-only mode it checks packet framing only.
+- **Open:** VU1 memory against a PCSX2 capture, a frame comparison with the original, the CPU renderer's 3D states, and measured frame time (the 9,000-frame long run takes 214 s with the interpreter).
+
 ## Design
 
 1. **VIF1 interpreter** (`runtime/gs/` or a new `runtime/vu/` folder, decided when the code exists): VIFcodes from chain data and, with TTE, from the tags. State: CYCLE (STCYCL), MASK/ROW/COL (STMASK, STROW, STCOL), MODE (STMOD), BASE/OFST/TOPS/TOP (BASE, OFFSET, the double-buffer swap at MSCAL), ITOPS/ITOP, MARK. Commands: NOP, MSKPATH3, FLUSH/FLUSHE/FLUSHA, MPG (microprogram upload), UNPACK (all formats the lists use, with masking and addition modes), MSCAL/MSCALF/MSCNT, DIRECT/DIRECTHL (existing path). Each unsupported code or UNPACK format stops by name.

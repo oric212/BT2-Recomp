@@ -58,7 +58,9 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ipu_input.cpp
     runtime/ee/ipu_vlc.cpp
     runtime/ee/ipu_block.cpp
-    runtime/ee/ipu_csc.cpp)
+    runtime/ee/ipu_csc.cpp
+    runtime/vu/vu1.cpp
+    runtime/vu/vif1.cpp)
 
 option(BT2_BUILD_GENERATED_PROBE "Build the isolated local generated-code probe" OFF)
 if(BT2_BUILD_GENERATED_PROBE)
@@ -105,6 +107,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
     bt2_target_defaults(bt2-dma-chain-tests)
     add_test(NAME dma-chain COMMAND bt2-dma-chain-tests)
+    add_executable(bt2-vu1-tests runtime/tests/vu1_tests.cpp runtime/vu/vu1.cpp runtime/vu/vif1.cpp)
+    bt2_target_defaults(bt2-vu1-tests)
+    add_test(NAME vu1 COMMAND bt2-vu1-tests)
     # GPU GS through paraLLEl-GS (docs/plans/graphics/GPU_RENDERING_PLAN.md); fetch it with
     # tools/graphics/gpu/fetch_parallel_gs.py. Off until it matches the CPU model.
     option(BT2_GPU_GS "Build the paraLLEl-GS backend and its tests" OFF)

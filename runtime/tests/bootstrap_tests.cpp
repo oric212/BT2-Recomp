@@ -1630,9 +1630,10 @@ int main() {
             require(vs.busy_main_vblanks==4);
         }
         {
-            // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS);
-            // UNPACK, a DIRECT crossing a tag, or a DIRECT the GS refuses stop at the channel start
-            // with no channel or GS effect and the code/tag recorded.
+            // Frame VIF1 chains: NOP-only and DIRECT chains complete (DIRECT data reaches the GS, also
+            // when it continues behind the next tag); a code that is not modelled or a DIRECT the GS
+            // refuses stops at the channel start with no channel or GS effect and the code/tag recorded.
+            // The codes themselves are covered by vu1_tests.cpp.
             EeRuntime vf;vf.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=vf.memory().data();
             auto tag=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
             tag(0x2000,0x70000000,0);vf.frame_vif1.tadr=0x2000;vf.frameVif1Start(0x145);
@@ -1641,14 +1642,16 @@ int main() {
             vf.frame_vif1.tadr=0x2100;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==2 && vf.frame_vif1.directs==1 && vf.frame_vif1.direct_qwords==1 && vf.gif_dma.gs.transfers==1 && vf.frame_vif1.tadr==0x2130);
             auto refuse=[&](std::uint32_t at,std::uint32_t code) {
-                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;
+                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;const auto starts=vf.frame_vif1.starts,transfers=vf.gif_dma.gs.transfers;
                 bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
-                require(refused && vf.frame_vif1.starts==2 && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gif_dma.gs.transfers==1
+                require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gif_dma.gs.transfers==transfers
                     && vf.frame_vif1.blocked_code==code && vf.frame_vif1.unsupported==before+1);
             };
-            tag(0x3000,0x10000001,0x6C01000000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x6C010000); // UNPACK.
-            tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0x8000,0);
-            refuse(0x3100,0x50000002); // DIRECT payload continues in the next tag.
+            tag(0x3000,0x10000001,0x0600800000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x06008000); // MSKPATH3.
+            // DIRECT 2 whose second quadword is the next tag's upper half and the first half of its data.
+            tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0,0);
+            vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
+            require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gif_dma.gs.transfers==2 && vf.frame_vif1.tadr==0x3140);
             tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x0800000000008001ull,0);tag(0x3220,0x70000000,0);
             refuse(0x3200,0x50000000); // DIRECT IMAGE without a host-to-local transfer: refused by the GS.
         }

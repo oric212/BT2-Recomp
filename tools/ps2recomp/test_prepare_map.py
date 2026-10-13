@@ -142,6 +142,13 @@ class BoundedSwitchTests(unittest.TestCase):
         for index,value in [(4,0x8E431C00),(4,0x00431821),(4,0x03E00008),(2,0x2C620000)]:
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
+        # FPU arithmetic writes no integer register: allowed in the delay slot and between the bound
+        # and the guard (seen at 0x12001C); MFC1 into the index or the condition is not.
+        fpu=words.copy();fpu[1],fpu[2],fpu[4]=0x2C620002,0x46001D42,0x46011D02
+        self.assertTrue(has_branch_nop_gaps(candidate,metadata,pack(fpu)))
+        for index,value in [(4,0x44030000),(2,0x44020000),(2,0x44030000)]:
+            changed=fpu.copy();changed[index]=value
+            self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
     def test_external_jump_target_for_overlay_programs(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x40,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
@@ -208,6 +215,77 @@ class SwitchCaseGapTests(unittest.TestCase):
         pack=lambda w:struct.pack('<20I',*w)
         called=self.words.copy();called[10]=0x0C000400;called[11]=0 # JAL 0x1000 with a NOP delay slot.
         self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(called)))
+
+    def test_case_block_may_branch_on_an_fpu_condition(self):
+        # A case block with BC1TL into the candidate and a NOP delay slot, falling through into the
+        # next span (seen at 0x1E6C74); the same branch leaving the candidate is refused.
+        pack=lambda w:struct.pack('<20I',*w)
+        fpu=self.words.copy();fpu[9],fpu[10],fpu[11],fpu[16],fpu[17]=0x45030002,0,0,0x1024,0x1024
+        self.assertTrue(has_switch_case_gaps(self.candidate,self.metadata,pack(fpu)))
+        fpu[9]=0x45030040
+        self.assertFalse(has_switch_case_gaps(self.candidate,self.metadata,pack(fpu)))
+
+    def test_switch_bound_and_index_kept_in_the_stack_frame(self):
+        # ADDIU sp / SW a0,0x10(sp) / LW v0,0x10(sp) / SLTIU v0,v0,2 / SW v0,0x14(sp) / LW v0,0x14(sp) /
+        # BEQ v0,zero,default / LW a0,0x10(sp) (delay) / table jump / NOP; a case block in the hole
+        # (0x1519A8 shape). Each slot is stored once and the frame is fixed.
+        words=[0x27BDFFE0,0xAFA40010,0x8FA20010,0x2C420002,0xAFA20014,0x8FA20014,0x10400009,0x8FA40010,
+               0x00041080,0x3C030000,0x00621821,0x8C631048,0x00600008,0,0x03E00008,0x27BD0020,0x03E00008,0x27BD0020,0x1038,0x1040]
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        candidate={'start':0x1000,'end_exclusive':0x1048,'body_size':64,'contiguous_aligned':False,'body_ranges':['1000-1037','1040-1047']}
+        pack=lambda w:struct.pack('<20I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        # A second store to the condition slot, the index slot's address taken, a bound on another
+        # slot's value, a frame that changes, or a doubleword store over the index slot: unproven.
+        for index,value in [(13,0xAFA20014),(13,0x27A50010),(2,0x8FA20018),(13,0x27BDFFF8),(13,0xFFA20010)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(changed)))
+
+    def test_switch_bound_kept_in_a_callee_saved_register(self):
+        # SW a0,0x10(sp) / LW v1,0x10(sp) / SLTIU s1,v1,2 / ... / BEQ s1,zero,default / LW a0,0x10(sp)
+        # (delay) / table jump (0x23AE34 shape): s1 keeps the condition up to the guard.
+        words=[0x27BDFFE0,0xAFA40010,0x8FA30010,0x2C710002,0,0,0x12200009,0x8FA40010,
+               0x00041080,0x3C030000,0x00621821,0x8C631048,0x00600008,0,0x03E00008,0x27BD0020,0x03E00008,0x27BD0020,0x1038,0x1040]
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        candidate={'start':0x1000,'end_exclusive':0x1048,'body_size':64,'contiguous_aligned':False,'body_ranges':['1000-1037','1040-1047']}
+        pack=lambda w:struct.pack('<20I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        called=words.copy();called[4]=0x0C000400 # A call in between leaves s1 intact.
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(called)))
+        # s1 rewritten on the way, a second SLTIU into s1, a bound on another slot's value, or the
+        # condition in a register calls may change (v1 through SLTIU v1 / BEQ v1): unproven.
+        for changes in [{4:0x0000882D},{4:0x2C710003},{2:0x8FA30018},{3:0x2C630002,6:0x10600009,9:0x3C020000,10:0x00431021,11:0x8C421048,12:0x00400008,8:0x00041880}]:
+            changed=words.copy()
+            for index,value in changes.items():changed[index]=value
+            self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(changed)))
+
+    def test_case_block_continues_at_its_own_branch_target(self):
+        # A case block: BNE a0,zero to the other arm / NOP / JR RA / NOP, then that arm (JR RA / DADDU),
+        # reached only by the branch (0x14C988 shape). A branch into the arm's delay slot is refused.
+        words=[0x2C820006,0x1040000D,0,0x00041080,0x3C030000,0x00621821,0x8C631044,0x00600008,0,
+               0x14800003,0,0x03E00008,0,0x03E00008,0x0000102D,0x03E00008,0x24020001,
+               0x103C,0x103C,0x1024,0x1024,0x103C,0x103C]
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x5C,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        candidate={'start':0x1000,'end_exclusive':0x1044,'body_size':44,'contiguous_aligned':False,'body_ranges':['1000-1023','103c-1043']}
+        pack=lambda w:struct.pack('<23I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        slot=words.copy();slot[9]=0x14800004
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(slot)))
+        # Without the branch the arm is unexplained code in the hole.
+        plain=words.copy();plain[9]=0
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(plain)))
+
+    def test_fpu_load_in_the_guard_delay_slot(self):
+        # The base shape with LWC1 in the guard's delay slot (it writes no integer register; seen at
+        # 0x1514E8) and one more padding NOP before the case block.
+        words=[0x2C820006,0x1040000B,0xC6990008,0x00041080,0x3C030000,0x00621821,0x8C63103C,0x00600008,0,
+               0,0,0x03E00008,0x0000102D,0x03E00008,0x24020001,0x1034,0x1034,0x102C,0x102C,0x1034,0x1034]
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x54,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        candidate={'start':0x1000,'end_exclusive':0x103C,'body_size':44,'contiguous_aligned':False,'body_ranges':['1000-1023','1034-103b']}
+        pack=lambda w:struct.pack('<21I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        loaded=words.copy();loaded[2]=0x8E840008 # LW a0 in the delay slot rewrites the index.
+        self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(loaded)))
 
     def test_switch_candidate_may_also_have_a_padding_hole(self):
         # As above, plus a second hole that is only a NOP after JR RA and its delay slot (0x23CDF8 shape).

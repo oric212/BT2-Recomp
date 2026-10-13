@@ -76,7 +76,7 @@ The smoke test creates our own ELF containing `addiu v0, zero, 42; jr ra; nop` a
 
 ## GPU GS (paraLLEl-GS)
 
-`python tools/graphics/gpu/fetch_parallel_gs.py` checks out the revision pinned in `config/parallel_gs.lock.json` (and the Granite submodules it needs) into ignored `work/dependencies/`. Configure with `-DBT2_GPU_GS=ON` to build `bt2-gpu-gs-tests` and link the backend into the probe; `BT2_GPU_GS=mirror` then renders every accepted GIF transfer on the GPU as well and compares VRAM at each flip; `BT2_GPU_GS=on` draws on the GPU only (the CPU model just validates). `run_startup_probe.py --gs auto|gpu|cpu|mirror` picks the mode; `auto` (default) uses the GPU when the build has `BT2_GPU_GS`. `render_gs_frame.py` (in `tools/graphics/cpu/`) needs a `--gs cpu` run. Tools are split by renderer: `tools/graphics/cpu/` and `tools/graphics/gpu/`. With either, `--viewer` shows the GPU scanout and `BT2_GPU_GS_SNAPSHOT=<flip>:<path>` saves one flip as PPM ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)).
+`python tools/graphics/gpu/fetch_parallel_gs.py` checks out the revision pinned in `config/parallel_gs.lock.json` (and the Granite submodules it needs) into ignored `work/dependencies/`. Configure with `-DBT2_GPU_GS=ON` to build `bt2-gpu-gs-tests` and link the backend into the probe; `BT2_GPU_GS=mirror` then renders every accepted GIF transfer on the GPU as well and compares VRAM at each flip; `BT2_GPU_GS=on` draws on the GPU only (the CPU model just validates). `run_startup_probe.py --gs auto|gpu|cpu|mirror` picks the mode; `auto` (default) uses the GPU when the build has `BT2_GPU_GS`. `render_gs_frame.py` (in `tools/graphics/cpu/`) needs a `--gs cpu` run. Tools are split by renderer: `tools/graphics/cpu/` and `tools/graphics/gpu/`. With either, `--viewer` shows the GPU scanout and `BT2_GPU_GS_SNAPSHOT=<flip>:<path>` saves a flip as PPM (several entries separated by `;`) ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)).
 
 ## Local BT2 generation
 
@@ -636,7 +636,17 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **IOP write watchpoint.** `BT2_IOP_WATCH=<hex>` stops the native IOP on the first nonzero store to that address and reports the writing PC and thread.
 
+**Stall budget.** `BT2_STALL_FIELDS=<n>` (default 3600) sets how many fields may pass without a display flip before the run stops. A busy main thread takes about a quarter second per field, so a small value (for example 120) turns a hang into a report within seconds; the report's `stop_returns` show the call chain.
+
+**Float watch.** `BT2_EE_WATCH_FLOAT=<hex address>:<limit>` stops the run at the first guest call that finds the float at that EE address non-finite or above the limit in magnitude, and names that call, the previous call and the main registers. An address below 32 watches the x field of that VU0 float register (`1F` is `vf31`). Following a bad value from its reader to its writer takes one run per step.
+
 **Map and generation.**
+- `prepare_runtime.py` keeps `VF0` constant (`keep_vf0_constant`): an instruction with `VF0` as destination has only its flag effects (the game's clip tests subtract into it), but the generator emits the register write, after which every routine that uses `vf0` as (0, 0, 0, 1) computes garbage. 34 sites (`vf0_writes_dropped`).
+- `prepare_runtime.py` restores the operand of `SQRT.S` from the instruction word (`fix_sqrt_operand`): on the R5900 it is `ft`, and the generator emits the root of `fs` (`$f0`). 150 sites; the count per file is in `runtime-preparation.json` (`sqrt_operand_fixes`).
+- `prepare_runtime.py` lets a `JR` the generator did not resolve (a jump table it did not recognize, emitted as a dispatch to another function) continue at the function's own entry label (`route_local_indirect_jumps`, counted as `local_indirect_jumps`); a target that is not one of its labels still goes to the dispatcher, which refuses it.
+- `prepare_map.py` proves switches whose index is reloaded from the stack frame in the guard's delay slot (`spilled_bound`): the frame is fixed, the index slot is stored once before any branch, and the `SLTIU` result reaches the guard through a stack slot stored once (seen at `0x1519A8`) or in a callee-saved register that nothing rewrites on the way (seen at `0x23AE34`). Writes through pointers to other locals are assumed not to reach those slots.
+- `prepare_map.py` case blocks may contain FPU condition branches and continue at the targets of their own branches (the other arm of a condition, `0x14C988`); padding may follow a proven switch jump.
+- `prepare_map.py` accepts FPU-only instructions (COP1 S/W arithmetic, MTC1) in a switch guard's delay slot and between the bound and the guard (seen at `0x12001C`).
 - `prepare_map.py` proves BEQ-guarded switch tables whose delay slot keeps the index register intact.
 - For overlay programs, the padding proof accepts J targets in the main executable's .text.
 - `prepare_runtime.py` routes inline DirectJump dispatches (J to another program's function) as tail jumps.

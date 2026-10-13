@@ -45,7 +45,8 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | First presented frame; controller and memory card checks | ✅ Verified | 650 frames before the movie; 1,000 with its first fields |
 | Opening movie | 🟢 Operational | Logo and opening movies play to the end (native IPU, native ADX flow, no sound) |
 | Title screen | 🟢 Operational | Renders with its options; reached with scripted input |
-| Title screen, demo fight, menus | ⏳ Not Reached | |
+| Demo fight | 🟢 Operational | Two idle demo fights render in 3D through VIF1/VU1 on the GPU renderer and play to their end; frames inspected, not compared with the original |
+| Menus | ⏳ Not Reached | The scripted Start presses did not leave the title/demo cycle |
 | Character selection and battle loading | ⏳ Not Reached | |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal |
 | Audio and a full match | ⏳ Not Reached | |
@@ -59,6 +60,9 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default, with the CPU renderer as fallback.
 4. **GIF DMA chain mode** — done 2026-10-11: frame-phase GIF channel 2 runs source chains through the DMA chain walker shared with VIF1. Still open: merging the startup GIF channel-2 models into the frame one.
 5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md), [IPU plan](../plans/video/IPU_PLAN.md)), operational: the native IPU decodes both movies and the native CRI service paces them with the player's played-data reports. Next: the SOUNDS request after the movies (`0x50`, to be captured), then systematic frame comparison with ffmpeg.
+
+6. **3D pipeline** ([plan](../plans/graphics/VU1_PIPELINE_PLAN.md)), operational since 2026-10-13: VIF1 display lists and a VU1 microprogram interpreter feed the GS; the demo fights render on the GPU renderer. Next: comparison with PCSX2 (VU1 memory, a frame), the CPU renderer's 3D drawing states, measured frame time.
+7. **Menus and battle setup** — next: the input that leaves the title screen, then New Game through its boundaries toward character selection.
 
 ## Working method
 

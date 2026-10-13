@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cmath>
 #include "ee_runtime.h"
 
 // EeRuntime guest call dispatch and kernel function binding.
@@ -36,6 +37,16 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
         context->pc = target;
         ++returns;
         return true;
+    }
+    if(float_watch_address) {
+        float value; // Addresses below 32 name a VU0 float register (its x field).
+        if(float_watch_address<32)value=_mm_cvtss_f32(context->vu0_vf[float_watch_address]); else std::memcpy(&value,rdram+float_watch_address,4);
+        if(!(std::fabs(value)<=float_watch_limit)) {
+            char text[360];std::snprintf(text,sizeof text,"Float watch 0x%X: %g before the call 0x%X -> 0x%X (previous call 0x%X -> 0x%X, thread %u; v0 0x%X v1 0x%X a0 0x%X a1 0x%X s0 0x%X s1 0x%X s2 0x%X ra 0x%X)",
+                float_watch_address,value,source,target,last_branch_source_,last_branch_target_,current_thread_id,
+                context->r[2].low,context->r[3].low,context->r[4].low,context->r[5].low,context->r[16].low,context->r[17].low,context->r[18].low,context->r[31].low);
+            float_watch_address=0;throw std::runtime_error(text);
+        }
     }
     last_branch_source_=source;last_branch_target_=target;
     if(target==0x2EF218 && source==0x1007F0 && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {

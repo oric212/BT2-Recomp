@@ -25,17 +25,17 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | --- | --- |
 | Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
 | Main frame loop | ✅ Verified — key startup states match original captures |
-| First presented frame | ✅ Verified — 1,000 frames in the gate run; 7,902 in the long Release run |
+| First presented frame | ✅ Verified — 1,000 frames in the gate run; 9,000 (the budget) in the long Release run |
 | Controller check | ✅ Verified — passed with the native controller service |
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
 | Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end (decoded natively, no sound); frames match an independent decoder at spot checks |
 | Title screen | 🟢 Operational — the title screen and its options render (the user confirms the picture); reached with scripted Start presses |
-| Demo fight (no input) | ⏳ Not Reached |
-| Gameplay (menus, versus battle) | ⛔ Blocking — after New Game the game starts its 3D pipeline: VIF1 display lists with tag transfer and VU1 microprograms, not modelled yet |
+| Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (about 5,600 frames; frames inspected, not compared with the original); no sound |
+| Gameplay (menus, versus battle) | ⏳ Not Reached — the scripted Start presses did not leave the title/demo cycle; the menu path is next |
 | Audio | 🔧 Incomplete — sound requests and stream flow answered natively; no sound output |
 | Saves | ⏳ Not Reached — no memory card image yet |
 
-**Measured 2026-10-12:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run · static coverage **10,650 EE functions mapped and generated** · verification **17/17 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,854 / 4,847 in the long run) · static coverage **10,680 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.

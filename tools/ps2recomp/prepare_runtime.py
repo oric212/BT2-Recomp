@@ -140,6 +140,44 @@ def route_vu_memory(source):
     return text,count
 
 
+def fix_sqrt_operand(source):
+    # SQRT.S on the R5900 takes its operand from ft (the fs field is 0): fd = sqrt(ft). The generator
+    # emits sqrt(fs), the root of $f0. Operand and destination are restored from the instruction word.
+    pattern=re.compile(r'(// 0x[0-9a-f]+: 0x([0-9a-f]+)  [^\n]*\n(?:\s*ctx->pc = 0x[0-9a-f]+u;\n)?\s*)ctx->f\[\d+\] = FPU_SQRT_S\(ctx->f\[\d+\]\);')
+    def fix(m):
+        word=int(m[2],16)
+        if word>>21!=0x230 or word&0x3F!=4:raise ValueError('FPU_SQRT_S emitted for another instruction')
+        return f'{m[1]}ctx->f[{(word>>6)&31}] = FPU_SQRT_S(ctx->f[{(word>>16)&31}]);'
+    text,count=pattern.subn(fix,source)
+    if text.count('FPU_SQRT_S(')!=count:raise ValueError('Unrecognized generated SQRT.S')
+    return text,count
+
+
+def route_local_indirect_jumps(source):
+    # A JR the generator could not resolve (a jump table it did not recognize) is emitted as a
+    # dispatch to another function. When the target is one of this function's own entry labels (the
+    # generator emits one per instruction for such functions), execution continues there through the
+    # function's entry switch; any other target still goes to the dispatcher, which refuses it.
+    pattern=re.compile(r'([ \t]*)(if \(!runtime->dispatchGuestBranch\(rdram, ctx, jumpTarget, 0x[0-9A-Fa-f]+u, 0x0u, PS2Runtime::GuestBranchKind::IndirectJump, "JR"\)\))')
+    if not pattern.search(source):return source,0
+    head=re.search(r'\n([ \t]*)switch \(ctx->pc\) \{\n(.*?)\n[ \t]*default: break;',source,re.S)
+    if not head:return source,0 # No entry labels: every target is another function's.
+    labels=re.findall(r'case (0x[0-9a-f]+u): goto label_[0-9a-f]+;',head[2])
+    if not labels or len(labels)!=head[2].count('case '):raise ValueError('Unrecognized generated entry switch')
+    cases=' '.join(f'case {label}:' for label in labels)
+    text,count=pattern.subn(lambda m:f'{m[1]}switch (jumpTarget) {{ {cases} goto bt2_reenter; default: break; }}\n{m[1]}{m[2]}',source)
+    return text.replace(head[0],f'\nbt2_reenter:{head[0]}',1),count
+
+
+def keep_vf0_constant(source):
+    # VF0 is hard-wired to (0, 0, 0, 1): an instruction naming it as destination only has its flag
+    # effects (the game's clip tests subtract into VF0). The generator emits the register write, which
+    # corrupts every later use of VF0; the value is computed and dropped instead.
+    text,count=re.subn(r'ctx->vu0_vf\[0\] = ',r'(void)',source)
+    if re.search(r'ctx->vu0_vf\[0\]\s*(=[^=]|[-+*/|&^]=)',text) or '&ctx->vu0_vf[0]' in text:raise ValueError('Unrecognized generated write to VF0')
+    return text,count
+
+
 def widen_sign_branches(source):
     # BLTZ/BGEZ/BLEZ/BGTZ (and their likely/link forms) compare the full 64-bit register on the R5900;
     # the generator emits a 32-bit test, which misreads e.g. a 64-bit BUSY flag in bit 63.
@@ -217,10 +255,13 @@ def main():
         text,sign_count=widen_sign_branches(text)
         text,recursive_count=route_recursive_calls(text,address)
         text,vu_memory_count=route_vu_memory(text)
+        text,sqrt_count=fix_sqrt_operand(text)
+        text,vf0_count=keep_vf0_constant(text)
+        text,local_jump_count=route_local_indirect_jumps(text)
         destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count,'sqrt_operand_fixes':sqrt_count,'vf0_writes_dropped':vf0_count,'local_indirect_jumps':local_jump_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:
