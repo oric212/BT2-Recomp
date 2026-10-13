@@ -110,10 +110,10 @@ inline MenuEntry number(std::string label,unsigned& value,unsigned low,unsigned 
 }
 inline MenuScreen display(Settings& s,std::function<void()> changed) {
     MenuScreen screen;screen.title="Display";
-    screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"On: whole multiples of the game's picture, sharp pixels. Off: stretched to the window."));
+    screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"On: whole multiples of the picture, sharp. Off: stretched to the window."));
     screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed));
     screen.entries.push_back(number("Window size",s.window_scale,1,4,1,"x",changed,"A multiple of 640 x 448."));
-    screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second in the corner: 60 in menus, 30 in fights."));
+    screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
     MenuEntry hd;hd.label="HD textures";hd.value=[]{return std::string("not available yet");};hd.enabled=false;
     screen.entries.push_back(hd);
     return screen;
@@ -132,7 +132,7 @@ inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> c
     key.note="Confirm, then press the key.";
     MenuEntry button;button.label="Gamepad button";button.value=[&s]{return std::string(GamepadState::labels[s.fast_forward_button]);};
     button.confirm=[&host,&s,changed]{host.capture("Press the gamepad button for fast forward (Escape cancels)",[&s,changed](MenuHost::Captured c){if(c.button!=GamepadState::Count) {s.fast_forward_button=c.button;changed();}});};
-    button.note="Confirm, then press the button. It no longer reaches the game while it is assigned here.";
+    button.note="Confirm, then press the button. The game no longer sees that button.";
     screen.entries.push_back(key);screen.entries.push_back(button);
     screen.entries.push_back(menuAction("Clear the gamepad button",[&s,changed]{s.fast_forward_button=GamepadState::Count;changed();}));
     screen.entries.push_back(toggle("Switch instead of hold",s.fast_forward_toggle,changed,"Off: fast while held. On: each press switches it."));
@@ -144,18 +144,18 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
     MenuScreen screen;screen.title="Controls";
     for(const unsigned n:order) {
         MenuEntry e;e.label=labels[n];
-        e.value=[&s,n]{return MenuHost::keyName(s.mapping.keys[n])+"   |   "+std::string(GamepadState::labels[s.mapping.buttons[n]]);};
+        e.value=[&s,n]{return MenuHost::keyName(s.mapping.keys[n])+"  -  "+std::string(GamepadState::labels[s.mapping.buttons[n]]);};
         e.confirm=[&host,&s,n,changed]{
             host.capture(std::string("Press a key or a gamepad button for ")+labels[n]+" (Escape cancels)",[&s,n,changed](MenuHost::Captured c) {
                 if(c.key)s.mapping.keys[n]=std::uint8_t(c.key);else s.mapping.buttons[n]=GamepadState::Button(c.button);
                 changed();
             });
         };
-        e.note="Keyboard key   |   gamepad button. Confirm, then press the new one.";
+        e.note="Keyboard key  -  gamepad button. Confirm, then press the new one.";
         screen.entries.push_back(e);
     }
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
-    screen.entries.push_back(toggle("In-game menu with Start + Select",s.overlay_start_select,changed,"Off: both stick buttons together. The PS button and Escape always open it."));
+    screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
     screen.entries.push_back(menuAction("Reset to defaults",[&s,changed]{s.mapping=InputMapping{};const Settings d;s.fast_forward_key=d.fast_forward_key;s.fast_forward_button=d.fast_forward_button;changed();}));
     return screen;
 }

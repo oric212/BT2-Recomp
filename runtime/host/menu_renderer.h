@@ -49,7 +49,7 @@ public:
         const unsigned count=unsigned(screen.entries.size());
         const unsigned first=count<=visible_entries?0:std::min(screen.highlighted>visible_entries/2?screen.highlighted-visible_entries/2:0u,count-visible_entries);
         const unsigned shown=std::min(count,visible_entries);
-        const int row=unit*2-unit/3,left=root && !over_game?w*48/100:w*42/100,right=w*94/100;
+        const int row=unit*2-unit/3,left=root && !over_game?w*48/100:w*36/100,right=w*95/100;
         const int top=h/2-int(shown)*row/2+(root && !over_game?0:unit);
         text(screen.title,left,top-row*2,title_,root && !over_game?RGB(150,150,160):RGB(238,218,64));
         for(unsigned n=first;n<first+shown;++n) {
@@ -57,14 +57,17 @@ public:
             const bool on=n==screen.highlighted;
             const double pulse=0.5+0.5*std::sin(seconds*4.0);
             const COLORREF colour=!entry.enabled?RGB(84,84,92):on?RGB(BYTE(96+40*pulse),BYTE(196+30*pulse),255):RGB(150,150,158);
-            text(entry.label,left,y,entry_,colour);
-            if(entry.value)textRight(entry.value(),right,y,entry_,!entry.enabled?RGB(84,84,92):on?RGB(236,236,240):RGB(120,120,128));
+            // The value keeps its place at the right; the label gets what is left and is cut short if it must be.
+            const std::string value=entry.value?fit(entry.value(),entry_,(right-left)*6/10):std::string();
+            const int value_width=value.empty()?0:extent(value,entry_)+unit;
+            text(fit(entry.label,entry_,right-left-value_width),left,y,entry_,colour);
+            if(!value.empty())textRight(value,right,y,entry_,!entry.enabled?RGB(84,84,92):on?RGB(236,236,240):RGB(120,120,128));
         }
         const int arrows=left-unit;
         if(first>0)triangle(arrows,top+unit/2,unit/3,true,RGB(90,150,255));
         if(first+shown<count)triangle(arrows,top+int(shown)*row-unit,unit/3,false,RGB(90,150,255));
         const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
-        if(!note.empty())textCentred(note,w/2,h-unit*5,note_,!prompt.empty()?RGB(255,225,120):RGB(176,176,188));
+        if(!note.empty())textCentred(fit(note,note_,w*92/100),w/2,h-unit*5,note_,!prompt.empty()?RGB(255,225,120):RGB(176,176,188));
         // The bottom line: a symbol and what it does.
         int x=w*34/100;const int y=h-unit*3;
         x=hint(Symbol::Cross,"Enter",x,y,unit);
@@ -122,6 +125,12 @@ private:
         SetTextColor(dc_,colour);TextOutA(dc_,x,y,s.c_str(),int(s.size()));
     }
     int extent(const std::string& s,HFONT font) {SelectObject(dc_,font);SIZE size{};GetTextExtentPoint32A(dc_,s.c_str(),int(s.size()),&size);return size.cx;}
+    // `s`, or its beginning with three dots, within `width` pixels.
+    std::string fit(std::string s,HFONT font,int width) {
+        if(extent(s,font)<=width)return s;
+        while(s.size()>1 && extent(s+"...",font)>width)s.pop_back();
+        return s+"...";
+    }
     void textRight(const std::string& s,int right,int y,HFONT font,COLORREF colour) {text(s,right-extent(s,font),y,font,colour);}
     void textCentred(const std::string& s,int centre,int y,HFONT font,COLORREF colour) {text(s,centre-extent(s,font)/2,y,font,colour);}
     void clock(int unit) {

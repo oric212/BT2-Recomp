@@ -1,6 +1,24 @@
 # Memory cards and saves
 
-## Current model: absent cards
+## Plan of 2026-10-13: folder cards behind the native card service
+
+The sections further down describe the earlier model, in which the original IOP modules ran and an empty slot was answered on the SIO2 bus. No IOP code runs any more: the game's card requests arrive at the native card service (`runtime/services/memory_card_service.cpp`) as library calls with the public parameter layout. Today it answers the initialization and the status query, with "no card".
+
+At that level a card does not have to be a card image. **A card is a host folder** (`user/memcards/<name>/`) with one sub-folder per save, holding the save's files as the game wrote them, plus `entries.txt` with what the host file system cannot keep: each entry's mode and its two time stamps in the card's own form. This is the smallest layer that gives the game a card, it keeps saves visible and copyable for the player, and it is the idea of PCSX2's folder cards (whose own folders can be read later; the user has one in `work/memcards/`).
+
+**Steps:**
+
+1. **Bringing a save in — done for the CodeBreaker format.** `tools/saves/import_save.py SAVE.cbs CARD_FOLDER` unpacks a `.cbs` file into a card folder (header, RC4 from a fixed starting permutation, zlib, then files with 64-byte headers; format as documented by mymc, public domain, which is the behavioural reference). Damaged files are refused by what is wrong; an existing save is never overwritten. The user's save (`work/100%_savefile/`, 14.8 KB) unpacks to its three files (the icon description, the icon and 16,384 bytes of save data) in `user/memcards/Card 1/`.
+2. **The service answers from a card folder:** the status query reports a formatted PS2 card with its free space; then the requests the game makes next (expected: change directory, list a directory, open, read, close; for saving: make a directory, write, set file information, delete). Each is implemented when a run reaches it, from the public library's parameter layout, and refused by name until then. The game is run with the card present until its "create a save file" and load paths work.
+3. **Launcher:** the Saves screen lists the card folders, shows the saves on the chosen one and selects the card for slot 1; importing an exchange file from there.
+4. **Other sources:** PCSX2 folder cards as they are; raw 8 MB card images (a parser for the card's own file system) and the other exchange formats (`.psu`, `.max`, `.xps`, `.sps`) when the user needs them. Unknown formats are refused, never guessed.
+
+**Verification:** tests for each request on a synthetic card folder; a save written by the port read back; the user's save loaded by the game and judged by the user (what is unlocked); a PCSX2 capture of the same requests for comparison where the replies can be captured.
+
+---
+
+## Earlier model (IOP modules): absent cards
+
 
 Memory card requests run through the original IOP modules (MCSERV, MCMAN, SIO2MAN). On the SIO2 bus, the card ports answer as an empty slot. This is the device policy `sio2_card_absent` in `runtime/iop/core/native_runtime.h`.
 

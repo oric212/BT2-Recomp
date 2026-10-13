@@ -46,17 +46,18 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
     main.entries.push_back(start);
     MenuEntry saves;saves.label="Saves";saves.value=[]{return std::string("not available yet");};saves.enabled=false;
     main.entries.push_back(saves);
-    main.entries.push_back(menuAction("Controls",[&]{host.menu.open(menu_screens::controls(host,settings,changed));},"Keyboard keys and gamepad buttons, fast forward, the in-game menu."));
+    main.entries.push_back(menuAction("Controls",[&]{host.menu.open(menu_screens::controls(host,settings,changed));},"Keys and gamepad buttons, fast forward, the in-game menu."));
     main.entries.push_back(menuAction("Display",[&]{host.menu.open(menu_screens::display(settings,changed));}));
     main.entries.push_back(menuAction("Sound",[&]{host.menu.open(menu_screens::sound(settings,changed));}));
     main.entries.push_back(menuAction("Game disc",[&] {
         MenuScreen screen;screen.title="Game disc";
         for(const auto& path:discs) {
-            MenuEntry e=menuAction(std::filesystem::path(path).filename().string(),[&settings,path,changed]{settings.disc=path;changed();},path);
-            e.value=[&settings,path]{return std::string(settings.disc==path?"selected":"");};
+            MenuEntry e=menuAction(std::filesystem::path(path).filename().string(),[&settings,path,changed]{settings.disc=path;changed();},
+                "In "+std::filesystem::path(path).parent_path().string());
+            e.value=[&settings,path]{return std::string(settings.disc==path?"in use":"");};
             screen.entries.push_back(e);
         }
-        if(discs.empty())screen.entries.push_back(menuAction("No disc image found",[]{},"Put the game's .iso file into the rom or the user folder and open this screen again."));
+        if(discs.empty())screen.entries.push_back(menuAction("No disc image found",[]{},"Put the game's .iso file into the rom or the user folder."));
         host.menu.open(std::move(screen));
     },"The disc image the game is read from."));
     main.entries.push_back(menuAction("Quit",[&]{result=LauncherResult::Quit;host.finished=true;}));

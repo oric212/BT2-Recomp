@@ -12,8 +12,8 @@ struct GamepadState {
     static constexpr std::array<std::string_view,Count> names{"south","east","west","north","left_shoulder","right_shoulder",
         "left_trigger","right_trigger","back","start","left_stick","right_stick","up","down","left","right","guide"};
     // What the screens call them: the Xbox name and the PlayStation name.
-    static constexpr std::array<std::string_view,Count+1> labels{"A / Cross","B / Circle","X / Square","Y / Triangle","LB / L1","RB / R1","LT / L2","RT / R2",
-        "Back / Create","Start / Options","Left stick press","Right stick press","D-pad up","D-pad down","D-pad left","D-pad right","Guide / PS","none"};
+    static constexpr std::array<std::string_view,Count+1> labels{"Cross (A)","Circle (B)","Square (X)","Triangle (Y)","L1 (LB)","R1 (RB)","L2 (LT)","R2 (RT)",
+        "Select (Back)","Start","L3","R3","D-pad up","D-pad down","D-pad left","D-pad right","PS (Guide)","none"};
     bool connected=false;
     std::uint32_t buttons=0;                 // Bit per Button.
     std::uint8_t lx=0x80,ly=0x80,rx=0x80,ry=0x80; // 0 is left or up, 0xFF right or down.
