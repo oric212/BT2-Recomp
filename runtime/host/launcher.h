@@ -75,14 +75,18 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
         }
         if(std::filesystem::path(settings.memory_card).is_absolute()) {
             const std::string elsewhere=settings.memory_card;
-            MenuEntry e=menuAction(std::filesystem::path(elsewhere).filename().string(),[]{},"In "+std::filesystem::path(elsewhere).parent_path().string());
-            e.value=[]{return std::string("in use");};
+            MenuEntry e=menuAction(std::filesystem::path(elsewhere).filename().string(),[&settings,elsewhere,changed]{settings.memory_card=elsewhere;changed();},
+                "In "+std::filesystem::path(elsewhere).parent_path().string());
+            e.value=[&settings,elsewhere]{return std::string(settings.memory_card==elsewhere?"in use":"");};
             screen.entries.push_back(e);
         }
-        screen.entries.push_back(menuAction("Choose a card folder...",[&] {
+        screen.entries.push_back(menuAction("Choose a card folder...",[&,cards_folder] {
             const std::string chosen=chooseFolder(host.window().handle(),"The memory card folder (it holds one folder per save)");
             if(chosen.empty())return;
-            settings.memory_card=chosen;changed();reopen(card_screen);
+            // A card of the program's own folder goes by its name, as when it is picked from the list.
+            const std::filesystem::path picked(chosen);std::error_code same;
+            settings.memory_card=std::filesystem::equivalent(picked.parent_path(),cards_folder,same)?picked.filename().string():chosen;
+            changed();reopen(card_screen);
         },"Opens the system's folder dialog (mouse and keyboard). An empty folder is an empty card."));
         return screen;
     };

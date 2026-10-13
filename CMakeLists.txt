@@ -262,6 +262,13 @@ if(BT2_BUILD_GENERATED_PROBE)
         "${BT2_GENERATED_DIR}/FUN_0033A7B8_0x33a7b8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0033A7C8_0x33a7c8.cpp"
         "${BT2_GENERATED_DIR}/FUN_0033A800_0x33a800.cpp")
+    # The player's programs start this runtime and share its settings file: building them builds it,
+    # so the two are never from different sources.
+    foreach(bt2_player_program bt2-game bt2-launcher)
+        if(TARGET ${bt2_player_program})
+            add_dependencies(${bt2_player_program} bt2-entry-probe)
+        endif()
+    endforeach()
     target_sources(bt2-entry-probe PRIVATE
         "${BT2_GENERATED_DIR}/FUN_0031EDB0_0x31edb0.cpp"
         "${BT2_GENERATED_DIR}/FUN_0031F010_0x31f010.cpp"
