@@ -1,5 +1,6 @@
 #include "ee/frame_profile.h"
 #include "vif1.h"
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -68,7 +69,14 @@ void Vif1::process(std::span<const std::uint32_t> words,Registers& r,Vif1* self,
                 r.dbf=!r.dbf;r.tops=(r.base+(r.dbf?r.ofst:0))&0x3FF; // The double buffers swap at each start.
                 if(!self)break;
                 ++self->calls;self->vu.top=r.top;self->vu.itop=r.itop;
-                {FrameProfile::Scope timed(frame_profile.vu1);if(command==0x17)self->vu.resume(*kick); else self->vu.run(imm,*kick);}
+                {
+                    FrameProfile::Scope timed(frame_profile.vu1);
+                    const bool measured=bool(self->vu.on_ran);
+                    const auto began=measured?std::chrono::steady_clock::now():std::chrono::steady_clock::time_point{};
+                    const std::uint32_t from=(command==0x17?self->vu.pc:imm)&Vu1::program_mask;const auto before=self->vu.instructions;
+                    if(command==0x17)self->vu.resume(*kick); else self->vu.run(imm,*kick);
+                    if(measured)self->vu.on_ran(from,self->vu.instructions-before,std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-began).count()));
+                }
                 break;
             case 0x20:r.mask=operands(1)[0];break;                  // STMASK
             case 0x30:case 0x31: {                                  // STROW, STCOL

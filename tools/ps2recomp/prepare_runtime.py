@@ -140,6 +140,26 @@ def route_vu_memory(source):
     return text,count
 
 
+def route_vu_random(source):
+    # VRNEXT/VRGET/VRINIT/VRXOR: the generator's output follows another sequence than the register's
+    # and never writes VRNEXT's destination. The runtime executes them from the instruction word.
+    pattern=re.compile(r'(// 0x[0-9a-f]+: 0x([0-9a-f]+)  v(?:rnext|rget|rinit|rxor)[^\n]*\n(?:\s*ctx->pc = 0x[0-9a-f]+u;\n)?)([ \t]*)\{[^{}]*\}\n')
+    text,count=pattern.subn(lambda m:f'{m[1]}{m[3]}runtime->vu0RandomInstruction(ctx, 0x{m[2]}u);\n',source)
+    if 'vu0_r' in text:raise ValueError('Unrecognized generated VU0 random number access')
+    return text,count
+
+
+def sign_extend_float_moves(source):
+    # MFC1 (and the COP2 moves of Q's bits) sign-extend the 32-bit pattern into the 64-bit register on
+    # the R5900. The generator zero-extends it, so every sign test of a float done on its bits with a
+    # 64-bit branch or comparison (the C library's sinf, atanf, floorf ...) takes a negative value for
+    # positive.
+    pattern=re.compile(r'(\{ uint32_t bits; std::memcpy\(&bits, &ctx->(?:f\[\d+\]|vu0_q), sizeof\(bits\)\); )SET_GPR_U32\(ctx, (\d+), bits\); \}')
+    text,count=pattern.subn(r'\1SET_GPR_S32(ctx, \2, (int32_t)bits); }',source)
+    if re.search(r'SET_GPR_U32\(ctx, \d+, bits\)',text):raise ValueError('Unrecognized generated move of float bits')
+    return text,count
+
+
 def fix_sqrt_operand(source):
     # SQRT.S on the R5900 takes its operand from ft (the fs field is 0): fd = sqrt(ft). The generator
     # emits sqrt(fs), the root of $f0. Operand and destination are restored from the instruction word.
@@ -255,13 +275,15 @@ def main():
         text,sign_count=widen_sign_branches(text)
         text,recursive_count=route_recursive_calls(text,address)
         text,vu_memory_count=route_vu_memory(text)
+        text,vu_random_count=route_vu_random(text)
+        text,float_move_count=sign_extend_float_moves(text)
         text,sqrt_count=fix_sqrt_operand(text)
         text,vf0_count=keep_vf0_constant(text)
         text,local_jump_count=route_local_indirect_jumps(text)
         destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count,'sqrt_operand_fixes':sqrt_count,'vf0_writes_dropped':vf0_count,'local_indirect_jumps':local_jump_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count,'vu_random_hooks':vu_random_count,'float_moves_sign_extended':float_move_count,'sqrt_operand_fixes':sqrt_count,'vf0_writes_dropped':vf0_count,'local_indirect_jumps':local_jump_count})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

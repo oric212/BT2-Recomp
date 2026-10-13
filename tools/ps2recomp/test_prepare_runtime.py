@@ -1,6 +1,6 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches, route_recursive_calls, route_vu_memory, detach_generated_headers
+from prepare_runtime import sign_extend_float_moves, route_vu_random, build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches, route_recursive_calls, route_vu_memory, detach_generated_headers
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -145,6 +145,30 @@ class RuntimePreparationTests(unittest.TestCase):
         self.assertIn('ctx->vu0_vf[10] = PS2_VADD(ctx->vu0_vf[0], ctx->vu0_vf[1]);',text)
         with self.assertRaises(ValueError):keep_vf0_constant('    std::memcpy(&ctx->vu0_vf[0], &bits, 16);\n')
         with self.assertRaises(ValueError):keep_vf0_constant('    ctx->vu0_vf[0]  = x;\n')
+
+    def test_float_bits_moved_to_a_register_are_sign_extended(self):
+        source=('    // 0x30eb08: 0x44120800  mfc1        $s2, $f1\n'
+                '    { uint32_t bits; std::memcpy(&bits, &ctx->f[1], sizeof(bits)); SET_GPR_U32(ctx, 18, bits); }\n'
+                '    { uint32_t bits; std::memcpy(&bits, &ctx->vu0_q, sizeof(bits)); SET_GPR_U32(ctx, 2, bits); }\n'
+                '    SET_GPR_U32(ctx, 31, 0x1001F0u);\n')
+        text,count=sign_extend_float_moves(source)
+        self.assertEqual(count,2)
+        self.assertIn('std::memcpy(&bits, &ctx->f[1], sizeof(bits)); SET_GPR_S32(ctx, 18, (int32_t)bits); }',text)
+        self.assertIn('std::memcpy(&bits, &ctx->vu0_q, sizeof(bits)); SET_GPR_S32(ctx, 2, (int32_t)bits); }',text)
+        self.assertIn('SET_GPR_U32(ctx, 31, 0x1001F0u);',text) # A return address is not a float.
+        with self.assertRaises(ValueError):sign_extend_float_moves('    { uint32_t bits = x; SET_GPR_U32(ctx, 2, bits); }\n')
+
+    def test_vu0_random_instructions_run_natively(self):
+        source=('    // 0x128580: 0x4b05043c  vrnext.x    $vf5, $R\n    ctx->pc = 0x128580u;\n'
+                '    {\n    uint32_t r_vals[4];\n    _mm_storeu_si128((__m128i*)r_vals, _mm_castps_si128(ctx->vu0_r));\n\n    r_vals[3] = 1;\n}\n'
+                '        // 0x12857c: 0x4a002c3e  vrinit      $R, $vf5x (Delay Slot)\n'
+                '        {\n            uint32_t r0 = 1;\n            ctx->vu0_r = _mm_castsi128_ps(_mm_set_epi32(r0, r0, r0, r0));\n        }\n'
+                '    ctx->in_delay_slot = false;\n')
+        text,count=route_vu_random(source)
+        self.assertEqual(count,2)
+        self.assertIn('    ctx->pc = 0x128580u;\n    runtime->vu0RandomInstruction(ctx, 0x4b05043cu);\n',text)
+        self.assertIn('(Delay Slot)\n        runtime->vu0RandomInstruction(ctx, 0x4a002c3eu);\n    ctx->in_delay_slot = false;',text)
+        with self.assertRaises(ValueError):route_vu_random('    ctx->vu0_r = x;\n')
 
     def test_vu0_memory_instructions_run_natively(self):
         source=('    // 0x128ef0: 0x4bef837d  vsqi.xyzw   $vf16, ($vi15++)\n    ctx->pc = 0x128ef0u;\n'

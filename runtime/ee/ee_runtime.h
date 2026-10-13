@@ -120,6 +120,9 @@ public:
     // VU0 data memory (4 KB) and the macro-mode instructions that address it (vu0_macro.cpp).
     std::array<std::uint8_t,4096> vu0_memory_{};unsigned vu0_memory_instructions=0;
     void vu0MemoryInstruction(R5900Context* context,std::uint32_t instruction);
+    // VU0's random number register R: 23 bits, read as a float in [1, 2) (vu0_macro.cpp).
+    std::uint32_t vu0_random_=0x3F800000;unsigned vu0_random_instructions=0;
+    void vu0RandomInstruction(R5900Context* context,std::uint32_t instruction);
     void busyMainField();
     unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
     bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
@@ -275,6 +278,7 @@ public:
         address = uncachedWideAddress(address, 16);
         checkMemory(rdram, address, sizeof(value));
         if (address % 16) throw std::runtime_error("Unsupported unaligned quadword store");
+        if (address == quadword_watch_address && on_watched_quadword) on_watched_quadword(value);
         std::memcpy(memory_.data() + address, &value, sizeof(value));
         ++quadword_writes;
     }
@@ -475,6 +479,14 @@ public:
     // Diagnostic float watch (probe: BT2_EE_WATCH_FLOAT=<hex address>:<limit>): the run stops at the first
     // guest call that finds the float at the address non-finite or above the limit in magnitude.
     std::uint32_t float_watch_address=0;float float_watch_limit=0;
+    // Diagnostic call trace (probe: BT2_EE_CALL_TRACE): called before each guest call or jump the
+    // dispatcher sees, with the source and target addresses. Never changes guest state.
+    std::function<void(const R5900Context&,std::uint32_t,std::uint32_t)> on_guest_call;
+    // Diagnostic store watch (probe: BT2_EE_WATCH_QUADWORD): called before each 128-bit store to the address.
+    std::uint32_t quadword_watch_address=0;std::function<void(const ProbeGpr&)> on_watched_quadword;
+    const R5900Context* mainContext() const {return main_context_;}
+    std::uint32_t lastCallSource() const {return last_branch_source_;}
+    std::uint32_t lastCallTarget() const {return last_branch_target_;}
     unsigned flipless_field_limit=3600; // Fields without a display flip before the run stops (probe: BT2_STALL_FIELDS).
     std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.

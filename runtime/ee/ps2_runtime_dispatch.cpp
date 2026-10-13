@@ -48,6 +48,7 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
             float_watch_address=0;throw std::runtime_error(text);
         }
     }
+    if(on_guest_call)on_guest_call(*context,source,target);
     last_branch_source_=source;last_branch_target_=target;
     if(target==0x2EF218 && source==0x1007F0 && current_thread_id==1 && main_priority_admissions && !startup_scheduler_active) {
         // Main's asynchronous load poll found the request incomplete. Logical time model: one

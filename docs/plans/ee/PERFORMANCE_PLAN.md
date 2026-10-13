@@ -69,16 +69,27 @@ All with the same instruction count, call count and output hash on the fight run
 
 ## Next, in order of expected gain
 
-Against the requirements the fight needs its work cut from 18 to 31.5 ms per picture to about 16 ms, and its slow single pictures explained.
+Against the requirements the fight needs its work cut to about 16 ms per picture, and its slow single pictures explained. The numbers above were measured before the fixes of 2026-10-13 to the game's random numbers and float sign tests, which changed what happens in the scripted fight; the first step is to measure again.
 
-1. **The slow single pictures in the fight** (37 to 59 ms while the average is in budget): find whether it is the work of single frames (uploads, the renderer) or the pacing.
-2. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about half of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
-3. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
-4. **VU1, further:** the translations still call the interpreter's code for integer instructions, branches, DIV, the flag instructions and conversions, and keep every register in memory. Writing more of them out is the next step there.
+1. **Hand-written native VU1 programs** (decided by the user on 2026-10-13; next section).
+2. **The slow single pictures in the fight** (37 to 59 ms while the average is in budget): find whether it is the work of single frames (uploads, the renderer) or the pacing.
+3. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about half of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
+4. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
 5. **Game code and services** (about 5 to 7 ms): the other access widths and the per-call checks, guided by a new profile.
 6. **Loading hitches at screen changes:** spread the load over fields or do it off the game's thread.
 
-Each step: measure with `BT2_VIEWER_STATS` over the extended fight run (7,400 frames of `pad-fight.txt`), compare `vu1_kick_hash` and the run's counters with the baseline (5,100 frames), run the gate, record before and after in the monthly history.
+Each step: measure with `BT2_VIEWER_STATS` over the extended fight run (7,400 frames of `pad-fight.txt`), compare `vu1_kick_hash` and the run's counters with the baseline (5,100 frames, in the handoff), run the gate, record before and after in the monthly history.
+
+## Hand-written native programs
+
+The translations run a program pair by pair: every register lives in memory, every pair keeps the interpreter's bookkeeping, and integer instructions, branches, the division and the conversions still call the interpreter. A program written by hand as what it does (a loop over vertices: transform, perspective division, clipping test, conversion, output list) keeps its values in SSE registers, has no per-pair bookkeeping and can process the vertices of a list without the program's own pipelining. That is the route to the low-end target for VU1, and it is the project's own code: it is committed, unlike the translations.
+
+- **Where the time goes** (extended fight, measured per program with `BT2_VU1_CENSUS`, which now writes `cost.txt`: key, pairs, starts, pairs run, milliseconds including the output packets): of 14 programs five carry about 94% of VU1's time. Two have about 90 pairs each and run 1.2 and 0.9 billion pairs; two have about 377 pairs and run 0.86 and 0.71 billion; one of 89 pairs runs 0.23 billion. The small start stubs (6 to 36 pairs) cost almost nothing. The fight starts a VU1 program about 12 million times in 7,400 frames.
+- **Reading a program:** `python tools/vu1/disassemble.py <census file>` lists it as text. The listing is the game's program: read locally, never committed.
+- **What a hand-written program must keep:** the output packets byte for byte (`vu1_kick_hash`), and every piece of state a later program can read: the float and integer registers it leaves behind, ACC, Q, the clipping flags, data memory, the instruction count. Where the original leaves the values of its last loop pass in registers, the native version leaves the same values.
+- **Checking:** a verification mode runs the interpreter and the native program on the same state for every start and compares all of that state afterwards, so a difference is reported at the first start that shows it, with the program's key. Then the run's hash and counters against the baseline, with and without `BT2_VU1_INTERPRET`.
+- **Selection:** as now, by the key of the program reachable from the start address. A hand-written program is registered under its key in the runtime (a key is a number, not content) and takes precedence over a translation; a program without one keeps its translation, and without either the interpreter.
+- **Order:** the verification mode first; then the five programs by cost; measure after each.
 
 ## Native VU1 programs: how they are made
 

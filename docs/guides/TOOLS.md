@@ -654,6 +654,12 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).
 
+**VU1 program cost and listing.** With `BT2_VU1_CENSUS` set, the run also writes `cost.txt` into the folder: per program its key, pair count, starts, instruction pairs run and milliseconds (output packets included). `python tools/vu1/disassemble.py <census file>` lists a program as text, one line per instruction pair (`E` marks the end bit, `>` the start address). Both describe the game's programs and stay local.
+
+**Call trace.** `BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]` writes one line per call of those functions from that display flip on: the flip, the calling address, the target, `a0` to `a3`, `f12`, `f13` and `f0` (which still holds the previous call's result), and the four floats at each of `a0` to `a2` that points into RAM. Tracing a library function and reading the next line's `f0` gives its inputs and results without touching the game.
+
+**Store watch.** `BT2_EE_WATCH_QUADWORD=<file>:<from flip>:<hex address>` writes one line per 128-bit store to that EE address: the flip, main's program counter and return address, the last call and the four floats stored. Together with the call trace this follows a value backwards: who stored it, with which arguments, computed by which calls. The camera bug of 2026-10-13 was found this way in about ten runs (view matrix, its builder, the angles, the sine routine).
+
 **Float watch.** `BT2_EE_WATCH_FLOAT=<hex address>:<limit>` stops the run at the first guest call that finds the float at that EE address non-finite or above the limit in magnitude, and names that call, the previous call and the main registers. An address below 32 watches the x field of that VU0 float register (`1F` is `vf31`). Following a bad value from its reader to its writer takes one run per step.
 
 **Snapshot fields.** Each `BT2_GPU_GS_SNAPSHOT` flip prints `Snapshot: flip N at field M`. Pad scripts count fields and snapshots count flips, and the two drift apart while the game loads (about 695 fields by the title screen with the movies skipped), so this line is how a button press is timed against a picture.

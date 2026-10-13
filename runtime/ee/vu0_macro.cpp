@@ -31,6 +31,37 @@ void EeRuntime::vu0MemoryInstruction(R5900Context* context,std::uint32_t instruc
     ++vu0_memory_instructions;
 }
 
+// The random number instructions, executed natively from the instruction word (the generator's output
+// for them neither follows the register's sequence nor writes VRNEXT's destination):
+//   VRINIT R,fs[fsf]   R = the low 23 bits of the field
+//   VRXOR R,fs[fsf]    R ^= the low 23 bits of the field
+//   VRNEXT.dest ft,R   R advances one step, then ft's dest fields = R
+//   VRGET.dest ft,R    ft's dest fields = R
+// R is a 23-bit shift register (new bit 0 = bit 4 xor bit 22) read with the exponent of 1.0, so a
+// value is a float in [1, 2). An all-zero register stays zero: the game seeds it before use.
+void EeRuntime::vu0RandomInstruction(R5900Context* context,std::uint32_t instruction) {
+    const unsigned form=instruction&0x7FF,ft=(instruction>>16)&31,fs=(instruction>>11)&31,field=(instruction>>21)&3;
+    if(instruction>>25!=0x25 || form<0x43C || form>0x43F) {
+        char text[96];std::snprintf(text,sizeof text,"VU0 random instruction 0x%08X is not modelled (pc 0x%X)",instruction,context->pc);
+        throw std::runtime_error(text);
+    }
+    ++vu0_random_instructions;
+    if(form&2) { // VRINIT (0x43E), VRXOR (0x43F).
+        std::uint32_t lanes[4];std::memcpy(lanes,&context->vu0_vf[fs],16);
+        const std::uint32_t bits=lanes[field]&0x7FFFFFu;
+        vu0_random_=0x3F800000u|(form&1?(vu0_random_^bits)&0x7FFFFFu:bits);
+        return;
+    }
+    if(form==0x43C) { // VRNEXT.
+        const std::uint32_t bit=((vu0_random_>>4)^(vu0_random_>>22))&1u;
+        vu0_random_=0x3F800000u|(((vu0_random_<<1)|bit)&0x7FFFFFu);
+    }
+    if(!ft)return; // VF0 is constant.
+    std::uint32_t lanes[4];std::memcpy(lanes,&context->vu0_vf[ft],16);
+    for(unsigned lane=0;lane<4;++lane)if(instruction&(1u<<(24-lane)))lanes[lane]=vu0_random_;
+    std::memcpy(&context->vu0_vf[ft],lanes,16);
+}
+
 // Once frames are presented no VU microprogram has been started by anything the runtime models (VIF
 // microprogram calls are refused), so both units are idle whoever asks: main, a worker thread or an
 // interrupt handler. Before the first frame only the captured startup sequences are answered.

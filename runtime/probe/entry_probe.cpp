@@ -16,9 +16,11 @@
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 
@@ -115,11 +117,16 @@ int main(int argc, char** argv) {
         // reachable from each start address), one file per program named by its key: the start address,
         // the pair count and the pairs as address, lower word, upper word. Local evidence, not committed.
         struct Vu1Census {
+            struct Cost {std::uint64_t runs=0,pairs=0,nanoseconds=0;};
             std::string folder;std::map<std::uint64_t,std::size_t> programs;unsigned entries=0,indirect=0;
+            std::array<std::uint64_t,Vu1::program_mask+1> key_at{};std::map<std::uint64_t,Cost> cost;
             ~Vu1Census() {
                 if(folder.empty())return;
                 std::size_t pairs=0;for(const auto& [key,count]:programs)pairs+=count;
                 std::cerr<<std::dec<<"VU1 census: "<<entries<<" new entries, "<<programs.size()<<" distinct programs ("<<indirect<<" with register jumps), "<<pairs<<" pairs in all."<<std::endl;
+                // What each program cost over the run: `key size runs pairs milliseconds`.
+                std::ofstream out(folder+"/cost.txt");
+                for(const auto& [key,c]:cost)out<<std::hex<<std::setw(16)<<std::setfill('0')<<key<<std::dec<<' '<<programs[key]<<' '<<c.runs<<' '<<c.pairs<<' '<<c.nanoseconds/1'000'000<<'\n';
             }
         };
         static Vu1Census census;
@@ -127,7 +134,7 @@ int main(int argc, char** argv) {
             census.folder = folder;
             runtime.vif1.vu.on_entry = [&runtime](std::uint32_t start) {
                 const auto program = Vu1Program::reachable(runtime.vif1.vu.program, start);
-                ++census.entries;
+                ++census.entries;census.key_at[start & Vu1::program_mask] = program.key;
                 if (!census.programs.emplace(program.key, program.pairs.size()).second) return;
                 if (program.indirect) ++census.indirect;
                 char name[32];std::snprintf(name, sizeof name, "/%016llx.vu1", static_cast<unsigned long long>(program.key));
@@ -136,6 +143,62 @@ int main(int argc, char** argv) {
                 out.write(reinterpret_cast<const char*>(head), 8);
                 out.write(reinterpret_cast<const char*>(program.pairs.data()), std::streamsize(program.pairs.size() * sizeof(Vu1Program::Pair)));
                 if (!out) throw std::runtime_error("Cannot write the VU1 census in " + census.folder);
+            };
+            runtime.vif1.vu.on_ran = [](std::uint32_t start, std::uint64_t pairs, std::uint64_t nanoseconds) {
+                auto& c = census.cost[census.key_at[start]];++c.runs;c.pairs += pairs;c.nanoseconds += nanoseconds;
+            };
+        }
+        // BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]: one line per call of those
+        // functions from that display flip on: the flip, the calling address, the target, a0 to a3,
+        // f12, f13 and f0 (the previous call's result), and the four floats at each of a0 to a2 that points into RAM. Local evidence, not committed.
+        static std::ofstream call_trace;
+        if (const char* trace = std::getenv("BT2_EE_CALL_TRACE")) {
+            const std::string text = trace;
+            const auto list = text.rfind(':'), from = text.rfind(':', list - 1);
+            if (list == std::string::npos || from == std::string::npos) throw std::runtime_error("BT2_EE_CALL_TRACE needs <file>:<from flip>:<addresses>");
+            call_trace.open(text.substr(0, from));
+            if (!call_trace) throw std::runtime_error("Cannot write the call trace " + text.substr(0, from));
+            const unsigned first = static_cast<unsigned>(std::stoul(text.substr(from + 1, list - from - 1)));
+            std::vector<std::uint32_t> targets;
+            for (std::size_t at = list + 1; at < text.size();) {
+                const auto end = std::min(text.find(',', at), text.size());
+                targets.push_back(static_cast<std::uint32_t>(std::stoul(text.substr(at, end - at), nullptr, 16)));at = end + 1;
+            }
+            runtime.on_guest_call = [&runtime, targets, first](const R5900Context& context, std::uint32_t source, std::uint32_t target) {
+                if (runtime.gs_display_flips < first || std::find(targets.begin(), targets.end(), target) == targets.end()) return;
+                call_trace << std::dec << runtime.gs_display_flips << std::hex << ' ' << source << ' ' << target;
+                for (unsigned reg = 4; reg < 8; ++reg) call_trace << ' ' << context.r[reg].low;
+                call_trace << std::dec << ' ' << context.f[12] << ' ' << context.f[13] << ' ' << context.f[0];
+                for (unsigned reg = 4; reg < 7; ++reg) {
+                    const std::uint32_t address = context.r[reg].low;
+                    if (address < 0x80000 || address > runtime.memory().size() - 16) continue;
+                    float values[4];std::memcpy(values, runtime.memory().data() + address, 16);
+                    call_trace << " | a" << reg - 4 << ':';
+                    for (const float value : values) call_trace << ' ' << value;
+                }
+                call_trace << '\n';
+            };
+        }
+        // BT2_EE_WATCH_QUADWORD=<file>:<from flip>:<hex address>: one line per 128-bit store to that EE
+        // address from that display flip on: the flip, main's program counter and return address, the
+        // last call (source and target) and the four floats stored. Local evidence, not committed.
+        static std::ofstream store_trace;
+        if (const char* watch = std::getenv("BT2_EE_WATCH_QUADWORD")) {
+            const std::string text = watch;
+            const auto address = text.rfind(':'), from = text.rfind(':', address - 1);
+            if (address == std::string::npos || from == std::string::npos) throw std::runtime_error("BT2_EE_WATCH_QUADWORD needs <file>:<from flip>:<address>");
+            store_trace.open(text.substr(0, from));
+            if (!store_trace) throw std::runtime_error("Cannot write the store trace " + text.substr(0, from));
+            const unsigned first = static_cast<unsigned>(std::stoul(text.substr(from + 1, address - from - 1)));
+            runtime.quadword_watch_address = static_cast<std::uint32_t>(std::stoul(text.substr(address + 1), nullptr, 16));
+            runtime.on_watched_quadword = [&runtime, first](const ProbeGpr& value) {
+                if (runtime.gs_display_flips < first) return;
+                float lanes[4];std::memcpy(lanes, &value, 16);
+                const auto* context = runtime.mainContext();
+                store_trace << std::dec << runtime.gs_display_flips << std::hex << " pc " << (context ? context->pc : 0) << " ra " << (context ? context->r[31].low : 0)
+                            << " call " << runtime.lastCallSource() << "->" << runtime.lastCallTarget() << std::dec;
+                for (const float lane : lanes) store_trace << ' ' << lane;
+                store_trace << '\n';
             };
         }
         // BT2_VU1_INTERPRET: run every VU1 microprogram in the interpreter, also where the build has a native translation.

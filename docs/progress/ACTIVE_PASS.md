@@ -6,11 +6,13 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 ## Goal of the next passes
 
-**Performance comes first** ([plan](../plans/ee/PERFORMANCE_PLAN.md), with the user's requirements: fights a flat 30, menus a flat 60, also on a mid- to low-end PC). State: menus flat at 60; the fight averages 30 over the extended run (`--frames 7400` with `pad-fight.txt`, `BT2_VIEWER_STATS=1`, viewer and sound) with native VU1 programs, 18 to 31.5 ms of work per picture, single pictures still late. Next: the late pictures, graphics on its own thread, presenting without readback. Every VU1 or VIF1 change must keep `vu1_kick_hash` (`f3da74e43010e423` for 5,100 frames, headless). Profile with `BT2_SAMPLE_PROFILE` and `tools/perf/`.
+**Performance comes first** ([plan](../plans/ee/PERFORMANCE_PLAN.md), with the user's requirements: fights a flat 30, menus a flat 60, also on a mid- to low-end PC). State: menus flat at 60; the fight averaged 30 over the extended run (`--frames 7400` with `pad-fight.txt`, `BT2_VIEWER_STATS=1`, viewer and sound) with translated VU1 programs. That measurement predates the two fixes below, which changed the fight (the opponent acts now): measure again first. Then, as decided by the user on 2026-10-13: **hand-written native VU1 programs**, starting with the five that carry about 94% of VU1's time (plan, "Hand-written native programs"). Every VU1 or VIF1 change must keep `vu1_kick_hash`: **`5a4960667d4a3dff`** for 5,100 frames of `pad-fight.txt`, headless (724,698,589 instruction pairs, 2,140,195 starts, 39,256,326 calls; the same with `BT2_VU1_INTERPRET=1`). Profile with `BT2_SAMPLE_PROFILE` and `tools/perf/`; read a program with `tools/vu1/disassemble.py`.
 
 **Native VU1 programs are local build inputs:** `game/generated/vu1/vu1_native.cpp` is generated from `work/perf/vu1-census/` by `tools/vu1/translate_programs.py` (see the plan). Without the file the build interprets every program and is slower; after a fresh checkout or a clean, regenerate it and configure again.
 
-**Reported by the user on 2026-10-13, not investigated:** camera bugs in the fight (details asked for), and sound breaking up during slowdowns (expected while the fight misses its budget: the device runs dry).
+**Camera bug reported by the user on 2026-10-13: fixed, the user is asked to confirm.** The camera looked away from the fighters for seconds at a time. Cause: the generator zero-extended `MFC1`, so the C library's `sinf` returned the wrong sign for part of its range and the view matrix came out mirrored (history of 2026-10-13). `work/frames/cam/sx-a.png` and `sx-b.png` show the scripted run after the fix, `base-sheet.png` before. The same fix and the corrected VU0 random numbers changed the fight as a whole: the opponent blocks, counters and fires beams. Sound breaking up during slowdowns is expected while the fight misses its budget (the device runs dry).
+
+**After a change to `prepare_runtime.py`:** run it, then build; it rewrites the prepared sources (`game/generated/*-runtime/`), and the build recompiles what changed.
 
 **Launcher work in progress, uncommitted:** `runtime/host/settings.h` and `runtime/host/menu_model.h` are written but have no tests and no users yet (launcher plan, step 2).
 
@@ -40,6 +42,7 @@ The user inspected all of them on 2026-10-13 and confirmed them, map selection, 
 - **Audio:** `BT2_AUDIO_WAV=<absolute path>` writes the run's audio (streams and effects) as a 48 kHz stereo WAV. `BT2_SOUND_LOG=<existing folder>` writes every SOUNDS and sound driver request and each bank's blocks and samples there (local evidence; `work/audio/soundlog/` holds the battle run's).
 - **Frames:** `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM.
 - **Discovery loop:** `python tools/ps2recomp/discovery_loop.py --disc <iso> --frames <n> --pad-script-file <file>` ([TOOLS.md](../guides/TOOLS.md)); its log is `work/bt2-generation/discovery-loop.log`. A stop it does not handle (not a map gap, or "map did not grow") is named in the log.
+- **Following a value:** `BT2_EE_CALL_TRACE` (arguments of chosen functions per call) and `BT2_EE_WATCH_QUADWORD` (who stores to an address), both from a given flip on; see [TOOLS.md](../guides/TOOLS.md).
 - **A hang:** `BT2_STALL_FIELDS=120` ends a run without display flips within seconds; a loop that never ends inside one field stops at the runaway guard (`BT2_EE_LOOP_LIMIT` to change its bound). A bad float: `BT2_EE_WATCH_FLOAT=<address>:<limit>`.
 
 ## Notes

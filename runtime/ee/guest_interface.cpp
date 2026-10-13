@@ -35,3 +35,4 @@ void PS2Runtime::writeVuStatusFlag(R5900Context* context, std::uint32_t value) {
 void PS2Runtime::writeVuFbrst(R5900Context* context, std::uint32_t value) {full(this)->EeRuntime::writeVuFbrst(context, value);}
 void PS2Runtime::vu0UpdateFlags(R5900Context* context, std::uint32_t instruction) {full(this)->EeRuntime::vu0UpdateFlags(context, instruction);}
 void PS2Runtime::vu0MemoryInstruction(R5900Context* context, std::uint32_t instruction) {full(this)->EeRuntime::vu0MemoryInstruction(context, instruction);}
+void PS2Runtime::vu0RandomInstruction(R5900Context* context, std::uint32_t instruction) {full(this)->EeRuntime::vu0RandomInstruction(context, instruction);}

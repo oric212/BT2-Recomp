@@ -115,6 +115,29 @@ int main() {
             vum.vu0MemoryInstruction(&c,0x4B137B7E); // VLQD.x: only x is loaded.
             _mm_storeu_ps(out,c.vu0_vf[19]);require(out[0]==1 && out[1]==0 && out[3]==0);
             reject([&]{vum.vu0MemoryInstruction(&c,0x4BEF8368);});
+            {
+                // The random number register: VRINIT R,vf5x takes the field's low 23 bits; VRNEXT.x vf5,R
+                // shifts in bit 4 xor bit 22 and writes the value, a float in [1, 2), to x only; VRGET
+                // reads without a step; VRXOR mixes a field in; other words are refused.
+                EeRuntime random;R5900Context r{};std::uint32_t bits[4];
+                r.vu0_vf[5]=_mm_castsi128_ps(_mm_set_epi32(7,7,7,int(0xC0400010u)));
+                random.vu0RandomInstruction(&r,0x4A002C3E);require(random.vu0_random_==0x3FC00010u);
+                random.vu0RandomInstruction(&r,0x4B05043C);std::memcpy(bits,&r.vu0_vf[5],16);
+                require(random.vu0_random_==0x3F800020u && bits[0]==0x3F800020u && bits[1]==7 && bits[3]==7); // Bits 4 and 22 both set: 0 shifted in.
+                random.vu0RandomInstruction(&r,0x4B05043C);require(random.vu0_random_==0x3F800040u);
+                random.vu0RandomInstruction(&r,0x4B05043C);require(random.vu0_random_==0x3F800080u);
+                random.vu0RandomInstruction(&r,0x4B05043C);std::memcpy(bits,&r.vu0_vf[5],16);
+                require(bits[0]==0x3F800100u);
+                r.vu0_vf[5]=_mm_castsi128_ps(_mm_set_epi32(0,0,0,0x10));
+                random.vu0RandomInstruction(&r,0x4A002C3E);random.vu0RandomInstruction(&r,0x4B05043C);
+                require(random.vu0_random_==0x3F800021u);                                              // Bit 4 alone: 1 shifted in.
+                random.vu0RandomInstruction(&r,0x4BE6043D);std::memcpy(bits,&r.vu0_vf[6],16);          // VRGET.xyzw vf6,R.
+                require(bits[0]==0x3F800021u && bits[3]==0x3F800021u && random.vu0_random_==0x3F800021u);
+                r.vu0_vf[5]=_mm_castsi128_ps(_mm_set_epi32(0,0,0,int(0xFF800010u)));                  // VRNEXT had written vf5x.
+                random.vu0RandomInstruction(&r,0x4A002C3F);require(random.vu0_random_==0x3F800031u);   // VRXOR R,vf5x: the low 23 bits only.
+                require(random.vu0_random_instructions==9);
+                reject([&]{random.vu0RandomInstruction(&r,0x4B05043B);});
+            }
             // Status flags as the game's clip test uses them: clear, VSUB.xyw vf0,vf5,vf11 and
             // VSUB.xy vf0,vf12,vf5, then read the sticky zero/sign bits (0xC0).
             c.vu0_vf[5]=_mm_set_ps(1,5,200,100);c.vu0_vf[11]=_mm_setzero_ps();c.vu0_vf[12]=_mm_set_ps(0,0,4096,4096);

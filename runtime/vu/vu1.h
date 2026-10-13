@@ -34,6 +34,9 @@ public:
     // Called with the start address the first time a start runs from it since program memory last
     // changed (the program census, native program lookup).
     std::function<void(std::uint32_t)> on_entry;
+    // Called by VIF1 after each start or continuation when set: where it began, the instruction
+    // pairs it ran and the time it took in nanoseconds (the program census's cost per program).
+    std::function<void(std::uint32_t,std::uint64_t,std::uint64_t)> on_ran;
     std::uint32_t program_generation=1; // Advances with every write to program memory through `writeProgram`.
     // One instruction pair (8 bytes) to program memory at instruction index `index`.
     void writeProgram(std::uint32_t index,const void* pair) {std::memcpy(program.data()+(index&program_mask)*8,pair,8);++program_generation;}
