@@ -6,7 +6,9 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 ## Goal of the next passes
 
-**Performance comes first** (the user reported a laggy window on 2026-10-13): see the [performance plan](../plans/ee/PERFORMANCE_PLAN.md). Done: pacing (menus at 60), VU1 arithmetic with SSE and pairs decoded once, no CPU copy of texture uploads in GPU-only mode, RAM-first word accesses, cheaper call bookkeeping: the fight takes 32 to 38 ms per flip, from 59 to 73. Next: the rest of VU1 (see the plan's list). A sample profile is taken with `BT2_SAMPLE_PROFILE` and `tools/perf/profile_report.py`. Measure with `BT2_VIEWER_STATS=1` and the viewer; compare `vu1_kick_hash` (baseline `f3da74e43010e423` for 5,100 frames of `pad-fight.txt`). Open question for the user: whether the original shows 30 or 60 pictures per second in fights (the code reads as 30).
+**Performance comes first** ([plan](../plans/ee/PERFORMANCE_PLAN.md), with the user's requirements: fights a flat 30, menus a flat 60, also on a mid- to low-end PC). State: menus flat at 60 with the clock-based pacer; the fight at 25 to 39 ms of work per picture over the extended run (`--frames 7400` with `pad-fight.txt`, `BT2_VIEWER_STATS=1`, viewer and sound), not flat yet. Next: VU1 as native code, then graphics on its own thread. Every VU1 or VIF1 change must keep `vu1_kick_hash` (`f3da74e43010e423` for 5,100 frames, headless). Profile with `BT2_SAMPLE_PROFILE` and `tools/perf/`.
+
+**Reported by the user on 2026-10-13, not investigated:** camera bugs in the fight (details asked for), and sound breaking up during slowdowns (expected while the fight misses its budget: the device runs dry).
 
 **Launcher work in progress, uncommitted:** `runtime/host/settings.h` and `runtime/host/menu_model.h` are written but have no tests and no users yet (launcher plan, step 2).
 

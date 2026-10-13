@@ -48,7 +48,7 @@ int main() {
         g(0x1000000000000003ULL,0xE);g(0x0000000400000010ULL,0x52);g(0,0x53);g((1ULL<<61)|(2ULL<<51)|(0x13ULL<<20),0x06); // TRXREG 16x4, TRXDIR 0; TEX0 CLD 1, CT16 CLUT.
         g(0x0800000000008004ULL,0);g(0,0);g(0,0);g(0,0);g(0,0); // IMAGE, 4 quadwords, EOP.
         gpu.transfer(p);
-        check(gpu.transfers==2 && gpu.frame_triangles==1 && gpu.image_pixels==0 && gpu.clut_loads==0 && !gpu.state.trx);
+        check(gpu.transfers==2 && gpu.frame_triangles==0 && gpu.image_pixels==0 && gpu.clut_loads==0 && !gpu.state.trx); // Nothing of it is this model's: no primitive counted, no copy, no CLUT.
         auto refusedByGpu=[&](std::vector<std::uint8_t> packet) {try{gpu.transfer(packet);}catch(const std::runtime_error&){return true;}return false;};
         p.clear();g(0x1000000000008001ULL,0xE);g(1,0x53);check(refusedByGpu(p)); // TRXDIR 1: local to host.
         p.clear();g(0x1000000000008001ULL,0xE);g(0,0x12);check(refusedByGpu(p)); // Undefined register.

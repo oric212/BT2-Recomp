@@ -44,9 +44,9 @@ int main() try {
     cpu.transfer(sprite);gpu.transfer(sprite);
     const auto compared=compare(cpu,gpu.readVram());
     if(compared<12*12)throw std::runtime_error("Sprite covered fewer words than expected");
-    // GPU-only mode: the CPU model validates and counts the sprite but draws nothing.
+    // GPU-only mode: the CPU model accepts the packet's framing but neither draws nor counts the sprite.
     GsCommandSink validator;validator.rasterize=false;validator.transfer(sprite);
-    if(validator.frame_sprites!=1)throw std::runtime_error("Validate-only sink lost the sprite count");
+    if(validator.transfers!=1 || validator.frame_sprites!=0)throw std::runtime_error("GPU-only sink counted a sprite or lost the transfer");
     for(std::size_t i=0;i<1024*1024;++i)if(validator.word(i).known)throw std::runtime_error("Validate-only sink drew pixels");
     std::cout<<"GPU GS matches the CPU model on "<<compared<<" words\n";
     return 0;

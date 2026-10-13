@@ -1,12 +1,19 @@
 # Performance: real-time speed in the window
 
-Opened on 2026-10-13 after the user reported the window as laggy (about 15 frames per second) with the graphics card at about 16% load. The goal is that every part of the game holds its own speed on the user's machine, with sound, so play-testing is meaningful.
+Opened on 2026-10-13 after the user reported the window as laggy (about 15 frames per second) with the graphics card at about 16% load.
+
+## Requirements (set by the user, 2026-10-13)
+
+- **Fights: a flat 30 pictures per second.** The user confirmed in PCSX2 that the original shows 30 in fights; the fight loop's two-field frame, read from the code, agrees.
+- **Menus: a flat 60, without dips.**
+- **Never faster than the game:** the run is held at the PS2's field rate, 59.94 per second.
+- **A mid- to low-end PC must hold these too,** not only the user's machine. The measure for that is the work per picture, not the rate on this machine: a processor half as fast needs the work here to stay under half the budget (about 16 ms of 33.4 ms in fights, about 8 ms of 16.7 ms in menus). Optimizations must remove work or spread it over cores; nothing may rely on instruction sets beyond SSE2.
 
 ## How it is measured
 
 `BT2_SAMPLE_PROFILE=<path>` (with `BT2_SAMPLE_FROM=<flip>`) samples where the runner's thread executes and writes module offsets; `python tools/perf/profile_report.py <profile> build/probe/Release/bt2-entry-probe.map` names the functions. For the parts of a flip:
 
-`BT2_VIEWER_STATS=1` with the viewer prints every 120 flips: flips and fields per second of wall-clock time, and the time per flip spent on reading the picture back from the GPU, on showing it, on VIF1 unpacking, on VU1 (with the GS packets it sends), on GS packet handling from all sources and on the GPU renderer's flush. The rest of a flip is the recompiled game code and the services. Timers are in `runtime/ee/frame_profile.h`.
+`BT2_VIEWER_STATS=1` with the viewer prints every 120 flips: flips and fields per second of wall-clock time, the slowest single flip and how many took more than 20.9 ms, the work per flip (its time without the pacer's waiting), and the time per flip spent on reading the picture back from the GPU, on showing it, on VIF1 unpacking, on VU1 (with the GS packets it sends), on GS packet handling from all sources and on the GPU renderer's flush. The rest of a flip is the recompiled game code and the services. Timers are in `runtime/ee/frame_profile.h`.
 
 **Scene:** the scripted path into a 1P-vs-COM fight (`pad-fight.txt`), Release build, the user's 10-core machine. One scene on one machine; other fights and stages are not measured.
 
@@ -32,7 +39,13 @@ The three windows are the same 360 flips of the run each time; the scene gets li
 
 VU1 runs about 1.1 to 1.3 million instruction pairs per flip in this scene. The GPU's low load is consistent with this: it waits for the processor.
 
-**3. How many pictures per second the fight should show.** The fight's main loop (the functions at `0x102E80` and `0x102F30`) starts Timer 1 on the H-BLANK clock at the top of each frame and, before it waits for the vertical blank, waits until that timer has counted 400 (`0x28C790`). 400 lines are about 1.5 fields, so each frame takes two fields: 30 pictures per second in NTSC. The menu loops call a frame end without this wait and run at 60. This is read from the game's code, not measured on the original; the user's recollection is that the original targets 60 in fights. Open until it is checked on the original (a fight in PCSX2 with its internal frame rate shown). Under the reading from the code the budget is 33.4 ms per flip; under the user's it would be 16.7 ms.
+**3. The fight shows 30 pictures per second.** The fight's main loop (the functions at `0x102E80` and `0x102F30`) starts Timer 1 on the H-BLANK clock at the top of each frame and, before it waits for the vertical blank, waits until that timer has counted 400 (`0x28C790`). 400 lines are about 1.5 fields, so each frame takes two fields. The menu loops call a frame end without this wait and run at 60. The user confirmed 30 in fights on the original in PCSX2.
+
+**4. Menus averaged 60 but were not flat.** With the sound device's queue as the pacer, 15 to 20 of every 120 pictures took more than 20.9 ms (the slowest 26 to 30 ms), because the device releases its queue in coarse steps. With the clock-based pacer (below) 0 or 1 of 120 are late and the slowest steady picture is about 20 ms; the work per picture is 6 to 7.5 ms.
+
+**5. Single hitches at screen changes** (0.11 to 0.3 s, and 0.2 s entering the fight): the game loads data and the port does all of it within one field. Not addressed yet.
+
+**6. A longer fight is heavier than the first 20 seconds.** Over about 100 seconds of the scripted fight the work per picture is 25 to 31 ms in most stretches and 35 to 39 ms in the heaviest (flips 5,280 to 5,880), where the rate falls to 23 to 28 pictures per second. In the heaviest stretches VU1 with its packets takes 23 to 24.5 ms, of which about 6 ms are GS packets (5 ms in the GPU renderer). So the fight does not hold a flat 30 yet, even on the user's machine.
 
 ## Done
 
@@ -44,19 +57,24 @@ All with the same instruction count, call count and output hash on the fight run
 - **No CPU copy of texture uploads in GPU-only mode:** the CPU GS model no longer writes host-to-local image data into its own memory when the GPU renderer draws alone.
 - **Main RAM first in word loads and stores:** the game's 32-bit memory accesses reach RAM before the chain of device and checkpoint cases, none of which is a RAM address.
 - **Call bookkeeping:** the sets of entered and completed functions are skipped for a function recorded just before (a small table in front of them).
-- **A sampling profiler** (`BT2_SAMPLE_PROFILE`, `tools/perf/profile_report.py`) to find the next places.
+- **A sampling profiler** (`BT2_SAMPLE_PROFILE`; `tools/perf/profile_report.py` by function with the callers of library code, `profile_lines.py` by source line) to find the next places.
+- **The VIF1 list buffer is reused** instead of being built in a new zero-filled vector for every list.
+- **The EE FPU helpers set the rounding mode in MXCSR** for their one operation instead of through the C library.
+- **The CPU GS model follows only A+D registers in GPU-only mode** (transfers, FINISH); vertices, primitives and CLUT loads are the renderer's. Its primitive counters stay at zero in that mode.
+- **Frame timers cost nothing unless the statistics are on.**
+- **A clock-based pacer** (`runtime/host/frame_pacer.h`): each field has a deadline one period after the last and is waited for once, when its picture is shown or at its end, with a high-resolution timer. The period follows the sound device's queue within 1%, so the device no longer paces the run and its queue stays near 50 ms.
 
 ## Next, in order of expected gain
 
-The fight is now at the edge of the 33.4 ms budget in the measured scene and misses it in heavier moments; at a 16.7 ms budget it would be half speed. A sample profile of the fight (before the last two changes) put about 37% of the time in VU1, about 15% in the game's memory access helpers, about 7% in call bookkeeping, about 6% in memory copies and about 6% in allocation.
+Against the requirements the fight needs its work cut from 25 to 39 ms per picture to about 16 ms.
 
-1. **VU1, the rest.** About 12 to 18 ms per flip remain for its own work, roughly 10 ns per instruction pair. Next inside the interpreter: the lower instructions still on the general path (integer arithmetic, branches, the flag instructions) and ITOF, FTOI and CLIP. Beyond that, **native translation of the microprograms** to C++ (generated locally from the game's own programs, like the EE code, with the interpreter as fallback), which needs its own tool and tests.
-2. **GS packet handling in the CPU model** (about 2 ms): in GPU-only mode it still follows every vertex to validate the stream.
-3. **Game code and services** (about 8 ms): the other access widths and the remaining per-call checks, guided by a new profile.
-4. **Presenting without readback** (about 3 ms): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
-5. **Allocation and copies** seen in the profile: find their sources.
+1. **VU1 as native code.** VU1's own work is 11 to 18 ms per picture, spread evenly over the interpreter's loop (no single hot line), so the interpreter is at its limit. Translate the game's microprograms to C++ (generated locally from the programs the game uploads, like the EE code, with the interpreter as fallback and as the reference for the output hash).
+2. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about two thirds of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
+3. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
+4. **Game code and services** (about 5 to 7 ms): the other access widths and the per-call checks, guided by a new profile.
+5. **Loading hitches at screen changes:** spread the load over fields or do it off the game's thread.
 
-Each step: measure with `BT2_VIEWER_STATS`, compare `vu1_kick_hash` and the run's counters with the baseline, run the gate, record before and after in the monthly history.
+Each step: measure with `BT2_VIEWER_STATS` over the extended fight run (7,400 frames of `pad-fight.txt`), compare `vu1_kick_hash` and the run's counters with the baseline (5,100 frames), run the gate, record before and after in the monthly history.
 
 ## Verification
 

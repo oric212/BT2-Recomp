@@ -25,12 +25,12 @@ class ProfileReport(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             map_path = Path(folder) / 'probe.map'; map_path.write_text(MAP)
             profile = Path(folder) / 'run.profile'
-            profile.write_text('samples 10\nprobe.exe 1000 2\nprobe.exe 103f 1\nprobe.exe 1040 3\nprobe.exe 2000 1\nother lib.dll 5 2\nprobe.exe 10 1\n')
+            profile.write_text('samples 10\nprobe.exe 1000 2 0\nprobe.exe 103f 1 0\nprobe.exe 1040 3 0\nprobe.exe 2000 1 0\nother lib.dll 0 1 0\nother lib.dll 0 1 1041\nprobe.exe 10 1 0\n')
             symbols = read_map(map_path)
             self.assertEqual(symbols, [(0x1000, 'first'), (0x1040, 'second'), (0x1100, 'third')])  # Absolute symbols are left out.
             total, counts = report(profile, symbols, 'PROBE.EXE')
             self.assertEqual(total, 10)
-            self.assertEqual(dict(counts), {'first': 3, 'second': 3, 'third': 1, '[other lib.dll]': 2, '[before the first symbol]': 1})
+            self.assertEqual(dict(counts), {'first': 3, 'second': 3, 'third': 1, '[other lib.dll]': 1, '[other lib.dll] <- second': 1, '[before the first symbol]': 1})
 
     def test_refuses_a_file_that_is_not_a_map(self):
         with tempfile.TemporaryDirectory() as folder:

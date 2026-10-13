@@ -872,6 +872,7 @@ private:
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;
     std::vector<std::uint32_t> call_returns_;
+    std::vector<std::uint32_t> vif1_list_words_;std::vector<std::pair<std::size_t,std::uint32_t>> vif1_list_tags_; // frameVif1Start's working buffers.
     unsigned checkpoints_ = 0, checkpoint_flips_ = 0, checkpoint_fields_ = 0, dispatch_depth_ = 0;
     unsigned flipless_fields_ = 0, flipless_flips_ = 0; // Fields delivered since the last display flip.
     unsigned field_flips_ = 0, field_writes_ = 0;       // Flip and display-write counts at the last VBLANK.

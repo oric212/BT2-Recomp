@@ -7,6 +7,7 @@
 #endif
 #include "probe_state.h"
 #include "host/audio_device.h"
+#include "host/frame_pacer.h"
 #include "host/host_input.h"
 #include "host/input_mapping.h"
 #include "host/sample_profiler.h"
@@ -58,8 +59,10 @@ int main(int argc, char** argv) {
         if (const char* path = std::getenv("BT2_AUDIO_WAV")) {
             wav = std::make_unique<WavWriter>(path, AudioMixer::rate, 2);
         }
-        // BT2_AUDIO_DEVICE: play the mixed audio on the default audio device. The device's clock then
-        // paces the run at the game's speed (at most a tenth of a second waits in the device).
+        // BT2_AUDIO_DEVICE: play the mixed audio on the default audio device.
+        // Pacing: with the viewer or the audio device the run is held at the game's field rate by the
+        // clock (host/frame_pacer.h). Each field waits once for its deadline, when its picture is shown
+        // or at its end. With the device, the period follows the device's queue (kept near 50 ms).
         struct Speaker {
             std::unique_ptr<AudioDevice> device;
             ~Speaker() {
@@ -68,11 +71,22 @@ int main(int argc, char** argv) {
             }
         };
         static Speaker speaker; // Static, so the summary is also printed when the viewer's closing ends the run.
-        const bool audio_paced = std::getenv("BT2_AUDIO_DEVICE") != nullptr;
-        if (audio_paced) speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 10);
-        if (wav || speaker.device)
+        static std::unique_ptr<FramePacer> pacer;
+        if (std::getenv("BT2_AUDIO_DEVICE")) {
+            speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 4);
+            const std::vector<std::int16_t> silence(AudioMixer::rate / 20 * 2); // The queue starts at its target level.
+            speaker.device->write(silence);
+        }
+        if (viewer_mode || speaker.device) pacer = std::make_unique<FramePacer>();
+        if (wav || pacer)
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
                 if (wav) wav->write(pcm);
+                if (pacer) {
+                    pacer->wait(); // The field that ends here, if it showed no picture.
+                    // A queue above its target means the fields come faster than the device plays them: lengthen the period a little.
+                    const double excess = speaker.device ? (double(speaker.device->queuedFrames()) - AudioMixer::rate / 20) / AudioMixer::rate : 0;
+                    pacer->fieldStarted(1.0 + excess * 0.1);
+                }
                 if (speaker.device) speaker.device->write(pcm);
             };
         // BT2_SOUND_LOG=<folder>: the sound effects requests as text (requests.txt: field, kind, function,
@@ -103,12 +117,13 @@ int main(int argc, char** argv) {
         // the run stops until the window is closed. Closing the window during a run ends the process.
         const char* scale = std::getenv("BT2_VIEWER_SCALE");
         static ViewerWindow viewer(scale && std::string_view(scale) == "stretch" ? ViewerWindow::Scaling::Stretch : ViewerWindow::Scaling::Integer);
-        viewer.paced = !audio_paced;
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode};
         if (viewer_mode) runtime.on_display_flip = [&runtime] {
             const auto dispfb = runtime.gs_privileged[9] ? runtime.gs_privileged[9] : runtime.gs_privileged[7];
             const auto display = runtime.gs_privileged[9] ? runtime.gs_privileged[10] : runtime.gs_privileged[8];
-            viewer.present(decodeDisplay(runtime.gif_dma.gs, dispfb, display), runtime.gs_display_flips);
+            const auto frame = decodeDisplay(runtime.gif_dma.gs, dispfb, display);
+            if (pacer) pacer->wait();
+            viewer.present(frame, runtime.gs_display_flips);
             if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
         };
         // BT2_HOST_INPUT: the keyboard and a gamepad play the game while the viewer window has the focus
@@ -180,8 +195,10 @@ int main(int argc, char** argv) {
                 // per flip spent on the renderer's flush, on reading the picture back and on showing it.
                 using Clock = std::chrono::steady_clock;
                 static const bool stats = std::getenv("BT2_VIEWER_STATS") != nullptr;
+                frame_profile.enabled = stats;
                 static Clock::time_point window_start = Clock::now();
-                static double scanout_s = 0, present_s = 0;static unsigned window_fields = 0;
+                static double scanout_s = 0, present_s = 0, slowest_s = 0, waited_at_window = 0;static unsigned window_fields = 0, late = 0;
+                static Clock::time_point last_flip = Clock::now();
                 const auto t0 = Clock::now();
                 const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
                 const auto t1 = Clock::now();
@@ -191,17 +208,24 @@ int main(int argc, char** argv) {
                     std::cerr << "Snapshot: flip " << flip << " at field " << runtime.vblank_deliveries << std::endl;
                 }
                 if (!viewer_mode || !frame.width) return;
+                const double waited_before = pacer ? pacer->waited_seconds : 0;
+                if (pacer) pacer->wait(); // The picture appears at the field's deadline.
+                const auto t_shown = Clock::now();
                 viewer.present(frame, flip);
                 if (stats) {
                     const auto t2 = Clock::now();
-                    scanout_s += std::chrono::duration<double>(t1 - t0).count();present_s += std::chrono::duration<double>(t2 - t1).count();
+                    scanout_s += std::chrono::duration<double>(t1 - t0).count();present_s += std::chrono::duration<double>(t2 - t_shown).count();
+                    // The slowest single flip of the window, and how many took more than 1.25 fields (20.9 ms):
+                    // at 60 flips per second each of those is a visible dip.
+                    const double this_flip = std::chrono::duration<double>(t2 - last_flip).count();last_flip = t2;
+                    slowest_s = std::max(slowest_s, this_flip);if (this_flip > 0.0209) ++late;
                     if (flip % 120 == 0) {
                         const double wall = std::chrono::duration<double>(t2 - window_start).count();
                         std::cerr << std::dec << "Viewer stats at flip " << flip << ": " << 120 / wall << " flips/s, " << (runtime.vblank_deliveries - window_fields) / wall
-                            << " fields/s; per flip " << wall / 120 * 1000 << " ms, of it readback " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
+                            << " fields/s; per flip " << wall / 120 * 1000 << " ms (slowest " << slowest_s * 1000 << " ms, " << late << " over 20.9 ms), work " << (wall - ((pacer ? pacer->waited_seconds : 0) - waited_at_window)) / 120 * 1000 << " ms, of it readback " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
                             << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000 << " ms, of it in the GPU renderer " << frame_profile.renderer / 120 * 1000
                             << " ms, GPU flush " << frame_profile.flush / 120 * 1000 << " ms" << std::endl;
-                        window_start = t2;scanout_s = present_s = 0;window_fields = runtime.vblank_deliveries;frame_profile = {};
+                        window_start = t2;scanout_s = present_s = slowest_s = 0;late = 0;waited_at_window = pacer ? pacer->waited_seconds : 0;(void)waited_before;window_fields = runtime.vblank_deliveries;frame_profile = {};frame_profile.enabled = true;
                     }
                 }
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}

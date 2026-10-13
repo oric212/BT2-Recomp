@@ -103,11 +103,14 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
     // microprograms run to their end and their XGKICK packets (PATH1) reach the GS between the
     // DIRECT data (PATH2).
     const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),v.tadr,"VIF1");
-    std::vector<std::uint32_t> words;std::vector<std::pair<std::size_t,std::uint32_t>> tags; // First word index and address of each tag.
+    // The list's words and the first word index and address of each tag; the buffers are kept between lists.
+    auto& words=vif1_list_words_;auto& tags=vif1_list_tags_;words.clear();tags.clear();
+    const auto append=[&](const std::uint8_t* bytes,std::size_t count) {
+        const auto* from=reinterpret_cast<const std::uint32_t*>(bytes);words.insert(words.end(),from,from+count);
+    };
     for(const auto& c:chain.segments) {
-        const auto at=words.size();tags.emplace_back(at,c.tag);
-        words.resize(at+2+c.data.size()/4);std::memcpy(words.data()+at,c.tag_words,8);
-        if(!c.data.empty())std::memcpy(words.data()+at+2,c.data.data(),c.data.size());
+        tags.emplace_back(words.size(),c.tag);
+        append(c.tag_words,2);append(c.data.data(),c.data.size()/4);
     }
     if(!v.starts) {
         // The registers as the startup FIFO writes left them.

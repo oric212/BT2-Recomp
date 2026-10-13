@@ -1,8 +1,8 @@
 // Host audio output (Win32 waveOut): plays the mixer's fields as they are produced.
-// The device's clock paces the run: a field is queued behind the ones still playing, and while more
-// than `queue_frames` are waiting the writer sleeps. A run that is faster than real time is thereby
-// held at the game's speed; a run that is slower lets the device run dry, which is heard as gaps and
-// counted in `dry`.
+// The run is paced by the clock (host/frame_pacer.h), which reads `queuedFrames` to keep this
+// device's queue level. The device itself only refuses to fall far behind: while more than
+// `queue_frames` are waiting, a write sleeps. A run that is slower than the game lets the device run
+// dry, which is heard as gaps and counted in `dry`.
 #pragma once
 #ifdef _WIN32
 #ifndef NOMINMAX

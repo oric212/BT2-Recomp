@@ -8,6 +8,7 @@
 #include <cfenv>
 #include <cmath>
 #include <cstdint>
+#include <immintrin.h>
 #pragma fenv_access(on)
 
 namespace {
@@ -20,10 +21,12 @@ float normalize(float value) {
 }
 template <class Operation>
 float chop(Operation operation) {
-    const int saved = std::fegetround();
-    std::fesetround(FE_TOWARDZERO);
+    // Round toward zero for the one operation, set in MXCSR directly: the C library's rounding
+    // functions cost several times the operation itself.
+    const unsigned saved = _mm_getcsr();
+    _mm_setcsr(saved | 0x6000u);
     const volatile float result = operation();
-    std::fesetround(saved);
+    _mm_setcsr(saved);
     return normalize(result);
 }
 }

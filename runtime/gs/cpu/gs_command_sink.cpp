@@ -115,7 +115,12 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
         if((tag>>46)&1)write(0x00,(tag>>47)&0x7FF,apply); // PRE: PRIM from the tag.
         if(flg==0) {
             if(at+std::size_t(nloop)*nreg*16>data.size())throw std::runtime_error("GIF PACKED data exceeds transfer");
-            for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);
+            if(!rasterize) {
+                // GPU-only: the renderer draws. This model follows only what is set through A+D (the
+                // transfer registers, FINISH); vertex and texture data pass by unread.
+                for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
+                    if(((regs>>(4*r))&15)==0xE)write(unsigned(read(at+8)&0xFF),read(at),apply);
+            } else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);
         } else if(flg==1) {
             const std::size_t words=std::size_t(nloop)*nreg;
             if(at+((words+1)/2)*16>data.size())throw std::runtime_error("GIF REGLIST data exceeds transfer");
@@ -264,9 +269,11 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     if(reg==0x61) {++state.finishes;return;}
     if(reg==0x06 || reg==0x07) {
         const unsigned cld=unsigned((value>>61)&7);
-        if(cld==1)loadClut(value);else if(cld)throw std::runtime_error("Unsupported GS CLUT load control");
+        if(cld>1)throw std::runtime_error("Unsupported GS CLUT load control");
+        if(cld==1 && rasterize)loadClut(value); // GPU-only: the renderer keeps the CLUT.
         return;
     }
+    if(!rasterize)return; // GPU-only: no vertex queue; primitives are the renderer's.
     if(reg==0x00)state.vertices=0;
     if(reg!=0x04 && reg!=0x05 && reg!=0x0C && reg!=0x0D)return;
     const auto prim=(state.regs[0x1A]&1)?state.regs[0x00]:state.regs[0x1B];

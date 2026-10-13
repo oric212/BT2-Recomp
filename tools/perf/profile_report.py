@@ -2,9 +2,10 @@
 
 Usage: profile_report.py PROFILE MAP [--top N] [--module NAME]
 
-The profile holds one line per place: module file name, offset in the module (hex), samples. The
+The profile holds one line per place: module file name, offset in the module (hex), samples and,
+for a place in another module, the offset of the program's code that called into it (0: unknown). The
 map file (linked with /MAP) lists each function's address; an offset belongs to the function with
-the highest address not above it. Places in other modules are summed per module.
+the highest address not above it. Places in other modules are summed per module and caller.
 """
 import argparse, bisect, collections, re
 from pathlib import Path
@@ -30,12 +31,14 @@ def report(profile, symbols, module):
     """Returns (total samples, Counter by function or module)."""
     lines = Path(profile).read_text().splitlines()
     total = int(lines[0].split()[1]); counts = collections.Counter(); addresses = [a for a, _ in symbols]
+    def named(offset):
+        at = bisect.bisect_right(addresses, offset) - 1
+        return symbols[at][1] if at >= 0 else '[before the first symbol]'
     for line in lines[1:]:
-        name, offset, samples = line.rsplit(' ', 2)
+        name, offset, samples, caller = line.rsplit(' ', 3)
         if name.lower() != module.lower():
-            counts['[' + name + ']'] += int(samples); continue
-        at = bisect.bisect_right(addresses, int(offset, 16)) - 1
-        counts[symbols[at][1] if at >= 0 else '[before the first symbol]'] += int(samples)
+            counts['[' + name + ']' + (' <- ' + named(int(caller, 16)) if int(caller, 16) else '')] += int(samples); continue
+        counts[named(int(offset, 16))] += int(samples)
     return total, counts
 
 
