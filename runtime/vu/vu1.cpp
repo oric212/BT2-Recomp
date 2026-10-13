@@ -4,19 +4,26 @@
 // wins. Floats follow the EE FPU model of this runtime (ps2_fpu.cpp): round toward zero, no
 // denormals, infinities or NaNs. MAC and status flags are not computed (no modelled instruction
 // reads them); the instructions that read them stop by name.
-#include "vu1.h"
-#include "vu1_program.h"
-#include "vu1_simd.h"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cfenv>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <immintrin.h>
+#include <span>
 #include <stdexcept>
+#include <vector>
+// The float settings come before this project's headers: the compiler does not inline a function
+// into code compiled under other float settings, and the small helpers of vu1.h and vu1_simd.h are
+// used in every instruction.
 #pragma fenv_access(on)
 #pragma fp_contract(off)
+#include "vu1.h"
+#include "vu1_program.h"
+#include "vu1_simd.h"
 
 using namespace vu1_simd;
 
@@ -26,11 +33,6 @@ constexpr std::uint64_t run_limit=Vu1::run_limit; // Instructions per start; a p
 [[noreturn]] void refuse(const char* what,std::uint32_t word,std::uint32_t at) {
     char text[128];std::snprintf(text,sizeof text,"VU1 %s 0x%08X is not modelled (instruction %u)",what,word,at);
     throw std::runtime_error(text);
-}
-// Denormals read as signed zero; infinities and NaNs as the largest magnitude of their sign.
-std::uint32_t normal(std::uint32_t bits) {
-    const auto exponent=bits&0x7F800000u;
-    return !exponent?bits&0x80000000u:exponent==0x7F800000u?(bits&0x80000000u)|0x7F7FFFFFu:bits;
 }
 float value(std::uint32_t bits) {return std::bit_cast<float>(normal(bits));}
 std::uint32_t bits(float v) {return normal(std::bit_cast<std::uint32_t>(v));}
@@ -224,7 +226,11 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
         case 0x68:setVi(integer(it),std::uint16_t(top));return;             // XTOP
         case 0x69:setVi(integer(it),std::uint16_t(itop));return;            // XITOP
         case 0x6C: {                                                        // XGKICK is
-            gifPacketInto(packet_,vi[integer(is)]);const auto& packet=packet_;
+            // The packet in place where it lies in one piece, otherwise (wrapping around the end of
+            // data memory) as a copy.
+            const std::uint32_t first=vi[integer(is)]&data_mask,qwords=gifPacketQwords(first);
+            std::span<const std::uint8_t> packet(data.data()+first*16,std::size_t(qwords)*16);
+            if(first+qwords>data_mask+1) {gifPacketInto(packet_,first);packet=packet_;}
             ++kicks;
             for(std::size_t n=0;n+8<=packet.size();n+=8) {std::uint64_t part;std::memcpy(&part,packet.data()+n,8);kick_hash=(kick_hash^part)*0x100000001B3ull;}
             if(kick) {const unsigned mode=_mm_getcsr();_mm_setcsr(host_csr_);kick(packet);_mm_setcsr(mode);} // The GS runs with the host's float mode.
@@ -280,18 +286,21 @@ void Vu1::run(std::uint32_t start,const Kick& kick) {
     if(entry_generation_[pc]!=program_generation) {
         // The first start from here since program memory changed: which program is it?
         entry_generation_[pc]=program_generation;
-        native_[pc]=nullptr;
-        const auto natives=nativePrograms();
-        if(use_native && !natives.empty()) {
+        native_[pc]=nullptr;native_by_hand_[pc]=false;
+        const auto natives=nativePrograms(),by_hand=use_hand_written?handWrittenPrograms():std::span<const NativeEntry>{};
+        if(use_native && (!natives.empty() || !by_hand.empty() || !extra_programs.empty())) {
+            // Tests' own programs, then the hand-written ones, then the translations.
             const auto key=Vu1Program::reachable(program,pc).key;
-            for(const auto& n:natives)if(n.key==key) {native_[pc]=n.run;break;}
+            for(const auto& n:extra_programs)if(n.key==key && !native_[pc])native_[pc]=n.run;
+            for(const auto& n:by_hand)if(n.key==key && !native_[pc]) {native_[pc]=n.run;native_by_hand_[pc]=true;}
+            for(const auto& n:natives)if(n.key==key && !native_[pc])native_[pc]=n.run;
         }
         if(on_entry)on_entry(pc);
     }
     // A native translation runs the program to its end, or returns early with `pc` at a pair it
     // does not contain; the interpreter goes on from there.
     if(native_[pc]) {
-        ++native_runs;
+        ++native_runs;hand_written_runs+=native_by_hand_[pc];
         if(verify_native) {runVerified(native_[pc],kick);return;}
         if(native_[pc](*this,kick)) {settle(true);clip_latest_=clip;vi_written_=0;return;}
     }
@@ -417,18 +426,21 @@ std::vector<std::uint8_t> Vu1::gifPacket(std::uint32_t address) const {
     std::vector<std::uint8_t> packet;gifPacketInto(packet,address);return packet;
 }
 
-void Vu1::gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const {
-    packet.clear();
-    auto take=[&](std::uint32_t qwords) {
-        if(packet.size()/16+qwords>data_mask+1)throw std::runtime_error("VU1 XGKICK packet exceeds VU1 memory");
-        for(;qwords;--qwords,++address) {const auto* from=data.data()+(address&data_mask)*16;packet.insert(packet.end(),from,from+16);}
-    };
+std::uint32_t Vu1::gifPacketQwords(std::uint32_t address) const {
+    std::uint32_t total=0;
     for(;;) {
-        std::uint64_t tag;std::memcpy(&tag,data.data()+(address&data_mask)*16,8);
-        take(1);
+        std::uint64_t tag;std::memcpy(&tag,data.data()+((address+total)&data_mask)*16,8);
         const std::uint32_t nloop=std::uint32_t(tag&0x7FFF),flg=std::uint32_t((tag>>58)&3),regs=std::uint32_t((tag>>60)&15);
         const std::uint32_t nreg=regs?regs:16;
-        take(flg==0?nloop*nreg:flg==1?(nloop*nreg+1)/2:nloop); // PACKED, REGLIST, IMAGE.
-        if(tag&0x8000)return; // EOP.
+        total+=1+(flg==0?nloop*nreg:flg==1?(nloop*nreg+1)/2:nloop); // The tag; PACKED, REGLIST, IMAGE.
+        if(total>data_mask+1)throw std::runtime_error("VU1 XGKICK packet exceeds VU1 memory");
+        if(tag&0x8000)return total; // EOP.
     }
+}
+
+void Vu1::gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const {
+    const std::uint32_t first=address&data_mask,qwords=gifPacketQwords(first),straight=std::min(qwords,data_mask+1-first);
+    packet.resize(std::size_t(qwords)*16);
+    std::memcpy(packet.data(),data.data()+first*16,std::size_t(straight)*16);
+    std::memcpy(packet.data()+std::size_t(straight)*16,data.data(),std::size_t(qwords-straight)*16);
 }

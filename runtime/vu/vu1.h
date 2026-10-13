@@ -25,7 +25,8 @@ public:
     std::uint32_t pc=0;           // Instruction index where MSCNT continues.
     std::uint32_t top=0,itop=0;   // Set by VIF1 at each start (XTOP, XITOP).
     std::uint64_t instructions=0;
-    unsigned runs=0,kicks=0,native_runs=0; // `native_runs`: starts that ran a native translation.
+    unsigned runs=0,kicks=0,native_runs=0; // `native_runs`: starts that ran a native program (hand-written or translated).
+    unsigned hand_written_runs=0;          // Those of them that ran a hand-written program.
     std::uint64_t kick_hash=0xCBF29CE484222325ull; // Over every XGKICK packet's bytes, in order: equal hashes mean equal output.
     // Reads of Q or the clipping flags while a newer result was still in the pipeline. The model
     // counts one cycle per instruction (no stalls), so a nonzero count marks timing-sensitive code.
@@ -50,6 +51,13 @@ public:
     struct NativeEntry {std::uint64_t key;NativeProgram run;};
     static std::span<const NativeEntry> nativePrograms();
     bool use_native=true; // Off: every program is interpreted.
+    // Hand-written native programs (vu1_handwritten_registry.cpp, the project's own code): a microprogram
+    // written out as what it does, with the same packets and the same state left behind as the
+    // interpreter. Chosen by the same key and before a translation. `extra_programs` are looked up
+    // first of all (tests register programs of their own there).
+    static std::span<const NativeEntry> handWrittenPrograms();
+    std::vector<NativeEntry> extra_programs;
+    bool use_hand_written=true; // Off: translations and the interpreter only.
     // Verification of native programs: every start that has one runs in the interpreter first and
     // then natively from the same state; the packets sent and the state left behind (memory, the
     // registers, ACC, Q, I, the clipping flags, where it stopped, the pair count) must be equal, or
@@ -65,6 +73,7 @@ public:
 
 private:
     friend struct Vu1Native; // The generated translations.
+    friend struct Vu1Hand;   // The hand-written programs.
     struct Result {enum Target {None,Register,Accumulator} target=None;unsigned reg=0,mask=0;std::array<std::uint32_t,4> value{};};
     Result upper(std::uint32_t word,std::uint32_t at);
     void lower(std::uint32_t word,std::uint32_t at,const Kick& kick);
@@ -84,7 +93,8 @@ private:
     unsigned vi_written_=0;std::uint64_t vi_written_cycle_=0; // Last VI write other than by a flag instruction.
     bool branch_=false;std::uint32_t branch_target_=0;
     std::array<std::uint32_t,program_mask+1> entry_generation_{}; // The generation each start address was last looked up in.
-    std::array<NativeProgram,program_mask+1> native_{};          // Its native translation, if any.
+    std::array<NativeProgram,program_mask+1> native_{};          // Its native program, if any.
+    std::array<bool,program_mask+1> native_by_hand_{};           // Whether that one is hand-written.
     unsigned host_csr_=0; // The float mode outside the run, restored around XGKICK.
     // An instruction pair decoded once: what the run loop needs without taking the words apart again.
     // An entry is current while its words equal program memory, so no writer has to invalidate it.
@@ -102,4 +112,5 @@ private:
     void decode(Decoded& d,std::uint32_t low,std::uint32_t high) const;
     std::vector<std::uint8_t> packet_; // The XGKICK packet being sent; kept to reuse its storage.
     void gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const;
+    std::uint32_t gifPacketQwords(std::uint32_t address) const; // The packets' length up to and including EOP.
 };

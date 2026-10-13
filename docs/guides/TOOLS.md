@@ -658,6 +658,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Saves.** `python tools/saves/import_save.py SAVE.cbs "user/memcards/Card 1"` unpacks a CodeBreaker save into a card folder (one sub-folder per save with its files and `entries.txt`). The launcher's Memory card screen puts a card folder in slot 1; a probe run takes one from `BT2_CARD_FOLDER=<folder>`. Loading works; saving is implemented and not yet confirmed by a run ([memory card plan](../plans/memory-card/MEMORY_CARD_PLAN.md)).
 
+**Hand-written VU1 programs** (`runtime/vu/vu1_handwritten_registry.cpp`) are chosen before the translations; `BT2_VU1_NO_HAND_WRITTEN=1` leaves them out, and the report's `vu1_hand_written_runs` counts their starts. **Profile totals.** `BT2_PROFILE_TOTALS=1` prints at the end of a headless run the seconds spent in VIF1, VU1, GS packet handling, the GPU renderer's intake and its flush.
+
 **VU1 verification.** `BT2_VU1_VERIFY=1` runs every start that has a native program in the interpreter first and then natively from the same state; the packets and the state left behind (memory, registers, ACC, Q, I, clipping flags, stopping address, pair count) must be equal, or the run stops with the program's key and what differs. The report's `vu1_verified_runs` counts the starts checked. Several times slower than a normal run.
 
 **VU1 program cost and listing.** With `BT2_VU1_CENSUS` set, the run also writes `cost.txt` into the folder: per program its key, pair count, starts, instruction pairs run and milliseconds (output packets included). `python tools/vu1/disassemble.py <census file>` lists a program as text, one line per instruction pair (`E` marks the end bit, `>` the start address). Both describe the game's programs and stay local.

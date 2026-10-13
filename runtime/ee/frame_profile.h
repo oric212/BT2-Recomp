@@ -5,7 +5,7 @@
 #include <chrono>
 
 struct FrameProfile {
-    double vif1=0,vu1=0,gs=0,renderer=0,flush=0; // `vif1` contains `vu1`; `vu1` contains the GS time of its packets; `gs` contains `renderer`, the GPU renderer's share.
+    double vif1=0,vu1=0,vu1_gs=0,gs=0,renderer=0,flush=0; // `vif1` contains `vu1`; `vu1` contains the GS time of its packets; `gs` contains `renderer`, the GPU renderer's share; `vu1_gs` is the part of `gs` that VU1's packets take.
     bool enabled=false; // Off, the scopes cost a test; on, two clock reads each.
     struct Scope {
         double* total;std::chrono::steady_clock::time_point start;

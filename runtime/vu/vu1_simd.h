@@ -7,6 +7,12 @@
 #include <emmintrin.h>
 
 namespace vu1_simd {
+// One float as the model reads it: denormals as signed zero; infinities and NaNs as the largest
+// magnitude of their sign.
+inline std::uint32_t normal(std::uint32_t bits) {
+    const auto exponent=bits&0x7F800000u;
+    return !exponent?bits&0x80000000u:exponent==0x7F800000u?(bits&0x80000000u)|0x7F7FFFFFu:bits;
+}
 // Infinities and NaNs become the largest magnitude of their sign. Denormals are handled by the run's
 // float mode (MXCSR: round toward zero, denormals read as zero, tiny results flushed to zero).
 inline __m128 clamp(__m128 v) {

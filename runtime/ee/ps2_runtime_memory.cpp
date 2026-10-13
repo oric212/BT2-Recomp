@@ -122,7 +122,7 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
         throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
     };
     const auto codes=vif1.codes,directs=vif1.directs;const auto direct_qwords=vif1.direct_qwords;
-    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs);gif_dma.gs.transfer(data);};
+    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gif_dma.gs.transfer(data);};
     try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1.run(words,to_gs,to_gs);}
     catch(const Vif1Unsupported& u) {
         std::uint32_t tag=v.tadr;

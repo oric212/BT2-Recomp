@@ -60,6 +60,10 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ipu_block.cpp
     runtime/ee/ipu_csc.cpp
     runtime/vu/vu1.cpp
+    runtime/vu/vu1_handwritten_registry.cpp
+    runtime/vu/vu1_skinned_vertex_programs.cpp
+    runtime/vu/vu1_triangle_strip_program.cpp
+    runtime/vu/vu1_triangle_clipper.cpp
     runtime/vu/vif1.cpp
     runtime/ee/ee_gs_readback.cpp)
 
@@ -135,7 +139,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
     bt2_target_defaults(bt2-dma-chain-tests)
     add_test(NAME dma-chain COMMAND bt2-dma-chain-tests)
-    add_executable(bt2-vu1-tests runtime/tests/vu1_tests.cpp runtime/vu/vu1.cpp runtime/vu/vif1.cpp runtime/vu/vu1_native_none.cpp)
+    add_executable(bt2-vu1-tests runtime/tests/vu1_tests.cpp runtime/vu/vu1.cpp runtime/vu/vu1_handwritten_registry.cpp runtime/vu/vu1_skinned_vertex_programs.cpp runtime/vu/vu1_triangle_strip_program.cpp runtime/vu/vu1_triangle_clipper.cpp runtime/vu/vif1.cpp runtime/vu/vu1_native_none.cpp)
     bt2_target_defaults(bt2-vu1-tests)
     # Its main keeps many Vu1 objects (each over 100 KB with the decoded-pair table) as locals.
     target_link_options(bt2-vu1-tests PRIVATE /STACK:67108864)

@@ -329,6 +329,44 @@ void programs() {
     check(vu.native_runs==0 && Vu1::nativePrograms().empty(),"no native translations in this build");
 }
 
+// Native programs registered by key, and the verification mode that runs them against the
+// interpreter. The programs here are the test's own; the registry of hand-written programs holds
+// only keys of the game's programs, which no test contains.
+bool nativeRight(Vu1& vu,const Vu1::Kick&) {vu.vi[1]=5;vu.vi[2]=7;vu.instructions+=4;vu.pc=4;return true;}
+bool nativeWrongRegister(Vu1& vu,const Vu1::Kick&) {vu.vi[1]=5;vu.vi[2]=8;vu.instructions+=4;vu.pc=4;return true;}
+bool nativeWrongCount(Vu1& vu,const Vu1::Kick&) {vu.vi[1]=5;vu.vi[2]=7;vu.instructions+=3;vu.pc=4;return true;}
+bool nativeLeaves(Vu1& vu,const Vu1::Kick&) {vu.vi[1]=5;++vu.instructions;vu.pc=1;return false;} // The first pair only.
+void nativePrograms() {
+    const std::vector<Pair> code{lo(iaddiu(1,0,5)),lo(iaddiu(2,1,2)),{LNOP,UNOP|E},nop};
+    const auto started=[&](Vu1& vu,Vu1::NativeProgram native) {
+        loadProgram(vu,code);
+        vu.extra_programs={{Vu1Program::reachable(vu.program,0).key,native}};
+    };
+    Vu1 plain;loadProgram(plain,code);plain.run(0,{});
+    check(plain.vi[1]==5 && plain.vi[2]==7 && plain.instructions==4 && plain.pc==4 && plain.native_runs==0,"the interpreter's result");
+    Vu1 native;started(native,nativeRight);native.run(0,{});native.run(0,{});
+    check(native.native_runs==2 && native.hand_written_runs==0 && native.vi==plain.vi && native.instructions==8,"a registered program runs in the interpreter's place");
+    Vu1 other;started(other,nativeRight);const Pair changed=lo(iaddiu(2,1,3));other.writeProgram(1,&changed);other.run(0,{});
+    check(other.native_runs==0 && other.vi[2]==8,"another program under the same start has another key");
+    Vu1 off;started(off,nativeWrongRegister);off.use_native=false;off.run(0,{});
+    check(off.native_runs==0 && off.vi[2]==7,"native programs can be switched off");
+    Vu1 verified;started(verified,nativeRight);verified.verify_native=true;verified.run(0,{});verified.run(0,{});
+    check(verified.verified_runs==2 && verified.vi==plain.vi && verified.instructions==8,"verification passes an equal program and counts each start once");
+    Vu1 wrong;started(wrong,nativeWrongRegister);wrong.verify_native=true;
+    check(throws([&]{wrong.run(0,{});}),"verification stops at a different register");
+    Vu1 miscounted;started(miscounted,nativeWrongCount);miscounted.verify_native=true;
+    check(throws([&]{miscounted.run(0,{});}),"and at a different pair count");
+    Vu1 partial;started(partial,nativeLeaves);partial.verify_native=true;partial.run(0,{});
+    check(partial.verified_runs==1 && partial.vi==plain.vi && partial.instructions==4,"a program that leaves early is finished by the interpreter");
+    // The hand-written programs: one entry per key.
+    const auto by_hand=Vu1::handWrittenPrograms();
+    check(!by_hand.empty(),"the build has hand-written programs");
+    for(std::size_t a=0;a<by_hand.size();++a) {
+        check(by_hand[a].run!=nullptr,"each has its function");
+        for(std::size_t b=a+1;b<by_hand.size();++b)check(by_hand[a].key!=by_hand[b].key,"each key once");
+    }
+}
+
 int main() {
     memoryAndIntegers();
     arithmetic();
@@ -337,6 +375,7 @@ int main() {
     kicks();
     vif();
     programs();
+    nativePrograms();
     std::cout<<"VU1 tests passed\n";
     return 0;
 }
