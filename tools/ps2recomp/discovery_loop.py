@@ -62,7 +62,7 @@ class Loop:
         def functions():
             with open(folder/'candidates.csv',encoding='utf-8') as f:return sum(1 for _ in f)-1
         before=functions();self.run(self.tool('ps2recomp/prepare_map.py',*select));after=functions()
-        self.run(self.tool('ps2recomp/generate_game.py',*(select or ['--candidate-map',str(folder/'candidates.csv')])))
+        self.run(self.tool('ps2recomp/generate_game.py',*select,'--candidate-map',str(folder/'candidates.csv')))
         path=FOLDER/('overlays.json' if program else 'extra-startup.json')
         whole=json.loads(path.read_text(encoding='utf-8'));receipt=whole['programs'][program] if program else whole
         manifest=json.loads((folder/'generation.manifest.json').read_text(encoding='utf-8'))
@@ -92,14 +92,28 @@ class Loop:
         self.say('flips',report['gs_display_flips'],'fields',report['vblank_deliveries'],'pc',hex(report['pc']),'target',hex(report['target']),
                  'entered',report['distinct_ee_entered'],'completed',report['distinct_ee_completed'],'budget',report['frame_budget_reached'])
         return report,lines
+    def player_stop(self):
+        """The stop of the last session played with bt2-game.exe, as a run of the probe would leave it."""
+        report_path=ROOT/'user/last-run.json'
+        if not report_path.exists():raise SystemExit('no stopped play session: user/last-run.json is missing')
+        if self.a.build_stamp().stat().st_mtime>report_path.stat().st_mtime:raise SystemExit('the runtime was rebuilt after that session; play again first')
+        for suffix in ('','.ee.bin','.gs.bin','.iop.bin'):
+            source=Path(str(report_path)+suffix)
+            if source.exists():shutil.copyfile(source,str(FOLDER/'entry-stop.json')+suffix)
+        lines=(ROOT/'user/last-run.log').read_text(encoding='utf-8',errors='replace').splitlines()
+        lines=[l for l in lines if l and not l.startswith('[INFO]')]
+        report=json.loads(report_path.read_text(encoding='utf-8'))
+        self.say('\n'.join(l[:300] for l in lines[-6:]))
+        self.say('flips',report['gs_display_flips'],'pc',hex(report['pc']),'target',hex(report['target']))
+        return report,lines
     def loop(self):
-        self.say('=== discovery loop started: up to',self.a.rounds,'rounds, frame budget',self.a.frames)
+        self.say('=== discovery loop started:','the last play session' if self.a.player_stop else f'up to {self.a.rounds} rounds, frame budget {self.a.frames}')
         if self.a.regenerate:self.regenerate(None if self.a.regenerate=='main' else self.a.regenerate)
         for n in range(self.a.rounds):
             self.say('--- round',n+1,'of',self.a.rounds)
-            report,lines=self.probe()
+            report,lines=self.player_stop() if self.a.player_stop else self.probe()
             if report['frame_budget_reached']:self.say('frame budget reached');break
-            if not is_map_gap(lines,report):self.say('not a map gap; stopping');break
+            if not is_map_gap(lines,report):self.say('not a map gap; stopping: this stop needs a look, not a new function');break
             self.say(self.run(self.tool('ps2recomp/inspect_blocker.py')).strip().splitlines()[-1][:160])
             status=json.loads((FOLDER/'blocker-map.json').read_text(encoding='utf-8'))['map_status']
             if status!='map gap':self.say('status',status);break
@@ -107,18 +121,26 @@ class Loop:
             found=self.run(self.tool('ghidra/analyze_game.py','--discover-blocker',*(['--program',program] if program else []))).strip().splitlines()
             self.say('\n'.join(l[:200] for l in [l for l in found if not l.startswith('WARNING:')][-2:]))
             if self.regenerate(program)<=0:self.say('map did not grow; needs prover work');break
+            if self.a.player_stop:self.say('the function at',hex(report['target']),'is built in; play again')
         self.say('=== discovery loop finished')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--disc',type=Path,required=True);p.add_argument('--frames',type=int,required=True,help='Frame budget of each run (display flips).')
+    p.add_argument('--disc',type=Path);p.add_argument('--frames',type=int,help='Frame budget of each run (display flips).')
+    p.add_argument('--player-stop',action='store_true',help='No run: take the stop of the last session played with bt2-game.exe (user/last-run.json), build the missing function in and end.')
     p.add_argument('--rounds',type=int,default=20,help='Most runs before the loop ends (default: %(default)s).')
     g=p.add_mutually_exclusive_group()
     g.add_argument('--pad-script',help='Scripted controller input (run_startup_probe.py format).');g.add_argument('--pad-script-file',type=Path,help='File holding the pad script.')
     p.add_argument('--regenerate',nargs='?',const='main',metavar='PROGRAM',help='Regenerate and rebuild before the first run (after map or prover changes): the main executable, or the named overlay program.')
     p.add_argument('--stall-fields',type=int,default=300,help='Fields without a display flip that end a run (default: %(default)s).')
     p.add_argument('--log',type=Path,default=FOLDER/'discovery-loop.log',help='Live log (default: %(default)s).')
-    a=p.parse_args();a.disc=a.disc.resolve()
+    a=p.parse_args()
+    if a.player_stop:
+        if a.disc or a.frames or a.pad_script or a.pad_script_file:p.error('--player-stop takes no run options')
+        a.rounds=1
+    elif a.rounds and (a.disc is None or a.frames is None):p.error('a run needs --disc and --frames')
+    if a.disc:a.disc=a.disc.resolve()
+    a.build_stamp=lambda:ROOT/'build/probe/Release/bt2-entry-probe.exe'
     a.pad=a.pad_script_file.read_text(encoding='utf-8').strip() if a.pad_script_file else a.pad_script
     a.log.parent.mkdir(parents=True,exist_ok=True)
     with open(a.log,'a',encoding='utf-8') as log:Loop(a,log).loop()

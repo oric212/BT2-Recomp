@@ -10,10 +10,11 @@
 
 enum class LauncherResult {Start,Quit};
 
-// Disc images offered on the Game disc screen: the .iso files in `rom` and `user` under `root`.
+// Disc images offered on the Game disc screen: the .iso files in `disc` (the folder meant for
+// them), `rom` and `user` under `root`.
 inline std::vector<std::string> discImages(const std::string& root) {
     std::vector<std::string> found;
-    for(const char* folder:{"rom","user"}) {
+    for(const char* folder:{"disc","rom","user"}) {
         std::error_code error;
         for(std::filesystem::directory_iterator it(std::filesystem::path(root)/folder,error),end;!error && it!=end;it.increment(error)) {
             auto extension=it->path().extension().string();
@@ -58,7 +59,7 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
             unsigned count=0;
             for(std::filesystem::directory_iterator it(cards_folder/card,error),end;!error && it!=end;it.increment(error))if(it->is_directory(error))++count;
             MenuEntry e=menuAction(card,[&settings,card,changed]{settings.memory_card=card;changed();},
-                std::to_string(count)+(count==1?" save":" saves")+". Loading works; the game stops if it tries to save (not built yet).");
+                std::to_string(count)+(count==1?" save":" saves")+". The game loads from and saves to this folder.");
             e.value=[&settings,card]{return std::string(settings.memory_card==card?"in use":"");};
             screen.entries.push_back(e);
         }
@@ -77,7 +78,7 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
             e.value=[&settings,path]{return std::string(settings.disc==path?"in use":"");};
             screen.entries.push_back(e);
         }
-        if(discs.empty())screen.entries.push_back(menuAction("No disc image found",[]{},"Put the game's .iso file into the rom or the user folder."));
+        if(discs.empty())screen.entries.push_back(menuAction("No disc image found",[]{},"Put the game's .iso file into the disc folder next to the program."));
         host.menu.open(std::move(screen));
     },"The disc image the game is read from."));
     main.entries.push_back(menuAction("Quit",[&]{result=LauncherResult::Quit;host.finished=true;}));

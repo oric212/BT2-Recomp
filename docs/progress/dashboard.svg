@@ -77,12 +77,12 @@
 <circle cx="41" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
 <text x="37" y="438" font-size="11.5" fill="#64748b">Keyboard and gamepads, remappable</text></g>
-<g><title>Memory card: Incomplete. Card folders; saves load, no writing</title>
+<g><title>Memory card: Incomplete. Card folders; saving untried</title>
 <rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="41" cy="478" r="3.5" fill="#b77912"/>
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="37" y="500" font-size="11.5" fill="#64748b">Card folders; saves load, no writing</text></g>
+<text x="37" y="500" font-size="11.5" fill="#64748b">Card folders; saving untried</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
 <g><title>GS: Operational. GPU renderer; frames confirmed</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>

@@ -112,7 +112,14 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
             const DWORD code=runGame(root,settings_path,settings,log);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
-            if(code!=0)MessageBoxA(nullptr,("The game stopped.\n\n"+lastLines(log,6)+"\nThe full messages are in "+log.string()).c_str(),"BT2 Recomp",MB_OK|MB_ICONINFORMATION);
+            if(code!=0) {
+                // A stop at code that was never translated can be repaired by the discovery loop.
+                const std::string last=lastLines(log,6);
+                const std::string hint=last.find("Branch target")==std::string::npos?"":
+                    "\nThe game reached code that is not translated yet. To build it in, run in "+root.string()+":\n"
+                    "python tools\\ps2recomp\\discovery_loop.py --player-stop\nand play again.\n";
+                MessageBoxA(nullptr,("The game stopped.\n\n"+last+hint+"\nThe full messages are in "+log.string()).c_str(),"BT2 Recomp",MB_OK|MB_ICONINFORMATION);
+            }
             return int(code);
         }
     } catch(const std::exception& error) {

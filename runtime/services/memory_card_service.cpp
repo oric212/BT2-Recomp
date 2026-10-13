@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <filesystem>
 
-// Native memory card service (MCSERV, 0x80000400) with no card inserted. Requests use the public
+// Native memory card service (MCSERV, 0x80000400) without a card, or on a card folder (below). Requests use the public
 // mcDescParam layout (48 bytes: port, slot, flags, type/free/format request flags, buffer, EE end
 // parameter address). Results as MCSERV returned them for an empty port 0 / slot 0:
 // - init (0xFE): {0, server version 0x210, driver version 0x226};
@@ -62,7 +62,9 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
         };
         std::int32_t result=0;bool handled=true;
         switch(r.rpc_number) {
-        case 2:result=card.open(name(),in[2]);break;                         // Open: flags in word 2.
+        case 2:                                                              // Open: flags in word 2.
+            if(in[2]&~CardFolder::known_flags)throw std::runtime_error("Memory card open with unknown flags "+std::to_string(in[2]));
+            result=card.open(name(),in[2]);break;
         case 3:result=card.close(std::int32_t(in[0]));break;                 // Close.
         case 4:result=card.seek(std::int32_t(in[0]),std::int32_t(in[4]),in[5]);break; // Seek: offset, origin.
         case 5: {                                                            // Read: size in word 3, buffer in word 6.
@@ -76,6 +78,17 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
             if(in[7]) {checkMemory(rdram,in[7],8);write32(rdram,in[7],0);write32(rdram,in[7]+4,0);}
             break;
         }
+        case 6: {                                                            // Write: as read, with up to 16 unaligned
+            // head bytes in the parameter itself (their count in the origin word, the bytes from +32)
+            // and the aligned rest in the buffer (size in word 3).
+            if(in[5]>16)throw std::runtime_error("Memory card write with more than 16 head bytes");
+            if(in[3])checkMemory(rdram,in[6],in[3]);
+            std::vector<std::uint8_t> data(in[5]+in[3]);
+            for(std::uint32_t n=0;n<in[5];++n)data[n]=read8(rdram,r.send_source+32+n);
+            for(std::uint32_t n=0;n<in[3];++n)data[in[5]+n]=read8(rdram,in[6]+n);
+            result=card.write(std::int32_t(in[0]),data);break;
+        }
+        case 0xA:result=card.flush(std::int32_t(in[0]));break;               // Flush.
         case 0xC:result=card.changeDirectory(name());break;                  // Change directory.
         case 0xD: {                                                          // List: flags 0 starts, otherwise continues.
             if(!in[2]) {memory_card_listing_=card.list(name());memory_card_listed_=0;}
@@ -91,6 +104,15 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
             }
             result=std::int32_t(count);break;
         }
+        case 0xE: {                                                          // Set an entry's data: which parts in
+            // the flags word, the data as one 64-byte listing entry at the pointer.
+            checkMemory(rdram,in[4],64);
+            CardFolder::Entry e;
+            for(unsigned b=0;b<8;++b) {e.created[b]=read8(rdram,in[4]+b);e.modified[b]=read8(rdram,in[4]+8+b);}
+            e.mode=read16(rdram,in[4]+20);
+            result=card.setInfo(name(),e,in[2]);break;
+        }
+        case 0xF:result=card.remove(name());break;                           // Delete.
         default:handled=false;
         }
         if(handled) {
@@ -108,12 +130,5 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
     throw UnsupportedSyscall(0x77,context->pc);
 }
 
-// Free space of the card folder in 1 KB clusters: an 8 MB card's 8,000 less what the saves take, each
-// file rounded up to whole clusters plus two for its directory entry (an estimate of the card's own
-// bookkeeping; the game only compares it with what a save needs).
-std::uint32_t EeRuntime::memoryCardFreeClusters() const {
-    std::uint64_t used=0;std::error_code error;
-    for(std::filesystem::recursive_directory_iterator it(memory_card_folder,error),end;!error && it!=end;it.increment(error))
-        used+=it->is_regular_file(error)?(it->file_size(error)+1023)/1024+2:2;
-    return used>=8000?0u:static_cast<std::uint32_t>(8000-used);
-}
+// Free space of the card folder in 1 KB clusters (CardFolder::freeClusters).
+std::uint32_t EeRuntime::memoryCardFreeClusters() const {return CardFolder(memory_card_folder).freeClusters();}

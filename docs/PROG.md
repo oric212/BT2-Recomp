@@ -18,9 +18,9 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
 | Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); frames confirmed by the user; GPU renderer, with music and sound effects in the run's WAV file, slower than real time, not compared with the original by capture |
 | Audio | 🟢 Operational — volumes for the whole mix, music and effects in the launcher and the in-game menu; stream audio (movies, music) and sound effects, including looping and stopped ones, are mixed, written to a WAV file and played on the audio device (`--sound`), which holds the run at the game's speed; the user listened to a WAV of menus and a fight and confirmed it; stream level, channel order and timing match a PCSX2 recording for the boot movies; live sound not yet heard by the user, gaps expected in fights (slower than real time) |
-| Saves | 🔧 Incomplete — a save on a memory card folder is read by the game at startup (the user's save, brought in from a CodeBreaker file); the game does not write saves yet |
+| Saves | 🔧 Incomplete — the user's 100% save on a memory card folder loads (confirmed by the user); writing saves is implemented and unit-tested, not yet tried in the game |
 
-**Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **10,682 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **10,990 EE functions mapped and generated** · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
 <!-- progress-summary:end -->
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
@@ -29,7 +29,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 | Item | Count |
 | --- | --- |
-| EE functions mapped and generated | 10,682, all compiled into the probe, plus all 473 mapped functions of the `DBZP.BIN` overlay |
+| EE functions mapped and generated | 10,990, all compiled into the probe, plus all 489 mapped functions of the `DBZP.BIN` overlay |
 | EE functions entered / completed | 2,007 / 1,998 in the gate run (1,000 frames); 4,936 / 4,927 in the long Release run to a battle (4,854 / 4,847 in the idle run of the demo fights) |
 | Presented frames / logical VBlanks | Gate run: 1,000 (frame budget) / 1,398. Long Release run (scripted input to a battle): 9,000 (frame budget) / 14,334. In the battle one frame is presented every two fields; whether the original does the same is not checked |
 | Native service requests (long run to a battle) | 1,013 disc requests, 48 CRI calls, 76 memory card queries (no IOP code runs) |
@@ -52,7 +52,7 @@ The gate run ends at its frame budget (1,000 frames, just after the logo movie).
 | IPU / video | 🟢 Operational | MPEG-2 decoding through the game's Sofdec library: FDEC, VDEC, BDEC, CSC (RGB32), toIPU/fromIPU DMA; both movies play; IDEC, PACK and RGB16 refused; spot frames match ffmpeg and PCSX2 memory captures, no systematic comparison yet |
 | Audio | 🟢 Operational | ADX stream flow native at 48 and 24 kHz, which paces movies and music, and its PCM mixed to 48 kHz stereo at the level measured against a PCSX2 recording. Sound effects: a native sampler behind SOUNDS and the sound driver (sound memory, bank parsing, SPU2 ADPCM, one voice per requested sound, looping samples, the module's keep and stop flags, slot volumes and silence requests as read from the module's code). Output to a WAV file and to the default audio device (waveOut), whose clock paces the run ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)); no volume settings Volumes for the whole mix, the streams and the effects (percent; full volume is the measured level). |
 | Input | 🟢 Operational | Native controller service with scripted input, which drives the menus and a fighter in battle, or live input: keyboard, XInput pad and DualSense (HID). Keys and gamepad buttons are assigned on the Controls screen of the launcher and the in-game menu and stored in the settings file. Keyboard input was seen to reach the game; no gamepad has been tried on hardware yet ([launcher plan](plans/launcher/LAUNCHER_PLAN.md)) |
-| Memory card | 🔧 Incomplete | Native card service on a host folder per card ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)): status, open, read, seek, close, listing and change directory; a save is read at startup. No writing yet; listing not exercised by a run; replies not compared with a capture |
+| Memory card | 🔧 Incomplete | Native card service on a host folder per card ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)): status, open, read, write, seek, flush, close, listing, change directory, make folder, set entry data, delete. Loading a save is confirmed by the user; saving and listing are not exercised by a run; replies not compared with a capture |
 | Disc / filesystem | ✅ Verified | ISO-backed reads and file I/O; archive table and overlay byte-identical to the original |
 
 ## Verification (2026-10-13)
