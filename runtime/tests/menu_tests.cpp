@@ -22,7 +22,10 @@ int main() {
         s.disc="D:\\games\\a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
+        s.disc_folder="E:\\discs";s.mapping.stick_sensitivity=150;
         check(Settings::parse(s.text())==s,"changed settings read back");
+        s.memory_card="E:\\saves\\My card";check(Settings::parse(s.text())==s,"a card folder elsewhere is a full path");
+        check(refused([]{Settings::parse("stick_sensitivity = 10\n");}),"stick sensitivity has its range");
         check(Settings::parse("window_scale = 4\r\ndisc =\r\n").window_scale==4,"a short file with CRLF lines and an empty value");
         check(Settings::parse("fast_forward_button = none\n").fast_forward_button==GamepadState::Count,"no fast forward button");
         check(refused([]{Settings::parse("speed = 2\n");}),"an unknown key is refused");

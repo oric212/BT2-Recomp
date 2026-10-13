@@ -29,7 +29,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 | Item | Count |
 | --- | --- |
-| EE functions mapped and generated | 10,990, all compiled into the probe, plus all 489 mapped functions of the `DBZP.BIN` overlay |
+| EE functions mapped and generated | 10,990, all compiled into the probe, plus all 490 mapped functions of the `DBZP.BIN` overlay |
 | EE functions entered / completed | 2,007 / 1,998 in the gate run (1,000 frames); 4,936 / 4,927 in the long Release run to a battle (4,854 / 4,847 in the idle run of the demo fights) |
 | Presented frames / logical VBlanks | Gate run: 1,000 (frame budget) / 1,398. Long Release run (scripted input to a battle): 9,000 (frame budget) / 14,334. In the battle one frame is presented every two fields; whether the original does the same is not checked |
 | Native service requests (long run to a battle) | 1,013 disc requests, 48 CRI calls, 76 memory card queries (no IOP code runs) |

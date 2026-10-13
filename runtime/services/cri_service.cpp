@@ -77,7 +77,8 @@ void EeRuntime::nativeCriVblank(const R5900Context* interrupted) {
     if(on_audio_field && !native_cri_audio.on_audible) {
         native_cri_audio.on_audible=[this](std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes) {
             if(address>native_iop_ram_.size() || bytes>native_iop_ram_.size()-address)throw std::runtime_error("CRI audio data outside IOP memory");
-            audio_mixer.push(source,side,hertz,std::span<const std::uint8_t>(native_iop_ram_.data()+address,bytes));audio_stream_bytes+=bytes;
+            const bool single=!native_cri_audio.paired(source);
+            audio_mixer.push(source,side,hertz,std::span<const std::uint8_t>(native_iop_ram_.data()+address,bytes));audio_stream_bytes+=bytes;if(single)audio_single_stream_bytes+=bytes;
         };
         native_cri_audio.on_silenced=[this](std::uint32_t source) {audio_mixer.drop(source);};
     }

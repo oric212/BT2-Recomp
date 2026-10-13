@@ -130,6 +130,17 @@ int main() {
         require(flushed.size()==2 && flushed[0].address==0x17C540 && flushed[0].bytes==0xC00 && flushed[1].address==0x179140 && flushed[1].bytes==0x2000,"stop reports the remaining data");
         stop.field();require(stop.played(1).empty(),"a stopped player reports nothing more");
         {
+            // A start still queued when its player was destroyed (a skipped film) is dropped; a start
+            // for a player that never existed is refused. Paired sources are told from single ones.
+            CriAudioFlow gone;gone.sourceCreated(1,0x11,0x100);gone.sourceCreated(2,0x12,0x200);gone.sourceCreated(3,0x21,0x300);
+            gone.playerCreated(9,0x11,0x12);gone.playerCreated(8,0x21,0x22);
+            require(gone.paired(1) && gone.paired(2) && !gone.paired(3) && !gone.paired(77),"two sources on one player are a pair");
+            gone.playerDestroyed(9);gone.play(9,1);gone.play(9,0);
+            require(gone.commands_for_destroyed_players==2,"commands for a destroyed player are dropped");
+            bool never=false;try{gone.play(7,1);}catch(const std::runtime_error&){never=true;}
+            require(never,"a start for a player that never existed is refused");
+        }
+        {
             // Sound output: played blocks are passed on with source, side and rate; what a stop only
             // reports is not, and a destroyed player silences its sources.
             CriAudioFlow heard;heard.sourceCreated(1,0x11,0x100);heard.sourceCreated(2,0x12,0x200);heard.playerCreated(9,0x11,0x12);heard.rate(9,24000);
@@ -275,8 +286,8 @@ int main() {
         wrap.play(9,1);wrap.dataWritten(1,0x179540,0x800,1);wrap.playerDestroyed(9);wrap.field();
         require(wrap.played(1).empty(),"a destroyed player reports nothing");
         wrap.play(9,0);
-        bool gone=false;try{wrap.play(9,1);}catch(const std::runtime_error&){gone=true;}
-        require(gone,"a destroyed player cannot start");
+        wrap.play(9,1);wrap.field(); // A start queued before the destruction is dropped (seen when a film is skipped).
+        require(wrap.played(1).empty() && wrap.commands_for_destroyed_players==2,"a destroyed player does not start");
         wrap.playerCreated(9,0x11,0x12);
         bool refused_argument=false;try{wrap.play(9,2);}catch(const std::runtime_error&){refused_argument=true;}
         require(refused_argument,"unmodelled player argument refused");

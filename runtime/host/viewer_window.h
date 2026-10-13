@@ -16,7 +16,8 @@
 #include "display_frame.h"
 
 // Minimal Win32 presentation window: shows the latest decoded frame in the client area, either at the
-// largest integer scale that fits (centred, black borders; pixel-exact) or stretched to fill.
+// largest integer scale that fits (pixel-exact) or at the largest size of the picture's proportions
+// that fits; centred, with black borders.
 // Messages are pumped by the caller at each presentation; closing the window sets closed(). The
 // window does not pace the run (host/frame_pacer.h does). The window's size is a multiple of the game's
 // picture (640 x 448) or the whole screen without a border; both, the scaling and a short status
@@ -62,6 +63,7 @@ public:
     bool closed() const {return closed_;}
     bool focused() const {return hwnd_ && GetForegroundWindow()==hwnd_;} // Input is taken only then.
     bool opened() const {return hwnd_!=nullptr;}
+    HWND handle() const {return hwnd_;} // For dialogs that belong to the window.
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
     unsigned scale_=2;bool fullscreen_=false;std::string title_,status_;
@@ -95,16 +97,23 @@ private:
         if(frame_.bgra.empty()) {FillRect(dc,&client,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));return;}
         BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(bi.bmiHeader);bi.bmiHeader.biWidth=LONG(frame_.width);
         bi.bmiHeader.biHeight=-LONG(frame_.height);bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
-        int x=0,y=0,w=client.right,h=client.bottom;
+        // The picture keeps its shape in every window: whole multiples of its size, or the largest
+        // size of the same proportions that fits; the rest of the window is black.
+        int w,h;
         if(scaling_==Scaling::Integer) {
             const int scale=std::max(1,int(std::min(client.right/LONG(frame_.width),client.bottom/LONG(frame_.height))));
-            w=int(frame_.width)*scale;h=int(frame_.height)*scale;x=(client.right-w)/2;y=(client.bottom-h)/2;
-            // Black only the borders around the frame: clearing the whole client area first made every
-            // presented frame flash black briefly (flicker).
-            const auto black=static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-            const RECT borders[4]={{0,0,client.right,y},{0,y+h,client.right,client.bottom},{0,y,x,y+h},{x+w,y,client.right,y+h}};
-            for(const auto& border:borders)if(border.right>border.left && border.bottom>border.top)FillRect(dc,&border,black);
+            w=int(frame_.width)*scale;h=int(frame_.height)*scale;
+        } else if(std::int64_t(client.right)*frame_.height<=std::int64_t(client.bottom)*frame_.width) {
+            w=std::max(1,int(client.right));h=std::max(1,int(std::int64_t(client.right)*frame_.height/frame_.width));
+        } else {
+            h=std::max(1,int(client.bottom));w=std::max(1,int(std::int64_t(client.bottom)*frame_.width/frame_.height));
         }
+        const int x=(client.right-w)/2,y=(client.bottom-h)/2;
+        // Black only the borders around the frame: clearing the whole client area first made every
+        // presented frame flash black briefly (flicker).
+        const auto black=static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        const RECT borders[4]={{0,0,client.right,y},{0,y+h,client.right,client.bottom},{0,y,x,y+h},{x+w,y,client.right,y+h}};
+        for(const auto& border:borders)if(border.right>border.left && border.bottom>border.top)FillRect(dc,&border,black);
         SetStretchBltMode(dc,COLORONCOLOR);
         StretchDIBits(dc,x,y,w,h,0,0,int(frame_.width),int(frame_.height),frame_.bgra.data(),&bi,DIB_RGB_COLORS,SRCCOPY);
         if(!status_.empty()) {

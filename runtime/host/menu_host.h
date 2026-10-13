@@ -22,6 +22,9 @@ public:
     bool finished=false; // Set by an entry to end `run`.
 
     MenuHost(ViewerWindow& window,HostInput& input):window_(window),input_(input) {}
+    ViewerWindow& window() {return window_;}
+    // Runs `action` once the press being handled is done: for an entry that replaces its own screen.
+    void later(std::function<void()> action) {later_=std::move(action);}
 
     // The next key or gamepad button pressed goes to `done`; Escape cancels.
     void capture(std::string prompt,std::function<void(Captured)> done) {prompt_=std::move(prompt);capture_=std::move(done);snapshot();}
@@ -39,6 +42,7 @@ public:
             if(window_.focused() || !window_.opened()) {
                 if(capture_)captureStep();
                 else for(const MenuKey key:steps_.step(held(),now_))menu.press(key);
+                if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
             }
             if(finished || menu.empty())break;
             // Drawn at the window's size, halved while that is larger than a screen needs.
@@ -61,7 +65,7 @@ public:
     }
 
 private:
-    ViewerWindow& window_;HostInput& input_;MenuRenderer renderer_;MenuInput steps_;
+    ViewerWindow& window_;HostInput& input_;MenuRenderer renderer_;MenuInput steps_;std::function<void()> later_;
     std::function<void(Captured)> capture_;std::string prompt_;
     std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;
 
@@ -121,8 +125,8 @@ inline MenuScreen display(Settings& s,std::function<void()> changed) {
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {
     MenuScreen screen;screen.title="Sound";
     screen.entries.push_back(number("Master volume",s.master_volume,0,100,5,"%",changed));
-    screen.entries.push_back(number("Music and voices",s.music_volume,0,100,5,"%",changed,"The game's streamed sound: music, movies, speech."));
-    screen.entries.push_back(number("Effects",s.effects_volume,0,100,5,"%",changed));
+    screen.entries.push_back(number("Music",s.music_volume,0,100,5,"%",changed,"The game's streamed sound: music and films."));
+    screen.entries.push_back(number("Effects and voices",s.effects_volume,0,100,5,"%",changed,"Sound effects and the characters' voices."));
     return screen;
 }
 inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> changed) {
@@ -154,6 +158,7 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
         e.note="Keyboard key  -  gamepad button. Confirm, then press the new one.";
         screen.entries.push_back(e);
     }
+    screen.entries.push_back(number("Stick sensitivity",s.mapping.stick_sensitivity,50,200,10,"%",changed,"How far the game sees the sticks pushed. 100%: as they are."));
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
     screen.entries.push_back(menuAction("Reset to defaults",[&s,changed]{s.mapping=InputMapping{};const Settings d;s.fast_forward_key=d.fast_forward_key;s.fast_forward_button=d.fast_forward_button;changed();}));

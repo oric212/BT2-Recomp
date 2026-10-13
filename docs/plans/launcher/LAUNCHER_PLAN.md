@@ -84,7 +84,7 @@ New code in `runtime/host/`, one purpose per file:
 | Controls | Each PS2 button with its keyboard key and its pad button. Selecting an entry waits for the next press and assigns it. The fast forward buttons and the overlay combination. Reset to defaults. |
 | Display | Integer scaling on or off (off stretches to the window). Fullscreen or windowed. Window size. Frame rate display on or off. HD textures on or off. |
 | Sound | Master, music and effects volume. |
-| Game disc | The disc image the game is read from. Images found in `disc/` (the folder meant for them), `rom/` and `user/` are listed; choosing a file anywhere with the system's file dialogue is planned (the same for a memory card folder); the program checks that the chosen one is the supported release before it is accepted. |
+| Game disc | The disc image the game is read from. Images found in `disc/` (the folder meant for them), `rom/` and `user/` are listed; a further folder can be chosen with the system's folder dialog (`disc_folder`), and so can a memory card folder anywhere (`memory_card` as a full path) — the one part of the launcher a controller cannot operate (`host/folder_dialog.h`); the program checks that the chosen one is the supported release before it is accepted. |
 
 ### Overlay
 

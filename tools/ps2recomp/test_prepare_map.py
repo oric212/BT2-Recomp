@@ -112,6 +112,22 @@ class BoundedSwitchTests(unittest.TestCase):
             changed=words.copy();changed[index]=value
             self.assertFalse(has_branch_nop_gaps(candidate,metadata,pack(changed)))
 
+    def test_switch_that_begins_its_function(self):
+        metadata={'sections':[{'name':'.text','address':0x1000,'size':0x48,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
+        # The function's first instruction is the bound, the index an incoming argument (seen at
+        # 0x41CAD8 of the overlay): SLTIU v0,a0,2 / BEQ v0,zero / SLL v0,a0,2 (delay) / LUI v1 /
+        # ADDU v1,v1,v0 / LW v1 / JR v1 / delay; two case blocks the analysis did not follow, the
+        # second running into the function's end.
+        words=[0x2C820002,0x1040000C,0x00041080,0x3C030000,0x00621821,0x8C631040,0x00600008,0,
+               0x3C020043,0x10000004,0x24040001,0,0x3C020043,0x24040002,0x03E00008,0,0x1020,0x1030]
+        candidate={'start':0x1000,'end_exclusive':0x1040,'body_size':40,'contiguous_aligned':False,'body_ranges':['1000-101f','1038-103f']}
+        pack=lambda w:struct.pack('<18I',*w)
+        self.assertTrue(has_switch_case_gaps(candidate,metadata,pack(words)))
+        # Without the bound, with a bound on another register, or with a target outside the function it stays unproven.
+        for index,value in [(0,0x24020001),(0,0x2CA20002),(16,0x1044)]:
+            changed=words.copy();changed[index]=value
+            self.assertFalse(has_switch_case_gaps(candidate,metadata,pack(changed)))
+
     def test_beql_switch_with_swapped_index_and_condition_registers(self):
         metadata={'sections':[{'name':'.text','address':0x1000,'size':0x50,'file_offset':0,'flags':4,'occupies_file_bytes':True}]}
         # Index in v0, bound condition in v1: SLTIU v1,v0,2 / BEQL v1,zero / annulled LW v0 / SLL v0,v0,2 /

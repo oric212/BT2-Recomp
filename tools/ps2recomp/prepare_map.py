@@ -173,7 +173,8 @@ def switch_targets(address,start,end,spans,metadata,data,word):
         op=ins>>26
         return op in (1,2,3,4,5,6,7,20,21,22,23) or (op==0 and ins&63 in (8,9,12,13)) or cop_control(ins)
     sign=lambda v:v-65536 if v&32768 else v
-    if address-start<28 or address+8>end or word(address+4)!=0:return None
+    # The shortest idiom is the whole head of a function: SLTIU first, the JR 24 bytes after it.
+    if address-start<24 or address+8>end or word(address+4)!=0:return None
     jr=word(address)
     tail=[word(address+n) for n in (-16,-12,-8,-4)] if address-start>=16 else [0]*4
     # First layout: SLTIU c,i,N / BEQ(L) c,zero / [delay] / SLL s,i,2 / LUI b / ADDU b,b,s / LW j,d(b) / JR j.

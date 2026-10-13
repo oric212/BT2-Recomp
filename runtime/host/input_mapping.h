@@ -18,6 +18,7 @@ struct InputMapping {
         GamepadState::LeftTrigger,GamepadState::RightTrigger,GamepadState::LeftShoulder,GamepadState::RightShoulder,
         GamepadState::North,GamepadState::East,GamepadState::South,GamepadState::West};
     std::uint8_t deadzone=24; // A stick this close to its centre counts as at rest.
+    unsigned stick_sensitivity=100; // Percent: how far from its centre the game sees a stick, against where it is.
     bool operator==(const InputMapping&) const=default;
 };
 
@@ -27,7 +28,13 @@ inline PadInput mapInput(const InputMapping& mapping,const GamepadState& pad,con
     PadInput out;
     for(unsigned n=0;n<16;++n)
         if((mapping.keys[n] && key_down(mapping.keys[n])) || (pad.connected && pad.held(mapping.buttons[n])))out.pressed|=std::uint16_t(1u<<n);
-    const auto rest=[&](std::uint8_t v){return v>=0x80-mapping.deadzone && v<=0x80+mapping.deadzone?std::uint8_t(0x80):v;};
-    if(pad.connected)out.sticks={rest(pad.rx),rest(pad.ry),rest(pad.lx),rest(pad.ly)};
+    // A stick near its centre is at rest; beyond that its distance from the centre is scaled and
+    // stops at the ends of the range.
+    const auto axis=[&](std::uint8_t v) {
+        if(v>=0x80-mapping.deadzone && v<=0x80+mapping.deadzone)return std::uint8_t(0x80);
+        const int scaled=0x80+(int(v)-0x80)*int(mapping.stick_sensitivity)/100;
+        return std::uint8_t(scaled<0?0:scaled>0xFF?0xFF:scaled);
+    };
+    if(pad.connected)out.sticks={axis(pad.rx),axis(pad.ry),axis(pad.lx),axis(pad.ly)};
     return out;
 }

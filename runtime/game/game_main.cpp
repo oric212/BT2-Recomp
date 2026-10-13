@@ -53,7 +53,7 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());
     // The memory card folder in slot 1, when the settings name one that exists.
-    const fs::path card=root/"user"/"memcards"/settings.memory_card;
+    const fs::path named=fs::path(settings.memory_card),card=named.is_absolute()?named:root/"user"/"memcards"/named;
     SetEnvironmentVariableA("BT2_CARD_FOLDER",!settings.memory_card.empty() && fs::is_directory(card,error)?card.string().c_str():nullptr);
     for(const char* name:{"BT2_FRAME_LIMIT","BT2_PAD_SCRIPT","BT2_PAD_RECORD","BT2_VIEWER_SCALE","BT2_GPU_GS_SNAPSHOT"})SetEnvironmentVariableA(name,nullptr);
 

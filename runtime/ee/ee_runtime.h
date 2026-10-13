@@ -825,7 +825,7 @@ public:
     AudioMixer audio_mixer;
     SoundSampler sound_sampler; // Effects: banks, sound memory and voices behind SOUNDS and the sound driver.
     std::function<void(std::span<const std::int16_t>)> on_audio_field;
-    std::uint64_t audio_fields=0,audio_stream_bytes=0;
+    std::uint64_t audio_fields=0,audio_stream_bytes=0,audio_single_stream_bytes=0; // `single`: of one-channel streams.
     void nativePadVblank(std::uint8_t* rdram);
     void nativeCriVblank(const R5900Context* interrupted);
     bool handleNativeDmaStat(R5900Context* context);

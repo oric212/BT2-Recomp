@@ -30,6 +30,11 @@ int main() {
     check(mapped.pressed==(1u<<bit("cross")|1u<<bit("l2")),"gamepad buttons press theirs");
     check(mapped.sticks==std::array<std::uint8_t,4>{0x80,0x40,0x10,0xF0},"sticks in wire order, a small offset is rest");
     check(mapInput(mapping,pad,held).pressed==(1u<<bit("cross")|1u<<bit("up")|1u<<bit("l2")),"keys and gamepad combine");
+    // Stick sensitivity scales the distance from the centre and stops at the ends; rest stays rest.
+    InputMapping twice;twice.stick_sensitivity=200;
+    check(mapInput(twice,pad,none).sticks==std::array<std::uint8_t,4>{0x80,0x00,0x00,0xFF},"double sensitivity reaches the ends early");
+    InputMapping half;half.stick_sensitivity=50;
+    check(mapInput(half,pad,none).sticks==std::array<std::uint8_t,4>{0x80,0x60,0x48,0xB8},"half sensitivity halves the distance");
     // A state that is not connected presses nothing, whatever its bits say.
     pad.connected=false;check(mapInput(mapping,pad,none)==PadInput{},"a disconnected gamepad is ignored");
     // Every PS2 button has its own key and its own gamepad button.

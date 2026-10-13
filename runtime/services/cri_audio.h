@@ -14,6 +14,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@
 class CriAudioFlow {
 public:
     struct Message {std::uint32_t ee_object=0,address=0,bytes=0;};
-    unsigned played_blocks=0,announced_bytes=0;
+    unsigned played_blocks=0,announced_bytes=0,commands_for_destroyed_players=0;
     // Sound output: each stretch of PCM a playing player consumed, as {source, side (0: the player's
     // first buffer, 1: its second), sampling rate, IOP address, bytes}. Data a stop only reports back
     // is not heard and is not passed on. `on_silenced` names a source whose player was destroyed.
@@ -38,7 +39,7 @@ public:
     // RPC 0x400 created a source (one audio channel) on an IOP buffer object for an EE object; RPC 0x408
     // a player over two buffer objects.
     void sourceCreated(std::uint32_t handle,std::uint32_t buffer,std::uint32_t ee_object) {sources_[handle].buffer=buffer;sources_[handle].ee_object=ee_object;}
-    void playerCreated(std::uint32_t handle,std::uint32_t first,std::uint32_t second) {players_[handle]={{first,second},false,0,block_bytes};}
+    void playerCreated(std::uint32_t handle,std::uint32_t first,std::uint32_t second) {players_[handle]={{first,second},false,0,block_bytes};destroyed_.erase(handle);}
     // Stream command 4: the player's sampling rate. A block is 0x400 bytes at 48 kHz and scales with the rate.
     void rate(std::uint32_t player,std::uint32_t hertz) {
         if(!hertz || hertz>48000 || (std::uint64_t(block_bytes)*hertz)%48000)throw std::runtime_error("CRI player rate "+std::to_string(hertz)+" is not modelled");
@@ -50,7 +51,7 @@ public:
     void playerDestroyed(std::uint32_t handle) {
         const auto& p=known(players_,handle,"CRI destroy of an unknown player");
         if(p.playing)for(auto& [source,s]:sources_)if(s.buffer==p.buffers[0] || s.buffer==p.buffers[1]) {s.due=s.flush=0;s.written.clear();if(on_silenced)on_silenced(source);}
-        players_.erase(handle);
+        players_.erase(handle);destroyed_.insert(handle);
     }
 
     // Stream command 0x100: `bytes` of PCM written at `address`, received on stream channel `channel`.
@@ -63,7 +64,8 @@ public:
     // next returned buffer reports all data still announced as played (logged at the end of the logo movie).
     void play(std::uint32_t player,std::uint32_t argument) {
         if(argument>1)throw std::runtime_error("CRI player command 2 with argument "+std::to_string(argument)+" is not modelled");
-        if(!argument && !players_.count(player))return; // A stop still queued for a player destroyed meanwhile.
+        // A start or stop still queued for a player destroyed meanwhile (a skipped film) has nothing to act on.
+        if(!players_.count(player) && (!argument || destroyed_.count(player))) {++commands_for_destroyed_players;return;}
         auto& p=known(players_,player,"CRI play command for an unknown player");
         if(argument && !p.playing) {p.playing=true;p.clock=initial_phase;}
         if(!argument) {
@@ -105,6 +107,18 @@ public:
         return out;
     }
 
+    // Whether `source` is one channel of a pair: its player's other buffer has a source too (music and
+    // films). A source alone on its player is a one-channel stream (speech).
+    bool paired(std::uint32_t source) const {
+        const auto found=sources_.find(source);
+        if(found==sources_.end())return false;
+        for(const auto& [handle,p]:players_)for(unsigned side=0;side<2;++side) {
+            if(p.buffers[side]!=found->second.buffer)continue;
+            for(const auto& [other,s]:sources_)if(other!=source && s.buffer==p.buffers[1-side])return true;
+        }
+        return false;
+    }
+
     static constexpr std::uint32_t block_bytes=0x400;
 
 private:
@@ -115,6 +129,7 @@ private:
     struct Player {std::array<std::uint32_t,2> buffers{};bool playing=false;std::uint64_t clock=0;std::uint32_t block=block_bytes;};
     std::map<std::uint32_t,Source> sources_;
     std::map<std::uint32_t,Player> players_;
+    std::set<std::uint32_t> destroyed_; // Handles of destroyed players, until one is created again.
     template<class Map> static auto& known(Map& map,std::uint32_t handle,const char* error) {
         const auto found=map.find(handle);
         if(found==map.end())throw std::runtime_error(std::string(error)+" "+std::to_string(handle));
