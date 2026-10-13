@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 #include "cpu/gs_command_sink.h"
+#include "ee/frame_profile.h"
 
 class GifPacketMismatch : public std::runtime_error {
 public:
@@ -68,7 +69,8 @@ public:
         if(madr>ram.size() || std::size_t(qwc)*16>ram.size()-madr)throw std::runtime_error("GIF start source bounds changed");
         auto packet=ram.subspan(madr,qwc*16);
         if(!std::equal(staged_.begin(),staged_.end(),packet.begin()))throw GifPacketMismatch(staged_,packet);
-        sink.consume(packet);chcr=value;phase_=4;++starts;
+        {FrameProfile::Scope timed(frame_profile.gs);sink.consume(packet);}
+        chcr=value;phase_=4;++starts;
         madr+=qwc*16;qwc=0;
         // Packet consumption advances MADR/QWC; STR remains set until checked completion.
     }

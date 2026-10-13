@@ -31,6 +31,7 @@ public:
         format.nBlockAlign=WORD(channels*2);format.nAvgBytesPerSec=rate*channels*2;
         const auto result=waveOutOpen(&device_,WAVE_MAPPER,&format,0,0,CALLBACK_NULL);
         if(result!=MMSYSERR_NOERROR)throw std::runtime_error("Cannot open the audio device (waveOut error "+std::to_string(result)+")");
+        timeBeginPeriod(1); // Sleeps of a millisecond instead of the default granularity of about 15 ms.
     }
     AudioDevice(const AudioDevice&)=delete;
     AudioDevice& operator=(const AudioDevice&)=delete;
@@ -38,6 +39,7 @@ public:
         waveOutReset(device_);
         for(auto& b:buffers_)if(b.queued)waveOutUnprepareHeader(device_,&b.header,sizeof b.header);
         waveOutClose(device_);
+        timeEndPeriod(1);
     }
     unsigned queuedFrames() {reclaim();return queued_;}
 

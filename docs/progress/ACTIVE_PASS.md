@@ -6,6 +6,10 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 ## Goal of the next passes
 
+**Performance comes first** (the user reported a laggy window on 2026-10-13): see the [performance plan](../plans/ee/PERFORMANCE_PLAN.md). Done: pacing (menus at 60), VU1 arithmetic with SSE (fight 48 to 58 ms per flip, from 59 to 73). Next: predecode VU1 programs, then GS packet handling. Measure with `BT2_VIEWER_STATS=1` and the viewer; compare `vu1_kick_hash` (baseline `f3da74e43010e423` for 5,100 frames of `pad-fight.txt`). Open question for the user: whether the original shows 30 or 60 pictures per second in fights (the code reads as 30).
+
+**Launcher work in progress, uncommitted:** `runtime/host/settings.h` and `runtime/host/menu_model.h` are written but have no tests and no users yet (launcher plan, step 2).
+
 Order set by the user on 2026-10-13, per [PROG.md](../PROG.md#next-steps):
 
 1. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)). Done: stream audio (movies, music) at the level measured against the user's PCSX2 recording, and sound effects through a native sampler behind SOUNDS: one-shot and looping sounds, the keep and stop flags, slot volumes, silence and stop-all, as read from the module's code. The user listened to the run with one-shot effects and confirmed it. `work/audio/battle-run.wav` (menus and a fight, 239 s) now also has the looping sounds; the user is asked whether they start and end where they should. The probe plays sound on the default audio device with `--sound` (also with `--viewer`), and the device then holds the run at the game's speed; the user is asked to try it. Sound is then complete except for volume settings. The comparison with the original is an optional final step.

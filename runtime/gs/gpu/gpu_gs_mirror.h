@@ -3,13 +3,14 @@
 #pragma once
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/cpu/gs_command_sink.h"
+#include "ee/frame_profile.h"
 #include "host/display_frame.h"
 #include <array>
 
 class GpuGsMirror {
 public:
     void attach(GsCommandSink& cpu);
-    void flip() {gpu_.flush();}
+    void flip() {FrameProfile::Scope timed(frame_profile.flush);gpu_.flush();}
     void readFifo(std::span<std::uint8_t> out) {gpu_.readFifo(out);} // Local->host data, GPU-only mode.
     void compare(const GsCommandSink& cpu,unsigned frame);
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and

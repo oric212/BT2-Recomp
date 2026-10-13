@@ -13,6 +13,7 @@
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -66,7 +67,8 @@ int main(int argc, char** argv) {
             }
         };
         static Speaker speaker; // Static, so the summary is also printed when the viewer's closing ends the run.
-        if (std::getenv("BT2_AUDIO_DEVICE")) speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 10);
+        const bool audio_paced = std::getenv("BT2_AUDIO_DEVICE") != nullptr;
+        if (audio_paced) speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 10);
         if (wav || speaker.device)
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
                 if (wav) wav->write(pcm);
@@ -100,6 +102,7 @@ int main(int argc, char** argv) {
         // the run stops until the window is closed. Closing the window during a run ends the process.
         const char* scale = std::getenv("BT2_VIEWER_SCALE");
         static ViewerWindow viewer(scale && std::string_view(scale) == "stretch" ? ViewerWindow::Scaling::Stretch : ViewerWindow::Scaling::Integer);
+        viewer.paced = !audio_paced;
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode};
         if (viewer_mode) runtime.on_display_flip = [&runtime] {
             const auto dispfb = runtime.gs_privileged[9] ? runtime.gs_privileged[9] : runtime.gs_privileged[7];
@@ -166,7 +169,15 @@ int main(int argc, char** argv) {
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
                 const auto snapshot = snapshots.find(flip);
                 if (!viewer_mode && snapshot == snapshots.end()) return;
+                // BT2_VIEWER_STATS: every 120 flips, the wall-clock rate of flips and fields and the time
+                // per flip spent on the renderer's flush, on reading the picture back and on showing it.
+                using Clock = std::chrono::steady_clock;
+                static const bool stats = std::getenv("BT2_VIEWER_STATS") != nullptr;
+                static Clock::time_point window_start = Clock::now();
+                static double scanout_s = 0, present_s = 0;static unsigned window_fields = 0;
+                const auto t0 = Clock::now();
                 const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
+                const auto t1 = Clock::now();
                 if (snapshot != snapshots.end()) {
                     // The field is what a pad script counts in; flips are what snapshots count in.
                     writePpm(snapshot->second, frame);
@@ -174,6 +185,18 @@ int main(int argc, char** argv) {
                 }
                 if (!viewer_mode || !frame.width) return;
                 viewer.present(frame, flip);
+                if (stats) {
+                    const auto t2 = Clock::now();
+                    scanout_s += std::chrono::duration<double>(t1 - t0).count();present_s += std::chrono::duration<double>(t2 - t1).count();
+                    if (flip % 120 == 0) {
+                        const double wall = std::chrono::duration<double>(t2 - window_start).count();
+                        std::cerr << std::dec << "Viewer stats at flip " << flip << ": " << 120 / wall << " flips/s, " << (runtime.vblank_deliveries - window_fields) / wall
+                            << " fields/s; per flip " << wall / 120 * 1000 << " ms, of it readback " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
+                            << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000
+                            << " ms, GPU flush " << frame_profile.flush / 120 * 1000 << " ms" << std::endl;
+                        window_start = t2;scanout_s = present_s = 0;window_fields = runtime.vblank_deliveries;frame_profile = {};
+                    }
+                }
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
             };
         }

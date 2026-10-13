@@ -25,6 +25,7 @@ public:
     std::uint32_t top=0,itop=0;   // Set by VIF1 at each start (XTOP, XITOP).
     std::uint64_t instructions=0;
     unsigned runs=0,kicks=0;
+    std::uint64_t kick_hash=0xCBF29CE484222325ull; // Over every XGKICK packet's bytes, in order: equal hashes mean equal output.
     // Reads of Q or the clipping flags while a newer result was still in the pipeline. The model
     // counts one cycle per instruction (no stalls), so a nonzero count marks timing-sensitive code.
     unsigned early_q_reads=0,early_clip_reads=0;
@@ -53,5 +54,7 @@ private:
     std::array<ClipEntry,4> clip_queue_{};unsigned clip_count_=0;std::uint32_t clip_latest_=0; // CLIP: 4 cycles.
     unsigned vi_written_=0;std::uint64_t vi_written_cycle_=0; // Last VI write other than by a flag instruction.
     bool branch_=false;std::uint32_t branch_target_=0;
-    int host_rounding_=0; // Rounding mode outside the run, restored around XGKICK.
+    unsigned host_csr_=0; // The float mode outside the run, restored around XGKICK.
+    std::vector<std::uint8_t> packet_; // The XGKICK packet being sent; kept to reuse its storage.
+    void gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const;
 };

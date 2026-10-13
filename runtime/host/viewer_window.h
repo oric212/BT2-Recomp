@@ -20,6 +20,7 @@
 class ViewerWindow {
 public:
     enum class Scaling {Integer,Stretch};
+    bool paced=true; // Whether present() holds the run at the display rate.
     explicit ViewerWindow(Scaling scaling=Scaling::Integer):scaling_(scaling) {}
     ~ViewerWindow() {if(hwnd_)DestroyWindow(hwnd_);}
     void present(const DisplayFrame& frame,unsigned flip) {
@@ -29,7 +30,9 @@ public:
         SetWindowTextA(hwnd_,("BT2 Recomp - frame "+std::to_string(flip)+(frame.unwritten?" (unwritten pixels)":"")).c_str());
         InvalidateRect(hwnd_,nullptr,FALSE);UpdateWindow(hwnd_);
         pump();
-        // Pace to about 59.94 Hz when the run is faster than real time.
+        // Pace to about 59.94 Hz when the run is faster than real time, unless something else paces
+        // the run (the audio device).
+        if(!paced)return;
         const auto period=std::chrono::microseconds(16683);
         const auto now=std::chrono::steady_clock::now();
         if(last_.time_since_epoch().count() && now-last_<period)std::this_thread::sleep_for(period-(now-last_));

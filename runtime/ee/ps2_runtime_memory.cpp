@@ -1,3 +1,4 @@
+#include "ee/frame_profile.h"
 #include "ee_runtime.h"
 #include "dma_chain.h"
 
@@ -118,8 +119,8 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
         throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
     };
     const auto codes=vif1.codes,directs=vif1.directs;const auto direct_qwords=vif1.direct_qwords;
-    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {gif_dma.gs.transfer(data);};
-    try {vif1.check(words);vif1.run(words,to_gs,to_gs);}
+    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs);gif_dma.gs.transfer(data);};
+    try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1.run(words,to_gs,to_gs);}
     catch(const Vif1Unsupported& u) {
         std::uint32_t tag=v.tadr;
         for(const auto& [first,address]:tags)if(first<=u.index)tag=address;

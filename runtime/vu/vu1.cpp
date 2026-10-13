@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <immintrin.h>
 #include <stdexcept>
 #pragma fenv_access(on)
 #pragma fp_contract(off)
@@ -32,11 +33,23 @@ std::uint32_t bits(float v) {return normal(std::bit_cast<std::uint32_t>(v));}
 std::uint32_t word(const std::uint8_t* at) {std::uint32_t w;std::memcpy(&w,at,4);return w;}
 int imm11(std::uint32_t w) {return int(w&0x7FF)-int((w&0x400)<<1);}
 unsigned viField(unsigned reg,std::uint32_t w,std::uint32_t at) {if(reg>15)refuse("integer register in",w,at);return reg;}
+// The float mode of a run, set in MXCSR: round toward zero, denormal operands read as zero and tiny
+// results flushed to zero. That is the model's treatment of denormals done by the processor; the
+// infinities and NaNs are clamped in code (`clamp`).
+constexpr unsigned vu_csr_mode=0x6000u|0x8000u|0x0040u;
 struct ChopRounding {
-    int saved=std::fegetround();
-    ChopRounding() {std::fesetround(FE_TOWARDZERO);}
-    ~ChopRounding() {std::fesetround(saved);}
+    unsigned saved=_mm_getcsr();
+    ChopRounding() {_mm_setcsr((saved&~0x6000u)|vu_csr_mode);}
+    ~ChopRounding() {_mm_setcsr(saved);}
 };
+// Four lanes at once: infinities and NaNs become the largest magnitude of their sign.
+inline __m128 clamp(__m128 v) {
+    const __m128i x=_mm_castps_si128(v),exponent=_mm_set1_epi32(0x7F800000);
+    const __m128i special=_mm_cmpeq_epi32(_mm_and_si128(x,exponent),exponent);
+    const __m128i largest=_mm_or_si128(_mm_and_si128(x,_mm_set1_epi32(int(0x80000000u))),_mm_set1_epi32(0x7F7FFFFF));
+    return _mm_castsi128_ps(_mm_or_si128(_mm_andnot_si128(special,x),_mm_and_si128(special,largest)));
+}
+inline __m128 lanes(const std::array<std::uint32_t,4>& v) {return _mm_castsi128_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(v.data())));}
 enum : unsigned {Add,Sub,Madd,Msub,Mul};       // Arithmetic families.
 enum : unsigned {Vector,Field,RegisterQ,RegisterI}; // Second operand: ft, one field of ft, Q, I.
 // Codes 0x1C-0x2D, shared by the register forms and the accumulator forms (ADDq/ADDAq ...).
@@ -86,22 +99,21 @@ std::uint16_t Vu1::branchVi(unsigned reg,std::uint32_t at) const {
 
 void Vu1::arithmetic(Result& result,unsigned operation,unsigned source,std::uint32_t w) {
     const unsigned ft=(w>>16)&31,fs=(w>>11)&31;
-    const std::uint32_t scalar=source==Field?vf[ft][w&3]:source==RegisterQ?readQ():i;
-    for(unsigned lane=0;lane<4;++lane) {
-        if(!(result.mask&(8u>>lane)))continue;
-        const float a=value(vf[fs][lane]),b=value(source==Vector?vf[ft][lane]:scalar);
-        float r;
-        switch(operation) {
-            case Add:r=a+b;break;
-            case Sub:r=a-b;break;
-            case Mul:r=a*b;break;
-            default: {
-                const float product=value(bits(a*b)),sum=value(acc[lane]);
-                r=operation==Madd?sum+product:sum-product;
-            }
+    // All four lanes are computed; the caller commits the masked ones. Denormals are handled by the
+    // run's float mode, so the model's per-lane normalization reduces to the clamp.
+    const __m128 a=clamp(lanes(vf[fs]));
+    const __m128 b=clamp(source==Vector?lanes(vf[ft]):_mm_castsi128_ps(_mm_set1_epi32(int(source==Field?vf[ft][w&3]:source==RegisterQ?readQ():i))));
+    __m128 r;
+    switch(operation) {
+        case Add:r=_mm_add_ps(a,b);break;
+        case Sub:r=_mm_sub_ps(a,b);break;
+        case Mul:r=_mm_mul_ps(a,b);break;
+        default: {
+            const __m128 product=clamp(_mm_mul_ps(a,b)),sum=clamp(lanes(acc));
+            r=operation==Madd?_mm_add_ps(sum,product):_mm_sub_ps(sum,product);
         }
-        result.value[lane]=bits(r);
     }
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(result.value.data()),_mm_castps_si128(clamp(r)));
 }
 
 Vu1::Result Vu1::upper(std::uint32_t w,std::uint32_t at) {
@@ -248,9 +260,10 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
         case 0x68:setVi(integer(it),std::uint16_t(top));return;             // XTOP
         case 0x69:setVi(integer(it),std::uint16_t(itop));return;            // XITOP
         case 0x6C: {                                                        // XGKICK is
-            const auto packet=gifPacket(vi[integer(is)]);
+            gifPacketInto(packet_,vi[integer(is)]);const auto& packet=packet_;
             ++kicks;
-            if(kick) {const int chop=std::fegetround();std::fesetround(host_rounding_);kick(packet);std::fesetround(chop);} // The GS runs with the host's rounding.
+            for(std::size_t n=0;n+8<=packet.size();n+=8) {std::uint64_t part;std::memcpy(&part,packet.data()+n,8);kick_hash=(kick_hash^part)*0x100000001B3ull;}
+            if(kick) {const unsigned mode=_mm_getcsr();_mm_setcsr(host_csr_);kick(packet);_mm_setcsr(mode);} // The GS runs with the host's float mode.
             return;
         }
         default:refuse("lower instruction",w,at);
@@ -258,7 +271,7 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
 }
 
 void Vu1::run(std::uint32_t start,const Kick& kick) {
-    const ChopRounding rounding;host_rounding_=rounding.saved;
+    const ChopRounding rounding;host_csr_=rounding.saved;
     pc=start&program_mask;++runs;branch_=false;
     bool ending=false;
     for(std::uint64_t executed=0;;++executed) {
@@ -294,7 +307,11 @@ void Vu1::run(std::uint32_t start,const Kick& kick) {
 }
 
 std::vector<std::uint8_t> Vu1::gifPacket(std::uint32_t address) const {
-    std::vector<std::uint8_t> packet;
+    std::vector<std::uint8_t> packet;gifPacketInto(packet,address);return packet;
+}
+
+void Vu1::gifPacketInto(std::vector<std::uint8_t>& packet,std::uint32_t address) const {
+    packet.clear();
     auto take=[&](std::uint32_t qwords) {
         if(packet.size()/16+qwords>data_mask+1)throw std::runtime_error("VU1 XGKICK packet exceeds VU1 memory");
         for(;qwords;--qwords,++address) {const auto* from=data.data()+(address&data_mask)*16;packet.insert(packet.end(),from,from+16);}
@@ -305,6 +322,6 @@ std::vector<std::uint8_t> Vu1::gifPacket(std::uint32_t address) const {
         const std::uint32_t nloop=std::uint32_t(tag&0x7FFF),flg=std::uint32_t((tag>>58)&3),regs=std::uint32_t((tag>>60)&15);
         const std::uint32_t nreg=regs?regs:16;
         take(flg==0?nloop*nreg:flg==1?(nloop*nreg+1)/2:nloop); // PACKED, REGLIST, IMAGE.
-        if(tag&0x8000)return packet; // EOP.
+        if(tag&0x8000)return; // EOP.
     }
 }
