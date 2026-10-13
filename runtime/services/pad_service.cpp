@@ -79,7 +79,8 @@ bool EeRuntime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const Si
 NativePadState& EeRuntime::nativePadState() {
     if(!native_pad_) {
         native_pad_=std::make_shared<NativePadState>();
-        if(const char* script=std::getenv("BT2_PAD_SCRIPT"))native_pad_->pad.script=PadScript::parse(script); // Repeatable input (pad_script.h).
+        // Repeatable input (pad_script.h); live input takes its place.
+        if(const char* script=std::getenv("BT2_PAD_SCRIPT");script && !on_pad_input)native_pad_->pad.script=PadScript::parse(script);
     }
     return *native_pad_;
 }
@@ -87,6 +88,10 @@ NativePadState& EeRuntime::nativePadState() {
 void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
     auto& state=nativePadState();
     state.pad.advanceField(); // Scripted input changes at field starts; fields count every VBlank.
+    if(on_pad_input) {
+        const auto before=state.pad.buttons;state.pad.hold(on_pad_input());
+        if(on_pad_change && state.pad.buttons!=before)on_pad_change(state.pad.field,std::uint16_t(~state.pad.buttons));
+    }
     if(!state.open || ++state.fields_open<pad_detection_fields)return;
     if(!state.transfers) {
         // Detection complete: the socket table reports the connected device.

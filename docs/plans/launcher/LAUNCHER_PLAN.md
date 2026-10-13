@@ -14,7 +14,7 @@ Requested by the user on 2026-10-13 as the final stage before play-testing: a la
 
 **When the launcher appears:** it has its own executable. The game's executable opens the launcher by itself when no configuration file exists (first start); otherwise it starts the game directly.
 
-**Overlay**, opened in the game with Start + Select:
+**Overlay**, opened in the game with a button combination (the user proposed Start + Select and left the default open to a better suggestion; see Overlay below):
 
 - sound settings and whatever else should change on the fly;
 - quitting the game;
@@ -30,7 +30,7 @@ Requested by the user on 2026-10-13 as the final stage before play-testing: a la
 | --- | --- |
 | Window | `runtime/host/viewer_window.h`: a Win32 window that shows each frame, with integer or stretched scaling (`BT2_VIEWER_SCALE`). No input, no fullscreen. |
 | Sound | Live output on the audio device, which holds the run at the game's speed (`--sound`). Fixed levels. |
-| Controller | The native controller service answers the game from a pad script (`runtime/services/devices/pad_script.h`). No host input. |
+| Controller | The native controller service answers the game from a pad script or from live input (keyboard, XInput pad, DualSense) with a fixed default mapping. |
 | Memory card | The native card service reports an empty slot. No card image. |
 | Settings | Environment variables read by the probe. No settings file. |
 | HD textures | Nothing. The GPU renderer draws from GS memory as the game wrote it. |
@@ -83,7 +83,7 @@ New code in `runtime/host/`, one purpose per file:
 
 ### Overlay
 
-Opened and closed with Start + Select (configurable), or a keyboard key. While it is open the game does not advance and the sound is silent.
+Opened and closed with a configurable combination. Default: the PS button on a DualSense (the game never sees it), L3 + R3 pressed together on any gamepad, Escape on the keyboard. While it is open the game does not advance and the sound is silent.
 
 | Entry | Effect |
 | --- | --- |
@@ -95,7 +95,7 @@ Opened and closed with Start + Select (configurable), or a keyboard key. While i
 
 Changes made in the overlay are written to the settings file, so the launcher shows them next time.
 
-**The combination and the game.** Start and Select also mean something to the game. The press that completes the combination is not passed on, but the first of the two buttons has already reached the game by then (Start pauses a fight). This is accepted for now; if it disturbs, the combination is changed in Controls or a short hold is required.
+**Why not Start + Select by default.** Both mean something to the game, and the first of the two reaches the game before the combination is complete (Start pauses a fight under the overlay). The two stick buttons pressed together are rare in play, and the press that completes the combination is not passed on. Start + Select stays available as a choice in Controls.
 
 ### Fast forward
 
@@ -116,7 +116,7 @@ Until both work, the launcher shows the checkbox as unavailable instead of accep
 
 ## Order of work
 
-1. **Host input and controller support:** keyboard and XInput into the native controller service, with a default mapping. This is also the implementation plan's step "Controller support", and the menus need it for their own navigation.
+1. **Host input and controller support — done 2026-10-13:** the keyboard, the first XInput pad and a DualSense read directly over HID (USB and Bluetooth) feed the native controller service through a default mapping (`runtime/host/host_input.h`, `input_mapping.h`, `dualsense_report.h`). `run_startup_probe.py --play` plays in the viewer with sound; `--record <file>` writes the buttons played as a pad script. Checked: unit tests for the mapping, the DualSense report layouts and live input on the pad device; a short live run in which keyboard presses reached the game and were recorded. Not checked: an XInput pad and a DualSense on real hardware (none was available to the run; the user tries them).
 2. **Launcher shell:** settings file, menu model, renderer, loop; the game and launcher programs; Main, Display (scaling, fullscreen, window size, frame rate display) and Game disc screens. From here the game is started from the launcher with a controller.
 3. **Overlay:** the combination, pause, Resume and Quit; volumes (with the mixer's volume controls and the launcher's Sound screen); fast forward.
 4. **Controls screen:** remapping of the game buttons, the fast forward buttons and the overlay combination.
@@ -137,4 +137,4 @@ Play-testing by the user can begin after step 2 for anything that does not save,
 
 - **HD textures:** whether the GPU renderer can substitute textures at all (step 6 starts with this).
 - **Card file formats:** the target is the card file PCSX2 writes (to my knowledge a raw image of the card that includes each page's spare bytes; to be confirmed on a real file when the Saves step starts). Folder-based cards and other layouts are refused by name unless the user needs one.
-- **Gamepads other than XInput** (for example a DualShock on Windows without a wrapper) are not planned unless the user needs one.
+- **Gamepads:** XInput pads and the DualSense are read. A DualShock 4 has a different report layout and is not read; it is added if the user needs it.

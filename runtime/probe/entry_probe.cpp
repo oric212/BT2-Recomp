@@ -7,6 +7,8 @@
 #endif
 #include "probe_state.h"
 #include "host/audio_device.h"
+#include "host/host_input.h"
+#include "host/input_mapping.h"
 #include "host/wav_writer.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
@@ -105,6 +107,32 @@ int main(int argc, char** argv) {
             viewer.present(decodeDisplay(runtime.gif_dma.gs, dispfb, display), runtime.gs_display_flips);
             if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
         };
+        // BT2_HOST_INPUT: the keyboard and a gamepad play the game while the viewer window has the focus
+        // (default mapping, host/input_mapping.h); a pad script is then ignored.
+        // BT2_PAD_RECORD=<path>: the buttons played, written as a pad script that replays the session
+        // (stick positions are not part of a pad script).
+        static std::unique_ptr<HostInput> host_input;
+        static std::ofstream pad_record;
+        if (std::getenv("BT2_HOST_INPUT")) {
+            if (!viewer_mode) throw std::runtime_error("BT2_HOST_INPUT needs the viewer");
+            host_input = std::make_unique<HostInput>();
+            runtime.on_pad_input = [] {
+                if (!viewer.focused()) return PadInput{};
+                return mapInput(InputMapping{}, host_input->gamepad(), &HostInput::keyDown);
+            };
+            if (const char* path = std::getenv("BT2_PAD_RECORD")) {
+                pad_record.open(path);
+                if (!pad_record) throw std::runtime_error(std::string("Cannot write ") + path);
+                runtime.on_pad_change = [](unsigned field, std::uint16_t pressed) {
+                    static bool first = true;
+                    pad_record << (first ? "" : ",") << field << ':';first = false;
+                    if (!pressed) pad_record << '-';
+                    for (unsigned bit = 0, any = 0; bit < 16; ++bit)
+                        if (pressed >> bit & 1) pad_record << (any++ ? "+" : "") << PadScript::names[bit];
+                    pad_record.flush();
+                };
+            }
+        }
 #endif
 #ifdef BT2_GPU_GS
         // BT2_GPU_GS=mirror: render on paraLLEl-GS as well and compare VRAM at each flip.

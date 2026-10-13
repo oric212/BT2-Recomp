@@ -4,13 +4,14 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "pad_input.h"
 #include "pad_script.h"
 
 // Authored DualShock 2 on the SIO2 pad bus: one whole packet in, one reply of the same length out.
 // Protocol facts follow the public pad protocol (adapted from PCSX2's documented DualShock 2
 // behaviour, not copied): reply byte 1 is the mode ID (0x41 digital, 0x73 analog, 0x79 DualShock 2,
 // 0xF3 while in config), byte 2 is 0x5A, data follows. Byte 0 reads 0xFF as in the captured
-// startup reply. Input is neutral (no buttons, sticks centred) unless a pad script presses buttons;
+// startup reply. Input is neutral (no buttons, sticks centred) unless a pad script or live input presses buttons;
 // pressed buttons report full pressure in DualShock 2 mode.
 class DualShock2 {
 public:
@@ -29,6 +30,8 @@ public:
         ++field;
         if(const auto pressed=script.at(field)) {buttons=std::uint16_t(~*pressed);++script_steps;}
     }
+    // Live input for the field that begins: replaces what the script holds.
+    void hold(const PadInput& input) {buttons=std::uint16_t(~input.pressed);sticks=input.sticks;}
 
     std::vector<std::uint8_t> transfer(const std::vector<std::uint8_t>& tx) {
         history.push_back(tx);if(history.size()>6)history.erase(history.begin());

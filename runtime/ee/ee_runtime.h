@@ -32,6 +32,7 @@
 #include "services/iop_heap.h"
 #include "services/cri_audio.h"
 #include "services/audio_mixer.h"
+#include "services/devices/pad_input.h"
 #include "services/sound_sampler.h"
 #include "stopped_dma_channels.h"
 #include "vu/vif1.h"
@@ -476,6 +477,8 @@ public:
     std::uint32_t float_watch_address=0;float float_watch_limit=0;
     unsigned flipless_field_limit=3600; // Fields without a display flip before the run stops (probe: BT2_STALL_FIELDS).
     std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
+    std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
+    std::function<void(unsigned field,std::uint16_t pressed)> on_pad_change; // Live input whose buttons changed, with the pad script's field number.
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,

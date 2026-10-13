@@ -44,6 +44,7 @@ public:
         while(hwnd_ && !closed_ && GetMessageA(&msg,nullptr,0,0)>0) {TranslateMessage(&msg);DispatchMessageA(&msg);}
     }
     bool closed() const {return closed_;}
+    bool focused() const {return hwnd_ && GetForegroundWindow()==hwnd_;} // Input is taken only then.
     bool opened() const {return hwnd_!=nullptr;}
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
