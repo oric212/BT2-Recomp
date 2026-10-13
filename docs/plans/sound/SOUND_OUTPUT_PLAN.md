@@ -42,13 +42,22 @@ Its runtime (`ps2xRuntime/src/lib`, snapshot `e22a34be`) routes the sound librar
   - `5` {object, value}: 0 in all 69 uses. Read as the ADX volume in 0.1 dB steps, the game plays every stream without attenuation.
   - `4` {object, rate}: 48000 and 24000. `2` {object, 0 or 1}: stop and start. `3` and `8` {object, 0 or 1}: meaning unknown.
   - The third argument word often holds leftovers of earlier records, so only the arguments named above are evidence.
-- **Effects:** a separate path through the SOUNDS module and the sound driver (`runtime/services/sound_service.cpp`). The game uploads sound banks (SOUNDS `0x20` with two IOP blocks; 5 banks loaded by the battle) and requests sounds (`0x40` and others; 399 SOUNDS calls in the 9,000-frame battle run). The driver transfers blocks to sound RAM (`0x80D0`). The replies are answered as logged; the requests' contents and the bank layout are not decoded. The disc contains the module names `modhsyn` and `modsesq` and the chunk names `Vagi`, `Setb` and `Sesq`.
+- **Effects:** a separate path through the SOUNDS module and the sound driver (`runtime/services/sound_service.cpp`). The game uploads sound banks (SOUNDS `0x20` with two IOP blocks; 5 banks loaded by the battle) and requests sounds (`0x40` and others; 399 SOUNDS calls in the 9,000-frame battle run). The driver transfers blocks to sound RAM (`0x80D0`). The disc contains the module names `modhsyn` and `modsesq` and the chunk names `Vagi`, `Setb` and `Sesq`.
 - **SOUNDS requests, decoded from the battle run's log** (`BT2_SOUND_LOG`; 256 calls in 7,000 frames):
   - `0x20` load a bank {sound memory address, header block, sequence block}. The sound driver's block transfer (`0x80D0` {.., IOP source, sound memory address, size}) puts the bank's samples at that address just before.
   - `0x30` unload: the bank loaded last goes. Banks form a stack: one system bank from boot, two more in the menus, four in a battle.
   - `0x40` play, 234 of the 256 calls: up to 15 sounds in parallel arrays of 0x20 bytes. Byte 0 is the count; per sound *k* (from 1) the bank slot at +*k*, the sound number at 0x20+*k*, the volume at 0x40+*k* and the pan at 0x60+*k* (both 0 to 127), and a 16-bit pitch offset at 0x80+2*k* (values seen: 0, 1, +200, −200; read as cents).
-  - The bank slot is the bank's position in the stack. In 10 of 288 sounds it carries a flag bit (`0x40` or `0x80`) whose meaning is not established.
-  - `0x50`, `0x100`, `0x200` (10 calls): not decoded. Their words beyond the first hold leftovers of earlier requests.
+  - The bank slot is the bank's position in the stack, in the low five bits of its byte. The two bits above are flags (see the module's handlers below); 10 of 288 sounds carry one.
+  - `0x50`, `0x100`, `0x200` (10 calls): see the module's handlers below. Their words beyond those named there hold leftovers of earlier requests.
+- **The SOUNDS module's request handlers, read from the module's code** (the local `SOUNDS.IRX`, disassembled on 2026-10-13; a small unoptimized module that calls Sony's sequencer and synthesizer modules):
+  - **Play (`0x40`):** the module keeps a table of 48 sounds that can be stopped later. Slot flag `0x80` puts the sound in the table (a full table drops the sound). Slot flag `0x40` does not play: it stops the table's sound with the same slot and number. Entries whose sound has ended are freed at each play request.
+  - **Fade (`0x50`)** {direction, .., .., slot mask}: steps the volume of the masked slots from full (`0x100`) to zero when the direction word is set, from zero to full when it is clear, in four steps a millisecond apart. The game mutes slots 0 to 4 before it loads the battle's banks and restores them after.
+  - **Volume (`0x70`)** {16-bit volume}: the same volume for all eight slots. Not requested in the runs so far.
+  - **Silence (`0x200`)** {.., .., .., slot mask}: all sound off for the masked slots.
+  - **Stop all (`0x100`):** stops every sound in the table, all sound off for all eight slots, clears the table.
+  - **Unload (`0x30`)** only lowers the bank count. **`0x60`** selects the synthesizer's output mode (mono or stereo); **`0x80`** replaces a loaded bank. Neither is requested in the runs so far.
+  - A slot is the synthesizer port its bank was loaded on, so the slot masks address banks.
+  - The three looping samples are in the battle's common bank; the run requests one of them (sound 22) with the keep flag and stops it with the stop flag.
 - **Bank layout, read from the eight banks the run loads:** Sony's chunked sound data. The header block has `SCEI` chunks `Vers`, `Head`, `Vagi` (per sample: offset, sampling rate, loop flag) and `Setb` (timbres of 0x32 bytes: sample index, volume, pan). The sequence block has `Vers`, `Sequ` and `Sesq` (per sound: volume, pan and seven data bytes).
 - **Bank survey:** 233 sounds in the eight banks. Every one is a single note-on at time zero naming one timbre, and every timbre's parameters are identical (volume 100, pan centre). Sequence volume and note velocity are 100, the set volume 127. Rates are 11,000, 11,025, 16,000, 24,000 and 48,000 Hz. Three samples loop. This is the regular shape the reference port found in BT3, so a sampler without a sequencer is enough.
 - **Comparison with the original** (a PCSX2 recording by the user: boot without input through both movies, against the port's boot run; `tools/audio/compare_audio.py`):
@@ -58,29 +67,29 @@ Its runtime (`ps2xRuntime/src/lib`, snapshot `e22a34be`) routes the sound librar
   - Waveform: alike in short windows only (coherence about 0.97, sample correlation about 0.5), as a time-stretched recording would be. Not settled.
   - The recording's emulator version and audio settings were not noted. Later references record them.
 - **A lead for the stream level:** one volume of 100/127 times the chip's half-scale voice volume is 0.394, inside the measured range; the reference port explains its effects level with the same two factors (three such volumes there). This is a hypothesis: it is confirmed only when the values the original's modules write are read (the optional comparison step).
-- **The user's listening checks:** before the level correction, music too loud, voices too quiet, effects too loud; after it, better, but not something the ear can confirm. Bank effects are not played at all yet, so what was heard as effects is stream audio.
-- **Not known:** where the original sets the stream level; whether BT2's voices are streams, as in the reference port; the slot flag bits; requests `0x50`, `0x100` and `0x200`, one of which should stop sounds; the pan law and the envelope the original applies.
+- **The user's listening checks:** before the level correction, music too loud, voices too quiet, effects too loud (stream audio only at that time); after it, better. On 2026-10-13 the user listened to the battle run with the one-shot effects (menus and a fight): it sounds good and the effects are present.
+- **Not known:** where the original sets the stream level; whether BT2's voices are streams, as in the reference port; the pan law and the envelope the original applies (a stopped sound's release in particular).
 
 ## Design
 
 Sound is produced where the game asks for it. Two producers feed one mixer.
 
 1. **Streams — done.** The CRI flow passes on each stretch of PCM a playing player consumed (`on_audible`). Data that a stop only reports back, and data of a player destroyed while playing, is not heard. Each source is a mixer voice: mono, routed left (the player's first buffer) or right (its second), upsampled to 48 kHz by an integer factor with linear interpolation, at 25/64 of its PCM level. A voice starts with one block of silence, because data arrives in 512-sample blocks while a field takes 800.8 samples; with that its queue cannot run dry while the player plays. Still to add when a run needs them: a stream's volume and pan other than the values seen so far (commands `5` and `9`), refused by name until then.
-2. **Effects — done for one-shot sounds:** a native sampler behind SOUNDS and the sound driver, the shape both BT3 references use (`runtime/services/sound_sampler.h`, `sound_bank.h`, `spu_adpcm.h`).
+2. **Effects — done:** a native sampler behind SOUNDS and the sound driver, the shape both BT3 references use (`runtime/services/sound_sampler.h`, `sound_bank.h`, `spu_adpcm.h`).
    - **Sound memory:** 2 MB; the driver's block transfers fill it.
    - **Banks:** parsed at load into sounds (sample offset, rate, loop flag, the volumes and pans along the way). A bank outside the regular shape is refused by name at the load, so nothing plays wrongly.
-   - **Play:** each sound of a request starts a voice. The sample is decoded from sound memory (SPU2 ADPCM) and played at its rate, shifted by the pitch offset in cents, with linear interpolation. Up to 48 voices; the oldest gives way.
-   - **Level:** the product of the request's volume, the set's, the sequence's, the note's and the timbre's (each of 127) and the chip's half-scale voice volume. At a request volume of 127 that is 0.244, the reference port's figure. The pan is constant-power, an assumption.
-   - **Silent, counted in the report:** sounds whose sample loops (no stop request is decoded, so they would never end) and sounds whose slot carries a flag bit.
-   - **Not modelled:** the envelope, reverb, the chip's interpolation, requests `0x50`, `0x100` and `0x200`.
+   - **Play:** each sound of a request starts a voice. The sample is decoded from sound memory (SPU2 ADPCM) and played at its rate, shifted by the pitch offset in cents, with linear interpolation. A sample that ends with a repeat flag loops from its loop start. Up to 48 voices; the oldest gives way.
+   - **Level:** the product of the request's volume, the set's, the sequence's, the note's and the timbre's (each of 127), the chip's half-scale voice volume and the slot's volume (of `0x100`, set by the fade and volume requests). At a request volume of 127 and a full slot that is 0.244, the reference port's figure. The pan is constant-power, an assumption.
+   - **Stopping:** the keep and stop flags, the silence request and the stop-all request end voices as the module's handlers do. A stopped voice fades out over 10 ms; that stands in for the release of the envelope, which is not modelled.
+   - **Not modelled:** the envelope, reverb, the chip's interpolation. Refused by name until a run needs them: requests `0x60` and `0x80`, a request that keeps and stops at once.
    - The sampler does not emulate the sequencer and synthesizer modules or their voice allocation; nothing the game can observe depends on them so far.
 3. **Mixer** (`runtime/services/audio_mixer.h`): 48 kHz stereo, one field of output per VBLANK (800.8 samples, the fraction carried), saturating. Streams and sampler voices add here. Streams use the measured level; effects start from the level the expected volume chain gives and are adjusted with the user's listening.
 4. **Output:** the runtime hands each field's samples to `on_audio_field`. The probe writes them to a WAV file (`BT2_AUDIO_WAV=<path>`). A host audio device comes with real-time play in the viewer; there the device's clock paces playback, so the mixer needs a queue with drift control between game time and device time. User volume settings for music and effects, as the reference port has, belong to that step.
 
 ## Order of work
 
-1. **The user listens** to `work/audio/battle-run.wav` (menus and a fight with effects): are the effects the right ones, at a sensible level against the music, on the right side?
-2. **Stop requests and looping sounds:** decode `0x50`, `0x100` and `0x200` and the slot flag bits (log them against what happens on screen; the reference port's request kinds are the checklist), then play the looping samples.
+1. **Done:** streams, one-shot effects (heard by the user), looping effects and the stop, fade and silence requests.
+2. **The user listens** to the new `work/audio/battle-run.wav`: do the looping sounds in the fight start and end where they should?
 3. **Host audio device** with the viewer, with volume settings.
 4. **Optional, at the end: comparison with the original** (see Verification). It includes explaining the stream level from the original's settings and the byte-for-byte check of stream PCM.
 
@@ -89,9 +98,9 @@ Sound is produced where the game asks for it. Two producers feed one mixer.
 **Working check (what each step needs to count as done):** unit tests for the code, the run's counters, and the user's listening to the WAV files in `work/audio/`. This is how sound moves forward; a missing comparison with the original does not hold a step back. What the user heard is recorded as the user's judgement, kept apart from anything measured.
 
 **So far:**
-- Unit tests: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates, extra sources), the ADPCM decoder, the bank parser on a synthetic bank, the sampler (level, pan, pitch, voice end, silent cases, refusals, unload), the comparison tool.
-- Measured (7,000-frame battle run): 10,334 fields give 172.4 s of audio from 19.4 MB of stream PCM; 5,939 samples (0.03%) were missing where a voice ended or ran dry. 278 effects played, 10 stayed silent for their slot flag, none of the looping samples was requested; at most 16 voices at once. With effects on top of the music 14 samples reach full scale.
-- The effects have not been listened to and are not compared with the original.
+- Unit tests: the flow's audible stretches (stop and destroy cases), the mixer (start silence, interpolation, routing, level, field length, saturation, a dry voice, refused rates, extra sources), the ADPCM decoder, the bank parser on a synthetic bank, the sampler (level, pan, pitch, voice end, looping, keep and stop, slot volume, silencing, refusals, unload), the comparison tool.
+- Measured (9,000-frame battle run): 14,334 fields give 239.1 s of audio from 29.4 MB of stream PCM. 457 effects played, at most 16 voices at once, none dropped. 9 sounds were kept and each was followed by its stop request: 7 stops ended a playing voice, 2 came after the sound had ended by itself. The looping sound played 3 times and was stopped each time. The silence requests ended 2 voices.
+- The user's listening (2026-10-13, the earlier 7,000-frame run with one-shot effects): sounds good, effects present. The looping and stopped sounds have not been listened to. Nothing of the effects is compared with the original.
 - Against a PCSX2 recording, for the two boot movies: timing, channel order and level agree (see the evidence above); the waveform is not shown identical.
 - The user's listening: recognizable; better after the level correction; accuracy not something the ear can confirm.
 

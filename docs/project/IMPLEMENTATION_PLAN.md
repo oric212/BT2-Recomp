@@ -48,7 +48,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Demo fight | 🟢 Operational | Two idle demo fights render in 3D through VIF1/VU1 on the GPU renderer and play to their end; frames confirmed by the user, not compared with the original |
 | Menus | 🟢 Operational | Main menu and Dueling menu render and respond; only the 1P-vs-COM path has been entered |
 | Character selection and battle loading | 🟢 Operational | Character, colour and map selection; loading with GS readback |
-| Versus battle | 🟢 Operational | A 1P-vs-COM duel runs with scripted input controlling the fighter; GPU renderer only, no sound, about 19 frames per second of wall-clock time |
+| Versus battle | 🟢 Operational | A 1P-vs-COM duel runs with scripted input controlling the fighter; GPU renderer only, sound in a WAV file, about 19 frames per second of wall-clock time |
 | Playable versus battle | ⏳ Not Reached | First major gameplay goal: needs host input, sound and real-time speed |
 | Audio and a full match | ⏳ Not Reached | |
 
@@ -67,7 +67,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 
 Order of the following passes (set by the user on 2026-10-13):
 
-8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)), checked by tests and the user's listening; the comparison with the original is an [optional final step](../plans/sound/SOUND_OUTPUT_PLAN.md#verification). Since 2026-10-13 stream audio and one-shot sound effects (a native sampler behind SOUNDS) are mixed and written to a WAV file. Next: the stop requests and looping sounds, a host audio device.
+8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)), checked by tests and the user's listening; the comparison with the original is an [optional final step](../plans/sound/SOUND_OUTPUT_PLAN.md#verification). Since 2026-10-13 stream audio and sound effects (a native sampler behind SOUNDS, with looping sounds and the module's stop, fade and silence requests) are mixed and written to a WAV file; the user confirmed menus and a fight by listening. Next: a host audio device.
 9. **Saves:** a memory card image behind the native card service.
 10. **Controller support:** host input (keyboard, XInput) into the native controller service.
 11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first (VU1 performance).

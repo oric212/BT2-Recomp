@@ -195,7 +195,8 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"main_priority_admissions\":" << runtime.main_priority_admissions << ",\"main_priority_previous\":" << runtime.main_priority_previous
         << ",\"startup_scheduler_active\":" << runtime.startup_scheduler_active << ",\"current_thread_id\":" << runtime.current_thread_id
         << ",\"cri_stream_commands\":[" << [&]{std::string s;for(const auto& [key,count]:runtime.native_cri_audio.commands){if(!s.empty())s+=',';s+="["+std::to_string(key[0])+","+std::to_string(key[1])+","+std::to_string(key[2])+","+std::to_string(count)+"]";}return s;}() << "]"
-        << ",\"sound_effects_played\":" << runtime.sound_sampler.played << ",\"sound_effects_silent_loops\":" << runtime.sound_sampler.silent_loops << ",\"sound_effects_silent_flags\":" << runtime.sound_sampler.silent_flags
+        << ",\"sound_effects_played\":" << runtime.sound_sampler.played << ",\"sound_effects_looping\":" << runtime.sound_sampler.looping << ",\"sound_effects_kept\":" << runtime.sound_sampler.kept << ",\"sound_effects_kept_refused\":" << runtime.sound_sampler.kept_refused
+        << ",\"sound_effects_stopped\":" << runtime.sound_sampler.stopped << ",\"sound_effects_stops_unmatched\":" << runtime.sound_sampler.stops_unmatched << ",\"sound_effects_silenced\":" << runtime.sound_sampler.silenced
         << ",\"sound_voices_peak\":" << runtime.sound_sampler.peak_voices << ",\"sound_voices_stolen\":" << runtime.sound_sampler.stolen
         << ",\"audio_fields\":" << runtime.audio_fields << ",\"audio_stream_bytes\":" << runtime.audio_stream_bytes << ",\"audio_voice_samples\":" << runtime.audio_mixer.voice_samples << ",\"audio_underruns\":" << runtime.audio_mixer.underruns
         << ",\"gs_downloads\":" << runtime.gs_readback.downloads << ",\"gs_download_qwords\":" << runtime.gs_readback.dma_qwords+runtime.gs_readback.fifo_qwords << ",\"vif1_sends\":" << runtime.frame_vif1.sends

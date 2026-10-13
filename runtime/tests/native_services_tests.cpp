@@ -234,8 +234,24 @@ int main() {
             std::vector<std::int32_t> left(4);SoundSampler solo;solo.upload(0x1000,memory);solo.load(0x1000,head,sequences);solo.play(0,0,127,0,1200);solo.render(left);
             require(left[1]==0 && std::abs(left[0]-4096*level)<=1 && std::abs(left[2]-3600*level)<=1,"pan to one side and pitch");
             std::vector<std::int32_t> rest(200);sampler.render(rest);require(!sampler.voices(),"voices end with their sample");
-            sampler.play(0,1,127,64,0);sampler.play(0x41,0,127,64,0);
-            require(sampler.silent_loops==1 && sampler.silent_flags==1 && !sampler.voices(),"looping samples and flagged slots stay silent, counted");
+            // Sound 1 loops: it plays until its kept entry is stopped, then fades out.
+            sampler.play(0x80,1,127,0,0);
+            std::vector<std::int32_t> loop(400);sampler.render(loop);
+            require(sampler.voices()==1 && sampler.looping==1 && sampler.kept==1 && loop[0]!=0 && loop[112]==loop[0] && loop[398]!=0,"a looping sample repeats from its loop start");
+            sampler.play(0x40,0,0,0,0);require(sampler.stops_unmatched==1 && sampler.voices()==1,"a stop for a sound that is not kept changes nothing");
+            sampler.play(0x40,1,0,0,0);require(sampler.stopped==1,"a stop finds the kept sound");
+            std::vector<std::int32_t> tail(2*SoundSampler::release_samples+8);sampler.render(tail);
+            require(!sampler.voices() && tail[0]!=0 && std::abs(tail[2*SoundSampler::release_samples-56])<std::abs(tail[0])/4 && tail[2*SoundSampler::release_samples]==0,"a stopped voice fades and ends");
+            sampler.play(0x40,1,0,0,0);require(sampler.stops_unmatched==2,"a second stop finds nothing");
+            // Slot volume and silencing.
+            sampler.play(0,1,127,0,0);sampler.setVolume(1,0x80);
+            std::vector<std::int32_t> half(2);sampler.render(half);require(std::abs(half[0]-loop[0]/2)<=1,"the slot volume scales playing voices");
+            sampler.setVolume(2,0);sampler.render(half);require(half[0]!=0,"other slots' volumes do not apply");
+            sampler.silence(2);require(sampler.silenced==0,"silencing another slot changes nothing");
+            sampler.silence(1);sampler.render(tail);require(sampler.silenced==1 && !sampler.voices(),"a silenced slot's voices end");
+            sampler.setVolume(0xFF,SoundSampler::full_volume);
+            refused=false;try{sampler.play(0xC0,1,127,64,0);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"keep and stop together are refused");
             for(const auto& bad:{std::function<void()>([&]{sampler.play(1,0,127,64,0);}),std::function<void()>([&]{sampler.play(0,2,127,64,0);}),std::function<void()>([&]{sampler.play(0,0,128,64,0);})}) {
                 refused=false;try{bad();}catch(const std::runtime_error&){refused=true;}
                 require(refused,"requests outside the loaded banks are refused");

@@ -4,7 +4,7 @@
 #include <iostream>
 
 // Native sound driver (SDRDRV, 0x80000701) and SOUNDS (0x02000004) services. Replies as the
-// original modules returned them (traced 2026-10-11); audio output itself is a later step.
+// original modules returned them (traced 2026-10-11); what is heard comes from `sound_sampler`.
 // - SDRDRV: 64-byte commands, 16-byte replies. 0xE620 initializes (zeros); 0x80D0 transfers a
 //   sound block from IOP memory to sound RAM and returns its size (word 5); 0x80F0 returns 1.
 // - SOUNDS: 256-byte commands, 64-byte replies. 0x10 initializes (zeros). From 0x20 on every reply is
@@ -12,13 +12,12 @@
 //   8 and 13 are module-local values (the worker's IOP thread ID and an IOP address; opaque).
 //   PCSX2 call log 2026-10-12 (capture_ee.py --sounds-log, 40 calls from boot into the menus):
 //   0x20 loads a bank (word 5 + 1) and starts the worker on the first; 0x30 unloads one (word 5 - 1);
-//   0x40 (request a sound), 0x50 and 0x200 leave the block unchanged.
-//   0x60, 0x80 and 0x100 are not in the log: they are answered with the unchanged block as well, which
-//   is an inference from the module's uniform replies, not a captured result.
+//   0x40 (request a sound), 0x50 and 0x200 leave the block unchanged; so do 0x70 and 0x100, whose
+//   handlers (read from the module) return the same block.
 
 namespace {
 constexpr std::uint32_t sdr_init=0xE620,sdr_block_transfer=0x80D0,sdr_command=0x80F0;
-constexpr std::uint32_t sounds_init=0x10,sounds_bank=0x20,sounds_unload=0x30,sounds_play=0x40,sounds_50=0x50,sounds_60=0x60,sounds_80=0x80,sounds_100=0x100,sounds_200=0x200;
+constexpr std::uint32_t sounds_init=0x10,sounds_bank=0x20,sounds_unload=0x30,sounds_play=0x40,sounds_fade=0x50,sounds_60=0x60,sounds_volume=0x70,sounds_80=0x80,sounds_stop_all=0x100,sounds_silence=0x200;
 constexpr std::array<std::uint32_t,16> sounds_status={0,0,0,0,1,1,0,0,0x20010,0,0,0,2,0x1C2440,0,0};
 }
 
@@ -72,8 +71,8 @@ bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const
         sound_sampler.unload();--native_sounds_banks_;break;
     case sounds_play: {
         // Up to 15 sounds in parallel arrays of 0x20 bytes: byte 0 is the count, then per sound k
-        // (from 1) the bank slot at +k, the sound number at 0x20+k, the volume at 0x40+k, the pan at
-        // 0x60+k and a 16-bit pitch offset in cents at 0x80+2k.
+        // (from 1) the bank slot with its keep and stop flags at +k, the sound number at 0x20+k, the
+        // volume at 0x40+k, the pan at 0x60+k and a 16-bit pitch offset in cents at 0x80+2k.
         if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
         checkMemory(rdram,r.send_source,256);
         const auto* command=memory_.data()+r.send_source;
@@ -87,8 +86,28 @@ bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const
         } catch(const std::runtime_error& e) {std::cerr<<e.what()<<std::endl;throw UnsupportedSyscall(0x77,context->pc);}
         break;
     }
-    // Not decoded: answered as logged, without an audible effect.
-    case sounds_50: case sounds_200: case sounds_60: case sounds_80: case sounds_100: if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);break;
+    // The module's handlers for the requests below were read from its code (2026-10-13). Word 3 is a
+    // mask of bank slots (the module has eight).
+    case sounds_fade:
+        // Word 0 set: the masked slots' volume steps down to zero; clear: up to full. The steps are a
+        // millisecond apart, so the end value applies at once.
+        if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
+        sound_sampler.setVolume(read32(rdram,r.send_source+12)&0xFF,read32(rdram,r.send_source)?0:SoundSampler::full_volume);break;
+    case sounds_silence:
+        if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
+        sound_sampler.silence(read32(rdram,r.send_source+12)&0xFF);break;
+    case sounds_stop_all:
+        if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
+        sound_sampler.silence(0xFF);break;
+    case sounds_volume: {
+        // A 16-bit volume for all eight slots.
+        const auto volume=read32(rdram,r.send_source)&0xFFFF;
+        if(!native_sounds_started_ || volume>SoundSampler::full_volume)throw UnsupportedSyscall(0x77,context->pc);
+        sound_sampler.setVolume(0xFF,volume);break;
+    }
+    // Not reached by the runs so far and refused until one needs them: 0x60 selects the synthesizer's
+    // output mode (mono or stereo), 0x80 replaces a loaded bank.
+    case sounds_60: case sounds_80: std::cerr<<"SOUNDS request "<<std::hex<<r.rpc_number<<std::dec<<" is not implemented"<<std::endl;throw UnsupportedSyscall(0x77,context->pc);
     default: throw UnsupportedSyscall(0x77,context->pc);
     }
     for(unsigned n=0;n<16;++n)write32(rdram,r.receive+n*4,!native_sounds_started_?0u:n==5?native_sounds_banks_:sounds_status[n]);
