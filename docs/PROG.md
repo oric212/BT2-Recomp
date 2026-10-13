@@ -66,11 +66,11 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 ## Next steps
 
-Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step); the order of the first four was set by the user on 2026-10-13:
+Per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step); the order was set by the user on 2026-10-13:
 
 1. **Sound output** ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)): streams, effects and the audio device are done; the user's listening to the looping sounds and to live play is open. Checked by tests and the user's listening; the comparison with the original is an optional final step.
-2. **Saves:** a memory card image behind the native card service; the "create a save file" path.
-3. **Controller support:** host input (keyboard, XInput) into the native controller service, in the viewer.
+2. **Controller support:** host input (keyboard, XInput) into the native controller service, in the viewer. First step of the launcher.
+3. **Launcher and settings** ([plan](plans/launcher/LAUNCHER_PLAN.md)), asked for by the user as the final stage before play-testing: a controller-operated first screen with control configuration, integer scaling, saves (memory card image) and an HD textures switch.
 4. **Play-testing by the user:** live input with automatic recording of the input as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. Covers the other menu entries and story mode. Needs battles at real-time speed first.
 5. **Performance:** measure Release frame time in battles; translate the hot VU1 microprograms to native code if the interpreter is the limit (about 19 presented frames per second in the measured battle).
 6. **3D verification:** compare VU1 memory, a 3D frame and a GS readback buffer with PCSX2; check the battle's frame pacing (one frame per two fields) against the original.

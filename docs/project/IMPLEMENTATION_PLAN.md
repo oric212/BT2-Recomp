@@ -65,11 +65,11 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 6. **3D pipeline** ([plan](../plans/graphics/VU1_PIPELINE_PLAN.md)), operational since 2026-10-13: VIF1 display lists and a VU1 microprogram interpreter feed the GS; the demo fights render on the GPU renderer. Next: comparison with PCSX2 (VU1 memory, a frame), the CPU renderer's 3D drawing states, measured frame time.
 7. **Menus and battle setup** — operational since 2026-10-13: scripted input goes from the title screen through New Game, the main menu, Dueling, character and map selection and loading into a 1P-vs-COM battle ([GS readback plan](../plans/graphics/GS_READBACK_PLAN.md)).
 
-Order of the following passes (set by the user on 2026-10-13):
+Order of the following passes (set by the user on 2026-10-13; on the same day the user asked for a launcher with settings as the final stage before play-testing, which reorders steps 9 and 10 as below):
 
 8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)), checked by tests and the user's listening; the comparison with the original is an [optional final step](../plans/sound/SOUND_OUTPUT_PLAN.md#verification). Since 2026-10-13 stream audio and sound effects (a native sampler behind SOUNDS, with looping sounds and the module's stop, fade and silence requests) are mixed and written to a WAV file; the user confirmed menus and a fight by listening. The probe plays the sound on the audio device (`--sound`), which holds the run at the game's speed. Open: the user's listening to live play; volume settings.
-9. **Saves:** a memory card image behind the native card service.
-10. **Controller support:** host input (keyboard, XInput) into the native controller service.
+9. **Controller support:** host input (keyboard, XInput) into the native controller service. First step of the [launcher plan](../plans/launcher/LAUNCHER_PLAN.md), because the launcher is operated with a controller.
+10. **Launcher and settings** ([plan](../plans/launcher/LAUNCHER_PLAN.md)): a first screen in the style of the PS2 system menu, operated with a controller, with control configuration, integer scaling, saves (a memory card image behind the native card service) and an HD textures switch. HD textures need texture replacement in the GPU renderer, which is investigated last and does not hold play-testing back.
 11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first (VU1 performance).
 
 ## Working method
