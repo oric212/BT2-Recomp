@@ -290,7 +290,55 @@ void Vu1::run(std::uint32_t start,const Kick& kick) {
     }
     // A native translation runs the program to its end, or returns early with `pc` at a pair it
     // does not contain; the interpreter goes on from there.
-    if(native_[pc]) {++native_runs;if(native_[pc](*this,kick)) {settle(true);clip_latest_=clip;vi_written_=0;return;}}
+    if(native_[pc]) {
+        ++native_runs;
+        if(verify_native) {runVerified(native_[pc],kick);return;}
+        if(native_[pc](*this,kick)) {settle(true);clip_latest_=clip;vi_written_=0;return;}
+    }
+    interpret(kick);
+}
+
+// What a program leaves behind that a later program, VIF1 or the report can see.
+namespace {
+struct Visible {
+    std::array<std::uint8_t,16384> data;std::array<std::array<std::uint32_t,4>,32> vf;std::array<std::uint16_t,16> vi;
+    std::array<std::uint32_t,4> acc;std::uint32_t q,i,clip,pc;std::uint64_t instructions;unsigned kicks;
+    explicit Visible(const Vu1& vu):data(vu.data),vf(vu.vf),vi(vu.vi),acc(vu.acc),q(vu.q),i(vu.i),clip(vu.clip),pc(vu.pc),instructions(vu.instructions),kicks(vu.kicks) {}
+    void restore(Vu1& vu) const {vu.data=data;vu.vf=vf;vu.vi=vi;vu.acc=acc;vu.q=q;vu.i=i;vu.clip=clip;vu.pc=pc;vu.instructions=instructions;vu.kicks=kicks;}
+    const char* difference(const Visible& o) const {
+        return data!=o.data?"data memory":vf!=o.vf?"a float register":vi!=o.vi?"an integer register":acc!=o.acc?"ACC":q!=o.q?"Q":i!=o.i?"I":clip!=o.clip?"the clipping flags"
+            :pc!=o.pc?"the stopping address":instructions!=o.instructions?"the pair count":kicks!=o.kicks?"the packet count":nullptr;
+    }
+};
+}
+
+void Vu1::runVerified(NativeProgram native,const Kick& kick) {
+    const std::uint32_t start=pc;
+    const auto fail=[&](const char* what) {
+        char text[160];std::snprintf(text,sizeof text,"VU1 native program %016llx (start %u) differs from the interpreter in %s",
+            static_cast<unsigned long long>(Vu1Program::reachable(program,start).key),start,what);
+        throw std::runtime_error(text);
+    };
+    // The interpreter's run: its packets are kept, not sent, and the output hash is left alone.
+    const Visible before(*this);const auto hash=kick_hash;const auto cycle=cycle_;
+    std::vector<std::vector<std::uint8_t>> expected;
+    const Kick keep=[&](std::span<const std::uint8_t> packet) {expected.emplace_back(packet.begin(),packet.end());};
+    interpret(keep);
+    const Visible reference(*this);
+    // The native run from the same state: each packet must be the interpreter's, then goes out.
+    before.restore(*this);kick_hash=hash;cycle_=cycle;branch_=false;clip_latest_=clip; // As every run begins: the pipelines empty.
+    std::size_t sent=0;
+    const Kick check=[&](std::span<const std::uint8_t> packet) {
+        if(sent>=expected.size() || packet.size()!=expected[sent].size() || std::memcmp(packet.data(),expected[sent].data(),packet.size()))fail("an output packet");
+        ++sent;if(kick)kick(packet);
+    };
+    if(native(*this,check)) {settle(true);clip_latest_=clip;vi_written_=0;} else interpret(check);
+    if(sent!=expected.size())fail("the number of output packets");
+    if(const char* what=Visible(*this).difference(reference))fail(what);
+    ++verified_runs;
+}
+
+void Vu1::interpret(const Kick& kick) {
     bool ending=false;
     for(std::uint64_t executed=0;;++executed) {
         if(executed>=run_limit)throw std::runtime_error("VU1 microprogram does not end");

@@ -50,6 +50,11 @@ public:
     struct NativeEntry {std::uint64_t key;NativeProgram run;};
     static std::span<const NativeEntry> nativePrograms();
     bool use_native=true; // Off: every program is interpreted.
+    // Verification of native programs: every start that has one runs in the interpreter first and
+    // then natively from the same state; the packets sent and the state left behind (memory, the
+    // registers, ACC, Q, I, the clipping flags, where it stopped, the pair count) must be equal, or
+    // the run stops naming the program's key. Several times slower; for checking, not for play.
+    bool verify_native=false;unsigned verified_runs=0;
     static constexpr std::uint64_t run_limit=16'000'000; // Instruction pairs per start; a program that never ends stops here.
 
     Vu1() {vf[0][3]=0x3F800000;}
@@ -69,6 +74,8 @@ private:
     std::uint32_t readQ();
     std::uint32_t readClip();
     void settle(bool all); // Publishes pipeline results that are due (all of them at the end of a run).
+    void interpret(const Kick& kick); // From `pc` to the program's end.
+    void runVerified(NativeProgram native,const Kick& kick);
 
     std::uint64_t cycle_=0;
     bool q_pending_=false;std::uint64_t q_ready_=0;std::uint32_t q_next_=0; // DIV: 7 cycles.

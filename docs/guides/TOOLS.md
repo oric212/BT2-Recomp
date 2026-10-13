@@ -654,6 +654,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Loop limit.** `BT2_EE_LOOP_LIMIT=<n>` sets how many loop iterations one thread may run within a field before the runaway guard stops it (default 400 million once frames are presented; battle loading needs tens of millions in one burst).
 
+**VU1 verification.** `BT2_VU1_VERIFY=1` runs every start that has a native program in the interpreter first and then natively from the same state; the packets and the state left behind (memory, registers, ACC, Q, I, clipping flags, stopping address, pair count) must be equal, or the run stops with the program's key and what differs. The report's `vu1_verified_runs` counts the starts checked. Several times slower than a normal run.
+
 **VU1 program cost and listing.** With `BT2_VU1_CENSUS` set, the run also writes `cost.txt` into the folder: per program its key, pair count, starts, instruction pairs run and milliseconds (output packets included). `python tools/vu1/disassemble.py <census file>` lists a program as text, one line per instruction pair (`E` marks the end bit, `>` the start address). Both describe the game's programs and stay local.
 
 **Call trace.** `BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]` writes one line per call of those functions from that display flip on: the flip, the calling address, the target, `a0` to `a3`, `f12`, `f13` and `f0` (which still holds the previous call's result), and the four floats at each of `a0` to `a2` that points into RAM. Tracing a library function and reading the next line's `f0` gives its inputs and results without touching the game.
