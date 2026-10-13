@@ -69,3 +69,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 /user/
+
+# The user's local helper scripts.
+/discover.cmd
+/play.cmd
