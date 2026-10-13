@@ -84,12 +84,12 @@
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="37" y="500" font-size="11.5" fill="#64748b">Native, no card image or saves</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
-<g><title>GS: Operational. GPU draws 3D; CPU renderer 2D only</title>
+<g><title>GS: Operational. GPU renderer; frames confirmed</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="351" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="362" y="234" font-size="13" font-weight="600" fill="#1e293b">GS</text>
-<text x="347" y="252" font-size="11.5" fill="#64748b">GPU draws 3D; CPU renderer 2D only</text></g>
+<text x="347" y="252" font-size="11.5" fill="#64748b">GPU renderer; frames confirmed</text></g>
 <g><title>GIF / VIF: Operational. Display lists run; V4/S unpack</title>
 <rect x="334" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>

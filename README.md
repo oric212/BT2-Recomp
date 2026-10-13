@@ -30,9 +30,9 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Memory card check | ✅ Verified — no card inserted; the prompt is answered by scripted input |
 | Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end (decoded natively, no sound); frames match an independent decoder at spot checks |
 | Title screen | 🟢 Operational — the title screen, its option list and the New Game dialogues render and respond to scripted input (the user confirms the pictures) |
-| Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirms the frames; not compared with the original); no sound |
+| Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirmed the frames; not compared with the original by capture); no sound effects |
 | Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
-| Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); GPU renderer only, no sound, slower than real time, not compared with the original |
+| Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with scripted input controlling the fighter (about 4,100 frames to the run's budget); frames confirmed by the user; GPU renderer, stream audio only, slower than real time, not compared with the original by capture |
 | Audio | 🔧 Incomplete — stream audio (movie and music PCM) is mixed and written to a WAV file; level, channel order and timing of the boot movies match a PCSX2 recording (waveform not shown identical); no bank sound effects, no audio device |
 | Saves | ⏳ Not Reached — no memory card image yet |
 

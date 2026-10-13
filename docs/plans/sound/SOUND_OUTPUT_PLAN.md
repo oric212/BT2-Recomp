@@ -31,7 +31,8 @@ Make the game audible. Part of the [implementation plan](../../project/IMPLEMENT
 - Measured (7,000-frame battle run, 2026-10-13): 10,334 fields give 172.4 s of audio; 19.4 MB of stream PCM consumed; 5,939 samples (0.03%) were missing when a voice ended or ran dry. The output is audio-like (sample-to-sample correlation about 0.98, left and right partly correlated). **Not compared with the original.**
 - Listened to by the user (before the level correction): the audio is recognizable; music too loud, voices too quiet, effects too loud.
 - Compared with a PCSX2 recording: timing, channel order and level of the two boot movies agree (see the evidence above); the waveform is not shown to be identical. `python tools/audio/compare_audio.py work/audio/boot-run.wav work/audio/pcsx2_movie_menu_capture.wav` repeats it.
-- Open: the user listens again at the corrected level; a recording with PCSX2's audio synchronisation set to none (no time stretching) to settle the waveform question; the menu and battle parts, which need the same input on both sides.
+- The user listened again at the corrected level (2026-10-13): better, but accuracy cannot be judged by ear. Further checks follow the [verification plan](SOUND_VERIFICATION_PLAN.md).
+- Open: a recording with PCSX2's audio synchronisation set to none (no time stretching) to settle the waveform question; the menu and battle parts, which need the same input on both sides.
 
 ## Stop conditions
 

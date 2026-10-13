@@ -8,7 +8,7 @@ The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,99
 
 Order set by the user on 2026-10-13, per [PROG.md](../PROG.md#next-steps):
 
-1. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)). Done: stream audio (movies, music) is mixed and written to a WAV file. The user listened to `work/audio/battle-run.wav`: recognizable, but music too loud, voices too quiet, effects too loud. A PCSX2 recording by the user (`work/audio/pcsx2_movie_menu_capture.wav`, local) settled the stream level (25/64), the channel order and the timing for the boot movies; `work/audio/boot-run.wav` and `battle-run.wav` are regenerated at that level for the user to hear again. Open: whether the music/voice balance now sounds right, and a recording without time stretching for the waveform. Next: sound effects. Log the SOUNDS requests of the battle run with their arguments, identify the bank layout from the uploaded blocks, then a voice player; after that a host audio device.
+1. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)). Done: stream audio (movies, music) is mixed and written to a WAV file. The user listened to `work/audio/battle-run.wav`: recognizable, but music too loud, voices too quiet, effects too loud. A PCSX2 recording by the user (`work/audio/pcsx2_movie_menu_capture.wav`, local) settled the stream level (25/64), the channel order and the timing for the boot movies; `work/audio/boot-run.wav` and `battle-run.wav` are regenerated at that level for the user to hear again. The user hears an improvement but listening cannot confirm accuracy, so sound is verified stage by stage from here ([verification plan](../plans/sound/SOUND_VERIFICATION_PLAN.md)): first stream PCM against PCSX2 memory, then a capture of the SPU2 volume registers to replace the measured level, then request logs; sound effects after that. Log the SOUNDS requests of the battle run with their arguments, identify the bank layout from the uploaded blocks, then a voice player; after that a host audio device.
 2. **Saves:** a memory card image behind the native card service. The game asks "Do you wish to create a save file on the memory card (PS2)?" after New Game; the script answers No. The Yes path is untested.
 3. **Controller support:** host input (keyboard, XInput) into the native controller service.
 4. **Play-testing by the user:** live input in the viewer, recorded as a pad script; a session that stops at a boundary is replayed through `discovery_loop.py`. This replaces scripted presses and screenshots for the other menu entries and story mode. Battles run at about 19 presented frames per second of wall-clock time, so the VU1 path needs a performance pass before live play in fights.
@@ -22,7 +22,7 @@ Saved under `work/frames/` (local, ignored), from the long Release run on the GP
 - `battle-3600.png` to `battle-4450.png`: character selection steps, map selection, the loading screen.
 - `battle-4700.png` to `battle-8990.png`: stage fly-over, intro poses and the fight.
 
-The user confirmed the title dialogues, the menus and character selection on 2026-10-13. Map selection, the loading screen and the battle frames are not confirmed yet.
+The user inspected all of them on 2026-10-13 and confirmed them, map selection, the loading screen and the battle included.
 
 ## How to run
 
@@ -37,7 +37,7 @@ The user confirmed the title dialogues, the menus and character selection on 202
 
 - Build with `python tools/build/msvc.py cmake --build build/probe --config Release --target bt2-entry-probe` (Ninja). Times: runtime header (`ee_runtime.h`) edit about 16 s, one file about 12 s, full rebuild about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`).
 - Gate: `python tools/gate/run_gate.py --disc <iso>` (about 80 s plus the build).
-- The 3D frames exist only on the GPU renderer: the CPU GS model refuses perspective texturing and fog, so `--gs cpu` and `--gs mirror` stop at the first 3D frame. The gate's CPU run ends before any 3D frame.
+- The 3D frames exist only on the GPU renderer: the CPU GS model refuses perspective texturing and fog, so `--gs cpu` and `--gs mirror` stop at the first 3D frame. The gate's CPU run ends before any 3D frame. The user decided on 2026-10-13 that 3D on the CPU renderer is an optional extra for the end of the project; GS counts as Operational on the GPU renderer.
 - GS readback is untested against the original: the destination buffers of the 12 store-image calls in battle loading are not compared with a PCSX2 capture. In GPU-only mode paraLLEl-GS supplies the pixels; the CPU model reads CT32 and CT24 only.
 - VU1 counts one cycle per instruction pair without stalls. The report's `vu1_early_q_reads` and `vu1_early_clip_reads` are 0 in the battle run too.
 - The battle presents one frame per two fields of game time. Whether the original runs this scene at 60 or 30 frames per second is not checked; if it is 60, look at what consumes the second field in the frame loop.

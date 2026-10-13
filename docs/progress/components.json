@@ -75,7 +75,7 @@
         {
           "name": "GS",
           "status": "working",
-          "note": "GPU draws 3D; CPU renderer 2D only"
+          "note": "GPU renderer; frames confirmed"
         },
         {
           "name": "GIF / VIF",

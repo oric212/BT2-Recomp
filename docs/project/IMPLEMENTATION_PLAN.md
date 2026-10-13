@@ -10,7 +10,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | --- | --- |
 | Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. |
 | IOP side | **Native RPC services** answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Done 2026-10-11; the emulated IOP is removed. |
-| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU renderer stays as the fallback for systems without a suitable Vulkan GPU (for example some integrated graphics) and as the test reference. VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
+| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU renderer draws the 2D screens and is the test reference for them; extending it to 3D, as a fallback for systems without a suitable Vulkan GPU (for example some integrated graphics), is an optional extra for the end of the project (decided 2026-10-13). VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
 | Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
 
 ## Architecture rules
@@ -67,7 +67,7 @@ Each step keeps the game running to the current checkpoint (650 frames, then the
 
 Order of the following passes (set by the user on 2026-10-13):
 
-8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)): stream audio is mixed and written to a WAV file since 2026-10-13 (the EE decodes ADX itself, so no native decoder is needed). A PCSX2 recording set the stream level and confirmed channel order and timing for the boot movies. Next: sound effects (SOUNDS requests and banks), a host audio device.
+8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md), verified stage by stage per the [verification plan](../plans/sound/SOUND_VERIFICATION_PLAN.md) rather than by ear): stream audio is mixed and written to a WAV file since 2026-10-13 (the EE decodes ADX itself, so no native decoder is needed). A PCSX2 recording set the stream level and confirmed channel order and timing for the boot movies. Next: sound effects (SOUNDS requests and banks), a host audio device.
 9. **Saves:** a memory card image behind the native card service.
 10. **Controller support:** host input (keyboard, XInput) into the native controller service.
 11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first (VU1 performance).
