@@ -97,6 +97,16 @@ Planned 2026-10-18.
 - **Closure check:** `map_gaps.py --check` reports nothing left in either program and is a gate step.
 - **Checked:** unit tests (Python: entry labels, bindings, the new scans, the system call stub; C++: interior registration and dispatch, overlay check); the scripted fight gives the baseline hash `5a4960667d4a3dff` with 3,732 functions entered and 0 interior dispatches; with and without interior entries (`BT2_NO_INTERIOR_ENTRIES`) its state hash agrees on all 6,534 fields; the gate passed.
 
+### Step 6 begun (2026-10-18): BT2's own state machinery
+
+Found on BT2's code and checked in runs (scripted fight and idle runs); names stay neutral.
+
+- **Main loop** (`0x100680`-`0x1006C0`): load the overlay (`0x1002D8(0)`), call its entry (`0x3B7FA8(0)`), which runs the menus and returns; then, if flag `0x200` of the progress structure is set, clear it and call `0x2A8A38`, otherwise call `0x103000`, which runs a battle; repeat. The same shape as Tenkaichi3Decomp's notes describe for BT3.
+- **Progress structure:** pointed to by the word at `0x3876A4` (at `0x76BDC0` in both runs). Flags at `+0x18` (`0x40` on the first run, cleared by the entry after its first-run work; `0x02` while a battle runs), mode at `+0x1C`. The entry dispatches modes 1 to 64 through the table at `0x421950`; the modes fall into groups sharing a routine: 1 (`0x100D58`), 2, 4-5, 6-8 (`0x41BF08`), 10-16 (`0x3F9300`), 24-27 (`0x3CB1D0`), 30-35 (`0x418410`), 38-41 (`0x3C0700`), 43-47 (`0x3DF9E8`), 48-51 (`0x3E3B98`), 53-58 (`0x3DB6A8`), 61-64 (`0x3EC690`); the other values share a default case. Another system structure, which the battle routine works on, is pointed to by the word at `0x3876A0` (flags at `+0x4D8`).
+- **Modes seen in the scripted fight:** 1 from the start through the title, New Game and the main menu; 30 in the Dueling menu (by flip 2,700); 31 in character selection (3,300-3,900); 34 in map selection (4,380); the battle (`0x103000`, from flip 4,403) runs with mode 31 and flag `0x02`. Group 30-35 is the versus-battle setup.
+- **Idle demo fight:** with no input at all (the opening film plays to its end), the entry returns at flip 10,130 with flags `0x06` and mode 1 and main starts the battle routine: the game's own CPU-against-CPU demo. **It hangs in its first frame**: no display flip after flip 10,205, no VU1 work, inside the update of an object only the demo has (the structure behind `gp-18076`, absent in the scripted battle), in `0x145DF0` called from `0x146AA0` through the object tree walk at `0x1F2F90`. Not yet known: which loop does not end, and whether this is a regression (the demo fights rendered on 2026-10-13 in a run that skipped the films). The CPU-against-CPU sweeps need it fixed; it is the first finding of the sweep approach.
+- **Not yet found:** the battle setup fields (characters, forms, map); the start of the demo setup.
+
 ### Step 4 done (2026-10-18): the work list for step 5
 
 `python tools/ps2recomp/runtime_census.py` reads the mapped code of all programs and the runtime's sources (per-site lists in ignored `work/bt2-generation/runtime-census.json`). Measured on the map of 2026-10-18:
