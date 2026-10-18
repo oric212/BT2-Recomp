@@ -8,13 +8,13 @@ Current plan: [whole-game coverage](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), ah
 
 - `BT2_START_BATTLE=<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]`: a CPU-vs-CPU battle (characters 0 to 129, variants 0 to 8, stages 0 to 15).
 - `BT2_START_SCREEN=<mode>`: one of the ten main-menu screens.
-- `BT2_START_EPISODE=<episode>[,<part>]`: a story episode's 3D map (episodes 0 to 24).
+- `BT2_START_EPISODE=<episode>[,<part>]`: a story episode's 3D map (episodes 0 to 24, 207 parts). `tools/ps2recomp/story_scenes.py` lists the parts' scene scripts.
 
 What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new check there).
 
 **Next (when the user starts the next pass):**
 
-1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md)): first why episode 23 draws no 3D (it starts and runs, nothing stops); then decode the episode script machine (`0x29E000`-`0x2A1000`, command table `0x344C98`, script file 13259), list each episode's battles, add a starter for a story battle, then propose the overnight run of every episode and battle to the user with an estimate (3 to 8 hours for 125 to 250 battles, to be confirmed by counting) and run it only after their confirmation.
+1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): find how a story battle starts (no scene command starts one directly; likely a map marker, opcode 1009, and its numbered block), then a starter for a part's battle, then propose the overnight run of the 207 parts' battles to the user (roughly 5 to 7 hours) and run it only after their confirmation. Episode 23's missing 3D is explained (its first scene is empty; the game marks it unavailable).
 2. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
 3. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 

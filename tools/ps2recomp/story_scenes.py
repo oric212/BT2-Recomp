@@ -1,0 +1,140 @@
+"""Lists the story mode's scene scripts per episode part (docs/plans/ee/STORY_MODE_PLAN.md).
+
+Reads the scene files from the disc's first archive (file numbers below 13,234), decodes their script
+(GSCF: sections GSHD, GSCD with GSAC blocks ending in EOFC, GSTD), and for each episode part follows
+the scenes it leads to through the commands that set the next scene, counting the commands used. The
+first scene of a part is 33 + 3 x the parts before it, with the part counts read from the game's
+executable. Which command starts a battle is not known yet. Output: a JSON file in ignored work/ (the
+game's data stays local).
+"""
+import argparse,json,struct
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[2]
+
+FIRST_ARCHIVE=(b'DATA',b'ZS2US_1.AFS;1')
+SECOND_ARCHIVE_START=13234
+GO_TO_SCENE={1004,1007,1012,1013}  # Event kinds 2 to 4: the next scene is the argument.
+EPISODE_TABLE=0x344F30             # In the executable: 16 bytes per episode, the part count at +4.
+EPISODES=25
+
+
+class Disc:
+    def __init__(self,path):
+        self.stream=open(path,'rb')
+
+    def read(self,offset,size):
+        self.stream.seek(offset);data=self.stream.read(size)
+        if len(data)!=size:raise ValueError('Truncated read from the disc image')
+        return data
+
+    def file(self,path):
+        """(offset, size) of a file in the ISO 9660 image, by its path of directory and file names."""
+        pvd=self.read(16*2048,2048)
+        if pvd[1:6]!=b'CD001':raise ValueError('Not an ISO 9660 image')
+        record=pvd[156:156+pvd[156]]
+        for name in path:
+            start,size=struct.unpack_from('<I',record,2)[0]*2048,struct.unpack_from('<I',record,10)[0]
+            directory=self.read(start,size);pos=0;found=None
+            while pos<len(directory):
+                n=directory[pos]
+                if not n:pos=(pos//2048+1)*2048;continue
+                if directory[pos+33:pos+33+directory[pos+32]]==name:found=directory[pos:pos+n];break
+                pos+=n
+            if found is None:raise ValueError(f'{name!r} not on the disc')
+            record=found
+        return struct.unpack_from('<I',record,2)[0]*2048,struct.unpack_from('<I',record,10)[0]
+
+
+class Archive:
+    def __init__(self,disc,name):
+        self.disc=disc;self.offset,self.size=disc.file(name)
+        head=disc.read(self.offset,8)
+        if head[:3]!=b'AFS':raise ValueError('Not an AFS archive')
+        self.count=struct.unpack_from('<I',head,4)[0]
+        self.table=disc.read(self.offset+8,self.count*8)
+
+    def entry(self,index):
+        if not 0<=index<self.count:raise ValueError(f'Archive entry {index} outside 0 to {self.count-1}')
+        start,size=struct.unpack_from('<2I',self.table,index*8)
+        return self.disc.read(self.offset+start,size)
+
+
+def instructions(code):
+    """Decodes a GSAC block's words: (opcode, arguments); an argument word holds (value << 8) | type."""
+    out=[];words=list(struct.unpack_from(f'<{len(code)//4}I',code));k=0
+    while k<len(words):
+        word=words[k];k+=1
+        if not word:continue
+        opcode,count=word>>16,(word>>8)&0xFF
+        arguments=[]
+        for _ in range(count):
+            if k>=len(words):break
+            arguments.append((words[k]>>8,words[k]&0xFF));k+=1
+        out.append((opcode,arguments))
+    return out
+
+
+def scene(data):
+    """The blocks of a scene script: {block number: [(opcode, arguments)]}."""
+    if data[:4]!=b'GSCF':raise ValueError('Not a scene script')
+    a=struct.unpack_from('<I',data,4)[0];sections={}
+    while a+16<=len(data):
+        tag,head,size=data[a:a+4],*struct.unpack_from('<2I',data,a+4)
+        sections[tag]=(a+head,size);a+=head+size
+        if tag==b'GSTD':break
+    start,size=sections[b'GSCD'];blocks={};a=start
+    while a+16<=start+size:
+        tag,head,length,number=data[a:a+4],*struct.unpack_from('<3I',data,a+4)
+        if tag==b'GSAC':blocks[number]=instructions(data[a+head:a+head+length]);a+=head+length
+        elif tag==b'EOFC':a+=head
+        else:break
+    return blocks
+
+
+def survey(archive,part_counts):
+    """Per episode and part: the scenes reached from its first scene and the commands used in them."""
+    result=[];before=0
+    for episode,parts in enumerate(part_counts):
+        for part in range(parts):
+            first=33+3*(before+part);seen=set();todo=[first];commands={}
+            while todo:
+                number=todo.pop()
+                if number in seen or number>=SECOND_ARCHIVE_START:continue
+                seen.add(number)
+                try:blocks=scene(archive.entry(number))
+                except ValueError:continue
+                for code in blocks.values():
+                    for opcode,arguments in code:
+                        if opcode in GO_TO_SCENE and arguments:todo.append(arguments[0][0])
+                        commands[opcode]=commands.get(opcode,0)+1
+            result.append({'episode':episode,'part':part,'first_scene':first,'scenes':sorted(seen),'commands':commands})
+        before+=parts
+    return result
+
+
+def part_counts(executable):
+    """Part counts from the executable's episode table."""
+    elf=executable.read_bytes()
+    off,count=struct.unpack_from('<I',elf,0x1C)[0],struct.unpack_from('<H',elf,0x2C)[0]
+    for n in range(count):
+        kind,offset,vaddr,_,size,_=struct.unpack_from('<6I',elf,off+n*32)
+        if kind==1 and vaddr<=EPISODE_TABLE<vaddr+size:
+            base=offset+EPISODE_TABLE-vaddr
+            return [struct.unpack_from('<I',elf,base+16*k+4)[0] for k in range(EPISODES)]
+    raise ValueError('Episode table not in a loaded segment')
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--disc',type=Path,required=True)
+    p.add_argument('--executable',type=Path,default=ROOT/'rom/SLUS_214.41')
+    p.add_argument('--output',type=Path,default=ROOT/'work/coverage/story/scenes.json')
+    a=p.parse_args()
+    archive=Archive(Disc(a.disc),FIRST_ARCHIVE)
+    parts=survey(archive,part_counts(a.executable))
+    a.output.parent.mkdir(parents=True,exist_ok=True)
+    a.output.write_text(json.dumps(parts,indent=1),encoding='utf-8')
+    print(f'{len(parts)} parts, {sum(len(p["scenes"]) for p in parts)} scenes visited; {a.output}')
+
+
+if __name__=='__main__':main()
