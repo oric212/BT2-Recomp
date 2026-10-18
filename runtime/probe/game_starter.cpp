@@ -22,6 +22,8 @@ constexpr std::uint32_t modes=64;       // Entries of the entry's mode table.
 
 BattleStart configured;
 std::uint32_t configured_mode=0;
+std::uint32_t configured_episode[2]{};
+constexpr std::uint32_t episode_number=48,story_flag=0x200; // In the progress structure.
 PS2Runtime::RecompiledFunction original_entry=nullptr;
 bool started=false;
 
@@ -104,6 +106,25 @@ void startScreen(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) 
     original_entry(rdram,context,runtime);
 }
 
+void startEpisode(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(started) {original_entry(rdram,context,runtime);return;}
+    started=true;
+    const auto return_address=static_cast<std::uint32_t>(context->r[31].low);
+    const auto stack=context->r[29];
+    firstRun(rdram,context,runtime);
+    // As the story screen leaves it after an episode's opening: the episode and its part, and the flag
+    // that makes main run the story routine (0x2A8A38) instead of the versus battle routine.
+    const std::uint32_t progress=read32(rdram,progress_pointer);
+    write32(rdram,progress+episode_number,configured_episode[0]);
+    write32(rdram,progress+episode_number+4,configured_episode[1]);
+    write32(rdram,progress+progress_flags,read32(rdram,progress+progress_flags)|story_flag);
+    setRegister(context,2,0);
+    context->r[29]=stack;
+    setRegister(context,31,return_address);
+    context->pc=return_address;
+    runtime->dispatchGuestBranch(rdram,context,return_address,overlay_entry,0,PS2Runtime::GuestBranchKind::Return,"JR $ra");
+}
+
 std::uint32_t number(std::string_view text,const char* name) {
     std::uint32_t value=0;
     const auto [end,error]=std::from_chars(text.data(),text.data()+text.size(),value);
@@ -152,4 +173,17 @@ std::uint32_t parseScreenStart(std::string_view text) {
 void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
     configured_mode=mode;
     original_entry=runtime.replaceFunction(overlay_entry,startScreen);
+}
+
+EpisodeStart parseEpisodeStart(std::string_view text) {
+    EpisodeStart start;
+    const auto comma=text.find(',');
+    start.episode=number(text.substr(0,comma),"BT2_START_EPISODE");
+    if(comma!=std::string_view::npos)start.part=number(text.substr(comma+1),"BT2_START_EPISODE");
+    return start;
+}
+
+void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
+    configured_episode[0]=start.episode;configured_episode[1]=start.part;
+    original_entry=runtime.replaceFunction(overlay_entry,startEpisode);
 }

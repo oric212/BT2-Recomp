@@ -1,6 +1,6 @@
 # Validation record
 
-What has actually been checked, how, and when. Only checks that were run are listed; anything else is not validated. Details are in [PROG.md](../PROG.md#verification-2026-10-13) and the [monthly history](2026-10.md).
+What has actually been checked, how, and when. Only checks that were run are listed; anything else is not validated. Details are in the [monthly history](2026-10.md); the current status is in [PROG.md](../PROG.md).
 
 **Kinds of check:** *Original*: compared with the original game (PCSX2 captures or an independent decoder). *Exact*: byte-exact comparison between two port runs (state hash of every guest memory per field, VU1 output hash). *Ran*: the run reached its frame budget with no stop and nothing interpreted; the picture was not judged by the user. *User*: the user looked or listened and confirmed.
 
@@ -19,6 +19,7 @@ What has actually been checked, how, and when. Only checks that were run are lis
 | Battles without input | Characters 0 to 10 (each against the next) and 100 to 129 (against 0), variant 0, Rocky Area: each ran 4,500 flips, nothing interpreted. Characters from 130 are not valid | Ran | 2026-10-18 |
 | Stages | Goku against character 1 on stages 0 to 15 (16 distinct stages): each ran 4,500 flips, nothing interpreted; stage numbers from 16 give Wasteland again | Ran | 2026-10-19 |
 | Screens without input | The ten main-menu screens started by mode (`BT2_START_SCREEN`): Dragon Adventure intro, Ultimate Battle Z, Dragon Tournament, Dueling, Ultimate Training, Evolution Z, Item Shop, Data Center, Options, Dragon Library; each ran 1,200 flips, nothing interpreted | Ran | 2026-10-19 |
+| Story episode starts | Episodes 0 to 24 started by `BT2_START_EPISODE`: 24 load their 3D map with their own lead character and ran 1,500 flips, nothing interpreted; **episode 23 draws no 3D** (grey screen, part of the map's interface; open). From 25 the game reads past its tables (28 and up stop presenting frames). Story battles not reached | Ran | 2026-10-19 |
 | Runtime rules for the screen starter | The scripted fight before and after the general SetVSyncFlag and INTC_STAT rules: same state on all 6,534 fields | Exact | 2026-10-19 |
 | Frames | Demo fights, title dialogues, main and Dueling menus, character and map selection, loading screen, battle | User | 2026-10-13 |
 | Sound | A WAV of menus and a fight | User | 2026-10-13 |
@@ -26,6 +27,6 @@ What has actually been checked, how, and when. Only checks that were run are lis
 
 ## Not validated yet
 
-- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); story episodes.
+- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); story battles.
 - 3D frames, menu frames, memory card replies and GS readback pixels against the original.
 - Writing a save; special moves and ultimates in play; live sound in play.

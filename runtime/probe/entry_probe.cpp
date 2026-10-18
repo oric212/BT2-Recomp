@@ -391,15 +391,18 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,modes,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime,modes);
-        // BT2_START_BATTLE / BT2_START_SCREEN: a CPU-against-CPU battle or a screen without input, for tool
-        // runs (game_starter.h).
+        // BT2_START_BATTLE / BT2_START_SCREEN / BT2_START_EPISODE: a CPU-against-CPU battle, a screen or a
+        // story episode without input, for tool runs (game_starter.h).
         {
             const char* battle = std::getenv("BT2_START_BATTLE");
             const char* screen = std::getenv("BT2_START_SCREEN");
             if ((battle || screen) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN are for tool runs, not a player's session");
-            if (battle && screen) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN exclude each other");
+            const char* episode = std::getenv("BT2_START_EPISODE");
+            if ((battle != nullptr) + (screen != nullptr) + (episode != nullptr) > 1) throw std::runtime_error("BT2_START_BATTLE, BT2_START_SCREEN and BT2_START_EPISODE exclude each other");
+            if (episode && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_EPISODE is for tool runs, not a player's session");
             if (battle) installBattleStarter(runtime, parseBattleStart(battle));
             if (screen) installScreenStarter(runtime, parseScreenStart(screen));
+            if (episode) installEpisodeStarter(runtime, parseEpisodeStart(episode));
         }
         // The interpreter bridge for code no generated function holds (ee_interpreter.cpp). BT2_EE_INTERPRET:
         // "off" stops at such code as before; "all" runs every generated function interpreted as well

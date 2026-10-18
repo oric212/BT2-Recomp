@@ -331,6 +331,8 @@ int main() {
             reject([]{parseBattleStart("4,130,22");});
             require(parseBattleStart("129,0,22").character[0]==129);
             require(parseScreenStart("6")==6 && parseScreenStart("64")==64);
+            {const auto e=parseEpisodeStart("3,1");require(e.episode==3 && e.part==1 && parseEpisodeStart("7").part==0);}
+            reject([]{parseEpisodeStart("");});reject([]{parseEpisodeStart("2,x");});
             reject([]{parseScreenStart("0");});reject([]{parseScreenStart("65");});reject([]{parseScreenStart("x");});
             EeRuntime runtime;
             reject([&]{runtime.replaceFunction(0x300,return_leaf);});

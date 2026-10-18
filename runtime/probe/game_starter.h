@@ -11,7 +11,9 @@
 //   makes (characters, variants, stage, music; CPU on both sides) and the versus settings, and returns,
 //   so main runs its battle routine;
 // - BT2_START_SCREEN: writes the mode the main menu would and runs the original entry, which shows
-//   that screen.
+//   that screen;
+// - BT2_START_EPISODE: writes the story episode and the flag that makes main run the story routine,
+//   and returns.
 // Later calls run the original entry.
 struct BattleStart {
     std::uint32_t character[2]{};
@@ -27,3 +29,12 @@ void installBattleStarter(EeRuntime& runtime, const BattleStart& start);
 // A mode of the overlay's mode table, 1 to 64, decimal; throws on other text.
 std::uint32_t parseScreenStart(std::string_view text);
 void installScreenStarter(EeRuntime& runtime, std::uint32_t mode);
+
+// BT2_START_EPISODE=<episode>[,<part>]: the story routine with that episode, as after its opening
+// (STORY_MODE_PLAN.md). Decimal; throws on other text.
+struct EpisodeStart {
+    std::uint32_t episode = 0;
+    std::uint32_t part = 0;
+};
+EpisodeStart parseEpisodeStart(std::string_view text);
+void installEpisodeStarter(EeRuntime& runtime, const EpisodeStart& start);

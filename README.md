@@ -25,18 +25,19 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | --- | --- |
 | Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
 | Main frame loop | ✅ Verified — key startup states match original captures |
-| First presented frame | ✅ Verified — 1,000 frames in the gate run; 9,000 (the budget) in the long Release run |
+| First presented frame | ✅ Verified — 1,000 frames in the gate run |
 | Controller check | ✅ Verified — passed with the native controller service |
-| Memory card check | ✅ Verified — without a card the prompt is answered by scripted input (compared with the original); with a card folder in the slot the game reads the save and shows no prompt (the user's play) |
-| Opening movie | 🟢 Operational — the logo movie and the opening movie play to the end with their sound, from any start moment and after the first one is skipped (decoded natively); frames match an independent decoder at spot checks |
-| Title screen | 🟢 Operational — the title screen, its option list and the New Game dialogues render and respond to scripted input (the user confirms the pictures) |
-| Demo fight (no input) | 🟢 Operational — two CPU-vs-CPU demo fights render in 3D on the GPU renderer and play to their end (the user confirmed the frames; not compared with the original by capture); their sound has not been listened to; a hang in the demo's first frame that depended on random values (generated `VCLIP` flags) was fixed on 2026-10-18 |
-| Menus | 🟢 Operational — main menu (all nine entries scroll), Dueling menu, character selection and map selection render and respond to scripted input (the user confirms the pictures); only the path to a 1P-vs-COM duel has been entered |
-| Versus battle | 🟢 Operational — a 1P-vs-COM duel loads and runs with a controller or scripted input, with music and sound effects; frames confirmed by the user; GPU renderer; special moves and ultimates stopped the game at unmapped code, which is mapped now and waits for the user's test; not compared with the original by capture |
-| Audio | 🟢 Operational — volumes for the whole mix, music and effects in the launcher and the in-game menu; stream audio (movies, music) and sound effects, including looping and stopped ones, are mixed, written to a WAV file and played on the audio device (`--sound`), which holds the run at the game's speed; the user listened to a WAV of menus and a fight and confirmed it; stream level, channel order and timing match a PCSX2 recording for the boot movies; live sound not yet heard by the user, gaps expected in fights (slower than real time) |
-| Saves | 🔧 Incomplete — the user's 100% save on a memory card folder loads (confirmed by the user); writing saves is implemented and unit-tested, not yet tried in the game; a new empty card is made when none is chosen |
+| Memory card check | ✅ Verified — the no-card prompt matches the original; with a card folder the game reads the save (the user's play) |
+| Opening movie | 🟢 Operational — logo and opening films play with their sound, also after a skip; frames match an independent decoder at spot checks |
+| Title screen | 🟢 Operational — title, option list and New Game dialogues (the user confirmed the pictures) |
+| Demo fight (no input) | 🟢 Operational — the CPU-vs-CPU demo fights play and return to the title (the user confirmed the frames on 2026-10-13) |
+| Menus | 🟢 Operational — all ten main-menu screens open without input; Dueling, character and stage selection respond to input (the user confirmed the pictures) |
+| Versus battle | 🟢 Operational — 1P-vs-COM with a controller; CPU-vs-CPU without input for characters 0 to 129 and all 16 stages (sampled, see VALIDATION.md); music and effects |
+| Story mode | 🔧 Incomplete — episodes start without input and load their 3D maps; their battles start from the episode script, not reached yet |
+| Audio | 🟢 Operational — streams and sound effects mixed, to a WAV file or the audio device; volumes in the launcher and the in-game menu; the user confirmed a WAV of menus and a fight |
+| Saves | 🔧 Incomplete — the user's 100% save loads (confirmed by the user); writing saves is unit-tested, not tried in the game |
 
-**Measured 2026-10-13:** runtime coverage **2,007 EE functions entered / 1,998 completed** in the verified run (4,936 / 4,927 in the long run through a battle) · static coverage **11,139 EE functions mapped and generated** (2026-10-18; nothing the programs name or build is left outside a function or label) · verification **18/18 tests, 42 of 46 original comparisons passing** at this checkpoint.
+**Coverage:** **11,139 EE functions mapped and compiled** plus 494 in the `DBZP.BIN` overlay (nothing the programs name lies outside a function) · **2,007 entered / 1,998 completed** in the gate's verified run (2026-10-13) · verification: the gate passes; 42 of 46 original comparisons pass.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
