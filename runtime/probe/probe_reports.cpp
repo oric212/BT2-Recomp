@@ -36,6 +36,11 @@ std::string interpreterReport(const EeRuntime& runtime) {
             +",\"instructions\":"+std::to_string(record.instructions)+",\"first_word\":"+std::to_string(record.first_word)+"}";
         first=false;
     }
+    // The system call numbers the game installed its own handlers for (SetSyscall), which the runtime runs.
+    out+="],\"installed_syscalls\":[";
+    first=true;
+    for(std::size_t number=0;number<runtime.syscall_handlers.size();++number)
+        if(runtime.syscall_handlers[number]){out+=std::string(first?"":",")+std::to_string(number);first=false;}
     return out+"]";
 }
 

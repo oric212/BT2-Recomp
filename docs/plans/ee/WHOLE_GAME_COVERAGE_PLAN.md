@@ -97,6 +97,21 @@ Planned 2026-10-18.
 - **Closure check:** `map_gaps.py --check` reports nothing left in either program and is a gate step.
 - **Checked:** unit tests (Python: entry labels, bindings, the new scans, the system call stub; C++: interior registration and dispatch, overlay check); the scripted fight gives the baseline hash `5a4960667d4a3dff` with 3,732 functions entered and 0 interior dispatches; with and without interior entries (`BT2_NO_INTERIOR_ENTRIES`) its state hash agrees on all 6,534 fields; the gate passed.
 
+### Step 4 done (2026-10-18): the work list for step 5
+
+`python tools/ps2recomp/runtime_census.py` reads the mapped code of all programs and the runtime's sources (per-site lists in ignored `work/bt2-generation/runtime-census.json`). Measured on the map of 2026-10-18:
+
+- **System calls:** 144 numbers have a SYSCALL site; 75 of them are library stubs nothing in the code refers to. Of the 69 the code reaches, 41 are handled by the runtime without a gate, 4 are the game's own numbers it installs with `SetSyscall` (0x56, 0x5A, 0x5B, 0x83; the runtime runs installed handlers for any number, and the report now lists them as `installed_syscalls`: 14 in the scripted fight), 5 are handled only under a gate (`GsGetIMR`, `SetVSyncFlag`, `SifSetDChain` and its interrupt form, `Deci2Call`), and 19 are not named at all:
+  - threads: `ExitThread`, `ExitDeleteThread` (7 references), `DeleteThread`, `TerminateThread`, `RotateThreadReadyQueue`, `iSuspendThread`;
+  - interrupt-context forms: `_iEnableIntc`, `_iDisableIntc`, `_iEnableDmac`, `_iDisableDmac`;
+  - exception handlers: `SetVTLBRefillHandler`, `SetVCommonHandler` (the kernel-mode handlers of step 1; the port has no CPU exceptions to deliver to them);
+  - leaving the game: `Exit`, `LoadExecPS2`, `ExecPS2` (a checked stop by name is the right answer);
+  - `GetMemorySize`, and the numbers 0x7B, 0x80 and 0x82 (one reference each; not installed in the recorded run).
+- **Hardware registers:** 85 addresses in 24 blocks are loaded, stored or built as pointers; the runtime names 80 of them without a gate and 5 only under gates (one GIF, two VIF1 and two DMAC registers). This is a lenient measure: an address counts as named when one condition names it without a gate, although other paths to it may be gated.
+- **The runtime's gated conditions:** 163 lines compare the guest pc, a branch source or target, a startup phase, a call count or the stack offset: 77 in `ps2_runtime_syscalls.cpp`, 66 in `ps2_runtime_memory.cpp`, 7 in `ee_runtime.h`, 5 in `ps2_runtime_dispatch.cpp`, 4 in `ee_sound_dispatch.cpp`, 4 in services and VU0 support. These are the special cases step 5 turns into general handling.
+- **VU1:** all 1,946 instruction pairs of `.vutext` use instructions the VU1 model implements.
+- **Not covered statically:** SIF RPC requests (their function numbers are mostly built at run time), VIF codes and GS packets; the coverage files of step 6 report what the runtime refuses.
+
 ### Step 3 done (2026-10-18)
 
 - **Handlers from the recompiler:** instead of a second, hand-written meaning of every instruction, `tools/ps2recomp/generate_interpreter.py` takes every distinct instruction word of the mapped code that is not a branch or jump (82,667 words: 203 instruction forms appear in the game, among them about 60 VU0 macro forms and 25 MMI forms), lays them out as a synthetic program of one-instruction functions, generates it with the pinned recompiler and the same preparation as the game's functions (`prepare_runtime.prepare_text`, refactored out of `prepare_runtime.main` without changing its output), and turns each body into a handler taking the program counter (41 units, local and ignored). The VU0 flag reports `route_cop2_condition` inserts between a status flag write and read are carried as handler flags and applied in execution order.
