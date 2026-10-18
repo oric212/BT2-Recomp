@@ -65,7 +65,8 @@ set(BT2_EE_HOT_SOURCES
     runtime/vu/vu1_triangle_strip_program.cpp
     runtime/vu/vu1_triangle_clipper.cpp
     runtime/vu/vif1.cpp
-    runtime/ee/ee_gs_readback.cpp)
+    runtime/ee/ee_gs_readback.cpp
+    runtime/ee/state_hash.cpp)
 
 # Native translations of VU1 microprograms, when tools/vu1/translate_programs.py has generated them
 # (local, ignored); otherwise every program is interpreted. Tests always interpret.

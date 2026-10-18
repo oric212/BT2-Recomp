@@ -1,5 +1,8 @@
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
+#include "ee/state_hash.h"
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <algorithm>
@@ -250,6 +253,54 @@ int main() {
     }
 
     try {
+        {
+            // State hash: equal state gives equal field hashes, one changed byte changes the field's hash;
+            // the page hashes are written at the requested field.
+            std::vector<std::uint8_t> ram(3*StateHashLog::page_size+100,7);
+            const auto path=(std::filesystem::temp_directory_path()/"bt2-state-hash-test.txt").string();
+            std::uint64_t first,second,changed;
+            {
+                StateHashLog log(path,3);
+                const StateHashLog::Region regions[]={{"ee",ram}};
+                first=log.field(2,0,regions);second=log.field(2,0,regions);
+                ram[StateHashLog::page_size+5]^=1;changed=log.field(3,0,regions);
+            }
+            require(first==second && first!=changed);
+            std::string region,page,digest;unsigned lines=0;
+            {std::ifstream pages(path+".pages");while(pages>>region>>page>>digest)++lines;}
+            require(lines==4 && region=="ee" && page=="3");
+            require(StateHashLog::hashBytes(ram,0)!=StateHashLog::hashBytes(ram,1));
+            std::filesystem::remove(path);std::filesystem::remove(path+".pages");
+        }
+        {
+            // Interior entries: the function holding the label runs with the pc at the label, and the
+            // function counts as entered. Overlay entries are checked against their owner's bytes.
+            EeRuntime runtime;runtime.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
+            auto* ram=runtime.memory().data();R5900Context ctx{};
+            static std::uint32_t entered_at;entered_at=0;
+            const auto record=[](std::uint8_t* r,R5900Context* c,PS2Runtime* g){entered_at=c->pc;return_leaf(r,c,g);};
+            reject([&]{runtime.registerInteriorEntry(0x308,record,0x300);}); // No owner yet.
+            runtime.registerFunction(0x300,record);
+            reject([&]{runtime.registerInteriorEntry(0x300,record,0x300);});
+            reject([&]{runtime.registerInteriorEntry(0x2FC,record,0x300);});
+            reject([&]{runtime.registerInteriorEntry(0x30A,record,0x300);});
+            reject([&]{runtime.registerInteriorEntry(0x308,return_leaf,0x300);}); // Another function than the owner's.
+            runtime.registerInteriorEntry(0x308,record,0x300);
+            reject([&]{runtime.registerInteriorEntry(0x308,record,0x300);});
+            ctx.r[31].low=0x204;
+            runtime.dispatchGuestBranch(ram,&ctx,0x308,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"interior");
+            require(entered_at==0x308 && ctx.pc==0x204 && runtime.interior_entry_dispatches==1);
+            require(runtime.entered_functions.contains(0x300) && !runtime.entered_functions.contains(0x308));
+            reject([&]{runtime.dispatchGuestBranch(ram,&ctx,0x30C,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"no label");});
+
+            const std::uint8_t code[8]={0x08,0x00,0xE0,0x03,0x00,0x00,0x00,0x00}; // Synthetic JR RA / NOP.
+            runtime.registerOverlayFunction(0x400000,record,code);
+            runtime.registerInteriorEntry(0x400004,record,0x400000);
+            reject([&]{runtime.dispatchGuestBranch(ram,&ctx,0x400004,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"not loaded");});
+            std::copy(std::begin(code),std::end(code),ram+0x400000);
+            runtime.dispatchGuestBranch(ram,&ctx,0x400004,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"loaded");
+            require(entered_at==0x400004 && runtime.overlay_dispatch_validations==1 && runtime.entered_functions.contains(0x400000));
+        }
         {
             EeRuntime console;console.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             console.sound_rpc_calls=1;console.native_module_loads=14;

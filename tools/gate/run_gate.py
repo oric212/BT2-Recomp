@@ -1,5 +1,7 @@
 """Pre-commit gate: Debug and Release builds, CTest, Python suites, the Debug probe runs with the original
-comparisons, and the Release battle run (battle_run.py: the scripted fight against its recorded baseline).
+comparisons, the Release battle run (battle_run.py: the scripted fight against its recorded baseline) and
+the map closure check (map_gaps.py --check: nothing the programs name or build is left without a function
+or label).
 
 Independent steps run concurrently (each probe run writes its own report), so the gate takes about as
 long as its longest probe run plus the build. Exit status is non-zero when any step fails.
@@ -51,6 +53,8 @@ def main():
            ('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe+['--gs','cpu'],env)]
     steps+=[(f'probe: phase {ph}',probe+['--report',str(WORK/f'phase-{ph}/entry-stop.json')],dict(env,BT2_PHASE_STOP=ph)) for ph in PHASES]
     steps.append(('battle run (Release)',[sys.executable,str(ROOT/'tools/gate/battle_run.py'),'--disc',str(disc)],env))
+    # The map holds everything the programs name or build, and every address inside a function has a label.
+    steps.append(('map closure',[sys.executable,str(ROOT/'tools/ps2recomp/map_gaps.py'),'--check'],env))
     steps+=[(f'python: {s}',[sys.executable,'-m','unittest','discover','-s',f'tools/{s}'],env) for s in SUITES]
     with ThreadPoolExecutor(a.jobs) as pool:
         report(pool.map(lambda s:run(*s),steps))

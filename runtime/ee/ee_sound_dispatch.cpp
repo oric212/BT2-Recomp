@@ -159,6 +159,7 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     constexpr std::uint32_t cause=2;
     if(in_interrupt_ || current_thread_id!=1 || startup_scheduler_active || !(intc_mask&(1u<<cause)))
         throw UnsupportedSyscall(0x14,interrupted->pc);
+    if(on_field_end)on_field_end(); // The state at the end of the field that ends here.
     // The field that ends here shows what the game set up: a field with display register writes but
     // no library flip (the per-field update used while a movie plays) presents now.
     const bool unflipped_update=gs_display_flips && gs_display_flips==field_flips_ && gs_display_writes!=field_writes_;

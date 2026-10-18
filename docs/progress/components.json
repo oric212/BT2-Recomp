@@ -115,7 +115,7 @@
         {
           "name": "Code generation",
           "status": "verified",
-          "note": "11,122 + 494 functions"
+          "note": "11,139 + 494 functions, closed"
         },
         {
           "name": "Tests",

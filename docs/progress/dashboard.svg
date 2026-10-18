@@ -127,12 +127,12 @@
 <circle cx="661" cy="292" r="3.5" fill="#2b78b8"/>
 <text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
 <text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, pause menu, cards</text></g>
-<g><title>Code generation: Verified. 11,122 + 494 functions</title>
+<g><title>Code generation: Verified. 11,139 + 494 functions, closed</title>
 <rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="661" cy="354" r="3.5" fill="#16835d"/>
 <text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
-<text x="657" y="376" font-size="11.5" fill="#64748b">11,122 + 494 functions</text></g>
+<text x="657" y="376" font-size="11.5" fill="#64748b">11,139 + 494 functions, closed</text></g>
 <g><title>Tests: Verified. 21/21 CTests; Python suites pass</title>
 <rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>

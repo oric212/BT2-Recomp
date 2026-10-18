@@ -1,7 +1,8 @@
 """Link an actually reached, exactly mapped generated entry without renaming it.
 
 Selection, CMake fragment and generated bindings remain under ignored work/.
-This does not implement runtime APIs or permit unmapped/interior targets.
+Interior entries (the labels of a generated function's entry switch) are registered with the function
+that holds them. This does not implement runtime APIs or permit unmapped targets.
 """
 import argparse
 import collections
@@ -13,10 +14,29 @@ from run_pipeline import ROOT, verify_generated
 import overlay_programs
 
 FOLDER = ROOT / 'work/bt2-generation'
+GENERATED = ROOT / 'game/generated/bt2'
 OVERLAY_RECEIPT, OVERLAY_CMAKE, OVERLAY_HEADER = (FOLDER / name for name in ('overlays.json', 'overlays.cmake', 'bt2_overlays.h'))
 
 
-def render(addresses):
+ENTRY_SWITCH = re.compile(r'switch \(ctx->pc\) \{(.*?)default: break;', re.S)
+
+
+def entry_labels(source, start):
+    """Interior entries of a generated function: the labels of the switch on ctx->pc at its top
+    (resume points after calls, targets the generator found from elsewhere, entry hints). The
+    generated function resumes there when called with that pc."""
+    found = ENTRY_SWITCH.search(source)
+    labels = sorted(int(a, 16) for a in re.findall(r'case 0x([0-9a-fA-F]+)u: goto label_', found.group(1))) if found else []
+    return [label for label in labels if label != start]
+
+
+def interior_entries(folder, starts):
+    """(label, owner) for every interior entry of the generated functions at `starts`."""
+    return [(label, start) for start in starts
+            for label in entry_labels((folder / f'FUN_{start:08X}_0x{start:x}.cpp').read_text(encoding='utf-8'), start)]
+
+
+def render(addresses, interior=()):
     names = [f'FUN_{address:08X}_0x{address:x}' for address in addresses]
     cmake = 'target_sources(bt2-entry-probe PRIVATE\n' + ''.join(
         f'    "${{BT2_GENERATED_DIR}}/../bt2-runtime/{name}.cpp"\n' for name in names) + ')\n'
@@ -29,8 +49,12 @@ def render(addresses):
         '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function;} entries[] = {\n' + ''.join(
         f'        {{0x{address:08X}, {name}}},\n'
         for address, name in zip(addresses, names)) + '    };\n' \
-        '    for (const auto& entry : entries) runtime.registerFunction(entry.address, entry.function);\n}\n'
-    return cmake, header
+        '    for (const auto& entry : entries) runtime.registerFunction(entry.address, entry.function);\n'
+    if interior:
+        header += '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function; std::uint32_t owner;} interior[] = {\n' + ''.join(
+            f'        {{0x{label:08X}, FUN_{owner:08X}_0x{owner:x}, 0x{owner:08X}}},\n' for label, owner in interior) + '    };\n' \
+            '    for (const auto& entry : interior) runtime.registerInteriorEntry(entry.address, entry.function, entry.owner);\n'
+    return cmake, header + '}\n'
 
 
 def verify_extra():
@@ -44,19 +68,28 @@ def verify_extra():
     addresses = receipt['addresses']
     if len(addresses) != len(set(addresses)) or receipt['map_sha256'] != manifest['map_sha256']:
         raise ValueError('Extra startup selection/map differs.')
-    cmake, header = render(addresses)
-    if ((FOLDER / 'extra-startup.cmake').read_text(encoding='utf-8') != cmake
-            or (FOLDER / 'bt2_extra_startup.h').read_text(encoding='utf-8') != header):
-        raise ValueError('Extra startup binding fragment differs.')
     for address in addresses:
         name = f'FUN_{address:08X}_0x{address:x}.cpp'
         if receipt['files'].get(name) != manifest['files'].get(name):
             raise ValueError('Extra startup raw source provenance differs.')
+    # The fragments are derived from the verified receipt and sources (interior labels change with the
+    # sources): rewritten when they differ.
+    cmake, header = render(addresses, interior_entries(GENERATED, addresses))
+    if ((FOLDER / 'extra-startup.cmake').read_text(encoding='utf-8') != cmake
+            or (FOLDER / 'bt2_extra_startup.h').read_text(encoding='utf-8') != header):
+        (FOLDER / 'extra-startup.cmake').write_text(cmake, encoding='utf-8')
+        (FOLDER / 'bt2_extra_startup.h').write_text(header, encoding='utf-8')
+        print('Extra startup binding fragment rewritten from the verified receipt.')
     return addresses
 
 
-def render_overlays(selection):
-    """Overlay bindings: each selected function is registered with the bytes it was generated from."""
+def render_overlays(selection, interior=None):
+    """Overlay bindings: each selected function is registered with the bytes it was generated from,
+    then its interior entries (`interior`: program -> [(label, owner)], read from the generated
+    sources when not given), which are checked against the bytes of their owner."""
+    if interior is None:
+        interior = {program: interior_entries(overlay_programs.paths(program)['output'], [row['start'] for row in functions])
+                    for program, functions in selection.items()}
     cmake = 'target_sources(bt2-entry-probe PRIVATE\n'
     declarations, tables, registrations = [], [], []
     for program, functions in sorted(selection.items()):
@@ -72,6 +105,8 @@ def render_overlays(selection):
             body = ','.join(map(str, image[start - base:end - base]))
             tables.append(f'inline constexpr std::uint8_t bt2_overlay_{start:08X}[] = {{{body}}};\n')
             registrations.append(f'    runtime.registerOverlayFunction(0x{start:08X}, {name}, bt2_overlay_{start:08X});\n')
+        registrations += [f'    runtime.registerInteriorEntry(0x{label:08X}, FUN_{owner:08X}_0x{owner:x}, 0x{owner:08X});\n'
+                          for label, owner in interior.get(program, ())]
     header = ('#pragma once\n#include <cstdint>\n' + ''.join(declarations) + ''.join(tables)
               + 'inline void registerOverlays(EeRuntime& runtime) {\n' + ''.join(registrations) + '}\n')
     return cmake + ')\n', header
@@ -100,9 +135,12 @@ def verify_overlays():
             if rows.get(row['start']) != row['end'] or entry['files'].get(name) != manifest['files'].get(name):
                 raise ValueError('Overlay raw source/map provenance differs.')
         selection[program] = entry['functions']
+    # The fragments are derived from the verified receipt and sources (interior labels change with the
+    # sources): rewritten when they differ.
     cmake, header = render_overlays(selection)
     if OVERLAY_CMAKE.read_text(encoding='utf-8') != cmake or OVERLAY_HEADER.read_text(encoding='utf-8') != header:
-        raise ValueError('Overlay binding fragment differs.')
+        OVERLAY_CMAKE.write_text(cmake, encoding='utf-8'); OVERLAY_HEADER.write_text(header, encoding='utf-8')
+        print('Overlay binding fragment rewritten from the verified receipt.')
     return selection
 
 
@@ -235,7 +273,7 @@ def main():
     manifest = json.loads((FOLDER / 'generation.manifest.json').read_text(encoding='utf-8'))
     files = {f'FUN_{address:08X}_0x{address:x}.cpp':
              manifest['files'][f'FUN_{address:08X}_0x{address:x}.cpp'] for address in addresses}
-    cmake, header = render(addresses)
+    cmake, header = render(addresses, interior_entries(GENERATED, addresses))
     (FOLDER / 'extra-startup.cmake').write_text(cmake, encoding='utf-8')
     (FOLDER / 'bt2_extra_startup.h').write_text(header, encoding='utf-8')
     (FOLDER / 'extra-startup.json').write_text(json.dumps({

@@ -1,5 +1,5 @@
 import unittest
-from expand_startup import select_target, render, neighbours, remaining_overlay
+from expand_startup import select_target, render, neighbours, remaining_overlay, entry_labels
 
 
 class StartupExpansionTests(unittest.TestCase):
@@ -34,3 +34,17 @@ class StartupExpansionTests(unittest.TestCase):
         self.assertLess(header.index('{0x00001000, FUN_00001000_0x1000},'), header.index('{0x00002000, FUN_00002000_0x2000},'))
         self.assertIn('runtime.registerFunction(entry.address, entry.function);', header)
         self.assertNotIn('game_data', cmake)
+
+    def test_interior_entries_are_the_entry_switch_labels(self):
+        source = ('void FUN_00001000_0x1000(uint8_t* rdram, R5900Context* ctx, PS2Runtime *runtime) {\n'
+                  '    switch (ctx->pc) {\n        case 0x1000u: goto label_1000;\n        case 0x1010u: goto label_1010;\n'
+                  '        case 0x1008u: goto label_1008;\n        default: break;\n    }\n'
+                  '    switch (jumpTarget) {\n            case 0x1040u: goto label_1040;\n            default: break;\n    }\n')
+        self.assertEqual(entry_labels(source, 0x1000), [0x1008, 0x1010])
+        self.assertEqual(entry_labels('void f() {\n    ctx->pc = 0x1000u;\n}\n', 0x1000), [])
+        cmake, header = render([0x1000], [(0x1008, 0x1000)])
+        # Interior entries are registered after every function, with their owner.
+        self.assertIn('{0x00001008, FUN_00001000_0x1000, 0x00001000},', header)
+        self.assertLess(header.index('registerFunction'), header.index('registerInteriorEntry'))
+        self.assertTrue(header.endswith('}\n'))
+        self.assertNotIn('registerInteriorEntry', render([0x1000])[1])

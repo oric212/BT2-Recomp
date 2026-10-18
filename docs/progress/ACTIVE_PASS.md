@@ -1,8 +1,8 @@
 # Resume handoff
 
-Updated: 2026-10-18. **No pass in progress.** Next pass: step 1 of the [whole-game coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md) (close the map statically), set by the user on 2026-10-18 ahead of performance; the user accepted an EE interpreter as a logged bridge and a tool-only starter of game states.
+Updated: 2026-10-18. **No pass in progress.** Steps 1 (the map closed statically, interior entries registered) and 2 (state hash per field) of the [whole-game coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md) are done and committed. Next: step 3, the EE interpreter as a logged bridge (the user accepted it on 2026-10-18; what it runs is compiled at the next build, and code that costs time is made native). Then step 4 (what the game's code asks of the runtime; it already lists system calls 13 and 14, `SetVTLBRefillHandler` and `SetVCommonHandler`, which the runtime does not handle).
 
-The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (11,122, plus the 494 of the `DBZP.BIN` overlay) is generated and compiled. History of how this state was reached: [2026-10.md](2026-10.md).
+The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (11,139, plus the 494 of the `DBZP.BIN` overlay) is generated and compiled, with its interior entries registered. History of how this state was reached: [2026-10.md](2026-10.md).
 
 ## Where the work stands
 
@@ -23,7 +23,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 
 - **"Mono sound happens sometimes"** (the user; they want stereo only). Not reproduced: the music is as wide in stereo with the user's save as without, the port's mix has no mono mode (SOUNDS request `0x60`, value 1 with the save, is recorded and not acted on), and no one-channel stream occurs (`audio_single_stream_bytes` is 0; the port would play one on the left only). Ask where and when it happens, and whether it is the music or the effects, before changing anything.
 - **Performance, next step:** the GPU renderer's intake of packets is the largest graphics cost (3.7 s of the 14.7 s scripted fight, `BT2_PROFILE_TOTALS=1`). It is the library's own work; the step is a graphics thread, which needs its plan first ([performance plan](../plans/ee/PERFORMANCE_PLAN.md)). The fight's frame rate in the window with sound has not been measured since the VU1 work.
-- **Unmapped code:** `map_gaps.py` reports nothing uncovered in the main program (11,122 functions) or the overlay (494): every call, jump and data pointer target is a function. A stop at an unmapped function can now only come from a pointer computed at run time; `work\scripts\discover.cmd` (`discovery_loop.py --player-stop`) then maps that target and everything it leads to in one go. After a change to the map rules run `python tools/ps2recomp/discovery_loop.py --map-all`.
+- **Unmapped code:** `map_gaps.py --check` (a gate step) reports nothing uncovered in the main program (11,139 functions) or the overlay (494): every call, jump, data pointer and built address is a function or a label, and every label is a dispatch entry. A stop at an unmapped function can now only come from a pointer computed at run time; `work\scripts\discover.cmd` (`discovery_loop.py --player-stop`) then maps that target and everything it leads to in one go. After a change to the map rules run `python tools/ps2recomp/discovery_loop.py --map-all`.
 - **Not compared with the original:** the memory card replies, GS readback buffers, a 3D frame, VU1 memory (the deferred 3D verification).
 
 ## How the user runs things
@@ -46,6 +46,7 @@ The user plays the game with `bt2-game.exe` / `bt2-launcher.exe` and reports; ga
 - **Scripted fight:** `run_startup_probe.py --config Release --frames 5100 --pad-script "<contents of work/bt2-generation/pad-fight.txt>"`. The pad scripts are local and ignored. Scripts count fields; snapshots count flips and print `Snapshot: flip N at field M`.
 - **With a memory card:** `BT2_CARD_FOLDER=<folder>`; the default pad script answers the no-card dialogue, which does not appear then.
 - **Frames:** `BT2_GPU_GS_SNAPSHOT="<flip>:<path>;<flip>:<path>"` writes those flips as PPM. **Audio:** `BT2_AUDIO_WAV=<absolute path>`.
+- **Did a change alter what the game sees:** run both builds with `BT2_STATE_HASH=<file>` and compare with `tools/ps2recomp/compare_state_hash.py` (first differing field; `BT2_STATE_HASH_PAGES=<field>` for the pages).
 - **Following a value:** `BT2_EE_CALL_TRACE`, `BT2_EE_WATCH_QUADWORD`; **a hang:** `BT2_STALL_FIELDS=120`; all in [TOOLS.md](../guides/TOOLS.md).
 - **Build times:** a runtime header (`ee_runtime.h`) about 16 s, one file about 12 s, everything about 6 minutes (only after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`). **Gate:** `python tools/gate/run_gate.py --disc <iso>` (about 75 s plus the builds; it includes the 30 s battle run).
 

@@ -17,6 +17,11 @@ import overlay_programs
 ROOT=Path(__file__).resolve().parents[2]
 FOLDER=ROOT/'work/bt2-generation'
 STEPS={'prepare_map.py':'rebuilding the map','generate_game.py':'regenerating C++','expand_startup.py':'binding new entries','prepare_runtime.py':'preparing sources','msvc.py':'building the Release probe','run_startup_probe.py':'running the game (Release)','inspect_blocker.py':'classifying the stop','analyze_game.py':'Ghidra discovery'}
+def labels_of(path):
+    """The entry labels of a generated source (expand_startup.entry_labels), start included."""
+    from expand_startup import ENTRY_SWITCH
+    found=ENTRY_SWITCH.search(path.read_text(encoding='utf-8'))
+    return set(re.findall(r'case 0x([0-9a-fA-F]+)u: goto label_',found.group(1))) if found else set()
 DIRECT_CALL=re.compile(r'FUN_[0-9A-F]{8}_0x[0-9a-f]+\(rdram, ctx, runtime\); return;')
 
 def unexpected_change(old,new):
@@ -105,6 +110,11 @@ class Loop:
             # Functions the map split: their sources end earlier now.
             new=self.extents(program);resized={f'FUN_{a:08X}_0x{a:x}.cpp' for a,end in old[program].items() if new.get(a,end)!=end}
             if resized:self.say('split functions:',' '.join(sorted(resized))[:300])
+            # Functions whose entry labels changed (entry hints, new resume points): their source differs on purpose.
+            if previous:
+                relabelled={n for n,h in receipt['files'].items() if manifest['files'].get(n)!=h and n not in resized and (previous/n).exists() and (output/n).exists()
+                            and labels_of(previous/n)!=labels_of(output/n)}
+                if relabelled:self.say('functions with new entry labels:',len(relabelled));resized|=relabelled
             try:changed=refresh_receipt(receipt,manifest,lines(previous) if previous else None,lines(output),resized)
             except ValueError as e:raise SystemExit(str(e))
             if changed:self.say('tail jumps now direct in',changed)

@@ -95,12 +95,18 @@ def main():
                 raise ValueError("Unexpected generated-output location.")
             output.rename(folder / f"previous-output-{uuid.uuid4().hex}")
         output.mkdir(parents=True)
+        # Entry hints (map_gaps.py): addresses inside functions the generator makes labels of.
+        hints_path = folder / "entry-hints.json"
+        hints = sorted(json.loads(hints_path.read_text(encoding="utf-8"))) if hints_path.exists() else []
+        if any(not isinstance(h, int) or h % 4 or h <= 0 for h in hints):
+            raise ValueError("Entry hints must be aligned addresses.")
         config = folder / "config.toml"
         config.write_text(
             '[general]\n' + '\n'.join(f'{key} = {json.dumps(path.resolve().as_posix())}' for key, path in (
                 ("input", args.executable), ("ghidra_output", function_map), ("output", output))) +
             '\nsingle_file_output = false\nlow_memory_mode = true\noutput_worker_threads = 1\n'
-            'patch_syscalls = false\npatch_cop0 = false\npatch_cache = false\nstubs = []\nskip = []\n', encoding="utf-8")
+            'patch_syscalls = false\npatch_cop0 = false\npatch_cache = false\nstubs = []\nskip = []\n'
+            'entry_points = [' + ', '.join(f'"0x{h:08X}"' for h in hints) + ']\n', encoding="utf-8")
         log = folder / "generation.log"
         with log.open("w", encoding="utf-8") as stream:
             subprocess.run([str(tool), str(config)], cwd=folder, check=True, stdout=stream, stderr=subprocess.STDOUT)
@@ -113,6 +119,7 @@ def main():
             "map_sha256": hashlib.sha256(function_map.read_bytes()).hexdigest(),
             "lock_sha256": provenance["lock_sha256"],
             "recompiler_sha256": provenance["recompiler_sha256"], "map_kind": "provisional" if args.candidate_map else "reviewed",
+            "entry_hints": len(hints),
             "files": files}, indent=2) + "\n", encoding="utf-8")
         print(f"Generated {len(files)} local C++/header files. Log: {log}. Compile/execution is a separate stage.")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

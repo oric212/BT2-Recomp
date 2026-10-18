@@ -82,6 +82,7 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
     report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
         << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
         << ",\"resume_pc\":" << stop_resume << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
+        << ",\"interior_entry_dispatches\":" << runtime.interior_entry_dispatches
         << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"frame_budget_reached\":" << (runtime.frame_budget_reached?1:0) << ",\"timer1_counting\":" << (runtime.timer1.counting()?1:0) << ",\"timer1_mode\":" << runtime.timer1.mode() << ",\"timer1_polls\":" << runtime.timer1_polls
         << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_chain_starts\":" << runtime.frame_gif.chain_starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
         << ",\"vif1_unpacks\":" << runtime.vif1.unpacks << ",\"vif1_programs\":" << runtime.vif1.programs << ",\"vu1_runs\":" << runtime.vif1.vu.runs
@@ -359,6 +360,7 @@ void writeEntryReport(EeRuntime& runtime,R5900Context& context,const ProbeModes&
            << ",\"startup_zero_verified\":" << (runtime.startup_zero_verified ? "true" : "false")
            << ",\"kernel_dispatch_validations\":" << runtime.kernel_dispatch_validations
            << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
+           << ",\"interior_entry_dispatches\":" << runtime.interior_entry_dispatches
            << ",\"sif_dma_submissions\":" << runtime.sif_dma_submissions << ",\"sif_rpc_reads\":" << runtime.sif_rpc_reads
            << ",\"uncached_word_accesses\":" << runtime.uncached_word_accesses << ",\"uncached_byte_accesses\":" << runtime.uncached_byte_accesses
            << ",\"sif_command_reads\":" << runtime.sif_command_reads << ",\"data_cache_lines\":" << runtime.data_cache_lines

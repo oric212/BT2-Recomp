@@ -49,13 +49,15 @@ class OverlayBindingTests(unittest.TestCase):
         image = bytes(range(64))
         with mock.patch.dict(PROGRAMS, {'test': {'base': 0x400000, 'size': 64}}), \
                 mock.patch.object(overlay_programs, 'load', return_value=(image, b'')):
-            cmake, header = expand_startup.render_overlays({'test': [{'start': 0x400008, 'end': 0x400010}]})
+            cmake, header = expand_startup.render_overlays({'test': [{'start': 0x400008, 'end': 0x400010}]}, {'test': [(0x40000C, 0x400008)]})
             self.assertIn('test-runtime/FUN_00400008_0x400008.cpp', cmake)
             self.assertIn('bt2_overlay_00400008[] = {8,9,10,11,12,13,14,15};', header)
             self.assertIn('runtime.registerOverlayFunction(0x00400008, FUN_00400008_0x400008, bt2_overlay_00400008);', header)
+            self.assertIn('runtime.registerInteriorEntry(0x0040000C, FUN_00400008_0x400008, 0x00400008);', header)
+            self.assertLess(header.index('registerOverlayFunction'), header.index('registerInteriorEntry'))
             for start, end in ((0x3FFFFC, 0x400008), (0x400038, 0x400044), (0x400010, 0x400010)):
                 with self.assertRaises(ValueError):
-                    expand_startup.render_overlays({'test': [{'start': start, 'end': end}]})
+                    expand_startup.render_overlays({'test': [{'start': start, 'end': end}]}, {})
 
 
 if __name__ == '__main__':

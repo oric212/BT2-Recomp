@@ -158,6 +158,16 @@ public:
         overlay_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected.begin(), expected.end()));
     }
 
+    // An entry inside a registered function: a label of its generated entry switch, so the function
+    // resumes there when called with that pc (WHOLE_GAME_COVERAGE_PLAN.md, step 1). Overlay entries
+    // are checked against the bytes of the function that holds them.
+    void registerInteriorEntry(std::uint32_t address, RecompiledFunction function, std::uint32_t owner) {
+        const auto found = functions_.find(owner);
+        if (address <= owner || address % 4 || found == functions_.end() || found->second != function
+                || functions_.contains(address) || !interior_entries_.emplace(address, InteriorEntry{function, owner}).second)
+            throw std::runtime_error("Invalid or duplicate interior entry registration");
+    }
+
     void registerKernelFunction(std::uint32_t address, RecompiledFunction function,
                                 std::span<const std::uint8_t> expected_payload);
 
@@ -495,6 +505,7 @@ public:
     std::uint32_t lastCallTarget() const {return last_branch_target_;}
     unsigned flipless_field_limit=3600; // Fields without a display flip before the run stops (probe: BT2_STALL_FIELDS).
     std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
+    std::function<void()> on_field_end; // At each VBLANK, before anything of the next field runs (state hash); never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
     std::function<void(unsigned field,std::uint16_t pressed)> on_pad_change; // Live input whose buttons changed, with the pad script's field number.
     unsigned graph_startup_phase=0;
@@ -751,6 +762,8 @@ public:
         return option==0x3839A0 || option==0x3839B8 || option==0x3839D0 || option==0x3839E8;
     }
     std::uint64_t overlay_dispatch_validations=0;
+    std::uint64_t interior_entry_dispatches=0; // Dispatches that entered a function at an interior entry.
+    bool interior_entries_disabled=false; // BT2_NO_INTERIOR_ENTRIES: dispatch knows function starts only (diagnostic comparison).
 private:
     void receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context);
     // An IOP->EE SIF command handler call: packet header at the EE command buffer (0x3A94C0),
@@ -885,6 +898,8 @@ private:
             throw UnsupportedGuestMemory(address, count);
     }
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
+    struct InteriorEntry {RecompiledFunction function; std::uint32_t owner;};
+    std::unordered_map<std::uint32_t, InteriorEntry> interior_entries_;
     std::vector<std::uint8_t> memory_, kernel_snapshot_, startup_kernel_payload_;
     std::vector<std::uint8_t> scratchpad_ = std::vector<std::uint8_t>(scratchpad_size);
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;

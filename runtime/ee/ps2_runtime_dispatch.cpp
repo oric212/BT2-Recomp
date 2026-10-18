@@ -82,8 +82,15 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
         // Other CP0 fields remain outside this bootstrap compatibility scope.
         context->cop0_status|=0x10001;sound_thread_checkpoint=true;
     }
-    if (found == functions_.end()) throw UnsupportedGuestBranch(target, source, resume);
-    verifyKernelBinding(target);
+    // The function to run and the function that counts as entered: an interior entry runs the function
+    // holding it, which resumes at the label the pc names.
+    RecompiledFunction function;
+    std::uint32_t counted = target;
+    if (found != functions_.end()) function = found->second;
+    else if (const auto entry = interior_entries_.find(target); entry != interior_entries_.end() && !interior_entries_disabled) {
+        function = entry->second.function; counted = entry->second.owner; ++interior_entry_dispatches;
+    } else throw UnsupportedGuestBranch(target, source, resume);
+    verifyKernelBinding(counted);
     if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
     struct DepthGuard {
         unsigned& depth;
@@ -92,23 +99,23 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
     } depth_guard(dispatch_depth_);
     if (phase_stop && target == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
     if (kind == GuestBranchKind::TailJump) {
-        noteEntered(target);
+        noteEntered(counted);
         context->pc = target;
-        found->second(rdram, context, this);
-        noteCompleted(target);
+        function(rdram, context, this);
+        noteCompleted(counted);
         return true;
     }
     if (!resume || (resume & 3)) throw std::runtime_error("Invalid guest return address");
-    noteEntered(target);
+    noteEntered(counted);
     call_returns_.push_back(resume);
     ++guest_calls;
     context->pc = target;
     try {
-        found->second(rdram, context, this);
+        function(rdram, context, this);
         if (context->pc != resume) throw std::runtime_error("Guest callee did not return to caller: target "+std::to_string(target)+" source "+std::to_string(source)+" resume "+std::to_string(resume)+" pc "+std::to_string(context->pc));
     } catch (...) { if (stop_returns.empty()) stop_returns = call_returns_; call_returns_.pop_back(); throw; }
     call_returns_.pop_back();
-    noteCompleted(target);
+    noteCompleted(counted);
     if (phase_stop && resume == phase_stop) {phase_stop = 0; throw UnsupportedGuestBranch(target, source, resume);}
     return true;
 }

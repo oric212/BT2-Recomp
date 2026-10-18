@@ -554,7 +554,8 @@ def add_entries(selected, entries, metadata, data, max_size=0x5000):
     An entry in unmapped code becomes a function from there to its end: instructions are followed in
     address order, conditional and unconditional branches must stay at or after the entry, and the
     function ends after the first completed transfer (JR RA or J with its delay slot) that no
-    earlier branch reaches beyond; it must end before the next function begins. An entry inside a
+    earlier branch reaches beyond; it must end before the next function begins, except a stub whose
+    last instruction before the next function is a SYSCALL (a call that does not return). An entry inside a
     selected function splits it there, provided the code before the entry is complete (a transfer
     and its delay slot, then at most three NOPs) and no branch crosses the entry in either
     direction. Anything else is left alone and reported. Returns (rows, notes): the map with the new
@@ -607,6 +608,11 @@ def add_entries(selected, entries, metadata, data, max_size=0x5000):
         limit = rows[index + 1]["start"] if index + 1 < len(rows) else None
         end, reach, at, failure = None, entry, entry, None
         while True:
+            if limit is not None and at >= limit and at > entry and (word(at - 4) or 0) & 0xFC00003F == 0x0C and reach <= at:
+                # A stub ending in a system call that does not return (a thread's exit): it ends where
+                # the next function begins; were the call to return, the generated function would end
+                # at its own end and dispatch would refuse the return.
+                end = at; break
             if (limit is not None and at >= limit) or at - entry >= max_size:
                 failure = "runs into the next function" if limit is not None and at >= limit else "too long"; break
             ins = word(at)

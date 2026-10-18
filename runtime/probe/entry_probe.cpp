@@ -16,6 +16,7 @@
 #include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
+#include "ee/state_hash.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -58,6 +59,20 @@ int main(int argc, char** argv) {
         }
         // BT2_STALL_FIELDS: fields without a display flip before the run stops (default 3600).
         if (const char* limit = std::getenv("BT2_STALL_FIELDS")) runtime.flipless_field_limit = static_cast<unsigned>(std::stoul(limit));
+        // BT2_STATE_HASH=<path>: a hash of the guest memories at the end of every field; with
+        // BT2_STATE_HASH_PAGES=<field> also each 4 KB page's hash at that field (compare_state_hash.py).
+        std::unique_ptr<StateHashLog> state_hash;
+        if (const char* path = std::getenv("BT2_STATE_HASH")) {
+            const char* pages = std::getenv("BT2_STATE_HASH_PAGES");
+            state_hash = std::make_unique<StateHashLog>(path, pages ? static_cast<unsigned>(std::stoul(pages)) : 0u);
+            runtime.on_field_end = [&runtime, &state_hash] {
+                const StateHashLog::Region regions[] = {{"ee", runtime.memory()}, {"sp", runtime.scratchpad()},
+                    {"vu0", runtime.vu0_memory_}, {"vu1data", runtime.vif1.vu.data}, {"vu1code", runtime.vif1.vu.program}};
+                state_hash->field(static_cast<unsigned>(runtime.vblank_deliveries + 1), static_cast<unsigned>(runtime.gs_display_flips), regions);
+            };
+        }
+        // BT2_NO_INTERIOR_ENTRIES: dispatch knows function starts only (compare with the default).
+        if (std::getenv("BT2_NO_INTERIOR_ENTRIES")) runtime.interior_entries_disabled = true;
         // BT2_AUDIO_WAV=<path>: the mixed audio of the run as a 48 kHz stereo WAV file.
         std::unique_ptr<WavWriter> wav;
         if (const char* path = std::getenv("BT2_AUDIO_WAV")) {

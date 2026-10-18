@@ -87,4 +87,16 @@ The result is the work list for step 5, in the role Tenkaichi3Decomp's list of l
 
 ## Progress
 
-None yet. Planned 2026-10-18.
+Planned 2026-10-18.
+
+### Step 1 done (2026-10-18)
+
+- **Entries inside functions were already labelled.** Each generated function begins with a switch on `ctx->pc` whose labels are the points it can be entered at: resume points after calls, targets the generator found from other functions, and every instruction of a function with an unresolved `jr`. 66,784 such labels in the main program, 8,389 in the overlay. The runtime registered only function starts, so none of them could be dispatched to. `expand_startup.py` now registers each label with the function that holds it (`EeRuntime::registerInteriorEntry`; overlay entries are checked against their owner's bytes); a dispatch there runs the owner, which resumes at the label, and the owner counts as entered. 66,244 entries in the main program and 8,388 in the overlay after the map changes below.
+- **Of the addresses inside functions that code builds or data holds,** all but 32 in the main program are labels or local switch targets; the 32 (most look like round constants such as `0x200000`) became entry hints (`entry-hints.json`, passed by `generate_game.py` as `entry_points`), and the generator made labels of them (21 functions changed).
+- **Unmapped code:** the 16 gaps with non-zero words held 17 routines nothing names (small getters and setters, a system call stub, two larger functions) and the thread exit stub at `0x100250`, which ends in a system call that does not return (`add_entries` takes such a stub up to the next function). The map grew from 11,122 to 11,139 functions. The exception handlers the game installs with system calls 13 and 14 (`0x33AC00`-`0x33AF58`) and the unreachable word after an `ERET` (`0x338B40`) are kernel-mode code, reported and not mapped; the runtime does not handle those two system calls yet (step 4).
+- **Closure check:** `map_gaps.py --check` reports nothing left in either program and is a gate step.
+- **Checked:** unit tests (Python: entry labels, bindings, the new scans, the system call stub; C++: interior registration and dispatch, overlay check); the scripted fight gives the baseline hash `5a4960667d4a3dff` with 3,732 functions entered and 0 interior dispatches; with and without interior entries (`BT2_NO_INTERIOR_ENTRIES`) its state hash agrees on all 6,534 fields; the gate passed.
+
+### Step 2 done (2026-10-18)
+
+`BT2_STATE_HASH=<file>` writes, at every VBlank, the hash of EE RAM, the scratchpad, VU0 data memory and VU1 data and program memory (per 4 KB page, then the field's hash of the page hashes); `BT2_STATE_HASH_PAGES=<field>` writes every page hash at that field. `tools/ps2recomp/compare_state_hash.py` names the first field at which two runs differ and the pages that differ there. Unit tests for the hash and the comparison. Its cost per field was not measured separately (both 5,100-frame runs of the comparison above wrote it).
