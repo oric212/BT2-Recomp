@@ -150,7 +150,7 @@ public:
             throw std::runtime_error("Invalid or duplicate guest registration");
     }
 
-    // Tool runs only (the battle starter, runtime/probe/battle_starter.cpp): a host function in place of
+    // Tool runs only (the game starter, runtime/probe/game_starter.cpp): a host function in place of
     // a registered one; returns the function it replaces.
     RecompiledFunction replaceFunction(std::uint32_t address, RecompiledFunction function) {
         const auto found = functions_.find(address);
@@ -526,6 +526,8 @@ public:
     void vif1FifoWrite(const ProbeGpr& value);
     void frameVif1Start(std::uint32_t value);void frameGifChainStart(std::uint32_t value);
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
+    // Main running the game's own code past the replayed startup checkpoints, outside an interrupt.
+    bool mainGameContext() const {return current_thread_id==1 && main_priority_admissions && !startup_scheduler_active && !in_interrupt_;}
     LogicalTimer1 timer1;unsigned timer1_frame_writes=0,timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
     // Diagnostic float watch (probe: BT2_EE_WATCH_FLOAT=<hex address>:<limit>): the run stops at the first

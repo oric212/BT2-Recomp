@@ -1,7 +1,7 @@
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
-#include "probe/battle_starter.h"
+#include "probe/game_starter.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -319,15 +319,19 @@ int main() {
             std::filesystem::remove(path);std::filesystem::remove(path+".pages");
         }
         {
-            // BT2_START_BATTLE's text and the replacement of a registered function (battle_starter.cpp).
+            // The game starter's switches and the replacement of a registered function (game_starter.cpp).
             const auto start=parseBattleStart("4:1,70,22");
             require(start.character[0]==4 && start.variant[0]==1 && start.character[1]==70 && start.variant[1]==0
-                && start.map==22 && start.music==1);
+                && start.stage==22 && start.music==9);
             require(parseBattleStart("0,0,9,3").music==3);
             reject([]{parseBattleStart("4,70");});
             reject([]{parseBattleStart("4:9,70,22");});
             reject([]{parseBattleStart("4,x,22");});
             reject([]{parseBattleStart("4,70,22,1,5");});
+            reject([]{parseBattleStart("4,130,22");});
+            require(parseBattleStart("129,0,22").character[0]==129);
+            require(parseScreenStart("6")==6 && parseScreenStart("64")==64);
+            reject([]{parseScreenStart("0");});reject([]{parseScreenStart("65");});reject([]{parseScreenStart("x");});
             EeRuntime runtime;
             reject([&]{runtime.replaceFunction(0x300,return_leaf);});
             runtime.registerFunction(0x300,nested_call);
@@ -1736,16 +1740,19 @@ int main() {
             reject([&]{R5900Context w=worker_wake;ms.handleScheduledThreadSyscall(ram,0x33,&w);});
         }
         {
-            // Synthetic one-shot VSync registration: preserve the void ABI, reject aliasing/replacement,
+            // One-shot VSync registration: preserve the void ABI, reject misaligned addresses, accept it
+            // from any code before or after the first frame, let a later call replace a pending one,
             // publish checked RAM once, and retain the previous publication on later fields.
             EeRuntime vs;vs.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=vs.memory().data();
-            vs.current_thread_id=1;vs.main_thread_priority=24;vs.gs_display_flips=1;vs.timer1_stops=1;vs.intc_mask=4;
-            R5900Context c{};c.pc=0x32EFD8;c.r[3].low=0x73;c.r[2].low=0x12345678;
-            c.r[29].low=c.r[4].low=0x1000;c.r[5].low=0x1004;
+            vs.current_thread_id=1;vs.main_thread_priority=24;vs.intc_mask=4;
+            R5900Context c{};c.pc=0x123450;c.r[3].low=0x73;c.r[2].low=0x12345678;
+            c.r[29].low=0x2000;c.r[4].low=0x1000;c.r[5].low=0x1004;
             reject([&]{vs.handleSyscall(ram,&c,0);});require(!vs.vsync_flag);
-            c.r[5].low=0x1008;vs.handleSyscall(ram,&c,0);
+            c.r[4].low=0x1010;c.r[5].low=0x1018;vs.handleSyscall(ram,&c,0);
+            require(vs.vsync_flag==0x1010 && vs.vsync_csr==0x1018);
+            vs.gs_display_flips=1;vs.timer1_stops=1;
+            c.r[4].low=0x1000;c.r[5].low=0x1008;vs.handleSyscall(ram,&c,0);
             require(c.r[2].low==0x12345678 && vs.vsync_flag==0x1000 && vs.vsync_csr==0x1008);
-            reject([&]{vs.handleSyscall(ram,&c,0);});
             vs.deliverVblank(ram,&c);
             require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B400C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
             vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);

@@ -57,6 +57,8 @@ The gate run ends at its frame budget (1,000 frames, just after the logo movie).
 
 ## Verification (2026-10-13)
 
+A short record of everything validated so far, by kind of check, is kept in [VALIDATION.md](progress/VALIDATION.md).
+
 - **Tests:** MSVC Debug and Release builds (Ninja), **21/21 CTests** (among them: hand-written VU1 programs registered by key and the verification mode; the memory card folder with saving; the menu logic and settings file; host input mapping and DualSense reports; GS readback in the sink, VIF1 and the EE sequence; stream audio flow and mixer; ADPCM decoder, sound bank parser and sampler), Python suites (11 folders; 102 tests for recompilation and mapping, among them the map builder's entry and split rules and the gap scan). Release and Debug reach the same checkpoint. The gate is `tools/gate/run_gate.py`.
 - **Native services A/B:** same stop and identical EE memory as the emulated IOP, except two regions of stale IOP bytes ([details](plans/iop/NATIVE_SERVICES_PLAN.md#progress-2026-10-11)).
 - **Original comparisons** (46 scripts against PCSX2 captures): 23 pass on the full run, 12 at captured phase stops, 7 with their own capture inputs (not rerun this pass); 4 fail (`cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization`), as before.

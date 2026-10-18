@@ -8,13 +8,13 @@ class BattleSweepTests(unittest.TestCase):
         self.assertEqual(battle_sweep.numbers('0-3,7,9-10'),[0,1,2,3,7,9,10])
         self.assertEqual(battle_sweep.numbers('22'),[22])
 
-    def test_cases_take_the_next_character_and_the_maps_in_turn(self):
+    def test_cases_take_the_next_character_and_the_stages_in_turn(self):
         self.assertEqual(battle_sweep.cases([0,1,2],[0],None,[9,22]),['0:0,1,9','1:0,2,22','2:0,3,9'])
         self.assertEqual(battle_sweep.cases([4],[0,1],70,[22]),['4:0,70,22','4:1,70,22'])
 
     def test_name(self):
-        self.assertEqual(battle_sweep.name('0:2,70,22'),'c0v2-c70-m22')
-        self.assertEqual(battle_sweep.name('4:1,70:3,9,2'),'c4v1-c70v3-m9')
+        self.assertEqual(battle_sweep.name('0:2,70,22'),'c0v2-c70-s22')
+        self.assertEqual(battle_sweep.name('4:1,70:3,9,2'),'c4v1-c70v3-s9')
 
     def test_stop_line(self):
         lines=['Snapshot: flip 1 at field 2','Bootstrap execution budget exceeded; no display flip for 600 fields','Distinct EE entries: 1']

@@ -104,7 +104,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-disc-metadata-tests runtime/tests/disc_metadata_tests.cpp)
     bt2_target_defaults(bt2-disc-metadata-tests)
     add_test(NAME disc-metadata COMMAND bt2-disc-metadata-tests)
-    add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp runtime/probe/battle_starter.cpp)
+    add_executable(bt2-bootstrap-tests runtime/tests/bootstrap_tests.cpp runtime/probe/game_starter.cpp)
     bt2_ee_target(bt2-bootstrap-tests)
     # Its main keeps many EeRuntime objects (each several megabytes) as locals.
     target_link_options(bt2-bootstrap-tests PRIVATE /STACK:268435456)
@@ -199,7 +199,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/probe/entry_probe.cpp
         runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
         runtime/probe/selected_bindings.cpp runtime/probe/overlay_bindings.cpp
-        runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/battle_starter.cpp
+        runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/game_starter.cpp
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_0033A238_0x33a238.cpp"

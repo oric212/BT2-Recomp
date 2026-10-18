@@ -6,7 +6,7 @@
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
-#include "battle_starter.h"
+#include "game_starter.h"
 #include "host/audio_device.h"
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
@@ -391,10 +391,15 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,modes,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime,modes);
-        // BT2_START_BATTLE: a CPU-against-CPU battle without input, for tool runs (battle_starter.h).
-        if (const char* battle = std::getenv("BT2_START_BATTLE")) {
-            if (std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE is for tool runs, not a player's session");
-            installBattleStarter(runtime, parseBattleStart(battle));
+        // BT2_START_BATTLE / BT2_START_SCREEN: a CPU-against-CPU battle or a screen without input, for tool
+        // runs (game_starter.h).
+        {
+            const char* battle = std::getenv("BT2_START_BATTLE");
+            const char* screen = std::getenv("BT2_START_SCREEN");
+            if ((battle || screen) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN are for tool runs, not a player's session");
+            if (battle && screen) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN exclude each other");
+            if (battle) installBattleStarter(runtime, parseBattleStart(battle));
+            if (screen) installScreenStarter(runtime, parseScreenStart(screen));
         }
         // The interpreter bridge for code no generated function holds (ee_interpreter.cpp). BT2_EE_INTERPRET:
         // "off" stops at such code as before; "all" runs every generated function interpreted as well

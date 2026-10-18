@@ -289,7 +289,7 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
     if((address==0xB0001010 || address==0xB0001020) && context->pc==0x338B30 && timer2Context(context)) {
         checkMemory(rdram,0,0);if(address==0xB0001010)timer2.writeMode(value);else timer2.writeComp(value);return;
     }
-    if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0) || (frameGifContext() && timer1_stops && (context->pc==0x32F1AC || context->pc==0x32F1FC)))) {
+    if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
         checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
     }
     if(clear_repeat_gif && display_reset_phase==6 && context->r[29].low==initial_sp-624 && displayResetStep(context,6,context->pc,624)) {
@@ -309,6 +309,9 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
             gs_interrupt.arm(12,intc_mask);
         }
         gs_interrupt.acknowledge(value);return;
+    }
+    if(address==0x1000F000 && mainGameContext()) {
+        checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear (the VBLANK bits are modelled).
     }
     if(gif_dma_supplied_ && gs_field_reads==1 && context->r[29].low==initial_sp-624) {
         if(address==0x1000A000 && context->pc==0x3101A8) {
@@ -360,9 +363,6 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
     if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
         checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
     }
-    if(address==0x1000F000 && frameGifContext() && timer1_stops && context->pc==0x32F1D0 && vsync_flag) {
-        checkMemory(rdram,0,0);deliverVblank(rdram,context);return display_intc_stat;
-    }
     if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
         checkMemory(rdram,0,0);
         // Logical time: a poll that finds VBLANK_START clear advances one VBlank (START and END latch).
@@ -407,6 +407,10 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
     if(address==0x1000F000 && gs_interrupt_supplied_ && context->pc==0x32F130
         && context->r[29].low==initial_sp-656) {
         checkMemory(rdram,0,0);return gs_interrupt.poll();
+    }
+    if(address==0x1000F000 && mainGameContext()) {
+        // Logical time: main polling for VBLANK_START that finds it clear receives the next VBlank.
+        checkMemory(rdram,0,0);if(!(display_intc_stat&4))deliverVblank(rdram,context);return display_intc_stat;
     }
     if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
         checkMemory(rdram, 0, 0);

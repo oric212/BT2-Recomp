@@ -24,9 +24,11 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         context->pc = resume;
         return;
     }
-    if(code==0 && selector==0x73 && frameGifContext() && timer1_stops && context->pc==0x32EFD8) {
+    if(code==0 && selector==0x73 && !in_interrupt_) {
+        // SetVSyncFlag: at the next VBLANK_START the kernel writes 1 to the flag word and the GS CSR to the
+        // doubleword at csr (deliverVblank); a later call replaces a pending one.
         const auto flag=static_cast<std::uint32_t>(context->r[4].low),csr=static_cast<std::uint32_t>(context->r[5].low);
-        if(vsync_flag || flag!=context->r[29].low || csr!=flag+8 || (flag&15))throw UnsupportedSyscall(selector,context->pc);
+        if((flag&3) || (csr&7))throw UnsupportedSyscall(selector,context->pc);
         checkMemory(rdram,flag,4);checkMemory(rdram,csr,8);
         vsync_flag=flag;vsync_csr=csr;return; // Void BIOS API preserves V0 in the original capture.
     }
