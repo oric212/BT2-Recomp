@@ -1,5 +1,6 @@
-"""Discovery loop: run the Release probe; while it stops at an unmapped function, map it and everything else
-the programs name, regenerate, rebuild, rerun.
+"""Discovery loop: run the Release probe; while it stops at an unmapped function, or the interpreter ran
+unmapped code (ee_interpreted_entries in the report), map it and everything else the programs name,
+regenerate, rebuild, rerun.
 
 Each round: run_startup_probe.py (or, with --player-stop, the stop of the last played session) ->
 the stop's target becomes an entry address -> map_gaps.py and prepare_map.py until the maps of all
@@ -22,6 +23,7 @@ def labels_of(path):
     from expand_startup import ENTRY_SWITCH
     found=ENTRY_SWITCH.search(path.read_text(encoding='utf-8'))
     return set(re.findall(r'case 0x([0-9a-fA-F]+)u: goto label_',found.group(1))) if found else set()
+INTERPRETED=re.compile(r'EE interpreter: unmapped code at 0x([0-9A-F]{8}) runs interpreted')
 DIRECT_CALL=re.compile(r'FUN_[0-9A-F]{8}_0x[0-9a-f]+\(rdram, ctx, runtime\); return;')
 
 def unexpected_change(old,new):
@@ -124,6 +126,8 @@ class Loop:
             path.write_text(json.dumps(whole,indent=2)+'\n',encoding='utf-8')
         self.say(self.run(self.tool('ps2recomp/expand_startup.py','--all')).strip().splitlines()[-1])
         self.run(self.tool('ps2recomp/prepare_runtime.py'))
+        # New code may bring instruction words the interpreter has no handler for yet.
+        self.say(self.run(self.tool('ps2recomp/generate_interpreter.py','--reuse')).strip().splitlines()[-1])
         self.run(self.tool('build/msvc.py','cmake','--build','build/probe','--config','Release','--target','bt2-entry-probe'))
         for p,b,a in zip(programs,before,after):self.say((p or 'main')+' map',b,'->',a)
         return sum(after)-sum(before)
@@ -140,15 +144,24 @@ class Loop:
         return report,lines
     def player_stop(self):
         """The stop of the last session played with bt2-game.exe, as a run of the probe would leave it."""
-        report_path=ROOT/'user/last-run.json'
-        if not report_path.exists():raise SystemExit('no stopped play session: user/last-run.json is missing')
+        report_path,log_path=ROOT/'user/last-run.json',ROOT/'user/last-run.log'
+        lines=log_path.read_text(encoding='utf-8',errors='replace').splitlines() if log_path.exists() else []
+        lines=[l for l in lines if l and not l.startswith('[INFO]')]
+        # The interpreter names each place of unmapped code it ran in the log, which a session closed
+        # with its window has even without a report.
+        logged=sorted({int(a,16) for l in lines for a in INTERPRETED.findall(l)})
+        if not report_path.exists() or (log_path.exists() and report_path.stat().st_mtime<log_path.stat().st_mtime-5):
+            if not logged:raise SystemExit('no stopped play session: user/last-run.json is missing')
+            if self.a.build_stamp().stat().st_mtime>log_path.stat().st_mtime:raise SystemExit('the runtime was rebuilt after that session; play again first')
+            self.say('session without a report; the log names',len(logged),'places of interpreted code')
+            return {'ee_interpreted_entries':[{'entry':a} for a in logged],'frame_budget_reached':True},lines
         if self.a.build_stamp().stat().st_mtime>report_path.stat().st_mtime:raise SystemExit('the runtime was rebuilt after that session; play again first')
         for suffix in ('','.ee.bin','.gs.bin','.iop.bin'):
             source=Path(str(report_path)+suffix)
             if source.exists():shutil.copyfile(source,str(FOLDER/'entry-stop.json')+suffix)
-        lines=(ROOT/'user/last-run.log').read_text(encoding='utf-8',errors='replace').splitlines()
-        lines=[l for l in lines if l and not l.startswith('[INFO]')]
         report=json.loads(report_path.read_text(encoding='utf-8'))
+        known={e['entry'] for e in report.get('ee_interpreted_entries',[])}
+        report.setdefault('ee_interpreted_entries',[]).extend({'entry':a} for a in logged if a not in known)
         self.say('\n'.join(l[:300] for l in lines[-6:]))
         self.say('flips',report['gs_display_flips'],'pc',hex(report['pc']),'target',hex(report['target']))
         return report,lines
@@ -175,6 +188,13 @@ class Loop:
         for n in range(self.a.rounds):
             self.say('--- round',n+1,'of',self.a.rounds)
             report,lines=self.player_stop() if self.a.player_stop else self.probe()
+            # Unmapped code the interpreter ran: mapped now, so the next build runs it compiled.
+            interpreted=[e['entry'] for e in report.get('ee_interpreted_entries',[])]
+            if interpreted:
+                self.say('unmapped code ran interpreted at',' '.join(f'{a:08X}' for a in interpreted[:30]),f'({len(interpreted)} entries)')
+                self.say('functions added:',self.regenerate(add=interpreted))
+                if self.a.player_stop:self.say('play again: it runs compiled now');break
+                continue
             if report['frame_budget_reached']:self.say('frame budget reached');break
             if not is_map_gap(lines,report):self.say('not a map gap; stopping: this stop needs a look, not a new function');break
             if not self.map_stop(report['target']):break

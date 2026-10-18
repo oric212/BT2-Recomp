@@ -51,6 +51,11 @@ def route_vu_status(source):
     if 'ctx->vu0_vpu_stat' in text:raise ValueError('Unrecognized generated VU status access')
     return text,count
 
+# VU0 macro instructions by their effect on the status flags (mnemonic prefixes): those that leave them
+# alone, and those whose effects are reported to the runtime between a flag clear and read.
+VU_QUIET=('vnop','vwaitq','vftoi','vitof','vmove','vmr32','vabs','vclip','sqc2','lqc2','qmfc2','qmtc2','cfc2','ctc2')
+VU_FLAG_SETTING=('vadd','vsub','vmul','vmadd','vmsub','vopm','vdiv','vsqrt','vrsqrt','vmax','vmini')
+
 def route_cop2_condition(source):
     # BC2T/BC2F test the VU condition; the runtime owns which VU work exists. CFC2/CTC2 of the status
     # flag register go to the runtime as well (macro-mode arithmetic does not maintain the flags).
@@ -60,7 +65,6 @@ def route_cop2_condition(source):
     count+=reads+writes
     # Between a flag clear and the flag read, every flag-setting VU instruction first reports its
     # effects to the runtime (from the instruction word in the generator's comment).
-    quiet=('vnop','vwaitq','vftoi','vitof','vmove','vmr32','vabs','vclip','sqc2','lqc2','qmfc2','qmtc2','cfc2','ctc2')
     lines=text.split('\n');out=[];armed=False
     for line in lines:
         out.append(line)
@@ -68,8 +72,8 @@ def route_cop2_condition(source):
         elif 'runtime->readVuStatusFlag(' in line:armed=False
         elif armed:
             m=re.match(r'(\s*)// 0x[0-9a-f]+: 0x([0-9a-f]+)  (v[a-z0-9]+)',line)
-            if m and not m[3].startswith(quiet):
-                if not m[3].startswith(('vadd','vsub','vmul','vmadd','vmsub','vopm','vdiv','vsqrt','vrsqrt','vmax','vmini')):
+            if m and not m[3].startswith(VU_QUIET):
+                if not m[3].startswith(VU_FLAG_SETTING):
                     raise ValueError(f'Unrecognized VU instruction {m[3]} between a flag clear and read')
                 out.append(f'{m[1]}runtime->vu0UpdateFlags(ctx, 0x{m[2]}u);');count+=1
     text='\n'.join(out)
@@ -206,6 +210,29 @@ def widen_sign_branches(source):
     return text,count
 
 
+def prepare_text(text,address):
+    """Every rewrite a generated function's source gets, in order; returns the text and the count of
+    each kind of rewrite. The interpreter's handlers (generate_interpreter.py) get the same."""
+    text,count=route_tail_calls(text)
+    text,jump_count=route_direct_jumps(text);count+=jump_count
+    counts={'tail_dispatch_hooks':count}
+    text,counts['vu_status_hooks']=route_vu_status(text)
+    text,counts['vu_control_hooks']=route_vu_control(text)
+    text,counts['cop2_condition_hooks']=route_cop2_condition(text)
+    text,counts['indexed_cache_hooks'],counts['taglo_hooks']=route_indexed_cache(text)
+    text,counts['checked_halfword_hooks']=route_fast_halfword_reads(text)
+    text,counts['checked_byte_hooks']=route_fast_byte_reads(text)
+    text,counts['sign_branch_hooks']=widen_sign_branches(text)
+    text,counts['recursive_call_hooks']=route_recursive_calls(text,address)
+    text,counts['vu_memory_hooks']=route_vu_memory(text)
+    text,counts['vu_random_hooks']=route_vu_random(text)
+    text,counts['float_moves_sign_extended']=sign_extend_float_moves(text)
+    text,counts['sqrt_operand_fixes']=fix_sqrt_operand(text)
+    text,counts['vf0_writes_dropped']=keep_vf0_constant(text)
+    text,counts['local_indirect_jumps']=route_local_indirect_jumps(text)
+    return text,counts
+
+
 def build_memory(data, metadata, size=32 * 1024 * 1024):
     memory = bytearray(size)
     occupied = []
@@ -262,28 +289,13 @@ def main():
         files=overlay_programs.paths(program);files['runtime'].mkdir(parents=True,exist_ok=True)
         selected+=[(row['start'],files['output']/f"FUN_{row['start']:08X}_0x{row['start']:x}.cpp",files['runtime']) for row in functions]
     for address,source,prepared in selected:
-        text,count=route_tail_calls(source.read_text(encoding='utf-8'))
-        text,jump_count=route_direct_jumps(text);count+=jump_count
-        text,vu_count=route_vu_status(text)
-        text,control_count=route_vu_control(text)
-        text,cop2_count=route_cop2_condition(text)
-        text,cache_count,tag_count=route_indexed_cache(text)
-        if address in (0x32F4B0,0x32F5F0) and (cache_count,tag_count)!=(4,2):
+        text,counts=prepare_text(source.read_text(encoding='utf-8'),address)
+        if address in (0x32F4B0,0x32F5F0) and (counts['indexed_cache_hooks'],counts['taglo_hooks'])!=(4,2):
             raise ValueError('Reached indexed cache helper shape/count differs')
-        text,halfword_count=route_fast_halfword_reads(text)
-        text,byte_count=route_fast_byte_reads(text)
-        text,sign_count=widen_sign_branches(text)
-        text,recursive_count=route_recursive_calls(text,address)
-        text,vu_memory_count=route_vu_memory(text)
-        text,vu_random_count=route_vu_random(text)
-        text,float_move_count=sign_extend_float_moves(text)
-        text,sqrt_count=fix_sqrt_operand(text)
-        text,vf0_count=keep_vf0_constant(text)
-        text,local_jump_count=route_local_indirect_jumps(text)
         destination=prepared/source.name
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
-                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),'tail_dispatch_hooks':count,'vu_status_hooks':vu_count,'vu_control_hooks':control_count,'cop2_condition_hooks':cop2_count,'indexed_cache_hooks':cache_count,'taglo_hooks':tag_count,'checked_halfword_hooks':halfword_count,'checked_byte_hooks':byte_count,'sign_branch_hooks':sign_count,'recursive_call_hooks':recursive_count,'vu_memory_hooks':vu_memory_count,'vu_random_hooks':vu_random_count,'float_moves_sign_extended':float_move_count,'sqrt_operand_fixes':sqrt_count,'vf0_writes_dropped':vf0_count,'local_indirect_jumps':local_jump_count})
+                                 'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),**counts})
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

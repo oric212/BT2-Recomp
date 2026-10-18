@@ -19,6 +19,7 @@
 #include <iostream>
 #include <immintrin.h>
 #include "ps2_runtime.h"
+#include "ee_interpreter_handlers.h"
 #include "intc_checkpoint.h"
 #include "retained_ee_stack.h"
 #include "gs/gif_dma_staging.h"
@@ -156,7 +157,27 @@ public:
                 || !functions_.emplace(address, function).second)
             throw std::runtime_error("Invalid or duplicate overlay registration");
         overlay_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected.begin(), expected.end()));
+        registerFunctionExtent(address, address + static_cast<std::uint32_t>(expected.size()));
     }
+
+    // The extent [start, end) of a generated function, which the interpreter needs to tell a jump within
+    // the function from one to another (ee_interpreter.cpp). Overlay functions get theirs on registration.
+    void registerFunctionExtent(std::uint32_t start, std::uint32_t end) {
+        if (end <= start || start % 4 || end % 4 || !function_extents_.emplace(start, end).second)
+            throw std::runtime_error("Invalid or duplicate function extent");
+    }
+
+    // EE interpreter bridge (ee_interpreter.cpp; WHOLE_GAME_COVERAGE_PLAN.md, step 3): code no generated
+    // function holds runs interpreted, with one handler per instruction word made by the recompiler.
+    // Without handlers (tests, builds without the generated table) such a dispatch stops as before.
+    void setInterpreterHandlers(std::span<const EeInterpreterHandlerPart> parts);
+    void interpret(std::uint8_t* rdram, R5900Context* context);
+    static void interpretEntry(std::uint8_t* rdram, R5900Context* context, PS2Runtime* runtime); // A function that interprets from context->pc.
+    struct InterpretedEntry {std::uint64_t dispatches=0, instructions=0; std::uint32_t first_word=0;};
+    std::map<std::uint32_t, InterpretedEntry> interpreted_entries; // Unmapped code that ran, by entry address.
+    std::uint64_t interpreted_instructions=0; // Instructions of unmapped code run by the interpreter.
+    bool interpret_all=false; // BT2_EE_INTERPRET=all: every generated function runs interpreted (diagnostic comparison).
+    std::uint64_t interpret_all_instructions=0;
 
     // An entry inside a registered function: a label of its generated entry switch, so the function
     // resumes there when called with that pc (WHOLE_GAME_COVERAGE_PLAN.md, step 1). Overlay entries
@@ -304,6 +325,11 @@ public:
     }
     std::uint64_t guestRead64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
         return mmioWindow(address)?Load64(rdram,context,address):read64(rdram,address);
+    }
+    // Generated quadword stores: the same rule (FIFO writes reach their device whether or not the
+    // generator knew the address).
+    void guestWrite128(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, const ProbeGpr& value) {
+        if(mmioWindow(address))Store128(rdram,context,address,value);else write128(rdram,address,value);
     }
     void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
         if (auto* spr = scratchpadAt(address, 8)) {std::memcpy(spr, &value, 8); return;}
@@ -900,6 +926,13 @@ private:
     std::unordered_map<std::uint32_t, RecompiledFunction> functions_;
     struct InteriorEntry {RecompiledFunction function; std::uint32_t owner;};
     std::unordered_map<std::uint32_t, InteriorEntry> interior_entries_;
+    std::map<std::uint32_t, std::uint32_t> function_extents_;
+    std::unordered_map<std::uint32_t, const EeInterpreterHandler*> interpreter_handlers_;
+    bool registered(std::uint32_t address) const {return functions_.contains(address) || interior_entries_.contains(address);}
+    bool functionExtent(std::uint32_t address, std::uint32_t& start, std::uint32_t& end) const;
+    void runInterpretedInstruction(std::uint8_t* rdram, R5900Context* context, std::uint32_t pc, std::uint32_t word, bool& vu_flags_reported);
+    bool interpretControl(std::uint8_t* rdram, R5900Context* context, std::uint32_t pc, std::uint32_t word,
+                          std::uint32_t start, std::uint32_t end, bool& vu_flags_reported);
     std::vector<std::uint8_t> memory_, kernel_snapshot_, startup_kernel_payload_;
     std::vector<std::uint8_t> scratchpad_ = std::vector<std::uint8_t>(scratchpad_size);
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;

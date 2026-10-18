@@ -390,6 +390,16 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,modes,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime,modes);
+        // The interpreter bridge for code no generated function holds (ee_interpreter.cpp). BT2_EE_INTERPRET:
+        // "off" stops at such code as before; "all" runs every generated function interpreted as well
+        // (a diagnostic comparison with the compiled run through BT2_STATE_HASH).
+        {
+            const char* interpret = std::getenv("BT2_EE_INTERPRET");
+            const std::string mode = interpret ? interpret : "";
+            if (!mode.empty() && mode != "off" && mode != "all") throw std::runtime_error("BT2_EE_INTERPRET must be off or all");
+            if (mode != "off") runtime.setInterpreterHandlers({ee_interpreter_handler_parts, ee_interpreter_handler_part_count});
+            runtime.interpret_all = mode == "all";
+        }
         if (argc >= 18) loadScmdEvidence(runtime,argv);
         bool stopped = false,execution_budget_exhausted=false;
         std::uint32_t stop_address = 0;

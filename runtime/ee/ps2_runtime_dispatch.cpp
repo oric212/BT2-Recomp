@@ -89,7 +89,11 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
     if (found != functions_.end()) function = found->second;
     else if (const auto entry = interior_entries_.find(target); entry != interior_entries_.end() && !interior_entries_disabled) {
         function = entry->second.function; counted = entry->second.owner; ++interior_entry_dispatches;
+    } else if (!interpreter_handlers_.empty() && target < ram_size && !(target & 3)) {
+        function = interpretEntry; // Code no generated function holds runs interpreted (ee_interpreter.cpp).
     } else throw UnsupportedGuestBranch(target, source, resume);
+    // BT2_EE_INTERPRET=all: generated functions run interpreted as well (a diagnostic comparison).
+    if (interpret_all && function != interpretEntry && function_extents_.contains(counted)) function = interpretEntry;
     verifyKernelBinding(counted);
     if (dispatch_depth_ >= 64) throw std::runtime_error("Bootstrap call depth exceeded");
     struct DepthGuard {

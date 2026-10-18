@@ -29,6 +29,10 @@ def judge(report):
         problems.append(f"{report.get('vu1_verified_runs')} of {report.get('vu1_native_runs')} native VU1 starts verified")
     if report.get('distinct_ee_entered', 0) < ENTERED_AT_LEAST:
         problems.append(f"{report.get('distinct_ee_entered')} EE functions entered, at least {ENTERED_AT_LEAST} expected")
+    # The interpreter only bridges code the map lacks; the gate's runs must run everything compiled.
+    if report.get('ee_interpreted_instructions', 0):
+        problems.append(f"{report['ee_interpreted_instructions']} instructions of unmapped code interpreted "
+                        f"(entries {[hex(e['entry']) for e in report.get('ee_interpreted_entries', [])][:8]}; map them with discovery_loop.py)")
     return problems
 
 

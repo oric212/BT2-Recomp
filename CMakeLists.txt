@@ -66,6 +66,7 @@ set(BT2_EE_HOT_SOURCES
     runtime/vu/vu1_triangle_clipper.cpp
     runtime/vu/vif1.cpp
     runtime/ee/ee_gs_readback.cpp
+    runtime/ee/ee_interpreter.cpp
     runtime/ee/state_hash.cpp)
 
 # Native translations of VU1 microprograms, when tools/vu1/translate_programs.py has generated them
@@ -288,6 +289,14 @@ if(BT2_BUILD_GENERATED_PROBE)
         include("${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/overlays.cmake")
         target_include_directories(bt2-entry-probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation")
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_OVERLAY_BINDINGS=1)
+    endif()
+    # The EE interpreter's handlers (tools/ps2recomp/generate_interpreter.py, local and ignored); without
+    # them dispatch to code no generated function holds stops as before.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/ee-interpreter/ee_interpreter.cmake")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/game/generated/ee-interpreter/ee_interpreter.cmake")
+        message(STATUS "EE interpreter: handlers from game/generated/ee-interpreter")
+    else()
+        target_sources(bt2-entry-probe PRIVATE runtime/probe/interpreter_handlers_none.cpp)
     endif()
     option(BT2_BUILD_KERNEL_PAYLOAD "Link the scoped ignored copied-kernel entry" OFF)
     if(BT2_BUILD_KERNEL_PAYLOAD)

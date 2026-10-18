@@ -36,14 +36,37 @@ def interior_entries(folder, starts):
             for label in entry_labels((folder / f'FUN_{start:08X}_0x{start:x}.cpp').read_text(encoding='utf-8'), start)]
 
 
-def render(addresses, interior=()):
+def linked_startup():
+    """The generated functions the entry probe registers itself (startup_bindings.cpp)."""
+    bindings = (ROOT / 'runtime/probe/startup_bindings.cpp').read_text(encoding='utf-8')
+    return sorted({int(address, 16) for address in re.findall(r'registerFunction\(0x([0-9A-Fa-f]+)', bindings)})
+
+
+def main_extents(starts):
+    """(start, end) of each main-program function at `starts`, from the map."""
+    with (FOLDER / 'candidates.csv').open(newline='', encoding='utf-8') as stream:
+        ends = {int(row['Start'], 0): int(row['End'], 0) for row in csv.DictReader(stream)}
+    if any(start not in ends for start in starts):
+        raise ValueError('A bound function is not in the map.')
+    return [(start, ends[start]) for start in starts]
+
+
+def main_bindings(addresses):
+    """render() for the selected `addresses`: interior entries and extents of these and of the
+    functions startup_bindings.cpp registers."""
+    owners = list(addresses) + [a for a in linked_startup() if a not in set(addresses)]
+    return render(addresses, interior_entries(GENERATED, owners), main_extents(owners))
+
+
+def render(addresses, interior=(), extents=()):
     names = [f'FUN_{address:08X}_0x{address:x}' for address in addresses]
     cmake = 'target_sources(bt2-entry-probe PRIVATE\n' + ''.join(
         f'    "${{BT2_GENERATED_DIR}}/../bt2-runtime/{name}.cpp"\n' for name in names) + ')\n'
-    # Self-contained: declares only the selected functions (no full generated declaration header), so a
+    # Self-contained: declares only the functions it names (no full generated declaration header), so a
     # new selection recompiles one small binding file.
+    declared = names + sorted({f'FUN_{owner:08X}_0x{owner:x}' for _, owner in interior} - set(names))
     header = '#pragma once\n#include <cstdint>\n' + ''.join(
-        f'void {name}(uint8_t* rdram, R5900Context* ctx, PS2Runtime* runtime);\n' for name in names) + \
+        f'void {name}(uint8_t* rdram, R5900Context* ctx, PS2Runtime* runtime);\n' for name in declared) + \
         'inline void registerExtraStartup(EeRuntime& runtime) {\n' \
         '    // One table and one call site: registering in order without inlining the call per entry.\n' \
         '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function;} entries[] = {\n' + ''.join(
@@ -54,6 +77,10 @@ def render(addresses, interior=()):
         header += '    static constexpr struct {std::uint32_t address; PS2Runtime::RecompiledFunction function; std::uint32_t owner;} interior[] = {\n' + ''.join(
             f'        {{0x{label:08X}, FUN_{owner:08X}_0x{owner:x}, 0x{owner:08X}}},\n' for label, owner in interior) + '    };\n' \
             '    for (const auto& entry : interior) runtime.registerInteriorEntry(entry.address, entry.function, entry.owner);\n'
+    if extents:
+        header += '    static constexpr struct {std::uint32_t start, end;} extents[] = {\n' + ''.join(
+            f'        {{0x{start:08X}, 0x{end:08X}}},\n' for start, end in extents) + '    };\n' \
+            '    for (const auto& extent : extents) runtime.registerFunctionExtent(extent.start, extent.end);\n'
     return cmake, header + '}\n'
 
 
@@ -74,7 +101,7 @@ def verify_extra():
             raise ValueError('Extra startup raw source provenance differs.')
     # The fragments are derived from the verified receipt and sources (interior labels change with the
     # sources): rewritten when they differ.
-    cmake, header = render(addresses, interior_entries(GENERATED, addresses))
+    cmake, header = main_bindings(addresses)
     if ((FOLDER / 'extra-startup.cmake').read_text(encoding='utf-8') != cmake
             or (FOLDER / 'bt2_extra_startup.h').read_text(encoding='utf-8') != header):
         (FOLDER / 'extra-startup.cmake').write_text(cmake, encoding='utf-8')
@@ -206,8 +233,7 @@ def static_callees(target, rows, selected, limit):
     counts = collections.Counter(int(row['Start'], 0) for row in rows) if limit else {}
     unique = {address for address, count in counts.items() if count == 1}
     # Entries the entry probe already links and binds itself must not be added twice.
-    bindings = (ROOT / 'runtime/probe/startup_bindings.cpp').read_text(encoding='utf-8')
-    linked = {int(address, 16) for address in re.findall(r'registerFunction\(0x([0-9A-Fa-f]+)', bindings)}
+    linked = set(linked_startup())
     found, queue, seen = [], [target], {target}
     while queue and len(found) < limit:
         source = ROOT / f'game/generated/bt2/FUN_{queue[0]:08X}_0x{queue[0]:x}.cpp'
@@ -231,8 +257,7 @@ def neighbours(target, rows, selected, span):
     if not span:
         return []
     counts = collections.Counter(int(row['Start'], 0) for row in rows)
-    bindings = (ROOT / 'runtime/probe/startup_bindings.cpp').read_text(encoding='utf-8')
-    linked = {int(address, 16) for address in re.findall(r'registerFunction\(0x([0-9A-Fa-f]+)', bindings)}
+    linked = set(linked_startup())
     return sorted(address for address, count in counts.items()
                   if count == 1 and address != target and abs(address - target) <= span and address not in selected
                   and address not in linked and not overlay_programs.program_for(address)
@@ -273,7 +298,7 @@ def main():
     manifest = json.loads((FOLDER / 'generation.manifest.json').read_text(encoding='utf-8'))
     files = {f'FUN_{address:08X}_0x{address:x}.cpp':
              manifest['files'][f'FUN_{address:08X}_0x{address:x}.cpp'] for address in addresses}
-    cmake, header = render(addresses, interior_entries(GENERATED, addresses))
+    cmake, header = main_bindings(addresses)
     (FOLDER / 'extra-startup.cmake').write_text(cmake, encoding='utf-8')
     (FOLDER / 'bt2_extra_startup.h').write_text(header, encoding='utf-8')
     (FOLDER / 'extra-startup.json').write_text(json.dumps({

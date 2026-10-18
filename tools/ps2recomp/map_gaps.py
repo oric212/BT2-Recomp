@@ -239,7 +239,15 @@ def main():
         output = ROOT / 'game/generated' / ('bt2' if name == 'main' else name)
         hints_path = folder / 'entry-hints.json'
         hints = set(json.loads(hints_path.read_text(encoding='utf-8'))) if hints_path.exists() else set()
-        unlabelled = without_label(rows, word, code, data_ranges, generated_labels(output)) if output.exists() else []
+        labels = generated_labels(output) if output.exists() else set()
+        unlabelled = without_label(rows, word, code, data_ranges, labels) if output.exists() else []
+        # Added addresses inside a function (where the interpreter ran, or a run stopped) are hints as
+        # well: if the map builder cannot split the function there, the generator makes them labels.
+        starts = sorted(s for s, e in rows); ends = dict(rows)
+        def within(address):
+            at = bisect.bisect_right(starts, address) - 1
+            return at >= 0 and starts[at] != address and address < ends[starts[at]]
+        unlabelled = sorted(set(unlabelled) | {a for a in mine if within(a) and not a & 3 and a not in labels})
         new_hints, not_taken = sorted(set(unlabelled) - hints), sorted(set(unlabelled) & hints)
         total += len(found) + len(new_hints) + len(not_taken)
         print(f'{name}: {len(rows)} functions; not covered: {len(direct)} call or jump targets in unmapped code, '
@@ -257,7 +265,7 @@ def main():
             entries |= set(mine) | (set(found) if args.write else set())
             path.write_text(json.dumps(sorted(entries)) + '\n', encoding='utf-8')
             print(f'  {path.name}: {before} -> {len(entries)} entries')
-        if args.write and new_hints:
+        if (args.write or mine) and new_hints:
             hints_path.write_text(json.dumps(sorted(hints | set(new_hints))) + '\n', encoding='utf-8')
             print(f'  {hints_path.name}: {len(hints)} -> {len(hints) + len(new_hints)} hints')
     print(f'{total} addresses not covered in all.' + ('' if args.write or not total else ' Run with --write, then regenerate, to map them.'))

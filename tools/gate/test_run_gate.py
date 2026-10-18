@@ -22,7 +22,8 @@ class GateTests(unittest.TestCase):
         self.assertEqual(battle_run.judge(good),[])
         self.assertEqual(battle_run.judge(dict(good,vu1_native_runs=0,vu1_verified_runs=0)),[]) # A build without native programs.
         for change in ({'frame_budget_reached':0,'gs_display_flips':812},{'vu1_kick_hash':'0'},{'vu1_instructions':1},{'vu1_runs':1},
-                       {'vu1_verified_runs':6},{'distinct_ee_entered':battle_run.ENTERED_AT_LEAST-1}):
+                       {'vu1_verified_runs':6},{'distinct_ee_entered':battle_run.ENTERED_AT_LEAST-1},
+                       {'ee_interpreted_instructions':5,'ee_interpreted_entries':[{'entry':0x1000}]}):
             self.assertEqual(len(battle_run.judge(dict(good,**change))),1,change)
         self.assertTrue((Path(battle_run.__file__).with_name('pad-fight.txt')).is_file())
 if __name__=='__main__':unittest.main()

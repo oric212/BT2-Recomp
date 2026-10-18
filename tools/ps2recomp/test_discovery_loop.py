@@ -26,5 +26,18 @@ class DiscoveryLoopTests(unittest.TestCase):
         self.assertTrue(d.is_map_gap(['Branch target/source/resume: 3b9d58/3ba354/3ba35c'],{'target':0x3b9d58}))
         self.assertFalse(d.is_map_gap(['Memory address/pc/acks/polls: 1/2/3/4'],{'target':0}))
         self.assertFalse(d.is_map_gap(['Branch target/source/resume: 0/1/2'],{'target':0}))
+    def test_interpreted_code_named_in_the_log(self):
+        # The line ee_interpreter.cpp prints for each place of unmapped code it runs.
+        line='EE interpreter: unmapped code at 0x003A1B40 runs interpreted (thread 1)'
+        self.assertEqual(d.INTERPRETED.findall(line),['003A1B40'])
+        self.assertEqual(d.INTERPRETED.findall('EE interpreter: no handler for the instruction 0x24420005 at 0x00001000'),[])
+    def test_labels_of_a_generated_source(self):
+        import tempfile,pathlib
+        with tempfile.TemporaryDirectory() as folder:
+            path=pathlib.Path(folder)/'f.cpp'
+            path.write_text('    switch (ctx->pc) {\n        case 0x1000u: goto label_1000;\n        case 0x1010u: goto label_1010;\n        default: break;\n    }\n',encoding='utf-8')
+            self.assertEqual(d.labels_of(path),{'1000','1010'})
+            path.write_text('    ctx->pc = 0x1000u;\n',encoding='utf-8')
+            self.assertEqual(d.labels_of(path),set())
 
 if __name__=='__main__':unittest.main()

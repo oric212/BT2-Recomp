@@ -254,6 +254,51 @@ int main() {
 
     try {
         {
+            // Interpreter bridge: unmapped code runs through handlers, branches and jumps are decoded, calls
+            // and code reached by running on go to compiled code, and what ran is counted.
+            static const EeInterpreterHandler handlers[]={
+                {0x00000000u,+[](std::uint8_t*,R5900Context*,PS2Runtime*,std::uint32_t){},0},                       // NOP
+                {0x24420001u,+[](std::uint8_t*,R5900Context* c,PS2Runtime*,std::uint32_t){c->r[2].low+=1;},0},      // ADDIU v0,v0,1
+                {0x42000018u,+[](std::uint8_t*,R5900Context* c,PS2Runtime*,std::uint32_t){c->pc=c->r[31].low;},0},  // ERET (to ra here)
+            };
+            static const EeInterpreterHandlerPart parts[]={{handlers,3}};
+            EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
+            auto* ram=rt.memory().data();R5900Context c{};
+            const auto code=[&](std::uint32_t at,std::initializer_list<std::uint32_t> words){for(auto w:words){std::memcpy(ram+at,&w,4);at+=4;}};
+            const auto call=[&](std::uint32_t target){c.r[31].low=0x204;rt.dispatchGuestBranch(ram,&c,target,0x200,0x204,EeRuntime::GuestBranchKind::DirectCall,"test");};
+            code(0x1000,{0x24420001,0x24420001,0x03E00008,0});
+            reject([&]{call(0x1000);}); // Without handlers such a dispatch stops as before.
+            rt.setInterpreterHandlers(parts);
+            c.r[2].low=0;call(0x1000);
+            require(c.r[2].low==2 && c.pc==0x204 && rt.interpreted_entries.at(0x1000).dispatches==1 && rt.interpreted_entries.at(0x1000).instructions==4 && rt.interpreted_instructions==4);
+            // A loop: BNE v0,a0 back to 0x2000; each taken backward branch is a loop iteration.
+            code(0x2000,{0x24420001,0x1444FFFE,0,0x03E00008,0});
+            rt.current_thread_id=1;rt.main_checkpoints_since_field_=0;c.r[2].low=0;c.r[4].low=3;call(0x2000);
+            require(c.r[2].low==3 && c.pc==0x204 && rt.main_checkpoints_since_field_==2);
+            // A call into compiled code returns into the interpreted code.
+            static unsigned compiled_calls;compiled_calls=0;
+            // (The callee puts back the caller's return address, which real code keeps on its stack.)
+            rt.registerFunction(0x300,+[](std::uint8_t* r,R5900Context* x,PS2Runtime* g){++compiled_calls;return_leaf(r,x,g);x->r[31].low=0x204;});
+            code(0x3000,{0x0C0000C0,0,0x24420001,0x03E00008,0}); // JAL 0x300; NOP; ADDIU; JR RA; NOP
+            c.r[2].low=0;call(0x3000);
+            require(compiled_calls==1 && c.r[2].low==1 && c.pc==0x204);
+            // Unmapped code that runs into a compiled function hands over to it.
+            code(0x3FFC,{0x24420001});rt.registerFunction(0x4000,+[](std::uint8_t* r,R5900Context* x,PS2Runtime* g){++compiled_calls;return_leaf(r,x,g);});
+            c.r[2].low=0;call(0x3FFC);
+            require(compiled_calls==2 && c.r[2].low==1 && c.pc==0x204);
+            // ERET ends the frame where its handler put the pc.
+            code(0x5000,{0x42000018});call(0x5000);require(c.pc==0x204);
+            // Explicit stops: a word without a handler, a branch in a delay slot.
+            code(0x5100,{0x24420005});reject([&]{call(0x5100);});
+            code(0x5200,{0x10000001,0x03E00008});reject([&]{call(0x5200);});
+            // BT2_EE_INTERPRET=all: a generated function runs interpreted within its extent.
+            static bool compiled_ran;compiled_ran=false;
+            rt.registerFunction(0x6000,+[](std::uint8_t* r,R5900Context* x,PS2Runtime* g){compiled_ran=true;return_leaf(r,x,g);});
+            rt.registerFunctionExtent(0x6000,0x600C);code(0x6000,{0x24420001,0x03E00008,0});
+            rt.interpret_all=true;c.r[2].low=0;call(0x6000);
+            require(!compiled_ran && c.r[2].low==1 && c.pc==0x204 && rt.interpret_all_instructions==3 && !rt.interpreted_entries.contains(0x6000));
+        }
+        {
             // State hash: equal state gives equal field hashes, one changed byte changes the field's hash;
             // the page hashes are written at the requested field.
             std::vector<std::uint8_t> ram(3*StateHashLog::page_size+100,7);

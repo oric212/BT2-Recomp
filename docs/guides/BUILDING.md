@@ -75,6 +75,7 @@ This is a development workflow, not a player installation wizard. See [the tooli
 - Install the Ghidra version recorded in `config/ghidra.lock.json`, its matching R5900 extension and a compatible JDK. Pass your own installation locations to `tools/ghidra/analyze_game.py` using `--ghidra-home` and `--java-home`.
 - Analyze your extracted executable, export provisional candidates and prepare the function map. Generated code and analysis output remain local and ignored.
 - Run `python tools/ps2recomp/run_pipeline.py` for the baseline generation/build/probe workflow. `--reuse-generated` reuses output only after provenance checks.
+- Run `python tools/ps2recomp/generate_interpreter.py` once after generation (the discovery loop reruns it with `--reuse` after map changes): it makes the EE interpreter's handlers in ignored `game/generated/ee-interpreter/`, and the next CMake configure builds them in. Without them, code the map does not hold stops the run instead of running interpreted.
 - Advanced startup probes also require original IOP modules and validated local capture bundles. Preparing these uses your own PCSX2 installation, locally supplied BIOS and game image. Follow the capture/checkpoint sections in the tooling guide.
 
 The current deeper startup checkpoint is not reproducible from a fresh clone with one ISO command. Its complete input chain must be prepared locally. Missing inputs must be resolved; capture bundles are not downloaded or fabricated.

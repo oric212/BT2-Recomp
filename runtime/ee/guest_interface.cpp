@@ -24,6 +24,7 @@ std::uint32_t PS2Runtime::Load32(std::uint8_t* rdram, R5900Context* context, std
 void PS2Runtime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {full(this)->EeRuntime::Store32(rdram, context, address, value);}
 std::uint64_t PS2Runtime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {return full(this)->EeRuntime::Load64(rdram, context, address);}
 void PS2Runtime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {full(this)->EeRuntime::Store64(rdram, context, address, value);}
+void PS2Runtime::guestWrite128(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, const ProbeGpr& value) {full(this)->EeRuntime::guestWrite128(rdram, context, address, value);}
 void PS2Runtime::Store128(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, const ProbeGpr& value) {full(this)->EeRuntime::Store128(rdram, context, address, value);}
 void PS2Runtime::dataCacheLine(std::uint8_t* rdram, std::uint32_t address) {full(this)->EeRuntime::dataCacheLine(rdram, address);}
 void PS2Runtime::indexedDataCache(std::uint8_t* rdram, R5900Context* context, std::uint32_t operation, std::uint32_t address) {full(this)->EeRuntime::indexedDataCache(rdram, context, operation, address);}

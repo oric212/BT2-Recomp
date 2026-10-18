@@ -64,6 +64,7 @@ public:
     void write128(std::uint8_t* rdram, std::uint32_t address, const ProbeGpr& value);
     std::uint64_t guestRead64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address);
     void guestWrite64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value);
+    void guestWrite128(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, const ProbeGpr& value);
     std::uint32_t Load32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address);
     void Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value);
     std::uint64_t Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address);
@@ -83,6 +84,7 @@ public:
     void clearLLBit(R5900Context* context) { context->ll_bit = false; }
     // Vector register stores (VU0 macro mode: SQC2) pass the lanes as an integer vector.
     void write128(std::uint8_t* rdram, std::uint32_t address, __m128i value) { write128(rdram, address, std::bit_cast<ProbeGpr>(value)); }
+    void guestWrite128(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, __m128i value) { guestWrite128(rdram, context, address, std::bit_cast<ProbeGpr>(value)); }
 protected:
     PS2Runtime()=default; // Only as the base of EeRuntime.
     ~PS2Runtime()=default;

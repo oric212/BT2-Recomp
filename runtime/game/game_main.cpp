@@ -79,6 +79,12 @@ std::string lastLines(const fs::path& log,unsigned count) {
     for(std::size_t n=lines.size()>count?lines.size()-count:0;n<lines.size();++n)text+=lines[n]+"\n";
     return text;
 }
+// How many places of untranslated code the session ran through the interpreter (its log lines).
+unsigned interpretedPlaces(const fs::path& log) {
+    std::ifstream in(log);std::string line;unsigned count=0;
+    while(std::getline(in,line))if(line.find("runs interpreted")!=std::string::npos)++count;
+    return count;
+}
 }
 
 int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
@@ -120,12 +126,16 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
             const DWORD code=runGame(root,settings_path,settings,log);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
+            // Code that was never translated ran interpreted (slower), or stopped the game: the discovery
+            // loop builds it in.
+            const std::string discover="double-click\n"+(root/"work"/"scripts"/"discover.cmd").string()+"\nand play again.\n";
+            const unsigned interpreted=interpretedPlaces(log);
             if(code!=0) {
-                // A stop at code that was never translated can be repaired by the discovery loop.
                 const std::string last=lastLines(log,6);
-                const std::string hint=last.find("Branch target")==std::string::npos?"":
-                    "\nThe game reached code that is not translated yet. To build it in, double-click\n"+(root/"work"/"scripts"/"discover.cmd").string()+"\nand play again.\n";
+                const std::string hint=last.find("Branch target")!=std::string::npos||interpreted?"\nThe game reached code that is not translated yet. To build it in, "+discover:"";
                 MessageBoxA(nullptr,("The game stopped.\n\n"+last+hint+"\nThe full messages are in "+log.string()).c_str(),"BT2 Recomp",MB_OK|MB_ICONINFORMATION);
+            } else if(interpreted) {
+                MessageBoxA(nullptr,("The game ran "+std::to_string(interpreted)+" place(s) of code that is not translated yet, more slowly than the rest.\nTo build it in, "+discover).c_str(),"BT2 Recomp",MB_OK|MB_ICONINFORMATION);
             }
             return int(code);
         }
