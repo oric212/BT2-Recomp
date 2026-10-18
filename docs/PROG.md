@@ -66,11 +66,12 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 ## Next steps
 
-The user plays the game and reports ([handoff](progress/ACTIVE_PASS.md)); order of work per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step) and the user's decisions of 2026-10-13:
+Order of work per the [implementation plan](project/IMPLEMENTATION_PLAN.md#current-next-step) and the user's decisions of 2026-10-13 and 2026-10-18 ([handoff](progress/ACTIVE_PASS.md)):
 
+0. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), set by the user on 2026-10-18, ahead of performance): playing or scripting input to find what is missing does not scale. The map is closed statically (measured 2026-10-18: 99.03% of the main program's code bytes and 99.77% of the overlay's in functions); an EE interpreter bridges code the map does not hold and is compiled away at the next build; the runtime's handlers gated on guest PCs, stack offsets and call counts become general ones; a tool-only starter sweeps battles, screens and story episodes without input.
 1. **The user's test of what is built:** special moves and ultimates, saving (save, quit, start again), the films with and without a skip, the launcher's card list, controls and display screens, the camera in fights. A stop at unmapped code is repaired by `discovery_loop.py --player-stop`, which maps everything the stop leads to.
 2. **Open reports:** "mono sound sometimes" (not reproduced; needs where and when from the user).
-3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): the user's requirements are fights at a flat 30 pictures per second and menus at a flat 60, also on a mid- to low-end PC. Done: native VU1 programs, the heaviest written by hand. Next: the GPU renderer's packet intake on a graphics thread (needs its plan), presenting without readback, measuring the fight in the window again.
+3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md), after whole-game coverage): the user's requirements are fights at a flat 30 pictures per second and menus at a flat 60, also on a mid- to low-end PC. Done: native VU1 programs, the heaviest written by hand. Next: the GPU renderer's packet intake on a graphics thread (needs its plan), presenting without readback, measuring the fight in the window again.
 4. **Launcher** ([plan](plans/launcher/LAUNCHER_PLAN.md)): HD textures; the disc image path in any script; smooth scaling when presenting on the GPU.
 5. **Other parts of the game:** story mode and the menu entries not entered yet, by the user's play.
 6. **3D verification** (deferred by the user): compare VU1 memory, a 3D frame, a GS readback buffer and the memory card replies with PCSX2.

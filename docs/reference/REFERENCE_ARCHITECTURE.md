@@ -60,9 +60,23 @@ Snapshot: `05fd37be122cd5833cfeeceb83475933959d938f`. This is a matching decompi
 
 Its PCSX2 launcher boots a user's local ISO on the host. Use that separation for future behavioral comparisons with recorded version, input hash, scenario and observations. Its PC platform separation is useful, but the documented Linux/C++26/Vulkan setup is not our Windows/MSVC target. [PCSX2 launcher](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/scripts/host/pcsx2.sh), [PC notes](https://github.com/TheMoonPeople/Chronicle/blob/05fd37be122cd5833cfeeceb83475933959d938f/docs/PC.md).
 
+## Whole-game coverage (2026-10-18)
+
+Consulted for the [whole-game coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md): BT3-Recomp at `e22a34beb564e2d0f32bd60b02f0a95d9645ddcc` (its latest revision, the same as above) and Tenkaichi3Decomp at `ec3c85a`, of which only `docs/`, `port/` and `scripts/` were checked out; its decompiled game code (`src/`, `include/`) was not downloaded. No code copied.
+
+| Area | Reference approach | BT2 use |
+| --- | --- | --- |
+| Code the map misses | BT3-Recomp: a MIPS interpreter (`ps2xRuntime/src/lib/ps2_interp.cpp`, `interpretUntil`) runs code without a recompiled function and calls recompiled functions natively when it reaches them; `PS2X_COVERAGE` logs each interpreted address. | Adopted as a logged bridge: what it runs is compiled at the next build; the gate runs interpret nothing. |
+| Progressive recompilation | BT3-Recomp's orchestrator (`tools/orchestrator/`) keeps a corpus of logged units, discards those seen before and plans the next, hottest first. It depends on natural play to find units. | Same corpus model, fed by sweeps of game states started directly, as well as by play. |
+| Entries inside functions | BT3-Recomp inserts labels and function-table slots for callback and jump-table targets inside a function (`games/bt3/gen_overlay.py`, `REENTRY_LABELS`), found one by one. | Re-entry labels for every such target a static scan finds. |
+| Kernel | BT3-Recomp answers system calls by number (`ps2xRuntime/src/lib/Kernel/Syscalls/`) and SDK calls with stubs; its runtime also holds many fixed game addresses. | Layout reference for general handlers by number and address; the fixed game addresses are not adopted. |
+| What the game needs | Tenkaichi3Decomp: `port/tools/link.py` creates a stub for every missing symbol (about 130 at the first link), the work list of its native layer. | A list of the system calls, register addresses, RPC requests and VU1 instructions the game's code uses, against what the runtime handles. |
+| Reaching game states | Tenkaichi3Decomp: `port/src/headless.c` stands in for the menu routine, fills the battle setup (`BT3_CHARA`, costume, stage) and starts the CPU-vs-CPU demo battle or a recorded replay; a leftover debug routine unlocks everything. Its notes (`docs/systems/boot_and_frame.md`) describe the overlay's entry choosing screens by a mode field through a jump table. | A tool-only starter through BT2's own state fields, established on BT2's code; sweeps over characters, maps, screens and episodes without input. |
+| Exact checks | Tenkaichi3Decomp: a state hash per vertical blank (`BT3_HASH`, `compare_hash.py`) names the first differing blank; `compare_state.py` compares memory at a battle tick with a PCSX2 save state. | A state hash per field guards refactors and the interpreter. |
+
 ## Working strategy
 
-Discover provisionally, generate, compile/link, execute, inspect the actual blocker, implement a narrow runtime fix or checked patch, and repeat. Manual reverse engineering follows failing paths. Existing entry/control audits validate tooling; exhaustive manual boundary approval is not a prerequisite for experimental local generation.
+Discover provisionally, generate, compile/link, execute, inspect the actual blocker, implement a narrow runtime fix or checked patch, and repeat. Manual reverse engineering follows failing paths. Since 2026-10-18 the [whole-game coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md) replaces finding blockers one run at a time: the map is closed statically, what the game asks of the runtime is listed from its code, and game states are started directly. Existing entry/control audits validate tooling; exhaustive manual boundary approval is not a prerequisite for experimental local generation.
 
 ## Reached IOP boot boundary (2026-10-04)
 

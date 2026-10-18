@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-13. **No pass in progress.**
+Updated: 2026-10-18. **No pass in progress.** Next pass: step 1 of the [whole-game coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md) (close the map statically), set by the user on 2026-10-18 ahead of performance; the user accepted an EE interpreter as a logged bridge and a tool-only starter of game states.
 
 The verified checkpoint (gate run, 1,000-frame budget) is **2,007 entered / 1,998 completed**. Every mapped function (11,122, plus the 494 of the `DBZP.BIN` overlay) is generated and compiled. History of how this state was reached: [2026-10.md](2026-10.md).
 

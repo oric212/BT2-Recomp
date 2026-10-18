@@ -8,7 +8,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 
 | Area | Decision |
 | --- | --- |
-| Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. |
+| Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. An EE interpreter only as a logged bridge for code the map does not hold yet, compiled natively at the next build (decided 2026-10-18, [plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)). |
 | IOP side | **Native RPC services** answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Done 2026-10-11; the emulated IOP is removed. |
 | Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU renderer draws the 2D screens and is the test reference for them; extending it to 3D, as a fallback for systems without a suitable Vulkan GPU (for example some integrated graphics), is an optional extra for the end of the project (decided 2026-10-13). VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
 | Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
@@ -71,6 +71,10 @@ Order of the following passes (set by the user on 2026-10-13; on the same day th
 9. **Controller support** — done 2026-10-13 with a default mapping: keyboard, XInput pad and DualSense (HID) into the native controller service; `run_startup_probe.py --play` plays in the viewer with sound and can record the buttons as a pad script. Gamepads are untried on hardware. First step of the [launcher plan](../plans/launcher/LAUNCHER_PLAN.md).
 10. **Launcher, settings and overlay** ([plan](../plans/launcher/LAUNCHER_PLAN.md)): a launcher in the style of the PS2 system menu, operated with a controller (its own program; the game shows it on first start), with control configuration, display and sound settings, the disc image, saves (memory card files from `user/memcards/`) and an HD textures switch; an in-game overlay on Start + Select for volumes, display, fast forward and quitting. No save states. HD textures need texture replacement in the GPU renderer, which is investigated last and does not hold play-testing back.
 11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first ([performance plan](../plans/ee/PERFORMANCE_PLAN.md)).
+
+Set by the user on 2026-10-18: playing or scripting input to find what is missing does not scale to the game's many states. Next, ahead of performance:
+
+12. **Whole-game coverage** ([plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): close the map statically (addresses built in code, entries inside functions as re-entry labels); a state hash per field; an EE interpreter as a logged bridge for code the map does not hold, compiled natively at the next build; a list of what the game's code asks of the runtime; general kernel and hardware handlers in place of those gated on guest PCs, stack offsets and call counts; a tool-only starter of game states (battles CPU vs CPU for every character and map, menu screens, story episodes) with a coverage corpus. Then the [performance plan](../plans/ee/PERFORMANCE_PLAN.md).
 
 ## Working method
 
