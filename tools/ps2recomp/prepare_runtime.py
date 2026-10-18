@@ -177,6 +177,22 @@ def fix_sqrt_operand(source):
     return text,count
 
 
+def fix_clip(source):
+    # VCLIP sets, per x, y and z of fs, the low bit when it is above +|w| of ft and the high bit when it
+    # is below -|w|. The generator compares with w instead of |w| and swaps the two bits, so a loop that
+    # moves a point back inside by the flags (the demo fight's object at 0x145DF0) moves it away forever.
+    pattern=re.compile(r'\{ __m128 fs = ctx->vu0_vf\[(\d+)\]; __m128 ft = _mm_shuffle_ps\(ctx->vu0_vf\[(\d+)\], ctx->vu0_vf\[\2\], _MM_SHUFFLE\(3,3,3,3\)\); '
+                       r'__m128 neg_ft = [^;]*; __m128 gt = [^;]*; __m128 lt = [^;]*; uint32_t gt_mask = [^;]*; uint32_t lt_mask = [^;]*; uint32_t flags = [^;]*; '
+                       r'(ctx->vu0_clip_flags = \(\(ctx->vu0_clip_flags << 6\) \| \(flags & 0x3F\)\) & 0xFFFFFF; \})')
+    def fix(m):
+        return (f'{{ __m128 fs = ctx->vu0_vf[{m[1]}]; __m128 limit = _mm_and_ps(_mm_shuffle_ps(ctx->vu0_vf[{m[2]}], ctx->vu0_vf[{m[2]}], _MM_SHUFFLE(3,3,3,3)), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF))); '
+                f'uint32_t above = (uint32_t)_mm_movemask_ps(_mm_cmpgt_ps(fs, limit)); uint32_t below = (uint32_t)_mm_movemask_ps(_mm_cmplt_ps(fs, _mm_xor_ps(limit, _mm_castsi128_ps(_mm_set1_epi32(0x80000000))))); '
+                f'uint32_t flags = (above & 0x1) | ((below & 0x1) << 1) | ((above & 0x2) << 1) | ((below & 0x2) << 2) | ((above & 0x4) << 2) | ((below & 0x4) << 3); {m[3]}')
+    text,count=pattern.subn(fix,source)
+    if 'neg_ft' in text:raise ValueError('Unrecognized generated VCLIP')
+    return text,count
+
+
 def route_local_indirect_jumps(source):
     # A JR the generator could not resolve (a jump table it did not recognize) is emitted as a
     # dispatch to another function. When the target is one of this function's own entry labels (the
@@ -228,6 +244,7 @@ def prepare_text(text,address):
     text,counts['vu_random_hooks']=route_vu_random(text)
     text,counts['float_moves_sign_extended']=sign_extend_float_moves(text)
     text,counts['sqrt_operand_fixes']=fix_sqrt_operand(text)
+    text,counts['clip_fixes']=fix_clip(text)
     text,counts['vf0_writes_dropped']=keep_vf0_constant(text)
     text,counts['local_indirect_jumps']=route_local_indirect_jumps(text)
     return text,counts

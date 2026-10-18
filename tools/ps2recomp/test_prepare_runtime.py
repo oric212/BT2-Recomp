@@ -119,6 +119,21 @@ class RuntimePreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):fix_sqrt_operand('    ctx->f[2] = FPU_SQRT_S(ctx->f[0]);\n')
         with self.assertRaises(ValueError):fix_sqrt_operand('    // 0x100000: 0x46000840  add.s\n    ctx->f[2] = FPU_SQRT_S(ctx->f[0]);\n')
 
+    def test_clip_compares_with_the_magnitude_of_w_and_sets_above_in_the_low_bit(self):
+        from prepare_runtime import fix_clip
+        source=('    { __m128 fs = ctx->vu0_vf[3]; __m128 ft = _mm_shuffle_ps(ctx->vu0_vf[7], ctx->vu0_vf[7], _MM_SHUFFLE(3,3,3,3)); '
+                '__m128 neg_ft = _mm_xor_ps(ft, _mm_castsi128_ps(_mm_set1_epi32(0x80000000))); __m128 gt = _mm_cmpgt_ps(fs, ft); __m128 lt = _mm_cmplt_ps(fs, neg_ft); '
+                'uint32_t gt_mask = (uint32_t)_mm_movemask_ps(gt); uint32_t lt_mask = (uint32_t)_mm_movemask_ps(lt); '
+                'uint32_t flags = ((lt_mask & 0x1) << 0) | ((gt_mask & 0x1) << 1) | ((lt_mask & 0x2) << 1) | ((gt_mask & 0x2) << 2) | ((lt_mask & 0x4) << 2) | ((gt_mask & 0x4) << 3); '
+                'ctx->vu0_clip_flags = ((ctx->vu0_clip_flags << 6) | (flags & 0x3F)) & 0xFFFFFF; }\n')
+        text,count=fix_clip(source)
+        self.assertEqual(count,1)
+        self.assertIn('__m128 fs = ctx->vu0_vf[3]; __m128 limit = _mm_and_ps(_mm_shuffle_ps(ctx->vu0_vf[7], ctx->vu0_vf[7], _MM_SHUFFLE(3,3,3,3)), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)));',text)
+        self.assertIn('uint32_t flags = (above & 0x1) | ((below & 0x1) << 1) | ((above & 0x2) << 1) | ((below & 0x2) << 2) | ((above & 0x4) << 2) | ((below & 0x4) << 3);',text)
+        self.assertTrue(text.endswith('ctx->vu0_clip_flags = ((ctx->vu0_clip_flags << 6) | (flags & 0x3F)) & 0xFFFFFF; }\n'))
+        self.assertEqual(fix_clip('    ctx->f[1] = FPU_ADD_S(ctx->f[1], ctx->f[0]);\n')[1],0)
+        with self.assertRaises(ValueError):fix_clip('    { __m128 neg_ft = ft; }\n')
+
     def test_unresolved_jump_table_reenters_the_function(self):
         from prepare_runtime import route_local_indirect_jumps
         jump=('    {\n        const uint32_t jumpTarget = GPR_U32(ctx, 3);\n        ctx->pc = jumpTarget;\n'
