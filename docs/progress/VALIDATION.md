@@ -20,7 +20,8 @@ What has actually been checked, how, and when. Only checks that were run are lis
 | Stages | Goku against character 1 on stages 0 to 15 (16 distinct stages): each ran 4,500 flips, nothing interpreted; stage numbers from 16 give Wasteland again | Ran | 2026-10-19 |
 | Screens without input | The ten main-menu screens started by mode (`BT2_START_SCREEN`): Dragon Adventure intro, Ultimate Battle Z, Dragon Tournament, Dueling, Ultimate Training, Evolution Z, Item Shop, Data Center, Options, Dragon Library; each ran 1,200 flips, nothing interpreted | Ran | 2026-10-19 |
 | Story episode starts | Episodes 0 to 24 started by `BT2_START_EPISODE`: 24 load their 3D map with their own lead character and ran 1,500 flips, nothing interpreted; episode 23 draws no 3D because its first scene's script is empty (the game's episode table marks it unavailable). From 25 the game reads past its tables (28 and up stop presenting frames). Story battles not reached | Ran | 2026-10-19 |
-| Story scene scripts | All 621 scene files (33 to 653) decode with `story_scenes.py`; 25 episodes with 207 parts per the game's episode table | Ran | 2026-10-19 |
+| Story scene scripts | All 621 scene files (33 to 653) decode with `story_scenes.py`; 25 episodes with 207 parts per the game's episode table; 157 parts have a map marker to their story scene | Ran | 2026-10-19 |
+| Story scene from a marker | Episode 0 part 0, marker 14 (`BT2_START_EPISODE=0,0,marker:14`): the map hands over to scene 34, the opening cutscene, which plays without input up to its first text box; SOUNDS request `0x80` (implemented from the module's code, unit-tested) answered; 3,000 flips, nothing interpreted | Ran | 2026-10-19 |
 | Runtime rules for the screen starter | The scripted fight before and after the general SetVSyncFlag and INTC_STAT rules: same state on all 6,534 fields | Exact | 2026-10-19 |
 | Frames | Demo fights, title dialogues, main and Dueling menus, character and map selection, loading screen, battle | User | 2026-10-13 |
 | Sound | A WAV of menus and a fight | User | 2026-10-13 |
@@ -28,6 +29,6 @@ What has actually been checked, how, and when. Only checks that were run are lis
 
 ## Not validated yet
 
-- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); story battles.
+- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); story battles (text boxes and the pre-battle screen wait for a button).
 - 3D frames, menu frames, memory card replies and GS readback pixels against the original.
 - Writing a save; special moves and ultimates in play; live sound in play.

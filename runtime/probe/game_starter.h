@@ -30,11 +30,12 @@ void installBattleStarter(EeRuntime& runtime, const BattleStart& start);
 std::uint32_t parseScreenStart(std::string_view text);
 void installScreenStarter(EeRuntime& runtime, std::uint32_t mode);
 
-// BT2_START_EPISODE=<episode>[,<part>]: the story routine with that episode, as after its opening
+// BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]: the story routine with that episode, as after its opening
 // (STORY_MODE_PLAN.md). Decimal; throws on other text.
 struct EpisodeStart {
     std::uint32_t episode = 0;
     std::uint32_t part = 0;
+    std::uint32_t marker = 0; // ",marker:<m>" (1 to 25): the player is reported at that map marker once.
 };
 EpisodeStart parseEpisodeStart(std::string_view text);
 void installEpisodeStarter(EeRuntime& runtime, const EpisodeStart& start);

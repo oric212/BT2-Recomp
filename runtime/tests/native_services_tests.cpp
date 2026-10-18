@@ -276,6 +276,12 @@ int main() {
                 refused=false;try{bad();}catch(const std::runtime_error&){refused=true;}
                 require(refused,"requests outside the loaded banks are refused");
             }
+            // Replacing a slot's bank (SOUNDS 0x80): the old bank's voices end, the count stays.
+            sampler.play(0,1,127,64,0);sampler.replace(0,0x1000,head,sequences);
+            require(sampler.banks()==1 && !sampler.voices(),"replacement keeps the count and ends the old bank's voices");
+            sampler.play(0,0,127,64,0);require(sampler.voices()==1,"the replaced slot plays its new bank");
+            refused=false;try{sampler.replace(1,0x1000,head,sequences);}catch(const std::runtime_error&){refused=true;}
+            require(refused,"replacing a slot that holds no bank is refused");
             sampler.play(0,0,127,64,0);sampler.unload();require(!sampler.banks() && !sampler.voices(),"unload removes the bank and its voices");
             refused=false;try{sampler.unload();}catch(const std::runtime_error&){refused=true;}
             require(refused,"unload without a bank is refused");

@@ -39,6 +39,16 @@ public:
         if(address>memory_.size() || bank.sample_bytes>memory_.size()-address)throw std::runtime_error("Sound bank samples outside sound memory");
         banks_.push_back({address,std::move(bank),next_bank_++});
     }
+    // SOUNDS bank replacement: the bank in `slot` (already loaded) becomes the given one; the old bank's
+    // voices end and the number of banks stays.
+    void replace(std::size_t slot,std::uint32_t address,std::span<const std::uint8_t> head,std::span<const std::uint8_t> sequences) {
+        if(slot>=banks_.size())throw std::runtime_error("Sound bank replacement of slot "+std::to_string(slot)+", which holds no bank");
+        auto bank=SoundBank::parse(head,sequences);
+        if(address>memory_.size() || bank.sample_bytes>memory_.size()-address)throw std::runtime_error("Sound bank samples outside sound memory");
+        const auto id=banks_[slot].id;
+        std::erase_if(voices_,[&](const Voice& v){return v.bank==id;});
+        banks_[slot]={address,std::move(bank),next_bank_++};
+    }
     // SOUNDS bank unload: the last loaded bank goes, with its voices.
     void unload() {
         if(banks_.empty())throw std::runtime_error("Sound bank unload without a bank");

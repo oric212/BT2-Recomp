@@ -23,6 +23,13 @@ constexpr std::uint32_t modes=64;       // Entries of the entry's mode table.
 BattleStart configured;
 std::uint32_t configured_mode=0;
 std::uint32_t configured_episode[2]{};
+// The story map's marker queries (STORY_MODE_PLAN.md): has the player reached a marker, and which.
+constexpr std::uint32_t marker_reached=0x20C870,marker_number=0x20C8E8;
+constexpr unsigned map_frames_before_marker=120;
+PS2Runtime::RecompiledFunction original_marker_reached=nullptr,original_marker_number=nullptr;
+std::uint32_t configured_marker=0;
+unsigned marker_queries=0;
+bool marker_fired=false;
 constexpr std::uint32_t episode_number=48,story_flag=0x200; // In the progress structure.
 PS2Runtime::RecompiledFunction original_entry=nullptr;
 bool started=false;
@@ -125,6 +132,27 @@ void startEpisode(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime)
     runtime->dispatchGuestBranch(rdram,context,return_address,overlay_entry,0,PS2Runtime::GuestBranchKind::Return,"JR $ra");
 }
 
+void returnValue(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime,std::uint32_t value,std::uint32_t function) {
+    setRegister(context,2,value);
+    const auto return_address=static_cast<std::uint32_t>(context->r[31].low);
+    context->pc=return_address;
+    runtime->dispatchGuestBranch(rdram,context,return_address,function,0,PS2Runtime::GuestBranchKind::Return,"JR $ra");
+}
+
+// After the map has run a while, the player is reported at the chosen marker once; the map's exit test
+// then runs that marker's block of the scene script, which names the next scene, as when the player
+// flies there. Before and after, the game's own queries answer.
+void reachMarker(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(marker_fired || ++marker_queries<map_frames_before_marker) {original_marker_reached(rdram,context,runtime);return;}
+    marker_fired=true;
+    returnValue(rdram,context,runtime,1,marker_reached);
+}
+void reachedMarker(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(!marker_fired || marker_queries==~0u) {original_marker_number(rdram,context,runtime);return;}
+    marker_queries=~0u; // Answered once.
+    returnValue(rdram,context,runtime,configured_marker,marker_number);
+}
+
 std::uint32_t number(std::string_view text,const char* name) {
     std::uint32_t value=0;
     const auto [end,error]=std::from_chars(text.data(),text.data()+text.size(),value);
@@ -177,13 +205,30 @@ void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
 
 EpisodeStart parseEpisodeStart(std::string_view text) {
     EpisodeStart start;
-    const auto comma=text.find(',');
-    start.episode=number(text.substr(0,comma),"BT2_START_EPISODE");
-    if(comma!=std::string_view::npos)start.part=number(text.substr(comma+1),"BT2_START_EPISODE");
+    std::string_view fields[3];std::size_t count=0;
+    while(true) {
+        const auto comma=text.find(',');
+        if(count==3)throw std::runtime_error("BT2_START_EPISODE: too many fields");
+        fields[count++]=text.substr(0,comma);
+        if(comma==std::string_view::npos)break;
+        text.remove_prefix(comma+1);
+    }
+    start.episode=number(fields[0],"BT2_START_EPISODE");
+    if(count>1)start.part=number(fields[1],"BT2_START_EPISODE");
+    if(count>2) {
+        if(!fields[2].starts_with("marker:"))throw std::runtime_error("BT2_START_EPISODE: the third field is marker:<number>");
+        start.marker=number(fields[2].substr(7),"BT2_START_EPISODE");
+        if(!start.marker || start.marker>25)throw std::runtime_error("BT2_START_EPISODE: markers are 1 to 25");
+    }
     return start;
 }
 
 void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
     configured_episode[0]=start.episode;configured_episode[1]=start.part;
     original_entry=runtime.replaceFunction(overlay_entry,startEpisode);
+    if(start.marker) {
+        configured_marker=start.marker;
+        original_marker_reached=runtime.replaceFunction(marker_reached,reachMarker);
+        original_marker_number=runtime.replaceFunction(marker_number,reachedMarker);
+    }
 }

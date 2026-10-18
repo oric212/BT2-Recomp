@@ -8,13 +8,13 @@ Current plan: [whole-game coverage](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), ah
 
 - `BT2_START_BATTLE=<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]`: a CPU-vs-CPU battle (characters 0 to 129, variants 0 to 8, stages 0 to 15).
 - `BT2_START_SCREEN=<mode>`: one of the ten main-menu screens.
-- `BT2_START_EPISODE=<episode>[,<part>]`: a story episode's 3D map (episodes 0 to 24, 207 parts). `tools/ps2recomp/story_scenes.py` lists the parts' scene scripts.
+- `BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]`: a story episode's 3D map (episodes 0 to 24, 207 parts), or with a marker the scene it leads to. `tools/ps2recomp/story_scenes.py` lists the parts' markers and scenes.
 
 What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new check there).
 
 **Next (when the user starts the next pass):**
 
-1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): find how a story battle starts (no scene command starts one directly; likely a map marker, opcode 1009, and its numbered block), then a starter for a part's battle, then propose the overnight run of the 207 parts' battles to the user (roughly 5 to 7 hours) and run it only after their confirmation. Episode 23's missing 3D is explained (its first scene is empty; the game marks it unavailable).
+1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): a part's story scene now starts without input (`BT2_START_EPISODE=<episode>,<part>,marker:<m>`; `story_scenes.py` names the marker for 157 of the 207 parts). Next: a tool-only advance of text boxes, then of the pre-battle confirmation, so the part's battle runs; then the 50 parts without a story marker; then propose the overnight run of every part's battle (roughly 5 to 7 hours) and run it only after the user's confirmation.
 2. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
 3. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 

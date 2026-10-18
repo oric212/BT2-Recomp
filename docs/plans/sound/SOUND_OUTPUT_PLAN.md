@@ -55,7 +55,7 @@ Its runtime (`ps2xRuntime/src/lib`, snapshot `e22a34be`) routes the sound librar
   - **Volume (`0x70`)** {16-bit volume}: the same volume for all eight slots. Not requested in the runs so far.
   - **Silence (`0x200`)** {.., .., .., slot mask}: all sound off for the masked slots.
   - **Stop all (`0x100`):** stops every sound in the table, all sound off for all eight slots, clears the table.
-  - **Unload (`0x30`)** only lowers the bank count. **`0x60`** selects the synthesizer's output mode (mono or stereo); **`0x80`** replaces a loaded bank. Neither is requested in the runs so far.
+  - **Unload (`0x30`)** only lowers the bank count. **`0x60`** selects the synthesizer's output mode (mono or stereo; recorded, the mix stays stereo). **`0x80`** {sound memory address, header block, sequence block, slot} loads a bank into an existing slot and keeps the bank count (the module's handler, read 2026-10-19); implemented, first reached by a story mode scene.
   - A slot is the synthesizer port its bank was loaded on, so the slot masks address banks.
   - The three looping samples are in the battle's common bank; the run requests one of them (sound 22) with the keep flag and stops it with the stop flag.
 - **Bank layout, read from the eight banks the run loads:** Sony's chunked sound data. The header block has `SCEI` chunks `Vers`, `Head`, `Vagi` (per sample: offset, sampling rate, loop flag) and `Setb` (timbres of 0x32 bytes: sample index, volume, pan). The sequence block has `Vers`, `Sequ` and `Sesq` (per sound: volume, pan and seven data bytes).

@@ -487,6 +487,7 @@ public:
     // The memory card in slot 1 as a host folder (docs/plans/memory-card/MEMORY_CARD_PLAN.md); empty: no card.
     std::filesystem::path memory_card_folder;bool memory_card_reported_=false;
     unsigned sounds_output_mode=0,sounds_output_mode_requests=0; // SOUNDS request 0x60: the last mode asked for.
+    unsigned sounds_bank_replacements=0; // SOUNDS request 0x80.
     std::optional<CardFolder> memory_card_;std::vector<CardFolder::Entry> memory_card_listing_;std::size_t memory_card_listed_=0;unsigned memory_card_file_requests=0;
     std::uint32_t memoryCardFreeClusters() const;
     unsigned mc_rpc_binds=0,mc_rpc_calls=0,mc_lock_waits=0,mc_lock_signals=0,mc_lock_polls=0;

@@ -13,11 +13,12 @@
 //   PCSX2 call log 2026-10-12 (capture_ee.py --sounds-log, 40 calls from boot into the menus):
 //   0x20 loads a bank (word 5 + 1) and starts the worker on the first; 0x30 unloads one (word 5 - 1);
 //   0x40 (request a sound), 0x50 and 0x200 leave the block unchanged; so do 0x70 and 0x100, whose
-//   handlers (read from the module) return the same block.
+//   handlers (read from the module) return the same block. 0x80 replaces the bank of a slot (handler
+//   0xF2C of the module, read 2026-10-19).
 
 namespace {
 constexpr std::uint32_t sdr_init=0xE620,sdr_block_transfer=0x80D0,sdr_command=0x80F0;
-constexpr std::uint32_t sounds_init=0x10,sounds_bank=0x20,sounds_unload=0x30,sounds_play=0x40,sounds_fade=0x50,sounds_60=0x60,sounds_volume=0x70,sounds_80=0x80,sounds_stop_all=0x100,sounds_silence=0x200;
+constexpr std::uint32_t sounds_init=0x10,sounds_bank=0x20,sounds_unload=0x30,sounds_play=0x40,sounds_fade=0x50,sounds_60=0x60,sounds_volume=0x70,sounds_replace=0x80,sounds_stop_all=0x100,sounds_silence=0x200;
 constexpr std::array<std::uint32_t,16> sounds_status={0,0,0,0,1,1,0,0,0x20010,0,0,0,2,0x1C2440,0,0};
 }
 
@@ -111,8 +112,18 @@ bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const
         // Which of the two is mono is not established, so the mode is recorded and the mix stays stereo.
         if(!native_sounds_started_)throw UnsupportedSyscall(0x77,context->pc);
         sounds_output_mode=read32(rdram,r.send_source)?1:0;++sounds_output_mode_requests;break;
-    // Not reached by the runs so far and refused until one needs it: 0x80 replaces a loaded bank.
-    case sounds_80: std::cerr<<"SOUNDS request "<<std::hex<<r.rpc_number<<std::dec<<" is not implemented"<<std::endl;throw UnsupportedSyscall(0x77,context->pc);
+    case sounds_replace: {
+        // {sound memory address, header block, sequence block, slot}: the module (handler 0xF2C) loads the
+        // bank into that slot as 0x20 does into the next one, and keeps its count of banks (reached by
+        // a story mode battle scene).
+        const auto first=read32(rdram,r.send_source+4),second=read32(rdram,r.send_source+8),slot=read32(rdram,r.send_source+12);
+        if(!native_sounds_started_ || !native_heap_.isBlock(first) || !native_heap_.isBlock(second))throw UnsupportedSyscall(0x77,context->pc);
+        try {
+            sound_sampler.replace(slot,read32(rdram,r.send_source),std::span<const std::uint8_t>(native_iop_ram_.data()+first,native_heap_.size(first)),
+                std::span<const std::uint8_t>(native_iop_ram_.data()+second,native_heap_.size(second)));
+        } catch(const std::runtime_error& e) {std::cerr<<e.what()<<std::endl;throw UnsupportedSyscall(0x77,context->pc);}
+        ++sounds_bank_replacements;break;
+    }
     default: throw UnsupportedSyscall(0x77,context->pc);
     }
     for(unsigned n=0;n<16;++n)write32(rdram,r.receive+n*4,!native_sounds_started_?0u:n==5?native_sounds_banks_:sounds_status[n]);
