@@ -21,7 +21,7 @@ void EeRuntime::registerKernelFunction(std::uint32_t address, RecompiledFunction
 // A field's worth of main-thread work without an idle point: the VBLANK arrives anyway, once main runs
 // with interrupts enabled in the frame phase (otherwise it stays due and is retried).
 void EeRuntime::busyMainField() {
-    if(!main_context_ || current_thread_id!=1 || in_interrupt_ || !gs_display_flips || !main_priority_admissions || startup_scheduler_active
+    if(!main_context_ || current_thread_id!=1 || in_interrupt_ || !main_priority_admissions || startup_scheduler_active
         || !(intc_mask&4u) || (main_context_->cop0_status&0x10001u)!=0x10001u)return;
     ++busy_main_vblanks;deliverVblank(memory().data(),main_context_);
 }

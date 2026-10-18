@@ -75,7 +75,9 @@ bool EeRuntime::handleScheduledThreadSyscall(std::uint8_t* rdram,std::uint32_t s
         const auto priority=static_cast<std::uint32_t>(context->r[5].low);
         if(!main || !priority || priority>=128)throw UnsupportedSyscall(selector,context->pc);
         const auto previous=main_thread_priority;main_thread_priority=priority;
-        try{requireNoPreemption(selector,context);}catch(...){main_thread_priority=previous;throw;}
+        // Lowered below a ready worker, main yields to it before the call returns.
+        if(!mainYieldsToReadyWorkers(rdram,context))
+            try{requireNoPreemption(selector,context);}catch(...){main_thread_priority=previous;throw;}
         context->r[2].low=previous;++scheduled_priority_changes;return true;
     }
     // Main and unknown IDs are otherwise outside this bounded scope.

@@ -1,0 +1,124 @@
+#include "battle_starter.h"
+#include <charconv>
+#include <cstring>
+#include <initializer_list>
+#include <stdexcept>
+#include <string>
+
+namespace {
+
+// Established on BT2's code (WHOLE_GAME_COVERAGE_PLAN.md, step 6); names stay neutral.
+constexpr std::uint32_t overlay_entry=0x3B7FA8;                       // Runs the title and the menus.
+constexpr std::uint32_t progress_pointer=0x3876A4,system_pointer=0x3876A0;
+constexpr std::uint32_t progress_flags=0x18,first_run_flag=0x40;
+constexpr std::uint32_t archive_mount=0x100950,archive_wait=0x100990; // Mount archive n; wait until it is mounted.
+constexpr std::uint32_t common_files=0x102450;                      // Loads files 15401, 15402 and 15404 once.
+constexpr std::uint32_t setup_clear=0x101A10,side_control=0x101AB0,side_record=0x101A88,fighter_set=0x101AF8,
+                        music_choice=0x24AF50,battle_set=0x101A60;   // The setters the demo picker calls.
+constexpr std::uint32_t character_table=116,setup_flags=1240;        // In the system structure.
+constexpr std::uint32_t variants_per_character=9;
+
+BattleStart configured;
+PS2Runtime::RecompiledFunction original_entry=nullptr;
+bool started=false;
+
+std::uint32_t read32(const std::uint8_t* rdram,std::uint32_t address) {
+    std::uint32_t value;std::memcpy(&value,rdram+address,4);return value;
+}
+void write32(std::uint8_t* rdram,std::uint32_t address,std::uint32_t value) {std::memcpy(rdram+address,&value,4);}
+void setRegister(R5900Context* context,int index,std::uint32_t value) {
+    context->r[index].low=static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(value)));
+}
+
+// A call as a JAL from the entry makes it: the arguments in a0-a3 and t0-t3; returns v0.
+std::uint32_t call(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime,std::uint32_t target,
+                   std::initializer_list<std::uint32_t> arguments={}) {
+    int index=4;
+    for(const auto argument:arguments)setRegister(context,index++,argument);
+    setRegister(context,31,overlay_entry);
+    runtime->dispatchGuestBranch(rdram,context,target,overlay_entry,overlay_entry,PS2Runtime::GuestBranchKind::DirectCall,"battle starter");
+    return static_cast<std::uint32_t>(context->r[2].low);
+}
+
+void startBattle(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(started) {original_entry(rdram,context,runtime);return;}
+    started=true;
+    const auto return_address=static_cast<std::uint32_t>(context->r[31].low);
+    const auto stack=static_cast<std::uint32_t>(context->r[29].low);
+    const std::uint32_t progress=read32(rdram,progress_pointer);
+    // Of the entry's first-run work, the second archive is mounted and the common files (the character
+    // table among them) are loaded; the memory card check, the logos and the films are left out.
+    if(read32(rdram,progress+progress_flags)&first_run_flag) {
+        call(rdram,context,runtime,archive_mount,{1});
+        call(rdram,context,runtime,archive_wait,{1});
+        call(rdram,context,runtime,common_files);
+        write32(rdram,progress+progress_flags,read32(rdram,progress+progress_flags)&~first_run_flag);
+    }
+    call(rdram,context,runtime,setup_clear);
+    const std::uint32_t system=read32(rdram,system_pointer);
+    std::memset(rdram+system+setup_flags,0,8);
+    for(std::uint32_t side=0;side<2;++side)call(rdram,context,runtime,side_control,{side,1,1,0}); // CPU on both sides.
+    const std::uint32_t characters=read32(rdram,system+character_table);
+    for(std::uint32_t side=0;side<2;++side) {
+        const std::uint32_t record=call(rdram,context,runtime,side_record,{side});
+        const std::uint32_t character=configured.character[side],values=characters+character*16;
+        // The fighter setter's stack arguments: six flags, a doubleword 0 and three of the character's values.
+        const std::uint32_t frame=(stack-96)&~15u;
+        std::memset(rdram+frame,0,80);
+        for(std::uint32_t slot=0;slot<6;++slot)write32(rdram,frame+slot*8,1);
+        write32(rdram,frame+56,read32(rdram,values));
+        write32(rdram,frame+64,read32(rdram,values));
+        write32(rdram,frame+72,read32(rdram,values+4));
+        setRegister(context,29,frame);
+        call(rdram,context,runtime,fighter_set,{record+8,character*variants_per_character+configured.variant[side],0,2,0,0,1,1});
+        setRegister(context,29,stack);
+    }
+    const std::uint32_t music=call(rdram,context,runtime,music_choice,{configured.music});
+    // The settings the versus menus leave (kind 0: a battle to the end, without the demo's time limit
+    // and its return to the title); the demo picker passes kind 6 with 5 and 3.
+    call(rdram,context,runtime,battle_set,{0,configured.map,0,1,4,music});
+    write32(rdram,progress+progress_flags,read32(rdram,progress+progress_flags)|0x4); // Set before both the demo's and the menus' battles.
+    setRegister(context,2,0);
+    setRegister(context,29,stack);
+    setRegister(context,31,return_address);
+    context->pc=return_address;
+    runtime->dispatchGuestBranch(rdram,context,return_address,overlay_entry,0,PS2Runtime::GuestBranchKind::Return,"JR $ra");
+}
+
+std::uint32_t number(std::string_view text) {
+    std::uint32_t value=0;
+    const auto [end,error]=std::from_chars(text.data(),text.data()+text.size(),value);
+    if(text.empty() || error!=std::errc{} || end!=text.data()+text.size())
+        throw std::runtime_error("BT2_START_BATTLE: not a number: "+std::string(text));
+    return value;
+}
+
+} // namespace
+
+BattleStart parseBattleStart(std::string_view text) {
+    BattleStart start;
+    std::string_view fields[4];
+    std::size_t count=0;
+    while(true) {
+        const auto comma=text.find(',');
+        if(count==4)throw std::runtime_error("BT2_START_BATTLE: too many fields");
+        fields[count++]=text.substr(0,comma);
+        if(comma==std::string_view::npos)break;
+        text.remove_prefix(comma+1);
+    }
+    if(count<3)throw std::runtime_error("BT2_START_BATTLE needs <character>[:<variant>],<character>[:<variant>],<map>[,<music>]");
+    for(int side=0;side<2;++side) {
+        const auto colon=fields[side].find(':');
+        start.character[side]=number(fields[side].substr(0,colon));
+        if(colon!=std::string_view::npos)start.variant[side]=number(fields[side].substr(colon+1));
+        if(start.variant[side]>=variants_per_character)throw std::runtime_error("BT2_START_BATTLE: variant above 8");
+    }
+    start.map=number(fields[2]);
+    if(count==4)start.music=number(fields[3]);
+    return start;
+}
+
+void installBattleStarter(EeRuntime& runtime,const BattleStart& start) {
+    configured=start;
+    original_entry=runtime.replaceFunction(overlay_entry,startBattle);
+}

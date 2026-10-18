@@ -1,6 +1,7 @@
 #include "ee/ee_runtime.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
+#include "probe/battle_starter.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -316,6 +317,21 @@ int main() {
             require(lines==4 && region=="ee" && page=="3");
             require(StateHashLog::hashBytes(ram,0)!=StateHashLog::hashBytes(ram,1));
             std::filesystem::remove(path);std::filesystem::remove(path+".pages");
+        }
+        {
+            // BT2_START_BATTLE's text and the replacement of a registered function (battle_starter.cpp).
+            const auto start=parseBattleStart("4:1,70,22");
+            require(start.character[0]==4 && start.variant[0]==1 && start.character[1]==70 && start.variant[1]==0
+                && start.map==22 && start.music==1);
+            require(parseBattleStart("0,0,9,3").music==3);
+            reject([]{parseBattleStart("4,70");});
+            reject([]{parseBattleStart("4:9,70,22");});
+            reject([]{parseBattleStart("4,x,22");});
+            reject([]{parseBattleStart("4,70,22,1,5");});
+            EeRuntime runtime;
+            reject([&]{runtime.replaceFunction(0x300,return_leaf);});
+            runtime.registerFunction(0x300,nested_call);
+            require(runtime.replaceFunction(0x300,return_leaf)==nested_call);
         }
         {
             // Interior entries: the function holding the label runs with the pc at the label, and the
@@ -1626,8 +1642,20 @@ int main() {
             require(call(0x30,4,0x1000)==8 && sched.read32(ram,0x1000)==8 && call(0x30,5,0x1000)==4 && call(0x30,2,0x1000)==0x10);
             require(call(0x39,4,0)==4 && !sched.threads[2].suspended && sched.threads[2].ready && call(0x30,4,0x1000)==2);
             reject([&]{call(0x39,4,0);});
-            reject([&]{call(0x29,1,24);});                                       // Ready ID 4 (8) would preempt.
-            require(sched.main_thread_priority==1);
+            {
+                // Main lowering itself below ready ID 4 (8) yields, as a worker's change does: ID 4 runs
+                // first, and its unregistered entry stops at a checked branch with main restored. A fresh
+                // fixture, since the stopped worker keeps its retained stack.
+                EeRuntime yield;yield.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
+                yield.thread_initialized=true;yield.current_thread_id=1;yield.main_thread_priority=1;yield.main_priority_admissions=1;
+                yield.threads.resize(6);
+                for(unsigned n=0;n<6;++n){auto& t=yield.threads[n];t.id=n+2;t.current_priority=n==2?8u:20u;t.context.pc=n?0x100000u:0u;}
+                yield.threads[2].ready=true;yield.threads[2].entry=0x100000;
+                R5900Context c{};c.pc=0x32EAF8;c.r[3].low=0x29;c.r[4].low=1;c.r[5].low=24;
+                bool yielded=false;
+                try{yield.handleSyscall(yield.memory().data(),&c,0);}catch(const UnsupportedGuestBranch& e){yielded=e.target==0x100000;}
+                require(yielded && yield.startup_worker_dispatches==1 && yield.current_thread_id==1 && !yield.active_ee_stack);
+            }
             require(call(0x37,4,0)==4 && sched.threads[2].suspended && !sched.threads[2].ready && call(0x29,0,24)==1);
             reject([&]{call(0x30,9,0x1000);});reject([&]{call(0x30,1,0x1000);});reject([&]{call(0x37,1,0);});
             sched.threads[3].waiting=false;sched.threads[3].ready=true;         // Ready ID 5 (16) above main.

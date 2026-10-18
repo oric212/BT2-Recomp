@@ -150,6 +150,16 @@ public:
             throw std::runtime_error("Invalid or duplicate guest registration");
     }
 
+    // Tool runs only (the battle starter, runtime/probe/battle_starter.cpp): a host function in place of
+    // a registered one; returns the function it replaces.
+    RecompiledFunction replaceFunction(std::uint32_t address, RecompiledFunction function) {
+        const auto found = functions_.find(address);
+        if (found == functions_.end() || !function) throw std::runtime_error("Invalid guest replacement");
+        const auto replaced = found->second;
+        found->second = function;
+        return replaced;
+    }
+
     // A function generated from a runtime-loaded overlay: dispatchable only while main RAM holds the
     // exact bytes it was generated from (checked on every dispatch; EE_OVERLAY_PLAN.md).
     void registerOverlayFunction(std::uint32_t address, RecompiledFunction function, std::span<const std::uint8_t> expected) {
@@ -693,14 +703,13 @@ public:
     std::uint32_t read32(std::uint8_t* rdram, std::uint32_t address);
 
     bool eeCheckpointDue() {
-        // Runaway guard. One observed null-bind retry executes a 2^20+1-iteration guest loop. Once frames
-        // are presented the guard applies per frame and per VBLANK field (each restarts the count): run
-        // length is bounded by the frame limit and the flipless-field limit (deliverVblank), and a loop
-        // that never reaches the next field still stops. A worker thread above main runs to its next
-        // wait within one field (logical time does not advance for it), so the frame-phase bound has to
-        // hold a whole burst of loading work: battle loading copies and unpacks for tens of millions
-        // of iterations in one go.
-        if (gs_display_flips != checkpoint_flips_ || (gs_display_flips && vblank_deliveries != checkpoint_fields_))
+        // Runaway guard. One observed null-bind retry executes a 2^20+1-iteration guest loop. The guard
+        // applies per frame and per VBLANK field (each restarts the count): run length is bounded by the
+        // frame limit and the flipless-field limit (deliverVblank), and a loop that never reaches the
+        // next field still stops. A worker thread above main runs to its next wait within one field
+        // (logical time does not advance for it), so the frame-phase bound has to hold a whole burst of
+        // loading work: battle loading copies and unpacks for tens of millions of iterations in one go.
+        if (gs_display_flips != checkpoint_flips_ || vblank_deliveries != checkpoint_fields_)
             {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries; checkpoints_ = 0;}
         if (++checkpoints_ > (checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u))
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)

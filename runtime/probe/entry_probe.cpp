@@ -6,6 +6,7 @@
 #include "host/viewer_window.h"
 #endif
 #include "probe_state.h"
+#include "battle_starter.h"
 #include "host/audio_device.h"
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
@@ -390,6 +391,11 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,modes,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime,modes);
+        // BT2_START_BATTLE: a CPU-against-CPU battle without input, for tool runs (battle_starter.h).
+        if (const char* battle = std::getenv("BT2_START_BATTLE")) {
+            if (std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE is for tool runs, not a player's session");
+            installBattleStarter(runtime, parseBattleStart(battle));
+        }
         // The interpreter bridge for code no generated function holds (ee_interpreter.cpp). BT2_EE_INTERPRET:
         // "off" stops at such code as before; "all" runs every generated function interpreted as well
         // (a diagnostic comparison with the compiled run through BT2_STATE_HASH).
