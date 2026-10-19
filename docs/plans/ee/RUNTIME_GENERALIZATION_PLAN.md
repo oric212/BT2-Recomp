@@ -16,7 +16,7 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 
 1. **Kernel semaphores** (CreateSema, DeleteSema, WaitSema, PollSema, SignalSema): CreateSema accepts any `attr` (the kernel ignores it: it keeps the count, maximum and option only); DeleteSema deletes any existing semaphore and its id is reused (lowest free id first); a wait on a zero count still stops (no other thread can signal in this model) until threads (group 3) can block. **Done 2026-10-19:** see below.
 2. **GS and display startup** (GS CSR reset, GsPutIMR, SetGsCrt, the display's VSync waits): one reset behavior and one CRT behavior, wherever they come from. **Done 2026-10-19** except the two VSync waits (see below).
-3. **Threads** (CreateThread, StartThread, ChangeThreadPriority, ReferThreadStatus, SuspendThread, the startup workers): a general thread table with the kernel's states; then thread exit and deletion (the sound library's shutdown, a worker's exit), which the census lists as unhandled.
+3. **Threads** (CreateThread, StartThread, ChangeThreadPriority, ReferThreadStatus, SuspendThread, the startup workers): a general thread table with the kernel's states; then thread exit and deletion (the sound library's shutdown, a worker's exit), which the census lists as unhandled. **First part done 2026-10-19** (see below).
 4. **Hardware stores of the startup** (DMAC control and priority, Timer 1's delay helpers, the startup GIF transfers, VIF startup): the general register behavior the frame phase already has.
 5. **SIF and IOP replays after the IOP reset** (the post-reset LOADFILE, SCMD and SIF register sequences): general SIF register and DMA behavior.
 6. **The rest** (dispatch, sound dispatch, services, VU0 macro): case by case.
@@ -33,6 +33,14 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 - 18 branches keyed on pcs, stack offsets, return addresses and step numbers replaced by these four functions, and the evidence flags that admitted the first calls removed. The startup's sequence counters (the first reset's steps, the graph startup's, main's two display re-initializations, the frame-phase resets) advance from their own state after the general behavior; the later startup steps read them, but they decide nothing.
 - Left for group 4: the startup's two VSync waits (the CSR read at `0x3104F4` during main's display re-initialization), because the first of them also starts the repeated clear transfer (`clear_repeat_gif`) that the startup's GIF replay checks.
 - Unit tests of the general behavior; the gate passed (32/32 comparisons, battle hash unchanged); a story part (cleared, saga 411), a town and the Dragon Tournament (four battles to Champion, 4,197 functions) ran as before, nothing interpreted. The census counts 117 lines: 9 conditions fewer, 8 counter steps in the new file that it cannot tell from conditions.
+
+## Group 3 result, first part
+
+- The startup's thread calls go through the same handler as the scheduled ones (`runtime/ee/ee_thread_scheduler.cpp`, `handleThreadSyscall`), from main from SetupThread on and from any worker the scheduler runs: CreateThread, StartThread, ChangeThreadPriority, ReferThreadStatus, SuspendThread/ResumeThread, SleepThread/WakeupThread, GetThreadId. 9 startup branches keyed on pcs, return addresses, stack offsets and call counts removed, with the table of the four workers' captured identities and the separate startup dispatch.
+- CreateThread writes SetupThread's root function as every thread's return address (the startup captures of threads 3 to 7 show it; thread 2 had an unfounded default before). StartThread passes its argument in a0 and the caller's interrupt state. ReferThreadStatus writes the kernel's full descriptor for a created thread (status, entry, stack, size, gp, priorities, attr, option, wait type, wakeups), as the startup captures show it; for main, its status and current priority (the other fields of the startup's main thread are not known).
+- Main's admission is now what it is: main's first priority change that lets ready workers above it run. They run before the call returns, and the scheduled part of the run begins. The startup's counters count the same calls before it and the scheduled counters after it.
+- Left in this group: the sound thread's first SleepThread (it is the startup's sound dispatch, in `ee_sound_dispatch.cpp`), blocking semaphore waits, and thread exit and deletion.
+- Unit tests rewritten from refusals to the general calls (from any pc and buffer); the gate passed (32/32 comparisons, battle hash unchanged); a story part, a town and the Dragon Tournament ran as before, nothing interpreted. The census counts 108 lines.
 
 ## Limits
 

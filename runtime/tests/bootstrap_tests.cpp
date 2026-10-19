@@ -1181,7 +1181,7 @@ int main() {
         create_context.r[4].low = 0x300;
         create_context.r[2] = {0xCAFE, UINT64_MAX};
         reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
-        creation.thread_initialized = true;
+        creation.thread_initialized = true;creation.current_thread_id = 1;creation.thread_arguments[4] = 0x100250;
         reject([&] { creation.handleSyscall(creation_ram, &create_context, 0); });
         creation.heap_initialized = true;
         creation.heap_start = 0x4000;
@@ -1209,7 +1209,7 @@ int main() {
                 && created.heap_base == 0x4000 && created.context_address == 0x10160 && created.initial_sp == 0x103E0);
         auto expected_creation = before_creation;
         for (const auto [index, value] : std::array<std::array<std::uint32_t, 2>, 4>{
-                {{28, 0x2000}, {29, 0x103E0}, {30, 0x103E0}, {31, 0x1FC03000}}}) {
+                {{28, 0x2000}, {29, 0x103E0}, {30, 0x103E0}, {31, 0x100250}}}) { // ra: SetupThread's root.
             std::memcpy(expected_creation.data() + 0x10160 + index * 16, &value, 4);
         }
         require(std::equal(creation.memory().begin(), creation.memory().end(), expected_creation.begin()));
@@ -1243,7 +1243,7 @@ int main() {
         priority_context.r[4].low = 2;
         reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
         priority_context.r[4].low = 1;
-        for (const auto value : {0u, 2u, 128u, UINT32_MAX}) {
+        for (const auto value : {0u, 128u, UINT32_MAX}) {
             priority_context.r[5].low = value;
             reject([&] { priority.handleSyscall(nullptr, &priority_context, 0); });
         }
@@ -1557,8 +1557,11 @@ int main() {
             rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==3 && !rt.threads[1].ready);
             auto& t=rt.threads[1];require(rt.read32(ram,t.context_address+31*16)==0x100250);
             rt.sound_thread_checkpoint=true;cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=3;cpu.r[5].low=rt.initial_sp-256;
-            const std::vector<std::uint8_t> untouched(rt.memory().begin(),rt.memory().end());cpu.r[4].low=2;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(std::equal(rt.memory().begin(),rt.memory().end(),untouched.begin()) && !rt.sound_thread_queries);
+            const std::vector<std::uint8_t> untouched(rt.memory().begin(),rt.memory().end());cpu.r[4].low=9;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(std::equal(rt.memory().begin(),rt.memory().end(),untouched.begin()) && !rt.sound_thread_queries);
             cpu.r[4].low=3;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10 && rt.sound_thread_queries==1);
+            // The full descriptor, as the startup capture of this query shows.
+            const std::array<std::uint32_t,12> dormant={0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};
+            for(unsigned n=0;n<12;++n)require(rt.read32(ram,rt.initial_sp-256+n*4)==dormant[n]);
             cpu.pc=0x32EA88;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0;
             rt.handleSyscall(ram,&cpu,0);require(t.ready && t.context.pc==0x315380 && t.context.r[31].low==0x100250 && cpu.r[2].low==3 && rt.current_thread_id==1);
             reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.sound_thread_starts==1);
@@ -1570,17 +1573,18 @@ int main() {
             rt.threads.push_back({2,0,0,0,0,0,0,0,0});rt.threads.push_back({3,0,0,0,0,0,0,0,0});rt.threads[1].ready=true;rt.semaphores.resize(10);
             R5900Context cpu{};cpu.pc=0x32EB68;cpu.cop0_status=0x10001;cpu.r[3].low=0x30;cpu.r[4].low=1;cpu.r[5].low=cpu.r[29].low=rt.initial_sp-144;cpu.r[31].low=0x2EE9FC;
             std::fill_n(ram+rt.initial_sp-144,48,0xA5);
-            const auto prior=rt.memory()[rt.initial_sp-144];cpu.r[5].low+=4;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.memory()[rt.initial_sp-144]==prior && !rt.main_thread_queries);
-            cpu.r[5].low-=4;rt.handleSyscall(ram,&cpu,0);
+            const auto prior=rt.memory()[rt.initial_sp-144];cpu.r[5].low+=2;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.memory()[rt.initial_sp-144]==prior && !rt.main_thread_queries);
+            cpu.r[5].low-=2;rt.handleSyscall(ram,&cpu,0);
             require(cpu.r[2].low==1 && rt.main_thread_queries==1 && rt.read32(ram,rt.initial_sp-144+24)==2);
             require(rt.read32(ram,rt.initial_sp-144+4)==0xA5A5A5A5 && rt.read32(ram,rt.initial_sp-144+40)==0xA5A5A5A5);
-            reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.main_thread_queries==1);
+            cpu.pc=0x200000;cpu.r[5].low=rt.initial_sp-400;rt.handleSyscall(ram,&cpu,0); // From anywhere.
+            require(cpu.r[2].low==1 && rt.main_thread_queries==2 && rt.read32(ram,rt.initial_sp-400+24)==2);
         }
         {
             EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=rt.memory().data();
             rt.cri_rpc_calls=37;rt.heap_calls=6;rt.thread_initialized=rt.heap_initialized=true;rt.main_thread_queries=1;
             rt.current_thread_id=1;rt.main_thread_priority=2;rt.initial_sp=0x1FFED60;rt.thread_arguments[4]=0x100250;
-            rt.threads.resize(2);rt.threads[1].id=3;rt.threads[1].ready=true;
+            rt.threads.resize(2);rt.threads[1].id=3;rt.threads[1].ready=true;rt.threads[1].current_priority=5;
             // Independently captured descriptors and helper returns, including the previously omitted IDs 4/5.
             const std::array<std::array<std::uint32_t,6>,4> captured={{{0x2EDE58,0x34BC90,0x800,0x2EE51C,0x2EE564,8},
                 {0x2EDF48,0x34D490,0x1000,0x2EE684,0x2EE6A8,16},{0x2EE050,0x34E490,0x1000,0x2EE70C,0x2EE730,18},
@@ -1592,15 +1596,15 @@ int main() {
                 cpu.pc=0x32EA68;cpu.r[31].low=c[3];cpu.r[3].low=0x20;cpu.r[4].low=0x2000;
                 rt.handleSyscall(ram,&cpu,0);auto& t=rt.threads.back();require(t.id==id && !t.ready);
                 require(rt.read32(ram,t.context_address+31*16)==0x100250);
-                cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=id;cpu.r[5].low=rt.initial_sp-316;
+                cpu.pc=0x200000+n*8;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=id;cpu.r[5].low=rt.initial_sp-318;
                 const auto before=rt.read32(ram,rt.initial_sp-320);reject([&]{rt.handleSyscall(ram,&cpu,0);});
                 require(rt.startup_worker_queries==n && rt.read32(ram,rt.initial_sp-320)==before);
-                cpu.r[5].low=rt.initial_sp-320;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10);
-                cpu.pc=0x32EA88;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0;
-                const auto saved_ra=rt.read32(ram,t.context_address+31*16);rt.write32(ram,t.context_address+31*16,0);
-                reject([&]{rt.handleSyscall(ram,&cpu,0);});require(!t.ready && rt.startup_worker_starts==n);
-                rt.write32(ram,t.context_address+31*16,saved_ra);rt.handleSyscall(ram,&cpu,0);
-                require(t.ready && t.context.pc==c[0] && t.context.r[29].low==c[1]+c[2]-32 && rt.current_thread_id==1);
+                cpu.r[5].low=rt.initial_sp-320;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10 && rt.startup_worker_queries==n+1);
+                require(rt.read32(ram,rt.initial_sp-320+4)==c[0] && rt.read32(ram,rt.initial_sp-320+24)==2);
+                cpu.pc=0x210000+n*8;cpu.cop0_status=0x10001;cpu.r[3].low=0x22;cpu.r[5].low=0x55;
+                rt.handleSyscall(ram,&cpu,0);
+                require(t.ready && t.context.pc==c[0] && t.context.r[29].low==c[1]+c[2]-32 && t.context.r[31].low==0x100250
+                    && t.context.r[4].low==0x55 && t.context.cop0_status==0x10001 && rt.current_thread_id==1);
                 reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.startup_worker_starts==n+1);
                 if(n==0) {
                     cpu.pc=0x32EB68;cpu.r[31].low=0x2EE494;cpu.r[3].low=0x30;cpu.r[5].low=rt.initial_sp-288;
@@ -1609,9 +1613,9 @@ int main() {
                     rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==4 && rt.startup_worker_suspends==1);
                     reject([&]{rt.handleSyscall(ram,&cpu,0);});require(rt.startup_worker_suspends==1 && !t.ready && t.suspended);
                 }
-                cpu.pc=0x32EAF8;cpu.r[31].low=c[4];cpu.r[3].low=0x29;cpu.r[5].low=c[5]+1;
+                cpu.pc=0x220000;cpu.r[31].low=c[4];cpu.r[3].low=0x29;cpu.r[5].low=128;
                 reject([&]{rt.handleSyscall(ram,&cpu,0);});require(t.current_priority==2 && rt.startup_worker_priority_changes==n);
-                cpu.r[5].low=c[5];rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && t.current_priority==c[5]);
+                cpu.r[5].low=c[5];rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && t.current_priority==c[5] && rt.startup_worker_priority_changes==n+1);
                 if(n==3) {
                     cpu.pc=0x32EB68;cpu.r[31].low=0x2EE494;cpu.r[3].low=0x30;cpu.r[5].low=rt.initial_sp-288;
                     rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==2 && rt.read32(ram,rt.initial_sp-288+24)==25);
@@ -1752,7 +1756,7 @@ int main() {
                 require(yielded && yield.startup_worker_dispatches==1 && yield.current_thread_id==1 && !yield.active_ee_stack);
             }
             require(call(0x37,4,0)==4 && sched.threads[2].suspended && !sched.threads[2].ready && call(0x29,0,24)==1);
-            reject([&]{call(0x30,9,0x1000);});reject([&]{call(0x30,1,0x1000);});reject([&]{call(0x37,1,0);});
+            reject([&]{call(0x30,9,0x1000);});require(call(0x30,1,0x1000)==1 && sched.read32(ram,0x1000+24)==24);reject([&]{call(0x37,1,0);});
             sched.threads[3].waiting=false;sched.threads[3].ready=true;         // Ready ID 5 (16) above main.
             // Resuming ID 4 (8) from main yields: the ready workers run before main continues (ID 4
             // first); its unregistered entry stops at a checked branch with main restored.
@@ -1823,12 +1827,12 @@ int main() {
             ms.semaphores.clear();
             ms.current_thread_id=2;ms.main_sleeping=true;
             R5900Context query{};query.r[4].low=1;query.r[5].low=0x1000;
-            require(ms.handleScheduledThreadSyscall(ram,0x30,&query) && query.r[2].low==4 && ms.read32(ram,0x1000)==4);
+            require(ms.handleThreadSyscall(ram,0x30,&query) && query.r[2].low==4 && ms.read32(ram,0x1000)==4);
             R5900Context worker_wake{};worker_wake.r[4].low=1;
-            require(ms.handleScheduledThreadSyscall(ram,0x33,&worker_wake) && worker_wake.r[2].low==1 && !ms.main_sleeping && ms.main_wakes==2);
-            require(ms.handleScheduledThreadSyscall(ram,0x30,&query) && query.r[2].low==2);
+            require(ms.handleThreadSyscall(ram,0x33,&worker_wake) && worker_wake.r[2].low==1 && !ms.main_sleeping && ms.main_wakes==2);
+            require(ms.handleThreadSyscall(ram,0x30,&query) && query.r[2].low==2);
             ms.main_sleeping=true;ms.threads[0].current_priority=30;          // Waking main above the worker would preempt it.
-            reject([&]{R5900Context w=worker_wake;ms.handleScheduledThreadSyscall(ram,0x33,&w);});
+            reject([&]{R5900Context w=worker_wake;ms.handleThreadSyscall(ram,0x33,&w);});
         }
         {
             // One-shot VSync registration: preserve the void ABI, reject misaligned addresses, accept it
@@ -1935,5 +1939,5 @@ int main() {
         }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
-    } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+    } catch (const UnsupportedSyscall& s) { std::cerr << "Unsupported syscall 0x" << std::hex << s.selector << " at pc 0x" << s.resume_pc << '\n'; return 1; } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

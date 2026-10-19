@@ -36,9 +36,12 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         if(handleInterruptSyscall(rdram,selector,context))return;
         throw UnsupportedSyscall(selector,context->pc); // Interrupt context fails closed.
     }
-    if(code==0 && ((startup_scheduler_active && active_ee_stack && current_thread_id>=4 && current_thread_id<=7)
-            || (main_priority_admissions && !startup_scheduler_active && current_thread_id==1))
-        && handleScheduledThreadSyscall(rdram,selector,context)) return;
+    // Thread calls (ee_thread_scheduler.cpp): main on its own stack, or a worker the scheduler runs.
+    if(code==0 && selector==0x29 && ee_sound_dispatch_probe && current_thread_id==1 && context->r[4].low==1 && context->r[5].low==24)
+        probeReadySoundThread(rdram,context); // Diagnostic (BT2_EE_SOUND_DISPATCH_PROBE); always stops.
+    // The sound thread's first SleepThread is the startup's sound dispatch (below), not yet a scheduler wait.
+    if(code==0 && (current_thread_id==1 ? !startup_scheduler_active : active_ee_stack!=nullptr)
+        && !(selector==0x32 && current_thread_id==3) && handleThreadSyscall(rdram,selector,context)) return;
     if(code==0 && main_priority_admissions && !startup_scheduler_active && current_thread_id==1
         && handleAdmittedIntcSyscall(rdram,selector,context)) return;
     // Native SIF RPC services (runtime/services/) answer the game's requests and DMA status polls.
@@ -241,158 +244,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         active_ee_stack->yield();
         // No owned wake transaction exists yet.
         throw std::runtime_error("Unvalidated EE sound wake");
-    }
-    if (code == 0 && selector == 0x29 && context->r[4].low==1) {
-        if(ee_sound_dispatch_probe && context->r[5].low==24) probeReadySoundThread(rdram,context);
-        if(ee_queued_sound_rpc && context->r[5].low==24 && sound_thread_waiting) {
-            dispatchReadyStartupWorkers(rdram,context);return;
-        }
-
-        // Only the main thread is runnable; created threads remain dormant.
-        const bool startup_priority_two=texture_gif.phase==8 && timer1_setup_writes==1 && context->pc==0x32EAF8
-            && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005EC && context->r[5].low==2;
-        if (!thread_initialized || current_thread_id != 1 || context->r[4].low != 1 || (context->r[5].low != 1 && !startup_priority_two))
-            throw UnsupportedSyscall(selector, context->pc);
-        context->r[2].low = main_thread_priority;
-        main_thread_priority = startup_priority_two?2u:1u;
-        ++priority_changes;
-        return;
-    }
-    if (code == 0 && selector == 0x2F) {
-        if (!thread_initialized || !current_thread_id) throw UnsupportedSyscall(selector, context->pc);
-        context->r[2].low = current_thread_id;
-        return;
-    }
-    if (code == 0 && selector == 0x20) {
-        const auto parameter = static_cast<std::uint32_t>(context->r[4].low);
-        if (!thread_initialized || !heap_initialized || parameter % 4)
-            throw UnsupportedSyscall(selector, context->pc);
-        checkMemory(rdram, parameter, 36);
-        const auto entry = read32(rdram, parameter + 4);
-        const auto stack = read32(rdram, parameter + 8);
-        const auto size = read32(rdram, parameter + 12);
-        const auto gp = read32(rdram, parameter + 16);
-        const auto priority = read32(rdram, parameter + 20);
-        if (!entry || entry % 4 || stack % 16 || size % 16 || size < 0x2C0 || priority >= 128)
-            throw UnsupportedSyscall(selector, context->pc);
-        checkMemory(rdram, entry, 4);
-        checkMemory(rdram, stack, size);
-        checkMemory(rdram, gp, 4);
-        const auto top = stack + size;
-        const auto saved_context = top - 0x2A0;
-        if (parameter < top && saved_context < parameter + 36)
-            throw UnsupportedSyscall(selector, context->pc);
-        // Reference model reserves main ID 1 and idle ID 256; no ID reuse/scheduler yet.
-        if (threads.size() == 254) { context->r[2].low = UINT64_MAX; return; }
-        const auto id = static_cast<std::uint32_t>(threads.size()) + 2;
-        threads.push_back({id, entry, stack, size, gp, priority, heap_start, saved_context, top - 0x20});
-        threads.back().current_priority=priority;
-        // Pinned ThreadReset writes only these low words, preserving other context bytes.
-        write32(rdram, saved_context + 28 * 16, gp);
-        write32(rdram, saved_context + 29 * 16, top - 0x20);
-        write32(rdram, saved_context + 30 * 16, top - 0x20);
-        const auto* spec=id>=4 && id<=7 ? &startup_worker_specs[id-4] : nullptr;
-        const bool startup_worker=spec && entry==spec->entry && stack==spec->stack && size==spec->size
-            && context->r[31].low==spec->create_return && gp==0x38BDF0 && priority==2
-            && cri_rpc_calls==37 && heap_calls==6 && main_thread_queries==1 && context->pc==0x32EA68
-            && current_thread_id==1 && main_thread_priority==2;
-        write32(rdram, saved_context + 31 * 16, (sound_thread_start_supplied && id==3 && entry==0x315380) || startup_worker ? thread_arguments[4] : 0x1FC03000);
-        context->r[2].low = id;
-        return;
-    }
-    if(code==0 && selector==0x30 && cri_rpc_calls==37 && main_thread_queries==1
-        && (context->r[4].low==4 || context->r[4].low==7) && !threads.empty() && threads.back().ready) {
-        const auto id=static_cast<unsigned>(context->r[4].low);const unsigned phase=id==4?0:1;
-        const auto out=static_cast<unsigned>(context->r[5].low);
-        if(startup_ready_queries!=phase || startup_worker_starts!=(id==4?1u:4u) || startup_worker_priority_changes!=(id==4?0u:4u)
-            || threads.size()!=id-1 || threads.back().id!=id || current_thread_id!=1 || main_thread_priority!=2 || context->pc!=0x32EB68
-            || context->r[31].low!=0x2EE494 || context->cop0_status!=0x10001 || out!=initial_sp-288)
-            throw UnsupportedSyscall(selector,context->pc);
-        const auto& t=threads.back();checkMemory(rdram,out,48);
-        const std::array<std::uint32_t,12> info={2,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.current_priority,0,0,0,0,0};
-        for(unsigned n=0;n<12;++n)write32(rdram,out+n*4,info[n]);
-        context->r[2].low=2;++startup_ready_queries;return;
-    }
-    if(code==0 && selector==0x37 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low==4 || context->r[4].low==7)) {
-        const auto id=static_cast<unsigned>(context->r[4].low);const unsigned phase=id==4?0:1;
-        if(startup_ready_queries!=phase+1 || startup_worker_suspends!=phase || startup_worker_starts!=(id==4?1u:4u)
-            || threads.size()!=id-1 || threads.back().id!=id || !threads.back().ready || threads.back().suspended
-            || current_thread_id!=1 || main_thread_priority!=2 || context->pc!=0x32EBD8
-            || context->r[31].low!=0x2EE4B4 || context->cop0_status!=0x10001)
-            throw UnsupportedSyscall(selector,context->pc);
-        threads.back().ready=false;threads.back().suspended=true;
-        ++startup_worker_suspends;context->r[2].low=id;return; // Captured SuspendThread; the child has not executed.
-    }
-    if(code==0 && selector==0x30 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
-        const auto id=static_cast<unsigned>(context->r[4].low);const auto out=static_cast<unsigned>(context->r[5].low);
-        if(heap_calls!=6 || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=id-1 || startup_worker_queries!=id-4
-            || context->pc!=0x32EB68 || context->cop0_status!=1 || out!=initial_sp-320 || threads.back().ready
-            || threads.back().id!=id || threads.back().entry!=startup_worker_specs[id-4].entry || threads.back().current_priority!=2)
-            throw UnsupportedSyscall(selector,context->pc);
-        const auto& t=threads.back();checkMemory(rdram,out,48);
-        const std::array<std::uint32_t,12> info={0x10,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.current_priority,0,0,0,0,0};
-        for(unsigned n=0;n<12;++n)write32(rdram,out+n*4,info[n]);
-        context->r[2].low=0x10;++startup_worker_queries;return;
-    }
-    if(code==0 && selector==0x22 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
-        const auto id=static_cast<unsigned>(context->r[4].low);
-        if(heap_calls!=6 || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=id-1 || startup_worker_queries!=id-3
-            || startup_worker_starts!=id-4 || context->pc!=0x32EA88 || context->cop0_status!=0x10001 || context->r[5].low || threads.back().ready)
-            throw UnsupportedSyscall(selector,context->pc);
-        auto& t=threads.back();checkMemory(rdram,t.context_address,512);R5900Context child{};
-        for(unsigned n=0;n<32;++n)std::memcpy(&child.r[n],memory_.data()+t.context_address+n*16,16);
-        if(child.r[28].low!=0x38BDF0 || child.r[29].low!=t.initial_sp || child.r[31].low!=0x100250)
-            throw UnsupportedSyscall(selector,context->pc);
-        child.r[0]={0,0};child.r[4].low=0;child.pc=t.entry;child.cop0_status=context->cop0_status;
-        t.context=child;t.ready=true;++startup_worker_starts;context->r[2].low=id;return;
-    }
-    if(code==0 && selector==0x29 && cri_rpc_calls==37 && main_thread_queries==1 && (context->r[4].low>=4 && context->r[4].low<=7)) {
-        const auto id=static_cast<unsigned>(context->r[4].low);const auto priority=startup_worker_specs[id-4].priority;
-        if(current_thread_id!=1 || main_thread_priority!=2 || startup_worker_starts!=id-3 || startup_worker_priority_changes!=id-4
-            || threads.size()!=id-1 || (id==4 ? (threads.back().ready || !threads.back().suspended) : (!threads.back().ready || threads.back().suspended))
-            || threads.back().current_priority!=2 || context->r[5].low!=priority
-            || context->pc!=0x32EAF8 || context->r[31].low!=startup_worker_specs[id-4].priority_return)
-            throw UnsupportedSyscall(selector,context->pc);
-        threads.back().current_priority=priority;++startup_worker_priority_changes;context->r[2].low=2;return;
-    }
-    if(code==0 && selector==0x30 && cri_rpc_calls==37 && context->r[4].low==1) {
-        const auto out=static_cast<std::uint32_t>(context->r[5].low);
-        if(main_thread_queries || heap_calls!=6 || !thread_initialized || current_thread_id!=1 || main_thread_priority!=2
-            || threads.size()!=2 || (ee_queued_sound_rpc ? (!sound_thread_waiting || threads[1].ready || queued_sound_completions!=1) : !threads[1].ready) || threads[1].id!=3 || semaphores.size()!=10
-            || context->pc!=0x32EB68 || context->r[31].low!=0x2EE9FC || context->r[29].low!=out || out!=initial_sp-144
-            || context->cop0_status!=0x10001 || thread_arguments[0]!=0x38BDF0
-            || stack_base+thread_arguments[2]!=ram_size-4096)
-            throw UnsupportedSyscall(selector,context->pc);
-        checkMemory(rdram,out,48);
-        // This exact caller consumes status return and current_priority only.
-        // Preserve other descriptor bytes; their BIOS live-state meaning is unmodeled.
-        write32(rdram,out,1);write32(rdram,out+24,main_thread_priority);
-        context->r[2].low=1;++main_thread_queries;return;
-    }
-    if(code==0 && selector==0x30 && sound_thread_checkpoint) {
-        const auto out=static_cast<std::uint32_t>(context->r[5].low);
-        if(sound_thread_queries || context->pc!=0x32EB68 || context->r[4].low!=3 || threads.size()!=2
-            || threads[1].ready || out!=initial_sp-256 || context->cop0_status!=1)
-            throw UnsupportedSyscall(selector,context->pc);
-        const auto& t=threads[1];checkMemory(rdram,out,48);
-        const std::array<std::uint32_t,12> info={0x10,t.entry,t.stack_base,t.stack_size,t.gp,t.initial_priority,t.initial_priority,0,0,0,0,0};
-        for(unsigned n=0;n<info.size();++n)write32(rdram,out+n*4,info[n]);
-        context->r[2].low=0x10;++sound_thread_queries;return;
-    }
-    if(code==0 && selector==0x22 && sound_thread_checkpoint) {
-        if(sound_thread_starts || sound_thread_queries!=1 || context->pc!=0x32EA88 || context->r[4].low!=3 || context->r[5].low
-            || current_thread_id!=1 || main_thread_priority!=2 || threads.size()!=2 || threads[1].ready || context->cop0_status!=0x10001)
-            throw UnsupportedSyscall(selector,context->pc);
-        auto& t=threads[1];
-        if(t.entry!=0x315380 || t.stack_base!=0x3A5CC0 || t.stack_size!=0x1000 || t.gp!=0x38BDF0 || t.initial_priority!=5)
-            throw UnsupportedSyscall(selector,context->pc);
-        checkMemory(rdram,t.context_address,512);
-        R5900Context child{};
-        for(unsigned n=0;n<32;++n)std::memcpy(&child.r[n],memory_.data()+t.context_address+n*16,16);
-        child.r[0]={0,0};child.r[4].low=0;child.pc=t.entry;child.cop0_status=context->cop0_status;
-        if(child.r[28].low!=t.gp || child.r[29].low!=t.initial_sp || child.r[31].low!=thread_arguments[4] || thread_arguments[4]!=0x100250)
-            throw UnsupportedSyscall(selector,context->pc);
-        t.context=child;t.ready=true;++sound_thread_starts;context->r[2].low=t.id;return;
     }
     if (code == 0 && selector == 0x14) {
         // Observed cause only; explicit mask checkpoint avoids a fabricated BIOS default.

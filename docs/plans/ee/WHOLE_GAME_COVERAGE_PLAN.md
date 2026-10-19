@@ -21,7 +21,7 @@ What each step was checked on: [VALIDATION.md](../../progress/VALIDATION.md). Ho
 
 ## Step 5: what is left
 
-From the census (2026-10-18): 163 runtime conditions on guest PCs, stack offsets, call counts or startup phases; of the 69 system calls the code reaches, 5 handled only under a gate and 19 not at all (thread exit and deletion, interrupt-context forms, exception handler setup, leaving the game, `GetMemorySize`, three unnamed numbers). Most are startup replays that work as they are; they are made general group by group in the [runtime generalization plan](RUNTIME_GENERALIZATION_PLAN.md) (2026-10-19: kernel semaphores and the GS reset path done, 117 lines left). The unhandled thread calls are reached only through thread teardown (the sound library's shutdown at `0x315248`, a worker's exit at `0x31EB88`).
+From the census (2026-10-18): 163 runtime conditions on guest PCs, stack offsets, call counts or startup phases; of the 69 system calls the code reaches, 5 handled only under a gate and 19 not at all (thread exit and deletion, interrupt-context forms, exception handler setup, leaving the game, `GetMemorySize`, three unnamed numbers). Most are startup replays that work as they are; they are made general group by group in the [runtime generalization plan](RUNTIME_GENERALIZATION_PLAN.md) (2026-10-19: kernel semaphores, the GS reset path and the startup's thread calls done, 108 lines left). The unhandled thread calls are reached only through thread teardown (the sound library's shutdown at `0x315248`, a worker's exit at `0x31EB88`).
 
 ## Step 6: what is left
 

@@ -49,7 +49,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): Ultimate Training's lessons (scripted input per lesson) and the rest of step 6; runtime special cases made general group by group ([plan](plans/ee/RUNTIME_GENERALIZATION_PLAN.md); semaphores and the GS reset path done, 117 of 160 lines left); exhaustive battle sweeps at the end, as validation.
+1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): Ultimate Training's lessons (scripted input per lesson) and the rest of step 6; runtime special cases made general group by group ([plan](plans/ee/RUNTIME_GENERALIZATION_PLAN.md); semaphores, the GS reset path and the startup's thread calls done, 108 of 160 lines left); exhaustive battle sweeps at the end, as validation.
 2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
 3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC; next the GPU renderer's intake on a graphics thread.
 4. **Later:** launcher extras (HD textures), 3D and film comparisons with the original, the CPU renderer in 3D (optional).

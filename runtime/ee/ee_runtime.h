@@ -98,12 +98,11 @@ public:
     std::uint32_t sound_dispatch_wait_ra=0,sound_dispatch_wait_sp=0;
     unsigned startup_worker_dispatches=0,startup_worker_status_queries=0,startup_worker_waits=0;
     R5900Context startup_dispatch_parent{};
-    void dispatchReadyStartupWorkers(std::uint8_t*,R5900Context*);
     // Scheduler scope opened by main's admitted priority request. Dispatched workers use
     // kernel thread semantics; any transition requiring preemption fails closed.
     bool startup_scheduler_active=false;
     unsigned scheduled_priority_changes=0,scheduled_resumes=0,scheduled_suspends=0,main_priority_admissions=0;
-    unsigned scheduled_wakes=0,main_yields=0;
+    unsigned scheduled_wakes=0,main_yields=0,scheduled_starts=0;
     // Main's own sleep: it is not runnable while sleeping; wakeups that arrive first are banked.
     unsigned frame_csr_reads=0;
     bool main_sleeping=false;unsigned main_wakeups=0,main_sleeps=0,main_wakes=0,main_sleep_fields=0;
@@ -127,7 +126,9 @@ public:
     void vu0RandomInstruction(R5900Context* context,std::uint32_t instruction);
     void busyMainField();
     unsigned cri_stream_transfers=0,load_poll_idles=0,asset_poll_idles=0,dbc_port_calls=0,dbc_main_calls=0,scmd_calls=0;
-    bool handleScheduledThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
+    bool handleThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
+    void createThread(std::uint8_t*,R5900Context*);
+    void writeThreadStatus(std::uint8_t*,std::uint32_t id,std::uint32_t out,std::uint32_t pc);
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
     bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     unsigned vblank_handler_registrations=0,vblank_enable_calls=0,vblank_disable_calls=0;
@@ -738,18 +739,11 @@ public:
         std::uint32_t id, entry, stack_base, stack_size, gp, initial_priority, heap_base, context_address, initial_sp;
         bool ready=false;R5900Context context{};std::uint32_t current_priority=0;bool suspended=false;
         bool waiting=false;unsigned wakeups=0; // Waiting means SleepThread; other wait kinds are unmodeled.
+        std::uint32_t attr=0,option=0;
     };
     std::vector<DormantThread> threads;
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
     unsigned priority_changes = 0,main_thread_queries=0;
-    struct StartupWorkerSpec { std::uint32_t entry,stack,size,create_return,priority_return,priority; };
-    // Original independent creation/start captures establish all four identities.
-    inline static constexpr std::array<StartupWorkerSpec,4> startup_worker_specs={{
-        {0x2EDE58,0x34BC90,0x800,0x2EE51C,0x2EE564,8},
-        {0x2EDF48,0x34D490,0x1000,0x2EE684,0x2EE6A8,16},
-        {0x2EE050,0x34E490,0x1000,0x2EE70C,0x2EE730,18},
-        {0x2EE140,0x34F490,0x2000,0x2EE794,0x2EE7B8,25}
-    }};
     unsigned startup_worker_queries=0,startup_worker_starts=0,startup_worker_priority_changes=0;
     unsigned startup_ready_queries=0,startup_worker_suspends=0;
     unsigned disc_bind_semaphores=0,disc_rpc_binds=0,disc_rpc_calls=0;
