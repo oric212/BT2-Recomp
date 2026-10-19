@@ -41,6 +41,7 @@ What the game does (found 2026-10-19):
 
 - **Lost battles:** with the CPU on both sides 127 of 200 story battles are still lost; a lost part does not reach the save flow or the next part's map. Each part is started on its own, so its scenes and battle are covered either way; the save flow after a win is covered by the 73 cleared parts.
 - **The chase itself** (the enemy flying across the map, and how the game decides it is caught) runs only until the starter reports it caught.
+- **Special sagas (the user, 2026-10-19):** some sagas unlock when a story fight is beaten under a certain condition; not checked. The save data is the 16 KB block at the pointer `gp-0x3EC4` (`0x631000`); comparing it before and after cleared parts should show where the unlocks are kept, then the condition's test can be found (likely in the after-battle results, `0x2582E8`).
 - **Fight blocks:** how a town's second character starts its fight is not decoded (the runs reach the fights all the same).
 - **Pickups outside the towns' scripts:** none found in the scene files; if the overworld map has pickups of its own, they need the map object's code first.
 - Waits for a button that runs reach beyond those above: add each to the starter's table (`runtime/probe/game_starter.cpp`).

@@ -1,6 +1,8 @@
 #include "game_starter.h"
 #include <charconv>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
@@ -55,14 +57,55 @@ std::uint32_t call(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime
     return static_cast<std::uint32_t>(context->r[2].low);
 }
 
+// The title's New Game (WHOLE_GAME_COVERAGE_PLAN.md, step 6), as the entry runs the title: it loads the
+// menus' package (file progress+4 plus 1, through 0x100D58, polled until loaded) into 0x42138C; the
+// title (argument 2) sets itself up from it (among its resources the table of starting Z-items); New
+// Game's initialization resets the save data and gives those items (the unlocks the screens read); the
+// title's release frees its resources and the entry frees the package.
+constexpr std::uint32_t file_load=0x100D58,menu_package=0x42138C,package_free=0x28BB60;
+constexpr std::uint32_t title_setup=0x3B84B8,title_argument=2,new_game=0x3B9D58,title_release=0x3B8C78;
+void newGame(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime,std::uint32_t progress) {
+    call(rdram,context,runtime,file_load,{read32(rdram,progress+4)+1,0,1});
+    std::uint32_t package=0;
+    for(unsigned poll=0;!package;++poll) {
+        if(poll==1000000)throw std::runtime_error("game starter: the menus' package did not load");
+        package=call(rdram,context,runtime,file_load,{0,0,0});
+    }
+    write32(rdram,menu_package,package);
+    call(rdram,context,runtime,title_setup,{title_argument});
+    call(rdram,context,runtime,new_game);
+    call(rdram,context,runtime,title_release);
+    call(rdram,context,runtime,package_free,{package});
+    write32(rdram,menu_package,0);
+}
+
+// With a card folder that holds a BT2 save, the save data is that save's: the game's load leaves the
+// 16 KB block at the save pointer (0x387F2C) equal to the save file (checked byte for byte on the
+// user's save), so the file is copied there after New Game.
+constexpr std::uint32_t save_pointer=0x387F2C,save_size=0x4000;
+bool save_loaded=false;
+void loadSave(std::uint8_t* rdram,EeRuntime& runtime) {
+    if(runtime.memory_card_folder.empty())return;
+    const auto file=runtime.memory_card_folder/"BASLUS-21441DBZT2"/"BASLUS-21441DBZT2";
+    if(!std::filesystem::exists(file))return;
+    if(std::filesystem::file_size(file)!=save_size)throw std::runtime_error("game starter: the card's BT2 save is not 16 KB");
+    std::ifstream in(file,std::ios::binary);
+    in.read(reinterpret_cast<char*>(rdram+read32(rdram,save_pointer)),save_size);
+    if(!in)throw std::runtime_error("game starter: the card's BT2 save could not be read");
+    save_loaded=true;
+}
+
 // Of the entry's first-run work, the second archive is mounted and the common files (the character
-// table among them) are loaded; the memory card check, the logos and the films are left out.
+// table among them) are loaded; the memory card check, the logos and the films are left out. Then
+// the save data is a new game's, as after the title's New Game.
 void firstRun(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     const std::uint32_t progress=read32(rdram,progress_pointer);
     if(!(read32(rdram,progress+progress_flags)&first_run_flag))return;
     call(rdram,context,runtime,archive_mount,{1});
     call(rdram,context,runtime,archive_wait,{1});
     call(rdram,context,runtime,common_files);
+    newGame(rdram,context,runtime,progress);
+    loadSave(rdram,*static_cast<EeRuntime*>(runtime));
     write32(rdram,progress+progress_flags,read32(rdram,progress+progress_flags)&~first_run_flag);
 }
 
@@ -411,7 +454,7 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
 }
 
 std::string gameStarterReport() {
-    std::string text="\"starter_scenes\":["+scenes_visited+"],\"starter_town_blocks\":"+std::to_string(town_blocks)+",\"starter_shop_state\":"+std::to_string(shop_last_state)+",\"starter_town_done\":"+(town_character>=town_characters?"true":"false")+",\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
+    std::string text="\"starter_save_loaded\":"+std::string(save_loaded?"true":"false")+",\"starter_scenes\":["+scenes_visited+"],\"starter_town_blocks\":"+std::to_string(town_blocks)+",\"starter_shop_state\":"+std::to_string(shop_last_state)+",\"starter_town_done\":"+(town_character>=town_characters?"true":"false")+",\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
         +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_confirmations\":[";
     for(const auto& point:confirmations) {
         if(text.back()!='[')text+=',';

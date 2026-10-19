@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import battle_sweep
 ROOT=battle_sweep.ROOT
+CROSSES=12 # Crosses in a row a path may take without new code, for message chains.
 MOVES={'up','down','left','right','cross'} # Buttons a path may repeat without new code: cursor moves, and cross (messages, loads).
 
 
@@ -26,12 +27,15 @@ def pad_script(path,first,step):
 
 def extensions(path,new,buttons,idle_moves):
     """The paths to try after this one: every button added when it found new functions, or when it ends in
-    fewer than idle_moves cursor moves or crosses in a row."""
+    fewer than idle_moves cursor moves or crosses in a row; after that, cross alone up to CROSSES in a row
+    (a chain of messages, each taking a cross without new code)."""
     trailing=0
     for button in reversed(path):
         if button not in MOVES:break
         trailing+=1
     if new or (path and path[-1] in MOVES and trailing<idle_moves) or not path:return [path+[b] for b in buttons]
+    crosses=len(path)-len(''.join('x' if b=='cross' else '-' for b in path).rstrip('x'))
+    if crosses and crosses<CROSSES and 'cross' in buttons:return [path+['cross']]
     return []
 
 
