@@ -1,4 +1,5 @@
 #include "ee/ee_runtime.h"
+#include "services/memory_card_info.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -8,13 +9,12 @@
 // mcDescParam layout (48 bytes: port, slot, flags, type/free/format request flags, buffer, EE end
 // parameter address). Results as MCSERV returned them for an empty port 0 / slot 0:
 // - init (0xFE): {0, server version 0x210, driver version 0x226};
-// - GetInfo (1, no-wait): reply -11 (no card); the 192-byte end parameter receives type 0 and free
-//   space 0, after which the game's end function runs. The original's remaining end-parameter bytes
-//   are stale IOP buffer content and are zero here.
+// - GetInfo (1, no-wait), by port (memory_card_info.h): an empty port replies -11 (no card); the
+//   192-byte end parameter receives type 0 and free space 0, after which the game's end function
+//   runs. The original's remaining end-parameter bytes are stale IOP buffer content and are zero here.
 
 namespace {
 constexpr std::uint32_t mc_get_info=1,mc_init=0xFE;
-constexpr std::uint32_t mc_no_card=static_cast<std::uint32_t>(-11);
 constexpr unsigned mc_info_size=192;
 }
 
@@ -28,20 +28,18 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
         ++mc_rpc_calls;++sif_dma_submissions;++native_card_requests;context->r[2].low=0x720002;return true;
     }
     if(r.rpc_number==mc_get_info) {
-        // Port 0 / slot 0 only; the end parameter address must match the client's end parameter.
+        // Port in word 1, slot in word 2; the end parameter address must match the client's end parameter.
         const auto info=in[7];
-        if(r.recv_size!=4 || in[0] || in[1] || info!=read32(rdram,r.client+32))throw UnsupportedSyscall(0x77,context->pc);
+        const bool folder=!memory_card_folder.empty() && in[1]==0;
+        const auto answer=cardInfo(in[1],in[2],!memory_card_folder.empty(),memory_card_reported_,folder?memoryCardFreeClusters():0);
+        if(r.recv_size!=4 || !answer || info!=read32(rdram,r.client+32))throw UnsupportedSyscall(0x77,context->pc);
         checkMemory(rdram,info,mc_info_size);
-        for(unsigned n=0;n<mc_info_size;n+=4)write32(rdram,info+n,0); // Type 0, free 0.
-        if(memory_card_folder.empty())write32(rdram,r.receive,mc_no_card);
-        else {
-            // A card folder is in the slot: a formatted PS2 card. The game's end function reads the
-            // type at +0, the free space (in 1 KB clusters) at +4 and the format flag at +0x90.
-            // The first query after the card appeared answers -1 (a new, formatted card), later ones 0.
-            write32(rdram,info,2);write32(rdram,info+4,memoryCardFreeClusters());write32(rdram,info+0x90,1);
-            write32(rdram,r.receive,memory_card_reported_?0u:static_cast<std::uint32_t>(-1));
-            memory_card_reported_=true;
-        }
+        // The game's end function reads the type at +0, the free space (in 1 KB clusters) at +4 and
+        // the format flag at +0x90.
+        for(unsigned n=0;n<mc_info_size;n+=4)write32(rdram,info+n,0);
+        write32(rdram,info,answer->type);write32(rdram,info+4,answer->free_clusters);write32(rdram,info+0x90,answer->formatted);
+        write32(rdram,r.receive,answer->reply);
+        if(folder)memory_card_reported_=true;
         completeNativeCall(rdram,context,r,server);
         ++sif_dma_submissions;++native_card_requests;
         if(mc_rpc_calls==1){++mc_rpc_calls;context->r[2].low=0x720003;}

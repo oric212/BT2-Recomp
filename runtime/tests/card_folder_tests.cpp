@@ -1,6 +1,7 @@
 // The memory card folder's file layer on a synthetic card: opening, reading, seeking, listing, saving,
 // the current directory, result codes, and that nothing outside the folder can be named.
 #include "services/card_folder.h"
+#include "services/memory_card_info.h"
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -11,6 +12,17 @@ void put(const std::filesystem::path& path,const std::string& content) {std::ofs
 }
 
 int main() {
+    {
+        // GetInfo by port: the card folder answers in port 0 (a new card first, then 0); port 1 and a
+        // port 0 without a folder are empty (-11, type 0); a multitap slot or a third port is refused.
+        const auto first=cardInfo(0,0,true,false,1000),later=cardInfo(0,0,true,true,1000);
+        check(first && first->reply==0xFFFFFFFFu && first->type==2 && first->free_clusters==1000 && first->formatted==1,"a card folder in port 0");
+        check(later && later->reply==0,"the card folder reported before");
+        const auto empty=cardInfo(1,0,true,false,1000),none=cardInfo(0,0,false,false,0);
+        check(empty && empty->reply==0xFFFFFFF5u && !empty->type && !empty->free_clusters && !empty->formatted,"port 1 is empty");
+        check(none && none->reply==0xFFFFFFF5u,"port 0 without a folder is empty");
+        check(!cardInfo(0,1,true,false,0) && !cardInfo(2,0,true,false,0),"a multitap slot or a third port");
+    }
     const auto root=std::filesystem::temp_directory_path()/"bt2-card-folder-tests";
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root/"card"/"SAVE-ONE");

@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "ee_runtime.h"
 #include "ee_execution_owner.h"
 #include <utility>
@@ -186,7 +187,12 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     // Time advancing without any presented frame is bounded: 3,600 fields (a minute) stop the run.
     if(gs_display_flips!=flipless_flips_) {flipless_flips_=gs_display_flips;flipless_fields_=0;}
     // Counted once frames are presented or main is busy past a field (a run started into a battle loads before its first frame).
-    if((gs_display_flips || busy_main_vblanks) && ++flipless_fields_>flipless_field_limit)throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for "+std::to_string(flipless_field_limit)+" fields");
+    // The stop names where the field interrupted the game and its last call, for finding the wait.
+    if((gs_display_flips || busy_main_vblanks) && ++flipless_fields_>flipless_field_limit) {
+        char where[160];std::snprintf(where,sizeof where,"; interrupted at pc 0x%X ra 0x%X (thread %u), last call 0x%X -> 0x%X",
+            interrupted->pc,static_cast<std::uint32_t>(interrupted->r[31].low),current_thread_id,last_branch_source_,last_branch_target_);
+        throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for "+std::to_string(flipless_field_limit)+" fields"+where);
+    }
     nativePadVblank(rdram);       // Pad state for this field, before EE handlers run.
     nativeCriVblank(interrupted); // CRI stream buffers returned for this field.
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");

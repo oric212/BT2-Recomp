@@ -66,15 +66,16 @@ def write_summary(path,rows):
     path.write_text('\n'.join(lines)+'\n',encoding='utf-8')
 
 
-def run_case(case,disc,out,frames,stall,pictures=(),switch='BT2_START_BATTLE',label=None,passed=None):
-    """One run with <switch>=<case>; passed(report) decides 'ok' (default: the frame budget reached)."""
+def run_case(case,disc,out,frames,stall,pictures=(),switch='BT2_START_BATTLE',label=None,passed=None,pad_script=''):
+    """One run with <switch>=<case> (and a pad script, default none); passed(report) decides 'ok' (default:
+    the frame budget reached)."""
     label=label or name(case)
     report=out/(label+'.json');log=out/(label+'.log')
     cmd=run_startup_probe.command(ROOT,disc,'Release');cmd[2]=str(report)
     env=dict(os.environ)
     for key in ('BT2_VIEWER','BT2_AUDIO_DEVICE','BT2_HOST_INPUT','BT2_PAD_RECORD','BT2_PAD_SCRIPT','BT2_PLAYER_SETTINGS',
                 'BT2_START_BATTLE','BT2_START_SCREEN','BT2_START_EPISODE'):env.pop(key,None)
-    env.update({switch:case,'BT2_FRAME_LIMIT':str(frames),'BT2_STALL_FIELDS':str(stall),'BT2_PAD_SCRIPT':''})
+    env.update({switch:case,'BT2_FRAME_LIMIT':str(frames),'BT2_STALL_FIELDS':str(stall),'BT2_PAD_SCRIPT':pad_script})
     if isinstance(pictures,int):pictures=(pictures,) if pictures else ()
     ppms=[out/(label+(f'-{flip}' if len(pictures)>1 else '')+'.ppm') for flip in pictures]
     for ppm in ppms:ppm.unlink(missing_ok=True);ppm.with_suffix('.png').unlink(missing_ok=True) # No stale pictures from an earlier run.

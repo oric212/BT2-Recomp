@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-19. **No pass in progress.** The last pass covered the optional markers: all 73 towns (conversations, items, Dragon Balls, the shop, fights) run without input.
+Updated: 2026-10-19. **No pass in progress.** The last pass explored the menu screens (`menu_explorer.py`): Dragon Tournament's card query of port 1 is answered; an Evolution Z hang comes from the starters lacking New Game's unlocks (next item).
 
 ## Where the work stands
 
@@ -15,8 +15,9 @@ What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new che
 **Next (when the user starts the next pass):**
 
 1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): the story sweep passed (200 parts, 73 cleared, 127 lost, nothing interpreted; the chases are skipped by reporting the enemy caught). The optional sweep passed too (73 towns: 32 with conversations and items, 41 fights). Story mode's coverage is done as far as the starter reaches; what is left there is in the plan's "What is missing".
-2. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
-3. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
+2. **New Game's state for the starters, then battle content** ([coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), "Step 6: what is left"): where New Game writes the unlocked characters; Dragon Balls in a fight and stage destruction (the user's note); the other modes' battles.
+3. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
+4. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 
 **Waiting for the user's test** (built, gate passed, not confirmed in play): special moves and ultimates; saving (save, quit, start again); the films with and without a skip; the launcher's card list, controls and window size; the camera in fights.
 

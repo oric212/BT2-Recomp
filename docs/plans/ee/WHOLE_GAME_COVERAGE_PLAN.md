@@ -15,13 +15,19 @@ References consulted (BT3-Recomp's interpreter and orchestrator, Tenkaichi3Decom
 | 3. Interpreter bridge | Unmapped code runs through handlers the recompiler makes from each instruction word, is logged and mapped by `discovery_loop.py`; gate runs must interpret nothing | Done 2026-10-18 (a fully interpreted scripted fight equals the compiled one) |
 | 4. Census | `runtime_census.py`: the system calls, hardware registers and VU1 instructions the code uses against what the runtime handles; the work list for step 5 | Done 2026-10-18 |
 | 5. General runtime handlers | Replace the runtime's special cases (guest PC, stack offset, call count, startup phase) by general behavior, as runs reach them; the scripted fight's state hash must stay identical | In progress: 6 generalized so far (VBlank fields for a busy main before the first frame, the runaway guard per field, the no-flip limit, main's priority change, `SetVSyncFlag`, INTC_STAT) |
-| 6. Game states without input | Starters (`runtime/probe/game_starter.cpp`) for battles, screens and story episodes; sweeps; then the final validation | In progress: battles and screens done, story mode next ([story mode plan](STORY_MODE_PLAN.md)) |
+| 6. Game states without input | Starters (`runtime/probe/game_starter.cpp`) for battles, screens and story episodes; sweeps; then the final validation | In progress: battles, story mode ([plan](STORY_MODE_PLAN.md)) and the menu screens (`menu_explorer.py`) run; next the starters' New Game state, then battle content (below) |
 
 What each step was checked on: [VALIDATION.md](../../progress/VALIDATION.md). How it was done: [the October history](../../progress/2026-10.md).
 
 ## Step 5: what is left
 
 From the census (2026-10-18): 163 runtime conditions on guest PCs, stack offsets, call counts or startup phases; of the 69 system calls the code reaches, 5 handled only under a gate and 19 not at all (thread exit and deletion, interrupt-context forms, exception handler setup, leaving the game, `GetMemorySize`, three unnamed numbers). Most are startup replays that work as they are; each is generalized when a run reaches it, with a unit test. The unhandled thread calls are reached only through thread teardown (the sound library's shutdown at `0x315248`, a worker's exit at `0x31EB88`).
+
+## Step 6: what is left
+
+- **New Game's state:** the starters skip the title's New Game, which gives a new save its unlocked characters (after a real New Game, Evolution Z lists Goku, Vegeta, Piccolo and others; after a starter every entry is locked, and moving down in that list makes the game search forever, as it would on the console). Where New Game writes the unlocks is not found yet (not in the progress or system structures; the title's New Game functions at `0x3B3F38` / `0x3BC000` lead to screen code). Next: watch the character list's source while a real New Game runs, then have the starters do the same initialization; then rerun the menu explorer.
+- **Battle content (the user, 2026-10-19):** Dragon Balls picked up inside a fight, and stage destruction; neither is checked by the battle runs yet (find the battle setting that turns Dragon Balls on and the stage objects' break code, then check them in CPU battles).
+- **The other screens' battles:** the explorer reaches the menus of Ultimate Battle Z, Dragon Tournament and Ultimate Training; their battles (course, tournament and lesson rules) are not started yet.
 
 ## Step 6: BT2's state machinery (the starters rely on it)
 
