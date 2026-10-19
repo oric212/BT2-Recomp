@@ -12,7 +12,7 @@
 //   makes (characters, variants, stage, music; CPU on both sides) and the versus settings, and returns,
 //   so main runs its battle routine;
 // - BT2_START_SCREEN: writes the mode the main menu would and runs the original entry, which shows
-//   that screen;
+//   that screen; a battle the screen starts has the CPU on both sides;
 // - BT2_START_EPISODE: writes the story episode and the flag that makes main run the story routine,
 //   and returns.
 // Later calls run the original entry.

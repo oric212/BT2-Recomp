@@ -268,9 +268,36 @@ constexpr std::uint32_t after_battle=0x2AC4A0,battle_results=0x2582E8;
 constexpr unsigned flips_after_part=300;
 PS2Runtime::RecompiledFunction original_after_battle=nullptr,original_results=nullptr;
 unsigned parts_completed=0,battles_cleared=0,battles_lost=0;
+// What each story battle was and gave (STORY_MODE_PLAN.md, "Battle rules and rewards"), read when its
+// results start: the rule kind the part's battle record set (system structure +0xC8; 3 lets the story go on
+// after a loss, and only a win gives the rewards), the flags the battle start derived from it (+0xD8), the
+// Dragon Ball placed in the stage (+0xD0: 1 to 7, the first one not owned; it appears when a stage object
+// breaks), the result (+0x480: flags, finish flags with 0x10000 for the rewards, +0x48 the ball picked up),
+// the record's two reward items (0x3B2700) and the saga items (390 to 414, one per episode) owned after
+// the results that were not owned before.
+constexpr std::uint32_t battle_rule=0xC8,battle_flags=0xD8,battle_ball=0xD0,battle_result=0x480,result_ball=0x48;
+constexpr std::uint32_t battle_rewards=0x3B2700,item_records=0x1F30,first_saga_item=390,saga_items=25;
+std::string battles_seen;
+bool sagaOwned(std::uint8_t* rdram,std::uint32_t item) {
+    std::uint16_t count;std::memcpy(&count,rdram+read32(rdram,save_pointer)+item_records+item*4+2,2);
+    return count!=0;
+}
 void results(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    const std::uint32_t system=read32(rdram,system_pointer),result=system+battle_result;
+    std::string battle="{\"rule\":"+std::to_string(read32(rdram,system+battle_rule))+",\"flags\":"+std::to_string(read32(rdram,system+battle_flags))
+        +",\"ball\":"+std::to_string(read32(rdram,system+battle_ball))+",\"result\":"+std::to_string(read32(rdram,result))
+        +",\"finish\":"+std::to_string(read32(rdram,result+4))+",\"ball_picked\":"+std::to_string(read32(rdram,result+result_ball))
+        +",\"rewards\":["+std::to_string(static_cast<std::int32_t>(read32(rdram,battle_rewards)))+","
+        +std::to_string(static_cast<std::int32_t>(read32(rdram,battle_rewards+4)))+"]";
+    bool owned[saga_items];
+    for(std::uint32_t k=0;k<saga_items;++k)owned[k]=sagaOwned(rdram,first_saga_item+k);
     original_results(rdram,context,runtime);
-    ++(context->r[2].low?battles_cleared:battles_lost);
+    const bool cleared=context->r[2].low!=0;
+    ++(cleared?battles_cleared:battles_lost);
+    battle+=",\"cleared\":"+std::string(cleared?"true":"false")+",\"sagas\":[";
+    for(std::uint32_t k=0;k<saga_items;++k)
+        if(!owned[k] && sagaOwned(rdram,first_saga_item+k))battle+=(battle.back()=='['?"":",")+std::to_string(first_saga_item+k);
+    battles_seen+=(battles_seen.empty()?"":",")+battle+"]}";
 }
 void afterBattle(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     original_after_battle(rdram,context,runtime);
@@ -354,7 +381,8 @@ void touchedCharacters(std::uint8_t* rdram,R5900Context* context,PS2Runtime* run
 
 // The story's battles: the pre-battle setup (0x255EA0) sets side 0 to the player (the side setter's
 // third argument 0) and side 1 to the CPU (1); the starter passes 1 for both, as the battle starter
-// does, so a story battle can be won without input.
+// does, so a story battle can be won without input. The screen starter does the same for the battles
+// the other modes start.
 PS2Runtime::RecompiledFunction original_side_control=nullptr;
 void cpuSide(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     setRegister(context,6,1);
@@ -414,6 +442,7 @@ std::uint32_t parseScreenStart(std::string_view text) {
 void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
     configured_mode=mode;
     original_entry=runtime.replaceFunction(overlay_entry,startScreen);
+    original_side_control=runtime.replaceFunction(side_control,cpuSide);
 }
 
 EpisodeStart parseEpisodeStart(std::string_view text) {
@@ -455,7 +484,7 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
 
 std::string gameStarterReport() {
     std::string text="\"starter_save_loaded\":"+std::string(save_loaded?"true":"false")+",\"starter_scenes\":["+scenes_visited+"],\"starter_town_blocks\":"+std::to_string(town_blocks)+",\"starter_shop_state\":"+std::to_string(shop_last_state)+",\"starter_town_done\":"+(town_character>=town_characters?"true":"false")+",\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
-        +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_confirmations\":[";
+        +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_battles\":["+battles_seen+"],\"starter_confirmations\":[";
     for(const auto& point:confirmations) {
         if(text.back()!='[')text+=',';
         text+="["+std::to_string(point.function)+","+std::to_string(point.presses)+"]";

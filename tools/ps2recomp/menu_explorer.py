@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import battle_sweep
 ROOT=battle_sweep.ROOT
-CROSSES=12 # Crosses in a row a path may take without new code, for message chains.
+CROSSES=12 # Default of --crosses: crosses in a row a path may take without new code, for message chains.
 MOVES={'up','down','left','right','cross'} # Buttons a path may repeat without new code: cursor moves, and cross (messages, loads).
 
 
@@ -25,9 +25,9 @@ def pad_script(path,first,step):
     return ','.join(f'{first+i*step}:{button},{first+i*step+8}:-' for i,button in enumerate(path))
 
 
-def extensions(path,new,buttons,idle_moves):
+def extensions(path,new,buttons,idle_moves,crosses_allowed=CROSSES):
     """The paths to try after this one: every button added when it found new functions, or when it ends in
-    fewer than idle_moves cursor moves or crosses in a row; after that, cross alone up to CROSSES in a row
+    fewer than idle_moves cursor moves or crosses in a row; after that, cross alone up to crosses_allowed in a row
     (a chain of messages, each taking a cross without new code)."""
     trailing=0
     for button in reversed(path):
@@ -35,11 +35,11 @@ def extensions(path,new,buttons,idle_moves):
         trailing+=1
     if new or (path and path[-1] in MOVES and trailing<idle_moves) or not path:return [path+[b] for b in buttons]
     crosses=len(path)-len(''.join('x' if b=='cross' else '-' for b in path).rstrip('x'))
-    if crosses and crosses<CROSSES and 'cross' in buttons:return [path+['cross']]
+    if crosses and crosses<crosses_allowed and 'cross' in buttons:return [path+['cross']]
     return []
 
 
-def explore(mode,run,buttons,runs,idle_moves,jobs,record):
+def explore(mode,run,buttons,runs,idle_moves,jobs,record,crosses_allowed=CROSSES):
     """Breadth first over paths; run(path) returns (row, entered set). record(path,row,new) is called per run."""
     seen=set();frontier=[[]];done=0;lock=threading.Lock()
     while frontier and done<runs:
@@ -50,7 +50,7 @@ def explore(mode,run,buttons,runs,idle_moves,jobs,record):
             with lock:
                 new=len(entered-seen);seen|=entered;done+=1
             record(path,row,new)
-            if row['result']=='ok':frontier+=extensions(path,new,buttons,idle_moves)
+            if row['result']=='ok':frontier+=extensions(path,new,buttons,idle_moves,crosses_allowed)
     return seen,done
 
 
@@ -61,6 +61,7 @@ def main():
     p.add_argument('--buttons',default='cross,down,right,triangle,circle',help='Buttons a path is extended by (default: %(default)s).')
     p.add_argument('--runs',type=int,default=120,help='Runs per mode (default: %(default)s).')
     p.add_argument('--idle-moves',type=int,default=3)
+    p.add_argument('--crosses',type=int,default=CROSSES,help='Crosses in a row a path may take without new code (default: %(default)s; long message chains need more).')
     p.add_argument('--first-field',type=int,default=800,help='Field of the first press (the screens are up by about field 730).')
     p.add_argument('--step',type=int,default=60,help='Fields between presses (default: %(default)s).')
     p.add_argument('--settle',type=int,default=400,help='Flips after the last press (default: %(default)s).')
@@ -87,7 +88,7 @@ def main():
                 rows.append((path,row,new))
                 print(f'mode {mode} [{len(rows)}] {"-".join(path) or "none"}: {row["result"]} new {new} entered {row.get("entered","-")} '
                       f'interpreted {row.get("interpreted","-")} {row.get("stop","")}',flush=True)
-        seen,done=explore(mode,run,buttons,a.runs,a.idle_moves,a.jobs,record)
+        seen,done=explore(mode,run,buttons,a.runs,a.idle_moves,a.jobs,record,a.crosses)
         (out/'entered.txt').write_text(''.join(f'{x:08X}\n' for x in sorted(seen)))
         with (out/'summary.tsv').open('w',encoding='utf-8') as f:
             f.write('path\tresult\tnew\tentered\tinterpreted\tstop\n')

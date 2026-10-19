@@ -23,5 +23,10 @@ class StorySweepTests(unittest.TestCase):
         self.assertEqual(story_sweep.outcome({'frame_budget_reached':1}),'')
         self.assertEqual(story_sweep.outcome({'starter_town_done':True}),'town')
 
+    def test_battle_text(self):
+        won={'rule':3,'ball':1,'ball_picked':0,'rewards':[411,-1],'sagas':[411]}
+        lost={'rule':0,'ball':2,'ball_picked':2,'rewards':[-1,-1],'sagas':[]}
+        self.assertEqual(story_sweep.battle_text([won,lost]),'rule 3 ball 1/0 rewards 411 sagas 411; rule 0 ball 2/2 rewards none')
+
 
 if __name__=='__main__':unittest.main()

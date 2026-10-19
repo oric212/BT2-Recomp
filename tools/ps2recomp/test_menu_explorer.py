@@ -17,6 +17,7 @@ class MenuExplorerTests(unittest.TestCase):
         self.assertEqual(menu_explorer.extensions(['down','down','down'],0,b,3),[])
         self.assertEqual(menu_explorer.extensions(['down','cross','cross','cross'],0,b,3),[['down','cross','cross','cross','cross']])
         self.assertEqual(menu_explorer.extensions(['down']+['cross']*12,0,b,3),[])
+        self.assertEqual(menu_explorer.extensions(['down']+['cross']*12,0,b,3,20),[['down']+['cross']*13])
 
     def test_explore_is_breadth_first_and_stops_at_the_run_budget(self):
         # A menu where cross enters new code once, and a stopped run is not extended.
