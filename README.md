@@ -43,7 +43,7 @@ Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking ·
 
 **Windows 10/11 x64 · Visual Studio 2022 with C++ tools · CMake**
 
-Running the game needs your own disc image: the [build guide](docs/guides/BUILDING.md) prepares the game files, generates the code and builds it.
+Running the game needs your own disc image: the [build guide](docs/guides/BUILDING.md) prepares the game files, generates the code and builds it. Then put the disc image (`.iso`) into the `data` folder next to `bt2-game.exe` and start it; memory cards live in `saves` beside it. The launcher appears until the game is set up; `bt2-launcher.exe` opens it any time.
 
 ## Architecture
 

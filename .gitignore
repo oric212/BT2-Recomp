@@ -4,6 +4,10 @@
 /game_data/
 /assets/*
 !/assets/BT2 Recomp Banner.png
+# The launcher's logo, cut out of the banner above (tools/launcher/cut_logo.py).
+!/assets/launcher/
+/assets/launcher/*
+!/assets/launcher/logo.png
 *.iso
 *.ISO
 *.cue

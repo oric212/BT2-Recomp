@@ -6,13 +6,15 @@ Requested by the user on 2026-10-13 as the final stage before play-testing: a la
 
 **Launcher**, operated with a controller:
 
-1. **Saves:** load a memory card file that holds a save of the game. Card files are listed from `user/memcards/`.
+1. **Saves:** load a memory card file that holds a save of the game. Cards are listed from the `saves` folder next to the programs (since 2026-10-19; before, `user/memcards/`).
 2. **Controls:** control configuration.
 3. **Integer scaling.**
 4. **HD textures:** a checkbox. The pack is local, in `work/HD_TEXTURES/`.
 5. **Further useful settings.** Chosen by the user: fullscreen and window size, volumes, a frame rate display. The disc image path is added because the program needs it.
 
 **When the launcher appears:** it has its own executable. The game's executable opens the launcher by itself when no configuration file exists (first start); otherwise it starts the game directly.
+
+**Game folders (the user, 2026-10-19):** no file or folder browsing. Next to the programs, `data` holds the disc image and `saves` the memory cards; the game program makes them on its first start and never replaces or empties them (`runtime/host/game_folders.h`). The game program shows the launcher only while the game is not set up (no settings file, or no disc image of `data` chosen); afterwards it starts the game, and `bt2-launcher` opens the launcher any time. The launcher reads both folders again twice a second while it runs, so a disc image or a card moved in appears by itself (the only image is chosen at once, and so is the first card when none is in the slot). Card image files of other programs (`.ps2` and similar) are listed as unsupported. On the first start the cards of the older `user/memcards` are copied into `saves` (nothing moved or replaced). Older settings files still load: their dialog folders and hidden cards are ignored, and a disc given as a full path makes the launcher ask again.
 
 **Overlay**, opened in the game with a button combination (the user proposed Start + Select and left the default open to a better suggestion; see Overlay below):
 
@@ -56,7 +58,7 @@ Automated runs (the gate, the discovery loop, pad scripts) never set `BT2_PLAYER
 
 ### Style
 
-The console's system menu is the model, as in the user's reference pictures (`work/launcher_ui_ref/`, local): the first screen is a near-black haze with a ring of glowing points turning beside the list; the screens below it have a violet haze with a slowly turning fan of translucent bars around a dark sphere, the date and time in the corners and a yellow title. The list has no bar: the chosen entry is bright cyan, the others grey, unavailable ones dark. The bottom line names the buttons with their symbols (cross, circle, arrows). The in-game menu is shown on the plain dark haze (the user asked for black or opaque grey), not over the game's picture. Everything is drawn by our own code (`runtime/host/menu_renderer.h`) with a system font. No Sony artwork, logos, sounds or fonts are used; the screen carries this project's name. A first version with a highlighted bar on a blue gradient was rejected by the user as ugly.
+The console's system menu is the model, as in the user's reference pictures (`work/launcher_ui_ref/`, local; matched more closely on 2026-10-19: no title on the first screen, the chosen entry's value on the line under it with a left/right mark for entries the arrows change, glass cubes circling the fan, the disc and card screens as the console's browser, Segoe UI, the cross and circle hints placed as on the console): the first screen is a near-black haze with a ring of glowing points turning beside the list; the screens below it have a violet haze with a slowly turning fan of translucent bars around a dark sphere, the date and time in the corners and a yellow title. The list has no bar: the chosen entry is bright cyan, the others grey, unavailable ones dark. The bottom line names the buttons with their symbols (cross, circle, arrows). The in-game menu is shown on the plain dark haze (the user asked for black or opaque grey), not over the game's picture. Everything is drawn by our own code (`runtime/host/menu_renderer.h`) with a system font. No Sony artwork, logos, sounds or fonts are used. The first screen shows the game's logo, cut out of the project's README banner (`tools/launcher/cut_logo.py` makes `assets/launcher/logo.png`; the build copies it to the `assets` folder next to the programs; without the file the screen has no logo). A first version with a highlighted bar on a blue gradient was rejected by the user as ugly.
 
 ### Drawing
 
@@ -79,12 +81,12 @@ New code in `runtime/host/`, one purpose per file:
 
 | Screen | Contents |
 | --- | --- |
-| Main | Start game, Saves, Controls, Display, Sound, Game disc, Quit. |
-| Saves | The card files found in `user/memcards/` and which one is in slot 1. For the chosen card, the saves on it (title and size, read from the card's directory). Create a new formatted card. Copying a card file made by PCSX2 into the folder brings existing saves in. |
+| Main | Start game, Game disc, Memory card, Controls, Display, Sound, Quit; the game's logo above them; when a disc image is chosen, a small disc blinks in the top right corner for four seconds and then goes away. |
+| Memory card | The console's browser: grey, the chosen card's icon, name and save count at the top left, the title at the top right, the cards of `saves` as a row of memory card icons (the chosen one lit), card image files of other programs dimmed with a question mark, and a dashed card with a plus for a new empty card; "in use" under the card in slot 1. |
 | Controls | Each PS2 button with its keyboard key and its pad button. Selecting an entry waits for the next press and assigns it. The fast forward buttons and the overlay combination. Reset to defaults. |
 | Display | Integer scaling on or off (off stretches to the window). Fullscreen or windowed. Window size. Frame rate display on or off. HD textures on or off. |
 | Sound | Master, music and effects volume. |
-| Game disc | The disc image the game is read from. Images found in `disc/` (the folder meant for them), `rom/` and `user/` are listed; a further folder can be chosen with the system's folder dialog (`disc_folder`), and so can memory card folders anywhere (kept as `card_folder` lines, removable from the list without deleting anything; `memory_card` is then a full path) — the one part of the launcher a controller cannot operate (`host/folder_dialog.h`); the program checks that the chosen one is the supported release before it is accepted. |
+| Game disc | The same browser with the `.iso` files of `data` as discs (the chosen one turning); a dashed empty disc while there is none. |
 
 ### Overlay
 

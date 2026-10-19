@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-19. **No pass in progress.** The last pass started the runtime generalization plan: kernel semaphores are general (any attr, any semaphore deleted), the census down from 160 to 118 lines.
+Updated: 2026-10-19. **No pass in progress.** The last pass made kernel semaphores general (runtime generalization plan, group 1) and reworked the launcher at the user's request: `data` and `saves` folders next to the programs, no file dialogs, the launcher only until the game is set up, the PS2 browser look with the game's logo.
 
 ## Where the work stands
 
@@ -25,6 +25,7 @@ What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new che
 
 ## How the user runs things
 
+- **Game folders:** next to `bt2-game.exe` (in `build\probe\Release`), `data` holds the disc image (a hard link to `rom\...iso` there now) and `saves` the cards (copied from `user\memcards` on the first start); the settings stay in `user\settings`.
 - Helper scripts in `work\scripts\` (local; `work\WORKING_WITHOUT_AI.md` describes them): `play.cmd` (the launcher), `discover.cmd`, `rebuild.cmd`, `gate.cmd`, `show-log.cmd` and others. Settings: `user/settings`; the last run's messages: `user/last-run.log`.
 - **A stop at untranslated code** ("Branch target" in the log, or the game's message after a session that ran interpreted code): `work\scripts\discover.cmd` (`discovery_loop.py --player-stop`) maps it and rebuilds.
 - In the game: Escape, the PS button or both stick buttons open the menu; Tab is fast forward.

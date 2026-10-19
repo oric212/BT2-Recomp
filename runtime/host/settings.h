@@ -11,8 +11,7 @@
 #include <vector>
 
 struct Settings {
-    std::string disc;               // Path of the game's disc image.
-    std::string disc_folder;        // A further folder the launcher lists disc images from; empty: none.
+    std::string disc;               // The game's disc image: a file name in the data folder (host/game_folders.h).
     bool integer_scaling=true;      // Off: the picture is stretched to the window.
     bool fullscreen=false;
     unsigned window_scale=2;        // Window size as a multiple of the game's picture; the launcher offers what fits the screen.
@@ -28,23 +27,18 @@ struct Settings {
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
     bool overlay_start_select=false;
-    // The card folder in slot 1: a name under user/memcards, or the full path of a card folder
-    // elsewhere; empty: no card.
+    // The card in slot 1: a folder name in the saves folder; empty: none (the game program then makes one).
     std::string memory_card;
-    std::vector<std::string> card_folders; // Card folders elsewhere that the launcher lists (full paths).
-    std::vector<std::string> hidden_cards; // Cards of user/memcards taken off the launcher's list (names); their files stay.
     static constexpr unsigned max_window_scale=16;
     bool operator==(const Settings&) const=default;
 
     std::string text() const {
         std::ostringstream out;
-        out<<"disc = "<<disc<<"\ndisc_folder = "<<disc_folder<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
+        out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
-        for(const auto& folder:card_folders)out<<"card_folder = "<<folder<<"\n";
-        for(const auto& card:hidden_cards)out<<"hidden_card = "<<card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -71,7 +65,8 @@ struct Settings {
                 throw std::runtime_error("Setting "+key+" names no gamepad button: "+value);
             };
             if(key=="disc")s.disc=value;
-            else if(key=="disc_folder")s.disc_folder=value;
+            // Keys of older files (folders chosen in a dialog, cards taken off the list): no longer used.
+            else if(key=="disc_folder" || key=="card_folder" || key=="hidden_card") {}
             else if(key=="stick_sensitivity")s.mapping.stick_sensitivity=number(50,200);
             else if(key=="integer_scaling")s.integer_scaling=number(0,1);
             else if(key=="fullscreen")s.fullscreen=number(0,1);
@@ -85,12 +80,12 @@ struct Settings {
             else if(key=="fast_forward_button")s.fast_forward_button=button(true);
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
-            else if(key=="card_folder") {if(!value.empty())s.card_folders.push_back(value);}
-            else if(key=="hidden_card") {if(!value.empty())s.hidden_cards.push_back(value);}
             else if(key=="memory_card") {
-                // A full path (drive or network) is taken as it is; anything else must be one folder name.
+                // One folder name. A full path (a card elsewhere, from an older file) is dropped; the
+                // launcher or the game program then uses a card of the saves folder.
                 const bool full=(value.size()>2 && value[1]==':' && (value[2]=='\\' || value[2]=='/')) || value.starts_with("\\\\");
-                if(!full && (value.find_first_of("/\\:*?\"<>|")!=std::string::npos || value==".." || value=="."))throw std::runtime_error("Setting memory_card is not a folder name or a full path: "+value);
+                if(full)continue;
+                if(value.find_first_of("/\\:*?\"<>|")!=std::string::npos || value==".." || value==".")throw std::runtime_error("Setting memory_card is not a folder name: "+value);
                 s.memory_card=value;
             }
             else {

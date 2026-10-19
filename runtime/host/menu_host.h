@@ -28,6 +28,16 @@ public:
     ViewerWindow& window() {return window_;}
     // Runs `action` once the press being handled is done: for an entry that replaces its own screen.
     void later(std::function<void()> action) {later_=std::move(action);}
+    // Runs what `later` holds now, as `run` does after a press (for tests that press without `run`).
+    void settle() {if(later_) {const auto action=std::move(later_);later_=nullptr;action();}}
+    // The logo on the first screen (host/logo_image.h).
+    void setLogo(const std::filesystem::path& path) {renderer_.setLogo(path);}
+    // Whether a disc is in: the first screen shows it spinning (host/menu_renderer.h).
+    void setDiscPresent(std::function<bool()> present) {renderer_.setDiscPresent(std::move(present));}
+    // The current screen drawn at a size, as `run` would show it (for tests and pictures).
+    DisplayFrame picture(unsigned width,unsigned height,double seconds) {return renderer_.draw(menu.screen(),width,height,seconds,menu.depth()==1,prompt_);}
+    // Runs `action` every `ms` milliseconds while the menu runs (the launcher reads its folders again).
+    void every(unsigned ms,std::function<void()> action) {tick_ms_=ms;tick_=std::move(action);}
 
     // The next key or gamepad button pressed goes to `done`; Escape cancels.
     void capture(std::string prompt,std::function<void(Captured)> done) {prompt_=std::move(prompt);capture_=std::move(done);snapshot();}
@@ -46,6 +56,10 @@ public:
             if(window_.focused() || !window_.opened()) {
                 if(capture_)captureStep();
                 else for(const MenuKey key:steps_.step(held(),now_))menu.press(key);
+                if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
+            }
+            if(tick_ && now_>=next_tick_) {
+                next_tick_=now_+tick_ms_;tick_();
                 if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
             }
             if(finished || menu.empty())break;
@@ -73,6 +87,7 @@ public:
 private:
     ViewerWindow& window_;HostInput& input_;MenuRenderer renderer_;MenuInput steps_;std::function<void()> later_;
     std::function<void(Captured)> capture_;std::string prompt_;
+    std::function<void()> tick_;unsigned tick_ms_=0;std::uint64_t next_tick_=0;
     std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;
 
     unsigned held() {

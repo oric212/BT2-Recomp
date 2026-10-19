@@ -1,11 +1,14 @@
 // The player's programs (docs/plans/launcher/LAUNCHER_PLAN.md). Built twice from this file:
-//   bt2-game      starts the game with the stored settings; without a settings file (first start)
-//                 it shows the launcher first.
+//   bt2-game      starts the game with the stored settings; while the game is not set up (no
+//                 settings file, or no disc image of the data folder chosen) it shows the launcher first.
 //   bt2-launcher  always shows the launcher (BT2_LAUNCHER_ALWAYS).
+// Next to the programs: `data` (the disc image) and `saves` (the memory cards), made on the first start
+// and never emptied (host/game_folders.h), and `assets` (the launcher's logo, from the build).
 // Both then run the runtime program (bt2-entry-probe, next to this one) as a player's run: window,
 // sound, live input, the GPU renderer, the settings file. The runtime still starts from the local
 // startup inputs in work/bt2-generation, so these programs run from a prepared repository only.
 // When the player chooses "Quit to the launcher" in the game, the launcher comes back.
+#include "host/game_folders.h"
 #include "host/launcher.h"
 #include "host/player_session.h"
 #include <filesystem>
@@ -37,7 +40,7 @@ fs::path findRoot(fs::path from) {
 std::string inQuotes(const fs::path& path) {return "\""+path.string()+"\"";}
 
 // Runs the game; returns the runtime's exit code. Its messages go to `log`.
-DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const fs::path& log) {
+DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log) {
     const fs::path runtime=programFolder()/"bt2-entry-probe.exe",inputs=root/"work"/"bt2-generation";
     std::error_code error;
     if(!fs::is_regular_file(runtime,error))throw std::runtime_error("The runtime program is missing: "+runtime.string());
@@ -46,15 +49,15 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     std::string command=inQuotes(runtime)+" "+inQuotes(inputs/startup_inputs[0])+" "+inQuotes(root/"user"/"last-run.json");
     for(std::size_t n=1;n<count;++n) {
         if(!fs::is_regular_file(inputs/startup_inputs[n],error))throw std::runtime_error(std::string("A startup input is missing: ")+startup_inputs[n]);
-        if(n==count-1)command+=" "+inQuotes(fs::path(settings.disc));
+        if(n==count-1)command+=" "+inQuotes(folders.disc(settings));
         command+=" "+inQuotes(inputs/startup_inputs[n]);
     }
     for(const char* name:{"BT2_VIEWER","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})SetEnvironmentVariableA(name,"1");
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());
-    // The memory card folder in slot 1, when the settings name one that exists.
-    const fs::path named=pathFromUtf8(settings.memory_card),card=named.is_absolute()?named:root/"user"/"memcards"/named;
-    SetEnvironmentVariableW(L"BT2_CARD_FOLDER",!settings.memory_card.empty() && fs::is_directory(card,error)?card.wstring().c_str():nullptr);
+    // The memory card folder in slot 1, when the settings name one of the saves folder.
+    const fs::path card=folders.card(settings);
+    SetEnvironmentVariableW(L"BT2_CARD_FOLDER",card.empty()?nullptr:card.wstring().c_str());
     for(const char* name:{"BT2_FRAME_LIMIT","BT2_PAD_SCRIPT","BT2_PAD_RECORD","BT2_VIEWER_SCALE","BT2_GPU_GS_SNAPSHOT"})SetEnvironmentVariableA(name,nullptr);
 
     SECURITY_ATTRIBUTES inherit{sizeof inherit,nullptr,TRUE};
@@ -99,31 +102,36 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
             return 0;
         }
         const fs::path root=findRoot(programFolder()),user=root/"user",settings_path=user/"settings",log=user/"last-run.log";
-        fs::create_directories(user/"memcards");
+        fs::create_directories(user);
+        const GameFolders folders(programFolder());
+        {
+            std::error_code error;
+            const bool first_start=!fs::exists(folders.saves,error);
+            folders.create();
+            if(first_start)folders.copyCardsFrom(user/"memcards");
+        }
+        Settings settings;
+        if(auto stored=Settings::load(settings_path.string()))settings=*stored;
 #ifdef BT2_LAUNCHER_ALWAYS
         bool launcher=true;
 #else
         std::error_code error;
-        bool launcher=!fs::is_regular_file(settings_path,error);
+        bool launcher=!fs::is_regular_file(settings_path,error) || !folders.configured(settings);
 #endif
-        Settings settings;
-        if(auto stored=Settings::load(settings_path.string()))settings=*stored;
         for(;;) {
             if(launcher) {
                 ViewerWindow window;HostInput input;
                 settings.save(settings_path.string());
-                if(runLauncher(settings,settings_path.string(),root.string(),window,input)!=LauncherResult::Start)return 0;
+                if(runLauncher(settings,settings_path.string(),folders,window,input)!=LauncherResult::Start)return 0;
             }
-            if(settings.disc.empty()) {launcher=true;continue;} // A settings file without a disc: choose one.
-            {
-                // The game always has a card to save to: without one in the slot, or when its folder is
-                // gone, a new empty card is made. Existing cards are never replaced.
-                const fs::path named=pathFromUtf8(settings.memory_card);std::error_code missing;
-                if(settings.memory_card.empty() || !fs::is_directory(named.is_absolute()?named:root/"user"/"memcards"/named,missing)) {
-                    settings.memory_card=newCardFolder(root.string());settings.save(settings_path.string());
-                }
+            if(!folders.configured(settings)) {launcher=true;continue;} // No disc image of the data folder: choose one.
+            if(folders.card(settings).empty()) {
+                // The game always has a card to save to: the first card of the saves folder, or a new
+                // empty one when there is none. Existing cards are never replaced.
+                const auto cards=folders.cards();
+                settings.memory_card=cards.empty()?folders.newCard():cards.front();settings.save(settings_path.string());
             }
-            const DWORD code=runGame(root,settings_path,settings,log);
+            const DWORD code=runGame(root,settings_path,settings,folders,log);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
             // Code that was never translated ran interpreted (slower), or stopped the game: the discovery

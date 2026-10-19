@@ -9,6 +9,8 @@
 #include <vector>
 
 enum class MenuKey {Up,Down,Left,Right,Confirm,Back};
+// What an entry of a browser screen is drawn as.
+enum class MenuIcon {None,Disc,NoDisc,Card,CardImage,NewCard};
 
 struct MenuEntry {
     std::string label;
@@ -17,12 +19,16 @@ struct MenuEntry {
     std::function<void(int)> adjust;             // Left (-1) and right (+1).
     std::string note;                            // A line of explanation shown while highlighted.
     bool enabled=true;                           // A disabled entry is shown but cannot be highlighted.
+    MenuIcon icon=MenuIcon::None;                // Its picture on a browser screen.
 };
 
 struct MenuScreen {
     std::string title;
     std::vector<MenuEntry> entries;
     unsigned highlighted=0;
+    // Drawn as the console's browser (a row of icons on grey) instead of a list; every arrow moves
+    // through the row.
+    bool browser=false;
 };
 
 class Menu {
@@ -52,6 +58,7 @@ public:
             break;
         }
         case MenuKey::Left: case MenuKey::Right:
+            if(s.browser) {press(key==MenuKey::Right?MenuKey::Down:MenuKey::Up);break;}
             if(const auto adjust=s.entries[s.highlighted].adjust)adjust(key==MenuKey::Right?1:-1); // A copy: the callback may change the stack.
             break;
         case MenuKey::Confirm: {

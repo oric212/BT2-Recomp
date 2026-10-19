@@ -126,6 +126,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_test(NAME host-input COMMAND bt2-host-input-tests)
     add_executable(bt2-menu-tests runtime/tests/menu_tests.cpp)
     bt2_target_defaults(bt2-menu-tests)
+    # The launcher's tests build its screens (host input, the logo) and read the logo from the sources.
+    target_link_libraries(bt2-menu-tests PRIVATE winmm xinput hid setupapi windowscodecs)
+    target_compile_definitions(bt2-menu-tests PRIVATE "BT2_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
     add_test(NAME menu COMMAND bt2-menu-tests)
     add_executable(bt2-card-folder-tests runtime/tests/card_folder_tests.cpp)
     bt2_target_defaults(bt2-card-folder-tests)
@@ -135,7 +138,11 @@ if(BT2_BUILD_GENERATED_PROBE)
     foreach(bt2_player_program bt2-game bt2-launcher)
         add_executable(${bt2_player_program} WIN32 runtime/game/game_main.cpp)
         bt2_target_defaults(${bt2_player_program})
-        target_link_libraries(${bt2_player_program} PRIVATE winmm xinput hid setupapi)
+        target_link_libraries(${bt2_player_program} PRIVATE winmm xinput hid setupapi windowscodecs)
+        # The launcher's logo goes into the assets folder next to the program, so it is always there.
+        add_custom_command(TARGET ${bt2_player_program} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${bt2_player_program}>/assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/logo.png")
     endforeach()
     target_compile_definitions(bt2-launcher PRIVATE BT2_LAUNCHER_ALWAYS=1)
     add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
