@@ -28,7 +28,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
 | Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
-| Story mode | 🔧 Incomplete — all 200 playable parts run to their battle's end without input; optional markers and the shop are open |
+| Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
 
@@ -37,7 +37,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** the rest of story mode (optional map markers, the shop), then performance: fights at a steady 30 frames per second. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Next:** runtime special cases found by the coverage runs, then performance: fights at a steady 30 frames per second. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
 
 ## Building
 

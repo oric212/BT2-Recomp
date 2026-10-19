@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-19. **No pass in progress.** The last pass ran the story sweep: all 200 parts that can be started finish their battle.
+Updated: 2026-10-19. **No pass in progress.** The last pass covered the optional markers: all 73 towns (conversations, items, Dragon Balls, the shop, fights) run without input.
 
 ## Where the work stands
 
@@ -8,13 +8,13 @@ Current plan: [whole-game coverage](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), ah
 
 - `BT2_START_BATTLE=<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]`: a CPU-vs-CPU battle (characters 0 to 129, variants 0 to 8, stages 0 to 15).
 - `BT2_START_SCREEN=<mode>`: one of the ten main-menu screens.
-- `BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]`: a story part without input: its map (a chase's enemy reported caught), the scene the marker leads to, its text boxes, the pre-battle screen, the battle with the CPU on both sides and the results (no save is written); the run ends after the part's after-battle step. `tools/ps2recomp/story_scenes.py` lists the parts' markers and scenes; `tools/ps2recomp/story_sweep.py --jobs 6` runs the parts (about an hour; 4 of the 10 cores stay free for the user).
+- `BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]`: a story part without input: its map (a chase's enemy reported caught), the scene the marker leads to, its text boxes, the pre-battle screen, the battle with the CPU on both sides and the results (no save is written); the run ends after the part's after-battle step. From an optional marker's town it visits every character (talk, items, the shop, fights). `tools/ps2recomp/story_scenes.py` lists the parts' markers and scenes; `tools/ps2recomp/story_sweep.py --jobs 6` runs the parts (about an hour; 4 of the 10 cores stay free for the user); `--optional` runs the 73 towns (about 25 minutes).
 
 What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new check there).
 
 **Next (when the user starts the next pass):**
 
-1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): the story sweep passed (200 parts, 73 cleared, 127 lost, nothing interpreted; the chases are skipped by reporting the enemy caught). Next: the optional markers (fights and conversations) as cases of their own, then the shop.
+1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md), "Next steps"): the story sweep passed (200 parts, 73 cleared, 127 lost, nothing interpreted; the chases are skipped by reporting the enemy caught). The optional sweep passed too (73 towns: 32 with conversations and items, 41 fights). Story mode's coverage is done as far as the starter reaches; what is left there is in the plan's "What is missing".
 2. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
 3. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 

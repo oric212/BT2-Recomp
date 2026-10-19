@@ -349,10 +349,15 @@ int main() {
             const auto waiting=+[](std::uint8_t* r,R5900Context*,PS2Runtime*){
                 ++calls;std::uint32_t buttons;std::memcpy(&buttons,r+0x3B0C34,4);if(buttons&0x4000)pressed_on=calls;};
             EeRuntime runtime;
-            for(const std::uint32_t address:{0x3B7FA8u,0x2A7400u,0x255580u,0x2581F0u,0x29C640u,0x2AC4A0u,0x2582E8u})runtime.registerFunction(address,waiting);
+            for(const std::uint32_t address:{0x3B7FA8u,0x2A7400u,0x255580u,0x2581F0u,0x29C640u,0x2AC4A0u,0x2582E8u,0x2ACE58u,0x247638u,0x246860u,0x2A6F98u})runtime.registerFunction(address,waiting);
             static std::uint64_t control=0;
             runtime.registerFunction(0x101AB0,+[](std::uint8_t*,R5900Context* c,PS2Runtime*){control=c->r[6].low;});
             runtime.registerFunction(0x20C8A0,+[](std::uint8_t*,R5900Context* c,PS2Runtime*){c->r[2].low=0;});
+            static unsigned town_calls=0,town_pressed_on=0;
+            runtime.registerFunction(0x2A99B8,+[](std::uint8_t* r,R5900Context*,PS2Runtime*){
+                ++town_calls;std::uint32_t buttons;std::memcpy(&buttons,r+0x3B0C34,4);if(buttons&0x4000 && !town_pressed_on)town_pressed_on=town_calls;});
+            for(const std::uint32_t address:{0x20C950u,0x20C980u})
+                runtime.registerFunction(address,+[](std::uint8_t*,R5900Context* c,PS2Runtime*){c->r[2].low=0;});
             installEpisodeStarter(runtime,parseEpisodeStart("0,0"));
             const auto prebattle=runtime.replaceFunction(0x255580,waiting);
             std::vector<std::uint8_t> ram(0x400000);R5900Context context{};
@@ -370,6 +375,20 @@ int main() {
             unsigned answered_on=0;
             for(unsigned n=1;n<=150;++n) {caught(ram.data(),&context,&runtime);if(context.r[2].low)answered_on=answered_on?~0u:n;}
             require(answered_on==120 && gameStarterReport().find("\"starter_chase_caught\":true")!=std::string::npos);
+            // Towns: after 120 town frames the first character is reported in reach and cross is pressed
+            // every 30th call; once its block has run (0x3B2664 nonzero, then zero) the next one is touched.
+            const auto town=runtime.replaceFunction(0x2A99B8,return_leaf);
+            const auto reach=runtime.replaceFunction(0x20C950,return_leaf);
+            const auto touch=runtime.replaceFunction(0x20C980,return_leaf);
+            for(int n=0;n<150;++n)town(ram.data(),&context,&runtime);
+            reach(ram.data(),&context,&runtime);
+            require(town_pressed_on==150 && context.r[2].low==1);
+            const std::uint32_t running=1;std::memcpy(ram.data()+0x3B2664,&running,4);
+            town(ram.data(),&context,&runtime);
+            std::memset(ram.data()+0x3B2664,0,4);
+            for(int n=0;n<121;++n)town(ram.data(),&context,&runtime);
+            touch(ram.data(),&context,&runtime);
+            require(context.r[2].low==2 && gameStarterReport().find("\"starter_town_blocks\":1")!=std::string::npos);
         }
         {
             // Interior entries: the function holding the label runs with the pc at the label, and the

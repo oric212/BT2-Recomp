@@ -30,16 +30,28 @@ def cases(parts,episodes=None):
     return todo,skipped
 
 
+def optional_cases(parts,episodes=None):
+    """One BT2_START_EPISODE text per scene that an optional marker leads to (a town with its characters,
+    its shop or its fights): the first part and marker that lead there."""
+    seen=set();todo=[]
+    for part in parts:
+        if episodes is not None and part['episode'] not in episodes:continue
+        for marker,scene in sorted(part['markers'].items(),key=lambda item:int(item[0])):
+            if scene==part['first_scene']+1 or scene in seen:continue
+            seen.add(scene);todo.append(f'{part["episode"]},{part["part"]},marker:{marker}')
+    return todo
+
+
 def name(case):
-    episode,part=case.split(',')[:2]
-    return f'e{int(episode):02}-p{int(part):02}'
+    episode,part,*marker=case.split(',')
+    return f'e{int(episode):02}-p{int(part):02}'+(f'-m{int(marker[0][7:]):02}' if marker else '')
 
 
 def outcome(report):
-    """'cleared' or 'lost' once the part's battle is over, 'stuck: <function>' when a waiting screen kept
-    getting presses, '' otherwise."""
+    """'cleared' or 'lost' once the part's battle is over, 'town' once every character of a town was
+    talked to or touched, 'stuck: <function>' when a waiting screen kept getting presses, '' otherwise."""
     if report.get('starter_stuck'):return f'stuck: {report["starter_stuck"]:08X}'
-    if report.get('starter_parts_completed',0)<1:return ''
+    if report.get('starter_parts_completed',0)<1:return 'town' if report.get('starter_town_done') else ''
     return 'cleared' if report.get('starter_battles_cleared') else 'lost'
 
 
@@ -48,9 +60,12 @@ def run_part(case,disc,out,frames,stall,pictures):
     found={}
     def passed(report):
         found['outcome']=outcome(report)
-        return found['outcome'] in ('cleared','lost')
+        found['scenes']=report.get('starter_scenes',[]);found['blocks']=report.get('starter_town_blocks',0)
+        return found['outcome'] in ('cleared','lost','town')
     row,interpreted=battle_sweep.run_case(case,disc,out,frames,stall,pictures,'BT2_START_EPISODE',name(case),passed)
-    if row['result']=='ok':row['result']=found['outcome']
+    if row['result']=='ok':
+        row['result']=found['outcome']
+        row['stop']=f'scenes {"-".join(map(str,found["scenes"]))}; {found["blocks"]} town blocks'
     elif found.get('outcome'):row['stop']=found['outcome']
     elif row['result']=='stop' and not row['stop']:row['stop']='the part did not end within the frame budget'
     return row,interpreted
@@ -62,15 +77,18 @@ def main():
     p.add_argument('--scenes',type=Path,default=ROOT/'work/coverage/story/scenes.json',help='story_scenes.py output.')
     p.add_argument('--episodes',help='Episode numbers, e.g. 0-3,7 (default: all).')
     p.add_argument('--case',action='append',default=[],help='A BT2_START_EPISODE text to run instead (repeatable).')
+    p.add_argument('--optional',action='store_true',help="Run the optional markers' scenes (towns, shops, fights) instead, one case per scene; default --out work/coverage/story/optional.")
     p.add_argument('--frames',type=int,default=15000,help='Frame budget per part (default: %(default)s).')
     p.add_argument('--pictures',default='2500,4000,5500',help='Flips at which pictures are saved (default: %(default)s; empty: none).')
     p.add_argument('--stall-fields',type=int,default=600)
-    p.add_argument('--out',type=Path,default=ROOT/'work/coverage/story/sweep')
+    p.add_argument('--out',type=Path)
     p.add_argument('--again',action='store_true',help='Rerun cases already in the summary.')
     p.add_argument('--jobs',type=int,default=1,help='Parts run at the same time (default: %(default)s; each run uses about one CPU core).')
     a=p.parse_args()
     parts=json.loads(a.scenes.read_text(encoding='utf-8'))
-    todo,skipped=cases(parts,set(battle_sweep.numbers(a.episodes)) if a.episodes else None)
+    episodes=set(battle_sweep.numbers(a.episodes)) if a.episodes else None
+    todo,skipped=(optional_cases(parts,episodes),[]) if a.optional else cases(parts,episodes)
+    a.out=a.out or ROOT/'work/coverage/story'/('optional' if a.optional else 'sweep')
     if a.case:todo,skipped=a.case,[]
     pictures=tuple(battle_sweep.numbers(a.pictures)) if a.pictures else ()
     a.out.mkdir(parents=True,exist_ok=True)

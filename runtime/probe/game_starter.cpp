@@ -164,6 +164,17 @@ void catchEnemy(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     returnValue(rdram,context,runtime,1,chase_caught);
 }
 
+// The scenes a run goes to: every next scene the story sets (0x2ACE58, from a marker, an event or a
+// chase), in order, for the report.
+constexpr std::uint32_t next_scene=0x2ACE58;
+PS2Runtime::RecompiledFunction original_next_scene=nullptr;
+std::string scenes_visited;
+void nextScene(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(!scenes_visited.empty())scenes_visited+=',';
+    scenes_visited+=std::to_string(static_cast<std::int32_t>(context->r[4].low));
+    original_next_scene(rdram,context,runtime);
+}
+
 // Confirmations (STORY_MODE_PLAN.md): story mode's waits for a button test port 0's pressed buttons
 // (0x3B0C34) for cross in a function called once per frame. Every advance_calls calls of such a
 // function, one call runs with cross shown as pressed, as when the player presses it; the game's own
@@ -176,19 +187,30 @@ void catchEnemy(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
 //   20 bytes each, -1 when empty; +616 slots, +624 filled, the cursor at +360); while slots are empty
 //   and the cursor is on a filled one, down moves it on; cross on an empty slot picks a fighter.
 // A screen pressed more than its limit since the last part ended is stuck: the run ends.
-constexpr std::uint32_t pressed_buttons=0x3B0C34,repeated_buttons=0x3B0C44,cross=0x4000,left=0x80,down=0x40;
+constexpr std::uint32_t pressed_buttons=0x3B0C34,repeated_buttons=0x3B0C44,cross=0x4000,triangle=0x1000,left=0x80,down=0x40;
 constexpr unsigned advance_calls=30;
 constexpr std::uint32_t any_phase=~0u;
 constexpr std::uint32_t yes_no_dialogue=0x29C640,dialogue_pointer=0x387DA0,dialogue_cursor=88;
 constexpr std::uint32_t save_flow_pointer=0x387A00,save_flow_state=20,exit_saving=21;
 constexpr std::uint32_t prebattle_input=0x255580,prebattle_pointer=0x3879D0,prebattle_state=364,prebattle_cursor=360,
                         team_slots=416,team_slot_size=20,team_size=616,team_filled=624;
+// The item shop (a town's shop keeper; script command 1008): its step (0x247638; state at +0x1288 of
+// the structure at gp-0x4498) shows messages that take cross once their text is shown (states 2, 21
+// and 22); its main menu (0x246860) opens a list on cross and closes the shop on triangle, and the
+// lists go back on triangle. The starter presses cross on the messages, cross once in the main menu
+// (into the first list), and triangle after that until the shop closes.
+constexpr std::uint32_t shop_step=0x247638,shop_menu=0x246860,shop_pointer=0x387958,shop_state=0x1288; // gp-0x4498.
+std::uint32_t shop_last_state=0;
+bool shop_menu_entered=false;
 struct Confirmation {std::uint32_t function,phase;unsigned limit;PS2Runtime::RecompiledFunction original;unsigned calls,presses,since_part;};
 Confirmation confirmations[]={
     {0x2A7400,2,400},             // The scene script's message command (13004), in its update phase, once the text is shown.
     {prebattle_input,any_phase,40}, // The pre-battle screen's input step.
     {0x2581F0,any_phase,20},        // The after-battle results' input step.
     {yes_no_dialogue,any_phase,20}, // The yes/no dialogue (after a won story battle: "Save game data?", then "Exit saving?").
+    {shop_step,any_phase,40},       // The item shop's step.
+    {shop_menu,any_phase,20},       // The item shop's main menu.
+    {0x2A6F98,2,20},                // The "GET!!" banner of an item a town gives (script command 1011), in its update phase.
 };
 std::uint32_t stuck_function=0;
 void endRun(PS2Runtime* runtime,unsigned flips_from_now) {
@@ -231,6 +253,16 @@ template<std::size_t index> void confirm(std::uint8_t* rdram,R5900Context* conte
        && read32(rdram,read32(rdram,dialogue_pointer)+dialogue_cursor)!=0) {
         press(rdram,context,runtime,point.original,repeated_buttons,left);return;
     }
+    if(point.function==shop_step) {
+        shop_last_state=read32(rdram,read32(rdram,shop_pointer)+shop_state);
+        const bool message=shop_last_state==2 || shop_last_state==21 || shop_last_state==22;
+        press(rdram,context,runtime,point.original,pressed_buttons,message?cross:triangle);return;
+    }
+    if(point.function==shop_menu) {
+        const bool into_list=!shop_menu_entered;
+        shop_menu_entered=true;
+        press(rdram,context,runtime,point.original,pressed_buttons,into_list?cross:triangle);return;
+    }
     if(point.function==prebattle_input) {
         const std::uint32_t screen=read32(rdram,prebattle_pointer);
         const std::uint32_t cursor=read32(rdram,screen+prebattle_cursor);
@@ -241,6 +273,42 @@ template<std::size_t index> void confirm(std::uint8_t* rdram,R5900Context* conte
     }
     press(rdram,context,runtime,point.original,pressed_buttons,cross);
 }
+// Towns (the scenes optional markers lead to; STORY_MODE_PLAN.md): each frame the town step
+// (0x2A99B8) goes through the town's characters (map objects 3 to 11). The first one talks when the
+// player is in reach (bit 0 of 0x20C950) and presses cross; the others run their block when the
+// player touches them (bit k of 0x20C980), which can start a fight. Either runs the character's block
+// of the scene script, while the script state's running block (0x3B2664) is nonzero. The starter goes
+// through the characters in turn: after the town has run a while, the current one is reported in
+// reach (with cross pressed every advance_calls calls) or touched until its block has run, or for
+// at most town_frames_per_character calls if it does not answer; after the last one the run ends.
+constexpr std::uint32_t town_step=0x2A99B8,talk_reach=0x20C950,touched=0x20C980,running_block=0x3B2664;
+constexpr std::uint32_t town_characters=9;
+constexpr unsigned town_frames_before=120,town_frames_per_character=150;
+PS2Runtime::RecompiledFunction original_town_step=nullptr,original_talk_reach=nullptr,original_touched=nullptr;
+std::uint32_t town_character=0;
+unsigned town_calls=0,town_blocks=0;
+bool town_reporting=false,town_block_ran=false;
+void townStep(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    town_reporting=false;
+    if(read32(rdram,running_block)) {town_block_ran=true;original_town_step(rdram,context,runtime);return;}
+    if(town_block_ran) {town_block_ran=false;++town_blocks;++town_character;town_calls=0;}
+    if(town_character<town_characters && ++town_calls>town_frames_before+town_frames_per_character) {++town_character;town_calls=0;}
+    if(town_character>=town_characters) {endRun(runtime,flips_after_part);original_town_step(rdram,context,runtime);return;}
+    town_reporting=town_calls>town_frames_before;
+    if(town_reporting && town_character==0 && town_calls%advance_calls==0) {
+        press(rdram,context,runtime,original_town_step,pressed_buttons,cross);return;
+    }
+    original_town_step(rdram,context,runtime);
+}
+void talkReach(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(!town_reporting || town_character!=0) {original_talk_reach(rdram,context,runtime);return;}
+    returnValue(rdram,context,runtime,1,talk_reach);
+}
+void touchedCharacters(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(!town_reporting || town_character==0) {original_touched(rdram,context,runtime);return;}
+    returnValue(rdram,context,runtime,1u<<town_character,touched);
+}
+
 // The story's battles: the pre-battle setup (0x255EA0) sets side 0 to the player (the side setter's
 // third argument 0) and side 1 to the CPU (1); the starter passes 1 for both, as the battle starter
 // does, so a story battle can be won without input.
@@ -331,6 +399,10 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
     installConfirmations(runtime,std::make_index_sequence<std::size(confirmations)>{});
     original_side_control=runtime.replaceFunction(side_control,cpuSide);
     original_chase_caught=runtime.replaceFunction(chase_caught,catchEnemy);
+    original_next_scene=runtime.replaceFunction(next_scene,nextScene);
+    original_town_step=runtime.replaceFunction(town_step,townStep);
+    original_talk_reach=runtime.replaceFunction(talk_reach,talkReach);
+    original_touched=runtime.replaceFunction(touched,touchedCharacters);
     if(start.marker) {
         configured_marker=start.marker;
         original_marker_reached=runtime.replaceFunction(marker_reached,reachMarker);
@@ -339,7 +411,7 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
 }
 
 std::string gameStarterReport() {
-    std::string text="\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
+    std::string text="\"starter_scenes\":["+scenes_visited+"],\"starter_town_blocks\":"+std::to_string(town_blocks)+",\"starter_shop_state\":"+std::to_string(shop_last_state)+",\"starter_town_done\":"+(town_character>=town_characters?"true":"false")+",\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
         +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_confirmations\":[";
     for(const auto& point:confirmations) {
         if(text.back()!='[')text+=',';

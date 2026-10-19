@@ -12,7 +12,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
 | Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
-| Story mode | 🔧 Incomplete — all 200 playable parts run to their battle's end without input; optional markers and the shop are open |
+| Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
 
@@ -49,7 +49,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode next ([plan](plans/ee/STORY_MODE_PLAN.md): the optional markers, then the shop); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
+1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode's remaining screens as runs show them ([plan](plans/ee/STORY_MODE_PLAN.md)); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
 2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
 3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC; next the GPU renderer's intake on a graphics thread.
 4. **Later:** launcher extras (HD textures), 3D and film comparisons with the original, the CPU renderer in 3D (optional).

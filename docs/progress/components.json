@@ -28,14 +28,14 @@
     },
     {
       "name": "Story mode",
-      "status": "incomplete",
-      "note": "Parts to battle",
-      "current": true
+      "status": "working",
+      "note": "Parts, towns, shop"
     },
     {
       "name": "Saves",
       "status": "incomplete",
-      "note": "Loading confirmed"
+      "note": "Loading confirmed",
+      "current": true
     }
   ],
   "groups": [
