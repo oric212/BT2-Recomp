@@ -490,9 +490,33 @@ int main() {
             reject([&]{widths.write16(ram,EeRuntime::ram_size-1,0);});
             reject([&]{widths.write16(ram,0x12001000,0);});
             reject([&]{widths.handleBreak(ram,&ctx);});
-            reject([&]{widths.Store64(ram,&ctx,0x12001000,0x200);});
-            reject([&]{(void)widths.Load64(ram,&ctx,0x12001000);});
             require(widths.halfword_writes==1 && widths.gs_csr_reads==0 && widths.gs_csr_reset_writes==0);
+        }
+
+        {
+            // The GS library's reset path is one behavior wherever it is called from (group 2 of
+            // RUNTIME_GENERALIZATION_PLAN.md): a CSR reset from any pc, the read after it with the
+            // status bits and FIELD clear until the next VBlank, PutIMR returning the previous mask,
+            // SetGsCrt recording the mode; the first reset's counters advance once.
+            EeRuntime gs;std::vector<std::uint8_t> image(EeRuntime::ram_size);gs.loadMemory(image);
+            auto* ram=gs.memory().data();R5900Context ctx{};ctx.pc=0x200000;
+            gs.Store64(ram,&ctx,0x12001000,0x200);
+            require(gs.gs_resets==1 && gs.gs_csr_reset_writes==1 && gs.gs_csr_cleared); // A CSR reset from any pc resets the GS.
+            require(gs.Load64(ram,&ctx,0x12001000)==0x551B4000 && gs.gs_csr_reads==1); // The read after a reset sees the revision and clear status.
+            gs.display_field=true;gs.display_intc_stat=0xC;gs.gs_csr_cleared=false;
+            require(gs.Load64(ram,&ctx,0x12001000)==0x551B600C && gs.gs_csr_reads==1); // Later reads carry the status bits and FIELD.
+            auto syscall=[&](std::uint32_t number,std::uint64_t a0,std::uint64_t a1=0,std::uint64_t a2=0) {
+                ctx.r[3].low=number;ctx.r[4].low=a0;ctx.r[5].low=a1;ctx.r[6].low=a2;ctx.r[2].low=0x1234;ctx.r[2].high=7;
+                gs.handleSyscall(ram,&ctx,0);return ctx.r[2].low;
+            };
+            require(syscall(0x71,0x7F00)==0xFF00 && ctx.r[2].high==0 && gs.gs_imr==0x7F00 && gs.gs_imr_writes==1); // PutIMR returns the previous mask.
+            require(syscall(0x71,0xFF00)==0x7F00 && syscall(0x70,0)==0xFF00 && gs.gs_imr_writes==1); // GetIMR reads the mask.
+            reject([&]{syscall(0x71,0x10000);});
+            require(syscall(2,1,2,0)==0 && gs.gs_crt_request==std::array<std::uint32_t,3>{1,2,0} && gs.gs_crt_calls==1); // SetGsCrt records the mode.
+            require(syscall(2,0,2,1)==0 && gs.gs_crt_request==std::array<std::uint32_t,3>{0,2,1} && gs.gs_crt_calls==1); // A later SetGsCrt replaces it.
+            reject([&]{syscall(2,1,3,0);}); // PAL is not presented.
+            gs.Store64(ram,&ctx,0x12001000,0x200);
+            require(gs.gs_resets==2 && gs.gs_csr_reset_writes==1 && gs.graph_startup_phase==1); // The next reset is the graph startup's.
         }
 
         {

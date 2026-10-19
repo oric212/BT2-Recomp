@@ -146,16 +146,7 @@ void EeRuntime::countDisplayFlip() {
 
 void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
     checkMemory(rdram,0,0);
-    if(address==0x12001000 && vif_startup.phase==6 && !graph_startup_phase && value==0x200
-        && context->pc==0x30FE44 && context->r[29].low==initial_sp-112 && gs_csr_reset_writes==1) {
-        gif_dma.gs.resetDrawingState();graph_startup_phase=1;return;
-    }
-    if(address==0x12001000 && value==0x200 && frameGsResetStep(context,0,0x30FE44)) {
-        gif_dma.gs.resetDrawingState();frame_gs_reset_step=1;++frame_gs_resets;return; // VRAM stays as drawn.
-    }
-    if(address==0x12001000 && value==0x200 && (displayResetStep(context,0,0x30FE44,688) || displayResetStep(context,8,0x30FE44,128))) {
-        gif_dma.gs.resetDrawingState();++display_reset_phase;return;
-    }
+    if(address==0x12001000 && value==0x200) {gsCsrReset();return;} // CSR RESET (ee_gs_privileged.cpp).
     if(frameGifContext() && display_reset_phase==13 && !frame_gs_reset_step && gsReadbackStore64(address,value))return;
     // Privileged GS display registers after display setup (main's thread): PMODE, SMODE2, DISPFB1/2,
     // DISPLAY1/2, EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
@@ -171,13 +162,7 @@ void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_
         if(n==14)countDisplayFlip(); // The library flip ends with BGCOLOR.
         return;
     }
-    if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes || gs_csr_reads
-            || context->pc!=0x30FE44 || context->r[29].low!=initial_sp-688 || value!=0x200)
-        throw UnsupportedGuestMemory(address,8);
-    // Reached reset accepted only with matching reference readback evidence.
-    // Reset only the supported drawing-register defaults; VRAM stays unknown.
-    gif_dma.gs.resetDrawingState();
-    ++gs_csr_reset_writes;
+    throw UnsupportedGuestMemory(address,8);
 }
 
 std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
@@ -186,16 +171,6 @@ std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std:
     if(address>=0x10002000 && address<0x10002040 && !(address&15)) {
         std::uint32_t low=0,high=0;
         if(ipuRead(address,low) && ipuRead(address+4,high))return low|(std::uint64_t(high)<<32);
-    }
-    if(address==0x12001000 && graph_startup_phase==1 && context->pc==0x30FE50 && context->r[29].low==initial_sp-112) {
-        graph_startup_phase=2;return 0x551B4000; // Independently captured second original CSR load; no native video clock.
-    }
-    if(address==0x12001000 && frameGsResetStep(context,1,0x30FE50)) {
-        frame_gs_reset_step=2;return 0x551B4000; // Only the GS revision byte (bits 16..23) is consumed.
-    }
-    if(address==0x12001000 && (displayResetStep(context,1,0x30FE50,688) || displayResetStep(context,9,0x30FE50,128))) {
-        // Only the GS revision byte (bits 16..23) is consumed; the original keeps 0x1B.
-        ++display_reset_phase;return 0x551B4000;
     }
     if(address==0x12001000 && (displayResetStep(context,5,0x3104F4,640) || displayResetStep(context,7,0x3104F4,80))) {
         // Only FIELD (bit 13) is consumed, after this wait's polled VBlank.
@@ -207,17 +182,11 @@ std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std:
         && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
         ++gs_field_reads;return 0x551B6004; // Independent captured field, not timed native GS state.
     }
-    if(address==0x12001000 && gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_ && !startup_scheduler_active
-        && !frame_gs_reset_step && display_reset_phase==13) {
-        // Frame-phase CSR sample on main: revision 0x1B, the latched status bits and the field the
-        // logical VBlank model last published (the same FIELD the VSync callback receives).
-        // FINISH (bit 1) is set by a FINISH register write and stays until it is cleared.
-        ++frame_csr_reads;return 0x551B4000u|(display_intc_stat&0x1Du)|(gsFinishPending()?2u:0u)|(display_field?0x2000u:0u);
+    if(address==0x12001000) {
+        if(!gs_csr_cleared)++frame_csr_reads;
+        return gsCsrRead(); // ee_gs_privileged.cpp
     }
-    if(address!=0x12001000 || !gs_csr_supplied_ || gs_csr_reset_writes!=1 || gs_csr_reads
-            || context->pc!=0x30FE50 || context->r[29].low!=initial_sp-688)
-        throw UnsupportedGuestMemory(address,8);
-    ++gs_csr_reads;return 0x551B4000; // Explicit captured reference readback, not native GS state.
+    throw UnsupportedGuestMemory(address,8);
 }
 
 void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
@@ -367,7 +336,7 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         checkMemory(rdram,0,0);
         // Logical time: a poll that finds VBLANK_START clear advances one VBlank (START and END latch).
         // Cause 2 is disabled here, so no handler runs; FIELD toggles in interlaced mode.
-        if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;++polled_vblanks;advanceLogicalField();}
+        if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;gs_csr_cleared=false;++polled_vblanks;advanceLogicalField();}
         return display_intc_stat;
     }
     if(clear_repeat_gif && displayResetStep(context,6,context->pc,624)) {

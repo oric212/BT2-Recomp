@@ -618,8 +618,15 @@ public:
     unsigned serviceOperations() const {return cri_rpc_calls+cri_rpc_binds+ncmd_ready_calls+ncmd_rpc_binds+disc_rpc_calls+disc_rpc_binds+mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
     IntcCheckpoint gs_interrupt;
     unsigned gs_field_reads=0;
-    unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0;
-    std::uint32_t gs_imr=0;
+    // The GS library's reset path (ee_gs_privileged.cpp). The four counters mark the first reset's steps
+    // (the startup checks read them); gs_resets counts every CSR reset.
+    unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0,gs_resets=0;
+    std::uint32_t gs_imr=0xFF00; // Every GS interrupt masked, as the first PutIMR's captured return shows.
+    bool gs_csr_cleared=false; // After a CSR reset until the next VBlank: the status bits and FIELD read as clear.
+    void gsCsrReset();
+    std::uint64_t gsCsrRead();
+    std::uint32_t gsPutImr(std::uint64_t mask,std::uint32_t pc);
+    void gsSetCrt(std::uint64_t interlace,std::uint64_t mode,std::uint64_t field_mode,std::uint32_t pc);
     std::array<std::uint32_t,3> gs_crt_request{};
     unsigned iop_epoch=0, reset_clear_writes=0, reset_ready_checkpoint_reads=0;
     std::uint32_t reset_rpcinit=1, reset_subaddr=0x19600;
@@ -891,7 +898,6 @@ private:
     void receiveScmdMmode(std::uint8_t* rdram,R5900Context* context);
     bool gif_dma_supplied_=false;
     bool gs_interrupt_supplied_=false,gs_field_supplied_=false;
-    bool gs_csr_supplied_=false,gs_imr_supplied_=false,gs_crt_supplied_=false;
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;

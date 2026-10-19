@@ -177,7 +177,7 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
     }
     // The field alternates at every VBlank, waited for or not: code that samples it once per field
     // without a pending wait (a film's frame timing) sees it change as on the console.
-    display_field=!display_field;
+    display_field=!display_field;gs_csr_cleared=false;
     if(vsync_flag) {
         display_intc_stat|=0xC;
         write32(rdram,vsync_flag,1);write32(rdram,vsync_csr,0x551B400Cu|(display_field?0x2000u:0u));write32(rdram,vsync_csr+4,0);

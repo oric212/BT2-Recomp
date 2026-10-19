@@ -96,17 +96,14 @@ void EeRuntime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
     if(bundle.size()>=236) {
         std::uint64_t csr;std::memcpy(&csr,bundle.data()+228,8);
         if(csr!=0x551B4000)throw std::runtime_error("Invalid GS CSR checkpoint");
-        gs_csr_supplied_=true;
     }
     if(bundle.size()>=244) {
         std::uint64_t result;std::memcpy(&result,bundle.data()+236,8);
         if(result!=0xFF00)throw std::runtime_error("Invalid GS IMR checkpoint");
-        gs_imr_supplied_=true;
     }
     if(bundle.size()>=252) {
         std::uint64_t result;std::memcpy(&result,bundle.data()+244,8);
         if(result)throw std::runtime_error("Invalid GS CRT checkpoint");
-        gs_crt_supplied_=true;
     }
     if(bundle.size()>=316) {
         const std::array<std::uint32_t,16> evidence{12,0x1802,0x1FFEAD0,1,8,0x1802,0x1FFEAD0,1,

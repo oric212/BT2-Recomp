@@ -66,6 +66,7 @@ set(BT2_EE_HOT_SOURCES
     runtime/vu/vu1_triangle_clipper.cpp
     runtime/vu/vif1.cpp
     runtime/ee/ee_gs_readback.cpp
+    runtime/ee/ee_gs_privileged.cpp
     runtime/ee/ee_interpreter.cpp
     runtime/ee/state_hash.cpp)
 

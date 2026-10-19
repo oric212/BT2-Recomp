@@ -15,7 +15,7 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 ## Groups, in order
 
 1. **Kernel semaphores** (CreateSema, DeleteSema, WaitSema, PollSema, SignalSema): CreateSema accepts any `attr` (the kernel ignores it: it keeps the count, maximum and option only); DeleteSema deletes any existing semaphore and its id is reused (lowest free id first); a wait on a zero count still stops (no other thread can signal in this model) until threads (group 3) can block. **Done 2026-10-19:** see below.
-2. **GS and display startup** (GS CSR reset, GsPutIMR, SetGsCrt, the display's VSync waits): one reset behavior and one CRT behavior, wherever they come from.
+2. **GS and display startup** (GS CSR reset, GsPutIMR, SetGsCrt, the display's VSync waits): one reset behavior and one CRT behavior, wherever they come from. **Done 2026-10-19** except the two VSync waits (see below).
 3. **Threads** (CreateThread, StartThread, ChangeThreadPriority, ReferThreadStatus, SuspendThread, the startup workers): a general thread table with the kernel's states; then thread exit and deletion (the sound library's shutdown, a worker's exit), which the census lists as unhandled.
 4. **Hardware stores of the startup** (DMAC control and priority, Timer 1's delay helpers, the startup GIF transfers, VIF startup): the general register behavior the frame phase already has.
 5. **SIF and IOP replays after the IOP reset** (the post-reset LOADFILE, SCMD and SIF register sequences): general SIF register and DMA behavior.
@@ -26,6 +26,13 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 - CreateSema: 24 conditions that admitted a nonzero `attr` removed; any `attr` is accepted. The four that count the startup's own semaphores (the first CD-init call's, the CD semaphores, the disc and NCMD bind semaphores) remain as counters.
 - DeleteSema: the 9 cleanup conditions removed; any existing semaphore is deleted, its id freed (the newest is removed; an older one is marked deleted, and CreateSema reuses the lowest free id). Polls, waits and signals on a deleted id return -1.
 - Unit tests rewritten from refusals to the general behavior (and a deleted older id reused). The gate passed (32/32 comparisons, battle hash unchanged); a story part, the shop town and the Dragon Tournament ran as before. The census went from 160 lines to 118.
+
+## Group 2 result
+
+- One behavior each (`runtime/ee/ee_gs_privileged.cpp`), from any pc and stack: a CSR reset (`0x200`) resets the GS drawing registers; the CSR read gives revision `0x1B`, ID `0x55`, the latched status bits, FINISH and FIELD, all read as clear after a reset until the next VBlank (what every capture of the read after a reset shows); GsGetIMR reads the mask and GsPutIMR sets it and returns the previous one (the mask starts with every interrupt masked, `0xFF00`, as the first call's captured return shows); SetGsCrt records interlace, mode and FFMD. Mask bits outside `0xFF00` and modes other than NTSC stay explicit stops.
+- 18 branches keyed on pcs, stack offsets, return addresses and step numbers replaced by these four functions, and the evidence flags that admitted the first calls removed. The startup's sequence counters (the first reset's steps, the graph startup's, main's two display re-initializations, the frame-phase resets) advance from their own state after the general behavior; the later startup steps read them, but they decide nothing.
+- Left for group 4: the startup's two VSync waits (the CSR read at `0x3104F4` during main's display re-initialization), because the first of them also starts the repeated clear transfer (`clear_repeat_gif`) that the startup's GIF replay checks.
+- Unit tests of the general behavior; the gate passed (32/32 comparisons, battle hash unchanged); a story part (cleared, saga 411), a town and the Dragon Tournament (four battles to Champion, 4,197 functions) ran as before, nothing interpreted. The census counts 117 lines: 9 conditions fewer, 8 counter steps in the new file that it cannot tell from conditions.
 
 ## Limits
 

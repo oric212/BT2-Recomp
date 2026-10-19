@@ -164,49 +164,14 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
         return;
     }
-    if(code==0 && (selector==0x70 || selector==0x71) && frameGifContext() && display_reset_phase==13 && !frame_gs_reset_step) {
-        // GsGetIMR / GsPutIMR in the frame phase: the GS interrupt mask; PutIMR returns the previous mask.
-        const auto previous=gs_imr;
-        if(selector==0x71) {if(context->r[4].low&~0xFF00ull)throw UnsupportedSyscall(selector,context->pc);gs_imr=std::uint32_t(context->r[4].low);}
-        context->r[2].low=previous;context->r[2].high=0;return;
+    if(code==0 && (selector==0x70 || selector==0x71)) {
+        // GsGetIMR / GsPutIMR (ee_gs_privileged.cpp): the GS interrupt mask; PutIMR returns the previous mask.
+        const auto mask=selector==0x71?gsPutImr(context->r[4].low,context->pc):gs_imr;
+        context->r[2].low=mask;context->r[2].high=0;return;
     }
-    if(code==0 && selector==0x71 && gs_imr_supplied_) {
-        if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C && frameGsResetStep(context,2,0x32EFA8)) {
-            gs_imr=0xFF00;frame_gs_reset_step=3;context->r[2].low=0xFF00;return;
-        }
-        if(context->r[4].low==0xFF00 && context->r[31].low==0x30FE6C
-            && (displayResetStep(context,2,0x32EFA8,688) || displayResetStep(context,10,0x32EFA8,128))) {
-            gs_imr=0xFF00;++display_reset_phase;context->r[2].low=0xFF00;return;
-        }
-        if(graph_startup_phase==2 && context->pc==0x32EFA8 && context->r[4].low==0xFF00
-            && context->r[29].low==initial_sp-112 && context->r[31].low==0x30FE6C) {
-            gs_imr=0xFF00;graph_startup_phase=3;context->r[2].low=0xFF00;return;
-        }
-        if(gs_csr_reads!=1 || gs_imr_writes || context->pc!=0x32EFA8 || context->r[4].low!=0xFF00
-                || context->r[29].low!=initial_sp-688 || context->r[31].low!=0x30FE6C)
-            throw UnsupportedSyscall(selector,context->pc);
-        gs_imr=0xFF00;++gs_imr_writes;context->r[2].low=0xFF00;return;
-    }
-    if(code==0 && selector==2 && gs_crt_supplied_) {
-        // Frame-phase reset: after PutIMR (no VSync handler registered) or after its removal. NTSC only.
-        if((frameGsResetStep(context,3,0x32E868) || frameGsResetStep(context,4,0x32E868))
-            && context->r[4].low<=1 && context->r[5].low==2 && context->r[6].low<=1) {
-            frame_gs_crt_request={static_cast<std::uint32_t>(context->r[4].low),2,static_cast<std::uint32_t>(context->r[6].low)};
-            gs_crt_request=frame_gs_crt_request;frame_gs_reset_step=0;context->r[2].low=0;return;
-        }
-        if(context->r[4].low==1 && context->r[5].low==2 && ((context->r[6].low==1 && context->r[31].low==0x100274
-                && displayResetStep(context,4,0x32E868,608)) || (!context->r[6].low && context->r[31].low==0x2710A0
-                && displayResetStep(context,11,0x32E868,48)))) {
-            gs_crt_request={1,2,static_cast<std::uint32_t>(context->r[6].low)};++display_reset_phase;context->r[2].low=0;return;
-        }
-        if(graph_startup_phase==3 && context->pc==0x32E868 && context->r[4].low==1 && context->r[5].low==2
-            && context->r[6].low==1 && context->r[29].low==initial_sp-32 && context->r[31].low==0x1005D0) {
-            graph_startup_phase=4;graph_halfword_checkpoint=halfword_writes;context->r[2].low=0;return;
-        }
-        if(gs_imr_writes!=1 || gs_crt_calls || context->pc!=0x32E868 || context->r[4].low!=1
-                || context->r[5].low!=2 || context->r[6].low!=1 || context->r[29].low!=initial_sp-608
-                || context->r[31].low!=0x100274)throw UnsupportedSyscall(selector,context->pc);
-        gs_crt_request={1,2,1};++gs_crt_calls;context->r[2].low=0;return;
+    if(code==0 && selector==2) {
+        // SetGsCrt (ee_gs_privileged.cpp): the display mode. Void in the SDK; the captures return 0.
+        gsSetCrt(context->r[4].low,context->r[5].low,context->r[6].low,context->pc);context->r[2].low=0;return;
     }
     if (code == 0 && selector == 0x7A && iop_reset_pending && reset_ready_supplied_) {
         if(reset_ready_checkpoint_reads || reset_clear_writes!=4 || context->pc!=0x32F078
