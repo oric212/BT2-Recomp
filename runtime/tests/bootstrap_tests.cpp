@@ -842,12 +842,13 @@ int main() {
             disc.write32(dm,0x3A8780,0x203A97C0);disc.write32(dm,0x3A8784,42);
             for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<std::uint32_t>(dc.r[4].low)+4*i,
                 std::array<std::uint32_t,6>{144,1,0,0x80808080,1,0x3838D8}[i]);
-            dc.r[19].low=0x80000596;reject([&]{disc.handleSyscall(dm,&dc,0);});
-            require(disc.disc_bind_semaphores==0 && disc.semaphores.size()==10);
+            dc.r[19].low=0x80000596;disc.handleSyscall(dm,&dc,0); // Any attr is accepted; not the disc's bind semaphore.
+            require(dc.r[2].low==10 && disc.disc_bind_semaphores==0 && disc.semaphores.size()==11);
+            disc.semaphores.resize(10);
             dc.r[19].low=0xFFFFFFFF80000597;disc.handleSyscall(dm,&dc,0);
             require(dc.r[2].low==10 && disc.disc_bind_semaphores==1 && disc.semaphores[10].count==0
                 && disc.semaphores[10].maximum==1 && disc.semaphores[10].option==0x3838D8);
-            reject([&]{disc.handleSyscall(dm,&dc,0);});
+            disc.handleSyscall(dm,&dc,0);require(dc.r[2].low==11 && disc.disc_bind_semaphores==1); // Counted once.
         }
         {
             EeRuntime disc;disc.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
@@ -856,14 +857,15 @@ int main() {
             dc.r[4].low=disc.initial_sp-608;dc.r[31].low=0x332814;dc.r[17].low=0x369590;dc.r[19].low=0xFFFFFFFF80000595;
             disc.write32(dm,0x369594,44);
             for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<unsigned>(dc.r[4].low)+i*4,std::array<unsigned,6>{144,1,0,0,1,0x3838D8}[i]);
-            dc.r[17].low=0x369A90;reject([&]{disc.handleSyscall(dm,&dc,0);});require(disc.ncmd_bind_semaphores==0);
+            dc.r[17].low=0x369A90;disc.handleSyscall(dm,&dc,0);require(disc.ncmd_bind_semaphores==0 && dc.r[2].low==10);
+            disc.semaphores.resize(10);
             dc.r[17].low=0x369590;disc.handleSyscall(dm,&dc,0);require(disc.ncmd_bind_semaphores==1 && dc.r[2].low==10);
-            reject([&]{disc.handleSyscall(dm,&dc,0);});
+            disc.handleSyscall(dm,&dc,0);require(disc.ncmd_bind_semaphores==1 && dc.r[2].low==11);
             disc.semaphores.resize(10);disc.ncmd_rpc_binds=1;dc.r[4].low=disc.initial_sp-624;dc.r[31].low=0x332AD0;dc.r[19].low=1;
             disc.write32(dm,0x369594,45);
             for(unsigned i=0;i<6;++i)disc.write32(dm,static_cast<unsigned>(dc.r[4].low)+i*4,std::array<unsigned,6>{144,1,0,0,1,0x3838E8}[i]);
-            dc.r[31].low=0x332814;reject([&]{disc.handleSyscall(dm,&dc,0);});require(disc.semaphores.size()==10);
-            dc.r[31].low=0x332AD0;disc.handleSyscall(dm,&dc,0);require(dc.r[2].low==10 && disc.semaphores[10].option==0x3838E8);
+            dc.r[31].low=0x332814;disc.handleSyscall(dm,&dc,0);require(disc.semaphores.size()==11);
+            disc.semaphores.resize(10);dc.r[31].low=0x332AD0;disc.handleSyscall(dm,&dc,0);require(dc.r[2].low==10 && disc.semaphores[10].option==0x3838E8);
         }
         context.r[3].low = 0x40;
         context.r[4].low = 0x600;
@@ -882,8 +884,20 @@ int main() {
         runtime.handleSyscall(memory, &context, 0);
         require(context.r[2].low == UINT64_MAX && runtime.semaphores.size() == 1);
         runtime.write32(memory, 0x608, 1);
-        runtime.write32(memory, 0x610, 1);
-        reject([&] { runtime.handleSyscall(memory, &context, 0); });
+        runtime.write32(memory, 0x610, 1); // attr is ignored, as by the kernel.
+        runtime.handleSyscall(memory, &context, 0);
+        require(context.r[2].low == 1 && runtime.semaphores.size() == 2);
+        {   // DeleteSema: any semaphore; an older one leaves its id free for the next CreateSema.
+            R5900Context d{};d.r[3].low=0x41;d.r[4].low=0;
+            runtime.handleSyscall(memory, &d, 0);
+            require(d.r[2].low == 0 && runtime.semaphores.size() == 2 && runtime.semaphores[0].deleted);
+            runtime.handleSyscall(memory, &d, 0);require(d.r[2].low == UINT64_MAX); // Already deleted.
+            d.r[3].low=0x45;runtime.handleSyscall(memory, &d, 0);require(d.r[2].low == UINT64_MAX); // Poll of a deleted id.
+            runtime.handleSyscall(memory, &context, 0);
+            require(context.r[2].low == 0 && !runtime.semaphores[0].deleted && runtime.semaphores.size() == 2);
+            d.r[3].low=0x41;d.r[4].low=1;runtime.handleSyscall(memory, &d, 0); // The newest is removed.
+            require(d.r[2].low == 1 && runtime.semaphores.size() == 1);
+        }
         runtime.write32(memory, 0x610, 0);
         context.r[4].low = EeRuntime::ram_size - 20;
         reject([&] { runtime.handleSyscall(memory, &context, 0); });
@@ -1776,12 +1790,12 @@ int main() {
             require(sleep.r[2].low==1 && !ms.main_wakeups && ms.main_sleeps==1 && !ms.main_sleeping);
             reject([&]{R5900Context again=sleep;ms.handleSyscall(ram,&again,0);}); // VBLANK_START disabled: nothing wakes main.
             require(!ms.main_sleeping && ms.main_sleeps==1 && !ms.main_sleep_fields);
-            // Admitted main deletes its newest semaphore whatever its count; an older one stays refused.
+            // Any semaphore is deleted whatever its count; deleting the newest also drops older deleted ids.
             ms.semaphores.push_back({0,1,0x1234});ms.semaphores.push_back({1,1,0});
             R5900Context older{};older.pc=0x32EC78;older.r[3].low=0x41;older.r[4].low=0;
-            reject([&]{ms.handleSyscall(ram,&older,0);});
+            ms.handleSyscall(ram,&older,0);require(older.r[2].low==0 && ms.semaphores[0].deleted);
             R5900Context newest=older;newest.r[4].low=1;ms.handleSyscall(ram,&newest,0);
-            require(newest.r[2].low==1 && ms.semaphores.size()==1);
+            require(newest.r[2].low==1 && ms.semaphores.empty());
             ms.semaphores.clear();
             ms.current_thread_id=2;ms.main_sleeping=true;
             R5900Context query{};query.r[4].low=1;query.r[5].low=0x1000;

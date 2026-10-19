@@ -762,7 +762,7 @@ public:
             throw std::runtime_error("Invalid disc-search bind evidence");
         disc_bind_supplied=true;
     }
-    struct Semaphore { std::uint32_t count, maximum, option; };
+    struct Semaphore { std::uint32_t count, maximum, option; bool deleted = false; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
     std::uint32_t semaphore_waits = 0, semaphore_signals = 0;

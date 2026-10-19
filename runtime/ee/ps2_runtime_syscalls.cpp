@@ -608,9 +608,10 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         const auto initial = read32(rdram, address + 8);
         const auto attributes = read32(rdram, address + 16);
         const auto option = read32(rdram, address + 20);
-        // PS2SDK synchronous RPC leaves attr uninitialized; the pinned Play!
-        // model reads count/max/option only. Permit this field solely for the
-        // reached first CD-init call, whose local BIOS capture returns ID 3.
+        // The kernel keeps a semaphore's count, maximum and option and ignores attr (Play!'s CreateSema
+        // stores init/max/option only; library callers leave attr as uninitialized stack residue), so any
+        // attr is accepted. The conditions below only count the startup's own semaphores, which the
+        // startup checks and the comparisons with the original read.
         const bool rpc_call_sema = sif_call_sema_supplied_ && sif_bind_callbacks == 1 && semaphore_deletions == 1
             && semaphores.size() == 3 && address == initial_sp - 400
             && maximum == 1 && initial == 0 && option == 0x3838E8;
@@ -619,93 +620,28 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
             && address == initial_sp - 304 && maximum == 1
             && initial == (cd_semaphores_created == 3 ? 0u : 1u)
             && option == 0x3825B8 + cd_semaphores_created * 16;
-        const bool scmd_sema = scmd_bind_supplied_ && cd_semaphores_created == 4 && !scmd_bind_calls
-            && semaphores.size() == 7 && address == initial_sp - 288 && maximum == 1
-            && initial == 0 && option == 0x3838D8 && attributes == 2;
-        const bool mmode_sema = scmd_mmode_supplied_ && scmd_bind_calls == 1 && !scmd_mmode_calls
-            && semaphores.size() == 7 && address == initial_sp - 304 && maximum == 1
-            && initial == 0 && option == 0x3838E8 && attributes == 0x370000;
-        // Same reached RPC helper as before reboot; attr remains unused stack residue.
-        const bool fresh_bind_sema = post_sif.rpc_initialized && semaphores.size()==7
-            && address==initial_sp-320 && maximum==1 && initial==0 && option==0x3838D8;
-        const bool fresh_call_sema=post_cd.supplied && post_cd.binds==2 && !post_cd.calls && semaphores.size()==7
-            && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838E8;
-        const bool fresh_scmd_sema=post_cd.scmd_supplied && post_cd.calls==1 && semaphores.size()==7 && maximum==1 && initial==0
-            && ((!post_cd.scmd_binds && address==initial_sp-288 && option==0x3838D8)
-                || (post_cd.scmd_binds==1 && !post_cd.modes && address==initial_sp-304 && option==0x3838E8));
-        const bool fresh_loader_bind_sema=post_cd.modes==1 && semaphores.size()==7
-            && address==initial_sp-384 && maximum==1 && initial==0 && option==0x3838D8;
-        const bool fresh_loader_call_sema=post_loadfile.binds==1 && semaphores.size()==7 && maximum==1 && initial==0
-            && option==0x3838E8 && (address==initial_sp-(post_loadfile.versions?384:464)
-                || (heap_dma_polls==1 && native_module_loads==13 && address==initial_sp-496 && attributes==0x3AC840)
-                || (heap_dma_polls==1 && native_module_loads==14 && !heap_frees && address==initial_sp-400 && attributes==0x3B0000));
-        const bool mc_call_sema=mc_rpc_binds==1 && !mc_rpc_calls && semaphores.size()==10 && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838E8;
-        const bool dbc_init_sema=dbc_rpc_binds==4 && dbc_rpc_calls==1 && semaphores.size()==7 && address==initial_sp-288 && maximum==127 && initial==1 && option==0x381C28;
-        const bool dbc_call_sema=sounds_rpc_calls==1 && ((dbc_rpc_binds==1 && !dbc_rpc_calls && semaphores.size()==7) || (dbc_rpc_binds==4 && dbc_rpc_calls>=1 && dbc_rpc_calls<4 && semaphores.size()==8)) && address==initial_sp-(dbc_rpc_calls>=2?512:528) && maximum==1 && initial==0 && option==0x3838E8;
-        const bool dbc_bind_sema=sounds_rpc_calls==1 && dbc_rpc_binds<4 && semaphores.size()==7 && address==initial_sp-400 && maximum==1 && initial==0 && option==0x3838D8;
-        const bool sounds_bind_sema=sound_thread_starts==1 && !sounds_rpc_binds && native_module_loads==14 && heap_calls==2
-            && semaphores.size()==7 && address==initial_sp-176 && maximum==1 && initial==0 && option==0x3838D8;
-        const bool sound_call_sema=sound_rpc_binds==1 && !sound_rpc_calls && native_module_loads==14 && heap_calls==2
-            && semaphores.size()==7 && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838E8;
-        const bool cri_call_sema=cri_rpc_binds==1 && cri_rpc_calls<=41 && heap_calls==(cri_rpc_calls>=36?6u:cri_rpc_calls==35?5u:cri_rpc_calls>=3?4u:3u)
-            && semaphores.size()==10 && address==initial_sp-(cri_rpc_calls>=36?(cri_rpc_calls==36?448u:512u):cri_rpc_calls==35?448u:cri_rpc_calls>=3?(cri_rpc_calls&1?544u:592u):512u) && maximum==1 && initial==0
-            && option==0x3838E8 && context->r[17].low==0x355C70
-            && read32(rdram,0x3A97E0)==(cri_rpc_calls>=36?(cri_rpc_calls==36?0x40Au:0x408u):cri_rpc_calls==35?2u:cri_rpc_calls>=3?(cri_rpc_calls&1?0x422u:0x400u):cri_rpc_calls==2?0x40Cu:cri_rpc_calls==1?0x403u:2u);
-        const bool fourth_heap_sema=((heap_calls==3 && cri_rpc_calls==3) || (heap_calls==4 && cri_rpc_calls==35) || (heap_calls==5 && cri_rpc_calls==36)) && disc_rpc_calls==6 && ncmd_read_calls==1
-            && semaphores.size()==10 && address==initial_sp-(heap_calls>=4?416u:496u) && maximum==1 && initial==0 && option==0x3838E8
-            && context->pc==0x32EC68 && context->r[31].low==0x332AD0 && context->r[17].low==0x3AC840;
-        const bool third_heap_sema=heap_calls==2 && cri_rpc_binds==1 && disc_rpc_calls==6 && ncmd_read_calls==1 && semaphores.size()==10 && address==initial_sp-480 && maximum==1 && initial==0 && option==0x3838E8 && context->r[17].low==0x3AC840;
-        const bool second_heap_sema=heap_calls==1 && heap_frees==1 && texture_gif.phase==8 && native_module_loads==14
-            && semaphores.size()==7 && address==initial_sp-288 && maximum==1 && initial==0 && option==0x3838E8;
-        const bool heap_bind_sema=heap_bind_supplied && native_module_loads==13 && !heap_binds && post_loadfile.versions==1
-            && semaphores.size()==7 && address==initial_sp-192 && maximum==1 && initial==0 && option==0x3838D8
-            && read32(rdram,0x3AC864)==0;
-        // The actual bind helper writes only max/init/option. An isolated
-        // retail return confirms semaphore 10 with different unused attr residue.
         const bool disc_bind_sema=mc_rpc_calls==2 && mc_rpc_binds==1 && semaphores.size()==10
             && !disc_bind_semaphores && address==initial_sp-592 && maximum==1 && initial==0 && option==0x3838D8
             && context->pc==0x32EC68 && context->r[31].low==0x332814
             && context->r[17].low==0x3A8780 && static_cast<std::uint32_t>(context->r[19].low)==0x80000597
             && read32(rdram,0x3A8780)==0x203A97C0 && read32(rdram,0x3A8784)==42;
-        const bool disc_call_sema=disc_rpc_binds==1 && (disc_rpc_calls==0 || (disc_rpc_calls>=1 && disc_rpc_calls<6 && ncmd_read_calls==1)) && semaphores.size()==10 && address==initial_sp-(disc_rpc_calls?688:672)
-            && maximum==1 && initial==0 && option==0x3838E8 && context->pc==0x32EC68 && context->r[31].low==0x332AD0
-            && context->r[17].low==0x3A8780 && context->r[19].low==1 && read32(rdram,0x3A8784)==(disc_rpc_calls?46u+disc_rpc_calls:43u);
         const bool ncmd_bind_sema=disc_rpc_calls==1 && !ncmd_bind_semaphores && semaphores.size()==10
             && address==initial_sp-608 && maximum==1 && initial==0 && option==0x3838D8
             && context->pc==0x32EC68 && context->r[31].low==0x332814 && context->r[17].low==0x369590
             && static_cast<unsigned>(context->r[19].low)==0x80000595 && read32(rdram,0x369594)==44;
-        const bool ncmd_ready_sema=ncmd_rpc_binds==1 && !ncmd_ready_calls && semaphores.size()==10
-            && address==initial_sp-624 && maximum==1 && initial==0 && option==0x3838E8
-            && context->pc==0x32EC68 && context->r[31].low==0x332AD0 && context->r[17].low==0x369590
-            && context->r[19].low==1 && read32(rdram,0x369594)==45;
-        // After main's admitted priority: the SIF RPC library's own temporary call (RA 0x332AD0) or
-        // bind (RA 0x332814) semaphore; attr is uninitialized stack residue in that library.
-        const bool admitted_rpc_sema=main_priority_admissions && context->pc==0x32EC68 && maximum==1 && initial==0
-            && ((context->r[31].low==0x332AD0 && option==0x3838E8) || (context->r[31].low==0x332814 && option==0x3838D8));
-        // The C library's lazily created stdio lock ("SceStdioFioSema", count 1) after admission.
-        const bool stdio_sema=main_priority_admissions && context->pc==0x32EC68 && context->r[31].low==0x333770
-            && maximum==1 && initial==1 && option==0x383988 && read32(rdram,0x36AB24)==0xFFFFFFFF;
-        // Its per-call file semaphores (count 0), named by option: "SceStdioOpenSema" 0x3839A0,
-        // "...CloseSema" 0x3839B8, "...LseekSema" 0x3839D0, "...ReadSema" 0x3839E8.
-        const bool stdio_open_sema=main_priority_admissions && context->pc==0x32EC68 && stdioCallSema(option)
-            && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && maximum==1 && initial==0;
-        // Frame phase (after display setup): the kernel ignores attr (Play!'s CreateSema stores only
-        // init/max/option), so library callers' uninitialized attr residue has no effect.
-        const bool frame_phase_sema=gs_display_flips>=1 && context->pc==0x32EC68;
         if(ncmd_bind_sema)++ncmd_bind_semaphores;
         if (disc_bind_sema) ++disc_bind_semaphores;
-        if (attributes != 0 && !frame_phase_sema && !admitted_rpc_sema && !stdio_sema && !stdio_open_sema && !ncmd_ready_sema && !ncmd_bind_sema && !disc_bind_sema && !disc_call_sema && !mc_call_sema && !dbc_init_sema && !dbc_call_sema && !dbc_bind_sema && !sounds_bind_sema && !sound_call_sema && !cri_call_sema && !fourth_heap_sema && !third_heap_sema && !second_heap_sema && !heap_bind_sema && !fresh_loader_call_sema && !fresh_loader_bind_sema && !fresh_scmd_sema && !fresh_call_sema && !fresh_bind_sema && !rpc_call_sema && !cd_sema && !scmd_sema && !mmode_sema) {
-            if (sif_bind_callbacks) throw UnsupportedSyscall(selector, context->pc);
-            throw std::runtime_error("Unsupported semaphore attributes");
-        }
         if (cd_sema) ++cd_semaphores_created;
         if (rpc_call_sema) { ++rpc_call_semaphores; rpc_call_sema_attributes = attributes; }
         if (!maximum || maximum > INT32_MAX || initial > maximum || semaphores.size() == 256) {
             context->r[2].low = UINT64_MAX;
             return;
         }
-        const auto id = static_cast<std::uint32_t>(semaphores.size());
-        semaphores.push_back({initial, maximum, option});
+        // The lowest free id, as the kernel allocates them.
+        std::uint32_t id=0;
+        while(id<semaphores.size() && !semaphores[id].deleted)++id;
+        if(id==semaphores.size())semaphores.push_back({initial,maximum,option});
+        else semaphores[id]={initial,maximum,option};
         context->r[2].low = id;
         return;
     }
@@ -713,7 +649,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         // Pinned nonblocking PollSema: never sleeps or reschedules.
         const auto id = static_cast<std::uint32_t>(context->r[4].low);
         ++semaphore_polls;
-        if (id >= semaphores.size() || semaphores[id].count == 0) {
+        if (id >= semaphores.size() || semaphores[id].deleted || semaphores[id].count == 0) {
             context->r[2].low = UINT64_MAX;
             return;
         }
@@ -724,42 +660,13 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
     }
     if (code == 0 && selector == 0x41) {
         const auto id = static_cast<std::uint32_t>(context->r[4].low);
-        if (id >= semaphores.size()) { context->r[2].low = UINT64_MAX; return; }
-        // Observed completed bind cleanup only, with no waiting threads.
-        const bool bind_cleanup = sif_bind_callbacks == 1 && semaphore_waits == 2
-            && semaphore_deletions == 0 && semaphores[id].option == 0x3838D8;
-        const bool cd_cleanup = cd_init_calls == 1 && semaphore_waits == 3
-            && semaphore_deletions == 1 && semaphores[id].option == 0x3838E8;
-        const bool scmd_cleanup = scmd_bind_calls == 1 && semaphore_waits == 4 && semaphore_deletions == 2
-            && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838D8;
-        const bool mmode_cleanup = scmd_mmode_calls == 1 && semaphore_waits == 5 && semaphore_deletions == 3
-            && id == 7 && semaphores.size() == 8 && semaphores[id].option == 0x3838E8;
-        const bool fresh_cleanup=post_cd.supplied && ((id==7 && semaphores.size()==8) || (mc_rpc_binds && id==10 && semaphores.size()==11) || (dbc_rpc_binds==4 && dbc_rpc_calls>=2 && dbc_rpc_calls<=4 && id==8 && semaphores.size()==9))
-            && semaphore_deletions==3+serviceOperations()
-            && ((post_cd.binds && !post_cd.calls && semaphores[id].option==0x3838D8)
-                || (post_cd.calls==1 && !post_cd.scmd_binds && semaphores[id].option==0x3838E8)
-                || (post_cd.scmd_binds==1 && !post_cd.modes && semaphores[id].option==0x3838D8)
-                || (post_cd.modes==1 && !post_loadfile.binds && semaphores[id].option==0x3838E8)
-                || (post_loadfile.binds && !post_loadfile.versions && semaphores[id].option==0x3838D8)
-                || (post_loadfile.versions==1 && semaphores[id].option==0x3838E8)
-                || (heap_binds==1 && !heap_calls && semaphores[id].option==0x3838D8)
-                || (sound_rpc_binds==1 && !sound_rpc_calls && semaphores[id].option==0x3838D8)
-                || (sounds_rpc_binds==1 && semaphores[id].option==0x3838D8));
-        // After main's admitted priority: the SIF RPC library deletes its own newest temporary
-        // call/bind semaphore after completion.
-        const bool admitted_rpc_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
-            && (semaphores[id].option==0x3838E8 || semaphores[id].option==0x3838D8)
-            && (context->r[31].low==0x332B3C || context->r[31].low==0x33287C);
-        // The C library's completed open/close/lseek/read deletes its per-call semaphore (newest).
-        const bool stdio_open_cleanup=main_priority_admissions && id+1==semaphores.size() && context->pc==0x32EC78
-            && context->r[31].low>=0x333D00 && context->r[31].low<0x334800 && stdioCallSema(semaphores[id].option);
-        // Admitted main deletes its newest semaphore in any state (the movie player's lock, count 1): no
-        // thread waits on a semaphore in this model, so nothing is released.
-        const bool newest_cleanup=main_priority_admissions && current_thread_id==1 && !in_interrupt_ && id+1==semaphores.size();
-        if (!newest_cleanup && (semaphores[id].count != 0 || semaphores[id].maximum != 1
-                || (!admitted_rpc_cleanup && !stdio_open_cleanup && !(id == 3 && semaphores.size() == 4 && (bind_cleanup || cd_cleanup)) && !scmd_cleanup && !mmode_cleanup && !fresh_cleanup && !(disc_rpc_binds==1 && id==10 && semaphores.size()==11 && semaphores[id].option==((cri_rpc_binds && heap_calls>=3) || cri_rpc_calls?0x3838E8u:cri_rpc_binds?0x3838D8u:ncmd_ready_calls?0x3838E8u:ncmd_rpc_binds?0x3838D8u:disc_rpc_calls?0x3838E8u:0x3838D8u) && semaphore_deletions==2+serviceOperations()))))
-            throw UnsupportedSyscall(selector, context->pc);
-        semaphores.pop_back();
+        if (id >= semaphores.size() || semaphores[id].deleted) { context->r[2].low = UINT64_MAX; return; }
+        // Any existing semaphore can be deleted; no thread waits on one in this model, so nothing is
+        // released. Its id becomes free (the newest is removed, an older one is marked deleted).
+        if(id+1==semaphores.size()) {
+            semaphores.pop_back();
+            while(!semaphores.empty() && semaphores.back().deleted)semaphores.pop_back();
+        } else semaphores[id].deleted=true;
         ++semaphore_deletions;
         context->r[2].low = id;
         return;
@@ -767,7 +674,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
     if (code == 0 && (selector == 0x44 || selector == 0x42
             || (selector == 0xFFFFFFBD && rpc_end_callback_active_))) {
         const auto id = static_cast<std::uint32_t>(context->r[4].low);
-        if (id >= semaphores.size()) {
+        if (id >= semaphores.size() || semaphores[id].deleted) {
             context->r[2].low = UINT64_MAX;
             return;
         }
