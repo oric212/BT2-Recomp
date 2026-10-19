@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-19. **No pass in progress.** The last pass found how sagas unlock (reward Z-items; the special sagas by winning rule-3 battles), traced Dragon Balls in a fight and stage destruction, recorded every story battle's rules, and reached the other modes' battles without input.
+Updated: 2026-10-19. **No pass in progress.** The last pass ran Ultimate Battle Z's course and the Dragon Tournament to their ends without input (side 0 evened to the opponent's CPU level and strength); Ultimate Training waits in its first lesson.
 
 ## Where the work stands
 
@@ -15,7 +15,7 @@ What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new che
 **Next (when the user starts the next pass):**
 
 1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md)): done as far as the starter reaches: all 200 parts (62 cleared, 138 lost in the last sweep, `work/coverage/story/rules/battles.json` holds each battle's rule, rewards, sagas and Dragon Ball), the 73 towns, saga unlocks and a Dragon Ball pickup seen. Left: the plan's "What is missing" (the 18 saga rewards and the ball rewards need wins the CPU did not get).
-2. **The other modes' battles** ([coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), "Step 6: what is left"): Ultimate Battle Z, Dragon Tournament and Ultimate Training reach their battles with cross alone (`menu_explorer.py --buttons cross --crosses 60`); next their runs past the first battle (a whole course, the later matches, every lesson); then fusions found by the explorer itself.
+2. **The other modes' battles** ([coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), "Step 6: what is left"): Ultimate Battle Z's course and the Dragon Tournament run without input (the screen starter evens side 0 to the opponent; `starter_mode_battles` lists the battles). Left: Ultimate Training's lessons, which wait for the player's moves (scripted input per lesson), and the later courses.
 3. **Runtime special cases** (coverage plan, step 5): generalize each gated condition or unhandled system call when a run reaches it; check that the scripted fight's state hash is unchanged.
 4. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 

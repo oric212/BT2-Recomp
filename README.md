@@ -26,7 +26,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
-| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; Ultimate Battle Z, Dragon Tournament and Ultimate Training reach their battles without input |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; Ultimate Battle Z courses and the Dragon Tournament run without input (Ultimate Training to its first lesson) |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
 | Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); saga unlocks (a special saga by a won rule-3 battle) and a Dragon Ball picked up in a fight seen; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |

@@ -388,6 +388,41 @@ void cpuSide(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     setRegister(context,6,1);
     original_side_control(rdram,context,runtime);
 }
+// The battles a screen leads to (WHOLE_GAME_COVERAGE_PLAN.md, step 6): the battle start (0x101BF0) and
+// the battle's end (0x101D78, which settles the result) are counted, with the battle kind (system structure
+// +0xB8: 0 versus, 1 story, others for the other modes), the rule kind (+0xC8) and the result flags (+0x480:
+// bit 0 won by side 0, bit 1 by side 1).
+constexpr std::uint32_t battle_start=0x101BF0,battle_end=0x101D78,battle_kind=0xB8;
+PS2Runtime::RecompiledFunction original_battle_start=nullptr,original_battle_end=nullptr;
+std::string mode_battles;
+// A course or a match goes on only after side 0 wins, but the modes give the opponent a CPU level (word 2
+// of a fighter record, 0x58 bytes from +8 of the side record at +0xE0 + 0x1D0 × side; side 0 has 0, the
+// player's) and strength values (words 5 to 12; 1 each without equipment) above side 0's. Before each
+// battle starts, side 0's fighters get at least those of side 1's first fighter, so the CPU on side 0 has
+// an even fight (tool runs only).
+constexpr std::uint32_t side_records=0xE0,side_record_size=0x1D0,fighter_records=8,fighter_record_size=0x58;
+constexpr std::uint32_t even_words[]={2,5,6,7,8,9,10,11,12};
+void evenStrength(std::uint8_t* rdram,std::uint32_t system) {
+    const std::uint32_t side0=system+side_records,opponent=side0+side_record_size+fighter_records;
+    const std::uint32_t fighters=read32(rdram,side0);
+    for(std::uint32_t k=0;k<fighters && k<6;++k)
+        for(const std::uint32_t w:even_words) {
+            const std::uint32_t at=side0+fighter_records+k*fighter_record_size+w*4,theirs=read32(rdram,opponent+w*4);
+            if(static_cast<std::int32_t>(theirs)>static_cast<std::int32_t>(read32(rdram,at)))write32(rdram,at,theirs);
+        }
+}
+void battleStart(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    evenStrength(rdram,read32(rdram,system_pointer));
+    original_battle_start(rdram,context,runtime);
+    const std::uint32_t system=read32(rdram,system_pointer);
+    mode_battles+=std::string(mode_battles.empty()?"":",")+"{\"kind\":"+std::to_string(read32(rdram,system+battle_kind))
+        +",\"rule\":"+std::to_string(read32(rdram,system+battle_rule));
+}
+void battleEnd(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    original_battle_end(rdram,context,runtime);
+    if(mode_battles.empty() || mode_battles.back()=='}')return;
+    mode_battles+=",\"result\":"+std::to_string(read32(rdram,read32(rdram,system_pointer)+battle_result))+"}";
+}
 template<std::size_t... index> void installConfirmations(EeRuntime& runtime,std::index_sequence<index...>) {
     ((confirmations[index].original=runtime.replaceFunction(confirmations[index].function,confirm<index>)),...);
     original_after_battle=runtime.replaceFunction(after_battle,afterBattle);
@@ -443,6 +478,8 @@ void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
     configured_mode=mode;
     original_entry=runtime.replaceFunction(overlay_entry,startScreen);
     original_side_control=runtime.replaceFunction(side_control,cpuSide);
+    original_battle_start=runtime.replaceFunction(battle_start,battleStart);
+    original_battle_end=runtime.replaceFunction(battle_end,battleEnd);
 }
 
 EpisodeStart parseEpisodeStart(std::string_view text) {
@@ -484,7 +521,7 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
 
 std::string gameStarterReport() {
     std::string text="\"starter_save_loaded\":"+std::string(save_loaded?"true":"false")+",\"starter_scenes\":["+scenes_visited+"],\"starter_town_blocks\":"+std::to_string(town_blocks)+",\"starter_shop_state\":"+std::to_string(shop_last_state)+",\"starter_town_done\":"+(town_character>=town_characters?"true":"false")+",\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
-        +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_battles\":["+battles_seen+"],\"starter_confirmations\":[";
+        +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_battles\":["+battles_seen+"],\"starter_mode_battles\":["+mode_battles+(mode_battles.empty() || mode_battles.back()=='}'?"":"}")+"],\"starter_confirmations\":[";
     for(const auto& point:confirmations) {
         if(text.back()!='[')text+=',';
         text+="["+std::to_string(point.function)+","+std::to_string(point.presses)+"]";
