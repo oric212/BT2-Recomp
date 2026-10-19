@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-19. **No pass in progress.** The last pass made the startup's thread calls general (runtime generalization plan, group 3, first part): one thread-call handler for main and the workers from the startup on. Before it: the GS reset path (group 2), kernel semaphores (group 1) and the launcher's folders and look.
+Updated: 2026-10-19. **No pass in progress.** The last pass finished group 3 of the runtime generalization plan: one thread-call handler for main and the workers from the startup on, and thread exit and deletion. Before it: the GS reset path (group 2), kernel semaphores (group 1) and the launcher's folders and look.
 
 ## Where the work stands
 
@@ -16,7 +16,7 @@ What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new che
 
 1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md)): done as far as the starter reaches: all 200 parts (62 cleared, 138 lost in the last sweep, `work/coverage/story/rules/battles.json` holds each battle's rule, rewards, sagas and Dragon Ball), the 73 towns, saga unlocks and a Dragon Ball pickup seen. Left: the plan's "What is missing" (the 18 saga rewards and the ball rewards need wins the CPU did not get).
 2. **The other modes' battles** ([coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), "Step 6: what is left"): Ultimate Battle Z's course and the Dragon Tournament run without input (the screen starter evens side 0 to the opponent; `starter_mode_battles` lists the battles). Left: Ultimate Training's lessons, which wait for the player's moves (scripted input per lesson), and the later courses.
-3. **Runtime special cases** ([runtime generalization plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)): the startup's conditions on pcs, stack offsets, call counts and phases are replaced by the general kernel and hardware behavior group by group; groups 1 (kernel semaphores), 2 (the GS reset path; its two VSync waits moved to group 4) and the first part of 3 (the startup's thread calls) done; next in group 3: thread exit and deletion, then blocking semaphore waits. Each group: unit tests, the gate (32/32 comparisons, battle hash unchanged), a sample of the sweeps.
+3. **Runtime special cases** ([runtime generalization plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)): the startup's conditions on pcs, stack offsets, call counts and phases are replaced by the general kernel and hardware behavior group by group; groups 1 (kernel semaphores), 2 (the GS reset path; its two VSync waits moved to group 4) and 3 (the startup's thread calls, thread exit and deletion; blocking semaphore waits are reached by nothing and stay explicit stops) done; next group 4 (the startup's hardware stores, with the two VSync waits from group 2). Each group: unit tests, the gate (32/32 comparisons, battle hash unchanged), a sample of the sweeps.
 4. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
 
 **Waiting for the user's test** (built, gate passed, not confirmed in play): special moves and ultimates; saving (save, quit, start again); the films with and without a skip; the launcher's card list, controls and window size; the camera in fights.

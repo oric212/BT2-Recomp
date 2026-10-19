@@ -41,7 +41,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         probeReadySoundThread(rdram,context); // Diagnostic (BT2_EE_SOUND_DISPATCH_PROBE); always stops.
     // The sound thread's first SleepThread is the startup's sound dispatch (below), not yet a scheduler wait.
     if(code==0 && (current_thread_id==1 ? !startup_scheduler_active : active_ee_stack!=nullptr)
-        && !(selector==0x32 && current_thread_id==3) && handleThreadSyscall(rdram,selector,context)) return;
+        && !(selector==0x32 && current_thread_id==3 && !startup_scheduler_active) && handleThreadSyscall(rdram,selector,context)) return;
     if(code==0 && main_priority_admissions && !startup_scheduler_active && current_thread_id==1
         && handleAdmittedIntcSyscall(rdram,selector,context)) return;
     // Native SIF RPC services (runtime/services/) answer the game's requests and DMA status polls.

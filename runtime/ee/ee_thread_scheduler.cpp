@@ -81,11 +81,14 @@ void EeRuntime::createThread(std::uint8_t* rdram,R5900Context* context) {
     checkMemory(rdram,entry,4);checkMemory(rdram,stack,size);checkMemory(rdram,gp,4);
     const auto top=stack+size,saved_context=top-0x2A0;
     if(parameter<top && saved_context<parameter+36)throw UnsupportedSyscall(0x20,context->pc);
-    // The kernel reserves id 1 for main and 256 for idle; ids are not reused (no thread is deleted yet).
-    if(threads.size()==254) {context->r[2].low=UINT64_MAX;return;}
-    const auto id=static_cast<std::uint32_t>(threads.size())+2;
-    threads.push_back({id,entry,stack,size,gp,priority,heap_start,saved_context,top-0x20});
-    auto& t=threads.back();t.current_priority=priority;t.attr=attr;t.option=option;
+    // The kernel reserves id 1 for main and 256 for idle; a deleted thread's id is free again, the
+    // lowest first.
+    auto slot=std::find_if(threads.begin(),threads.end(),[](const auto& t){return t.deleted;});
+    if(slot==threads.end() && threads.size()==254) {context->r[2].low=UINT64_MAX;return;}
+    const auto id=slot==threads.end()?static_cast<std::uint32_t>(threads.size())+2:slot->id;
+    const DormantThread created{id,entry,stack,size,gp,priority,heap_start,saved_context,top-0x20};
+    if(slot==threads.end())threads.push_back(created);else *slot=created;
+    auto& t=threads.at(id-2);t.current_priority=priority;t.attr=attr;t.option=option;
     // The thread's saved context: gp, sp, fp and the return address, which is the root function given to
     // SetupThread (the startup's library passes its thread exit); the other bytes keep what was there.
     write32(rdram,saved_context+28*16,gp);
@@ -103,10 +106,11 @@ bool EeRuntime::handleThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R
     if(selector==0x20) {createThread(rdram,context);return true;}
     if(selector==0x2F) {context->r[2].low=current_thread_id;return true;}
     if(main && selector==0x32)return sleepMainThread(rdram,context);
-    if(selector!=0x22 && selector!=0x29 && selector!=0x30 && selector!=0x33 && selector!=0x37 && selector!=0x39 && (main || selector!=0x32))return false;
+    if(selector==0x23 || selector==0x24)exitThread(selector,context);
+    if(selector!=0x21 && selector!=0x22 && selector!=0x25 && selector!=0x29 && selector!=0x30 && selector!=0x33 && selector!=0x37 && selector!=0x39 && (main || selector!=0x32))return false;
     const auto argument=static_cast<std::uint32_t>(context->r[4].low);
     const auto id=selector==0x32||!argument?current_thread_id:argument; // TH_SELF (0) names the caller.
-    if(selector==0x30 && (id==1 || (id>=2 && id-2<threads.size()))) {
+    if(selector==0x30 && (id==1 || (id>=2 && id-2<threads.size() && !threads[id-2].deleted))) {
         const auto out=static_cast<std::uint32_t>(context->r[5].low);
         writeThreadStatus(rdram,id,out,context->pc);
         const auto status=read32(rdram,out);
@@ -138,8 +142,18 @@ bool EeRuntime::handleThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R
         context->r[2].low=previous;++(startup?priority_changes:scheduled_priority_changes);return true;
     }
     // Main and unknown IDs are otherwise outside this bounded scope.
-    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id)throw UnsupportedSyscall(selector,context->pc);
+    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id || threads[id-2].deleted)throw UnsupportedSyscall(selector,context->pc);
     auto& t=threads[id-2];const bool self=id==current_thread_id;
+    if(selector==0x21) {
+        // DeleteThread: a dormant thread's record goes and its id is free; another state is refused.
+        if(self || t.context.pc)throw UnsupportedSyscall(selector,context->pc);
+        t.deleted=true;++thread_deletions;context->r[2].low=id;return true;
+    }
+    if(selector==0x25) {
+        // TerminateThread: another thread becomes dormant wherever it is; its parked stack is released.
+        if(self || !t.context.pc)throw UnsupportedSyscall(selector,context->pc);
+        releaseThread(t);++thread_terminations;context->r[2].low=id;return true;
+    }
     if(selector==0x22) {
         // StartThread: a dormant thread begins at its entry with the saved context CreateThread prepared,
         // the argument in a0 and the caller's interrupt state.
@@ -193,12 +207,34 @@ bool EeRuntime::handleThreadSyscall(std::uint8_t* rdram,std::uint32_t selector,R
     throw UnsupportedSyscall(selector,context->pc);
 }
 
+void EeRuntime::releaseThread(DormantThread& t) {
+    // Dormant again: no context, no wait, no banked wakeups. A stack parked in a wait is unwound.
+    t.ready=t.waiting=t.suspended=false;t.wakeups=0;t.context=R5900Context{};
+    const auto found=std::find_if(worker_executions_.begin(),worker_executions_.end(),[&](const auto& o){return o->id==t.id;});
+    if(found!=worker_executions_.end()) {
+        if((*found)->stack->state()!=RetainedEeStack::State::Waiting)throw std::runtime_error("Releasing a running thread's stack");
+        worker_executions_.erase(found);
+    }
+}
+
+void EeRuntime::exitThread(std::uint32_t selector,R5900Context* context) {
+    // ExitThread / ExitDeleteThread: the calling worker ends (and with 0x24 its record goes). Its stack
+    // parks once more; the scheduler sees the thread exited and releases it. Main ending the program is
+    // not modelled.
+    if(current_thread_id==1 || in_interrupt_ || !active_ee_stack || !startup_scheduler_active)throw UnsupportedSyscall(selector,context->pc);
+    auto& t=threads.at(current_thread_id-2);
+    t.ready=t.waiting=t.suspended=false;t.wakeups=0;t.exited=true;t.deleted=selector==0x24;
+    ++thread_exits;
+    active_ee_stack->yield();
+    throw std::runtime_error("An exited thread resumed");
+}
+
 bool EeRuntime::handleInterruptSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
     // Interrupt context: current_thread_id names the interrupted thread; no reschedule happens here.
     const auto id=static_cast<std::uint32_t>(context->r[4].low);
     if(selector==0xFFFFFFD1u) {context->r[2].low=current_thread_id;return true;} // iGetThreadId
     if(selector==0xFFFFFFCCu && id==1) {wakeMainThread();context->r[2].low=1;return true;} // iWakeupThread(main)
-    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id)return false;
+    if(id<2 || id-2>=threads.size() || threads[id-2].id!=id || threads[id-2].deleted)return false;
     auto& t=threads[id-2];
     if(selector==0xFFFFFFCFu) { // iReferThreadStatus
         const auto out=static_cast<std::uint32_t>(context->r[5].low);
@@ -235,15 +271,18 @@ void EeRuntime::runReadyThreads(std::uint8_t*,R5900Context* parent) {
                 if(owner->stack->state()!=RetainedEeStack::State::Waiting)throw UnsupportedSyscall(0,parent->pc);
                 ++worker_resumes;
             } else {
-                if(id<4 || id>7)throw UnsupportedSyscall(0,parent->pc);
+                // The sound thread's parked stack belongs to the startup's sound dispatch.
+                if(id==3 && sound_execution_)throw UnsupportedSyscall(0,parent->pc);
                 owner=std::make_shared<EeExecutionOwner>(*this,id);worker_executions_.push_back(owner);
                 ++startup_worker_dispatches;
             }
             try {owner->dispatch();}
             catch(...) {threads.at(id-2).context=owner->context;*parent=owner->context;throw;}
-            if(owner->stack->state()!=RetainedEeStack::State::Waiting || !threads.at(id-2).waiting
+            auto& ran=threads.at(id-2);
+            if(owner->stack->state()!=RetainedEeStack::State::Waiting || (!ran.waiting && !ran.exited)
                 || std::memcmp(parent,&saved,sizeof(*parent)))
                 throw std::runtime_error("Scheduler lost retained parent/worker ownership");
+            if(ran.exited) {ran.exited=false;owner.reset();releaseThread(ran);} // Unwinds the exited stack.
         }
     } catch(...) {startup_scheduler_active=nested;throw;}
     startup_scheduler_active=nested;

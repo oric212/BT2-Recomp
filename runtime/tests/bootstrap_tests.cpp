@@ -21,6 +21,14 @@ void return_leaf(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
     runtime->dispatchGuestBranch(ram, ctx, GPR_U32(ctx, 31), ctx->pc, 0,
                                 EeRuntime::GuestBranchKind::Return, "synthetic return");
 }
+// Worker entries that end with a thread call: ExitDeleteThread, or SleepThread.
+void exiting_worker(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    ctx->r[3].low=0x24;static_cast<EeRuntime*>(guest)->handleSyscall(ram,ctx,0);
+}
+void sleeping_worker(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
+    ctx->r[3].low=0x32;static_cast<EeRuntime*>(guest)->handleSyscall(ram,ctx,0);
+    throw std::runtime_error("A sleeping test worker resumed");
+}
 void nested_call(std::uint8_t* ram, R5900Context* ctx, PS2Runtime* guest) {
     auto* runtime=static_cast<EeRuntime*>(guest);
     const auto saved_ra = GPR_U32(ctx, 31);
@@ -1724,6 +1732,35 @@ int main() {
             && sound_dispatch.current_thread_id==1 && sound_dispatch.main_thread_priority==2
             && parent.pc==sound_parent_before.pc && parent.r[31].low==sound_parent_before.r[31].low && parent.r[2].low==sound_parent_before.r[2].low
             && !sound_dispatch.active_ee_stack && !sound_dispatch.completed_functions.contains(0x315380));
+        {
+            // Thread exit and deletion: a worker ending with ExitDeleteThread is released by the
+            // scheduler and its id reused; TerminateThread makes a sleeping worker dormant and unwinds
+            // its parked stack; DeleteThread takes only a dormant thread; main cannot exit.
+            EeRuntime ex;ex.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=ex.memory().data();
+            ex.thread_initialized=ex.heap_initialized=true;ex.current_thread_id=1;ex.main_thread_priority=1;
+            ex.main_priority_admissions=1;ex.thread_arguments[4]=0x100250;
+            ex.registerFunction(0x100000,exiting_worker);ex.registerFunction(0x100100,sleeping_worker);
+            auto call=[&](unsigned selector,std::uint64_t a0,std::uint64_t a1=0) {
+                R5900Context c{};c.pc=0x200000;c.r[3].low=selector;c.r[4].low=a0;c.r[5].low=a1;
+                ex.handleSyscall(ram,&c,0);return c.r[2].low;
+            };
+            auto create=[&](std::uint32_t entry,std::uint32_t stack) {
+                const std::array<std::uint32_t,9> descriptor={0,entry,stack,0x1000,0x2000,8,0,0,0};
+                std::memcpy(ram+0x3000,descriptor.data(),sizeof(descriptor));return call(0x20,0x3000);
+            };
+            require(create(0x100000,0x10000)==2 && create(0x100100,0x20000)==3);
+            require(call(0x22,2)==2 && call(0x22,3)==3 && ex.threads[0].ready && ex.threads[1].ready);
+            reject([&]{call(0x21,2);});                                         // Not dormant.
+            require(call(0x29,1,24)==1);                                        // Main lowered: both run.
+            require(ex.thread_exits==1 && ex.threads[0].deleted && !ex.threads[0].context.pc && ex.threads[1].waiting);
+            reject([&]{call(0x30,2,0x4000);});                                  // A deleted id is unknown.
+            require(call(0x30,3,0x4000)==4 && ex.read32(ram,0x4000+36)==1);     // Sleeping: wait type 1.
+            require(call(0x25,3)==3 && !ex.threads[1].context.pc && !ex.threads[1].waiting && ex.thread_terminations==1);
+            require(call(0x30,3,0x4000)==0x10 && call(0x21,3)==3 && ex.threads[1].deleted && ex.thread_deletions==1);
+            require(create(0x100100,0x20000)==2 && !ex.threads[0].deleted && ex.threads[0].entry==0x100100); // Lowest free id.
+            reject([&]{call(0x23,0);});                                         // Main's exit is not modelled.
+            reject([&]{call(0x25,1);});
+        }
         {
             // Admitted-main thread semantics: previous-priority returns, status codes, TH_SELF,
             // and fail-closed transitions whenever a strictly higher-priority thread would run.

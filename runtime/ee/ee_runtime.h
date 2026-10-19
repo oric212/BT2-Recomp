@@ -129,6 +129,8 @@ public:
     bool handleThreadSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     void createThread(std::uint8_t*,R5900Context*);
     void writeThreadStatus(std::uint8_t*,std::uint32_t id,std::uint32_t out,std::uint32_t pc);
+    void exitThread(std::uint32_t selector,R5900Context*);
+    unsigned thread_exits=0,thread_deletions=0,thread_terminations=0;
     void requireNoPreemption(std::uint32_t,const R5900Context*) const;
     bool handleAdmittedIntcSyscall(std::uint8_t*,std::uint32_t,R5900Context*);
     unsigned vblank_handler_registrations=0,vblank_enable_calls=0,vblank_disable_calls=0;
@@ -740,8 +742,10 @@ public:
         bool ready=false;R5900Context context{};std::uint32_t current_priority=0;bool suspended=false;
         bool waiting=false;unsigned wakeups=0; // Waiting means SleepThread; other wait kinds are unmodeled.
         std::uint32_t attr=0,option=0;
+        bool exited=false,deleted=false; // Exited: its stack is released by the scheduler; deleted: the id is free.
     };
     std::vector<DormantThread> threads;
+    void releaseThread(DormantThread&); // ee_thread_scheduler.cpp
     std::uint32_t current_thread_id = 0, main_thread_priority = 0;
     unsigned priority_changes = 0,main_thread_queries=0;
     unsigned startup_worker_queries=0,startup_worker_starts=0,startup_worker_priority_changes=0;
