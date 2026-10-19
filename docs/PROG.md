@@ -5,23 +5,18 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 <!-- progress-summary:start -->
 ![BT2 port status](progress/dashboard.svg)
 
-| Functional milestone | Status |
+| Milestone | Status |
 | --- | --- |
-| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
-| Main frame loop | ✅ Verified — key startup states match original captures |
-| First presented frame | ✅ Verified — 1,000 frames in the gate run |
-| Controller check | ✅ Verified — passed with the native controller service |
-| Memory card check | ✅ Verified — the no-card prompt matches the original; with a card folder the game reads the save (the user's play) |
-| Opening movie | 🟢 Operational — logo and opening films play with their sound, also after a skip; frames match an independent decoder at spot checks |
-| Title screen | 🟢 Operational — title, option list and New Game dialogues (the user confirmed the pictures) |
-| Demo fight (no input) | 🟢 Operational — the CPU-vs-CPU demo fights play and return to the title (the user confirmed the frames on 2026-10-13) |
-| Menus | 🟢 Operational — all ten main-menu screens open without input; Dueling, character and stage selection respond to input (the user confirmed the pictures) |
-| Versus battle | 🟢 Operational — 1P-vs-COM with a controller; CPU-vs-CPU without input for characters 0 to 129 and all 16 stages (sampled, see VALIDATION.md); music and effects |
-| Story mode | 🔧 Incomplete — a part runs without input from its map through its cutscene, pre-battle screen and battle to the results (200 of 207 parts can be started; a sample of 8 finished their battles); the full sweep, cleared battles, optional markers, the shop and chases are open |
-| Audio | 🟢 Operational — streams and sound effects mixed, to a WAV file or the audio device; volumes in the launcher and the in-game menu; the user confirmed a WAV of menus and a fight |
-| Saves | 🔧 Incomplete — the user's 100% save loads (confirmed by the user); writing saves is unit-tested, not tried in the game |
+| Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
+| Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
+| Films | 🟢 Operational — logo and opening films with sound, also after a skip |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens |
+| Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
+| Story mode | 🔧 Incomplete — all 200 playable parts run to their battle's end without input; optional markers and the shop are open |
+| Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
+| Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
 
-**Coverage:** **11,139 EE functions mapped and compiled** plus 494 in the `DBZP.BIN` overlay (nothing the programs name lies outside a function) · **2,007 entered / 1,998 completed** in the gate's verified run (2026-10-13) · verification: the gate passes; 42 of 46 original comparisons pass.
+**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
@@ -54,7 +49,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode next ([plan](plans/ee/STORY_MODE_PLAN.md): the sweep of every part's battle, then cleared battles, optional markers, the shop and chases); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
+1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode next ([plan](plans/ee/STORY_MODE_PLAN.md): the optional markers, then the shop); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
 2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
 3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC; next the GPU renderer's intake on a graphics thread.
 4. **Later:** launcher extras (HD textures), 3D and film comparisons with the original, the CPU renderer in 3D (optional).

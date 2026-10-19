@@ -23,6 +23,7 @@ What has actually been checked, how, and when. Only checks that were run are lis
 | Story scene scripts | All 621 scene files (33 to 653) decode with `story_scenes.py`; 25 episodes with 207 parts per the game's episode table; 193 parts have a map marker to their story scene and 7 go there without one (the other 7 are the unavailable episode 23) | Ran | 2026-10-19 |
 | Story scene from a marker | Episode 0 part 0, marker 14 (`BT2_START_EPISODE=0,0,marker:14`): the map hands over to scene 34, the opening cutscene, which plays without input up to its first text box; SOUNDS request `0x80` (implemented from the module's code, unit-tested) answered; 3,000 flips, nothing interpreted | Ran | 2026-10-19 |
 | Story parts without input | Episode 0 part 0: map, marker, cutscene with its text boxes, pre-battle screen, battle, "CLEAR!!", save questions answered without saving, next part's map (4,543 flips). Sample of 8 parts (episodes 0, 1, 6, 9, 13, 17, 21, 24, first part with a marker): every one reached and finished its battle, 1 cleared and 7 lost (the player's side has no input), nothing interpreted | Ran | 2026-10-19 |
+| Story sweep | All 200 parts that can be started (`story_sweep.py`, the CPU on both sides, the 3 chases reported caught): every one reached and finished its battle, 73 cleared and 127 lost, nothing interpreted; the cleared ones answered the save questions without saving | Ran | 2026-10-19 |
 | Runtime rules for the screen starter | The scripted fight before and after the general SetVSyncFlag and INTC_STAT rules: same state on all 6,534 fields | Exact | 2026-10-19 |
 | Frames | Demo fights, title dialogues, main and Dueling menus, character and map selection, loading screen, battle | User | 2026-10-13 |
 | Sound | A WAV of menus and a fight | User | 2026-10-13 |
@@ -30,6 +31,6 @@ What has actually been checked, how, and when. Only checks that were run are lis
 
 ## Not validated yet
 
-- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); the other 192 story parts (the sweep is ready), cleared story battles beyond episode 0 part 0, optional markers, the shop and chases.
+- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); the story parts after a lost battle (the next part is started on its own instead), optional markers, the shop, the chase itself (reported caught).
 - 3D frames, menu frames, memory card replies and GS readback pixels against the original.
 - Writing a save; special moves and ultimates in play; live sound in play.

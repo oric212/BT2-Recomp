@@ -49,14 +49,17 @@ class StorySceneTests(unittest.TestCase):
         class Files:
             def __init__(self,files):self.files=files
             def entry(self,n):return self.files[n]
-        # Scene 33: block 3014 leads to scene 34; scene 36 goes to 37 itself from block 1001 (command 1012).
+        # Scene 33: block 3014 leads to scene 34; scene 36 goes to 37 itself from block 1001 (command 1012);
+        # scene 39 goes to 40 after a chase (command 1013).
         files={33:script([(3014,[0x03EA0101,0x10A])],[0,34]),36:script([(1001,[0x03F40101,0x10A])],[0,37]),
-               34:script([]),37:script([])}
-        parts=story_scenes.survey(Files(files),[2])
+               39:script([(1001,[0x03F50101,0x10A])],[0,40]),34:script([]),37:script([]),40:script([])}
+        parts=story_scenes.survey(Files(files),[3])
         self.assertEqual(parts[0]['markers'],{14:34})
         self.assertEqual(parts[0]['story_marker'],14)
         self.assertIsNone(parts[1]['story_marker'])
         self.assertTrue(parts[1]['direct_story'])
+        self.assertFalse(parts[1]['chase'])
+        self.assertTrue(parts[2]['direct_story'] and parts[2]['chase'])
 
 
 if __name__=='__main__':unittest.main()

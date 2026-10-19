@@ -13,7 +13,7 @@
   <a href="#credits--license">Credits &amp; license</a>
 </p>
 
-BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. First gameplay goal: a **playable versus battle**.
+BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller; story mode, saving and performance are in progress.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
@@ -21,40 +21,29 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 <!-- progress-summary:start -->
 ![BT2 port status](docs/progress/dashboard.svg)
 
-| Functional milestone | Status |
+| Milestone | Status |
 | --- | --- |
-| Boot | ✅ Verified — game entry, kernel services, IOP reset and module loading (answered natively) |
-| Main frame loop | ✅ Verified — key startup states match original captures |
-| First presented frame | ✅ Verified — 1,000 frames in the gate run |
-| Controller check | ✅ Verified — passed with the native controller service |
-| Memory card check | ✅ Verified — the no-card prompt matches the original; with a card folder the game reads the save (the user's play) |
-| Opening movie | 🟢 Operational — logo and opening films play with their sound, also after a skip; frames match an independent decoder at spot checks |
-| Title screen | 🟢 Operational — title, option list and New Game dialogues (the user confirmed the pictures) |
-| Demo fight (no input) | 🟢 Operational — the CPU-vs-CPU demo fights play and return to the title (the user confirmed the frames on 2026-10-13) |
-| Menus | 🟢 Operational — all ten main-menu screens open without input; Dueling, character and stage selection respond to input (the user confirmed the pictures) |
-| Versus battle | 🟢 Operational — 1P-vs-COM with a controller; CPU-vs-CPU without input for characters 0 to 129 and all 16 stages (sampled, see VALIDATION.md); music and effects |
-| Story mode | 🔧 Incomplete — a part runs without input from its map through its cutscene, pre-battle screen and battle to the results (200 of 207 parts can be started; a sample of 8 finished their battles); the full sweep, cleared battles, optional markers, the shop and chases are open |
-| Audio | 🟢 Operational — streams and sound effects mixed, to a WAV file or the audio device; volumes in the launcher and the in-game menu; the user confirmed a WAV of menus and a fight |
-| Saves | 🔧 Incomplete — the user's 100% save loads (confirmed by the user); writing saves is unit-tested, not tried in the game |
+| Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
+| Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
+| Films | 🟢 Operational — logo and opening films with sound, also after a skip |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens |
+| Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
+| Story mode | 🔧 Incomplete — all 200 playable parts run to their battle's end without input; optional markers and the shop are open |
+| Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
+| Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
 
-**Coverage:** **11,139 EE functions mapped and compiled** plus 494 in the `DBZP.BIN` overlay (nothing the programs name lies outside a function) · **2,007 entered / 1,998 completed** in the gate's verified run (2026-10-13) · verification: the gate passes; 42 of 46 original comparisons pass.
+**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** decode the opening movie (native IPU), then the title screen and menus. [Full progress](docs/PROG.md) · [Current handoff](docs/progress/ACTIVE_PASS.md) · [History](docs/progress/2026-10.md)
+**Next:** the rest of story mode (optional map markers, the shop), then performance: fights at a steady 30 frames per second. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
 
 ## Building
 
 **Windows 10/11 x64 · Visual Studio 2022 with C++ tools · CMake**
 
-```powershell
-cmake -S . -B build
-cmake --build build --config Debug
-.\build\Debug\bt2-port.exe
-```
-
-This builds the foundation host only. Running the game code needs your own disc image and the local preparation steps in the [build guide](docs/guides/BUILDING.md).
+Running the game needs your own disc image: the [build guide](docs/guides/BUILDING.md) prepares the game files, generates the code and builds it.
 
 ## Architecture
 
@@ -75,9 +64,9 @@ flowchart LR
 
 | Part | Role |
 | --- | --- |
-| **EE runtime** | Memory, kernel, threads, timers, DMA, IPU |
+| **EE runtime** | Memory, kernel, threads, timers, DMA, IPU, VU1 |
 | **Native services** | Answer the game's IOP requests on the host (disc, files, controller, memory card, sound, CRI); no IOP code runs |
-| **GS** | GPU rendering through paraLLEl-GS (Vulkan), with a CPU renderer as fallback and test reference |
+| **GS** | GPU rendering through paraLLEl-GS (Vulkan); a CPU renderer draws 2D and is the test reference |
 | **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
 
 ## Documentation

@@ -1,10 +1,9 @@
 """Story sweep (STORY_MODE_PLAN.md): every part's story scene and battle without input.
 
-Runs the Release probe once per part with BT2_START_EPISODE=<episode>,<part>,marker:<m>, one run at a
-time: the map reports the player at the part's story marker, the starter answers the waits for a button
+Runs the Release probe once per part with BT2_START_EPISODE=<episode>,<part>,marker:<m>: the map reports the player at the part's story marker, the starter answers the waits for a button
 (message boxes, the pre-battle screen, the results, the save questions without saving) and ends the run
 300 flips after the part's after-battle step. A part's result is 'cleared' or 'lost' (the battle's
-outcome; the player's side gets no input, so most battles are lost), or 'stop' (a stop, a stall, a
+outcome, with the CPU on both sides), or 'stop' (a stop, a stall, a
 waiting screen that kept getting presses, or the frame budget ran out first). --jobs runs several
 parts at once (each run uses about one CPU core; a stated exception to one run at a time, for sweeps). The parts and their markers come from story_scenes.py's
 scenes.json (a part whose first scene goes to its story scene itself starts without a marker); other parts

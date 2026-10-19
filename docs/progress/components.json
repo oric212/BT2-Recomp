@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-13",
+  "updated": "2026-10-19",
   "flow": [
     {
       "name": "Startup",
@@ -7,35 +7,35 @@
       "note": "Boot to frame loop"
     },
     {
-      "name": "Controller check",
+      "name": "Pad & card check",
       "status": "verified",
-      "note": "Native pad service"
+      "note": "Native services"
     },
     {
-      "name": "Memory card",
-      "status": "verified",
-      "note": "Card folders load"
-    },
-    {
-      "name": "Opening movie",
+      "name": "Films",
       "status": "working",
-      "note": "Both play; sound"
+      "note": "Play with sound"
     },
     {
-      "name": "Title screen",
+      "name": "Title & menus",
       "status": "working",
-      "note": "Options shown"
+      "note": "All ten screens"
     },
     {
-      "name": "Demo fight",
+      "name": "Versus battle",
       "status": "working",
-      "note": "Renders in 3D"
+      "note": "130 characters"
     },
     {
-      "name": "Gameplay",
-      "status": "working",
-      "note": "Versus battle runs",
+      "name": "Story mode",
+      "status": "incomplete",
+      "note": "Parts to battle",
       "current": true
+    },
+    {
+      "name": "Saves",
+      "status": "incomplete",
+      "note": "Loading confirmed"
     }
   ],
   "groups": [
@@ -45,7 +45,7 @@
         {
           "name": "EE CPU and kernel services",
           "status": "working",
-          "note": "All named code mapped"
+          "note": "Every mapped function native"
         },
         {
           "name": "IOP services",
@@ -55,12 +55,12 @@
         {
           "name": "Disc / filesystem",
           "status": "verified",
-          "note": "Reached reads byte-identical"
+          "note": "Reads byte-identical"
         },
         {
           "name": "Input",
           "status": "working",
-          "note": "Keyboard and gamepads, remappable"
+          "note": "Keyboard, XInput, DualSense"
         },
         {
           "name": "Memory card",
@@ -75,27 +75,27 @@
         {
           "name": "GS",
           "status": "working",
-          "note": "GPU renderer; frames confirmed"
+          "note": "GPU renderer (paraLLEl-GS)"
         },
         {
           "name": "GIF / VIF",
           "status": "working",
-          "note": "Display lists run; V4/S unpack"
+          "note": "DMA as the game uses it"
         },
         {
           "name": "IPU / video",
           "status": "working",
-          "note": "Both movies decode; no IDEC/PACK"
+          "note": "Both films decode"
         },
         {
           "name": "Audio",
           "status": "working",
-          "note": "Streams, effects, volumes"
+          "note": "Music, voices, effects"
         },
         {
           "name": "VU microprograms",
           "status": "working",
-          "note": "Hand-written native, verified"
+          "note": "Native, checked in the gate"
         }
       ]
     },
@@ -105,27 +105,27 @@
         {
           "name": "Native Windows host",
           "status": "verified",
-          "note": "MSVC x64; Debug and Release"
+          "note": "MSVC x64, Debug and Release"
         },
         {
           "name": "Launcher and menus",
           "status": "working",
-          "note": "Launcher, pause menu, cards"
+          "note": "Launcher, in-game menu, cards"
         },
         {
           "name": "Code generation",
           "status": "verified",
-          "note": "11,139 + 494 functions, closed"
+          "note": "11,139 + 494 functions"
         },
         {
           "name": "Tests",
           "status": "verified",
-          "note": "21/21 CTests; Python suites pass"
+          "note": "Unit tests and Python suites pass"
         },
         {
           "name": "Original comparisons",
           "status": "incomplete",
-          "note": "42 of 46 pass at this checkpoint"
+          "note": "32/32 pass; 3D not yet compared"
         }
       ]
     }

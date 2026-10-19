@@ -6,7 +6,8 @@ arguments index the values). For each episode part (first scene 33 + 3 x the par
 counts read from the game's executable) it lists the map markers of the first scene with the scene each
 leads to (block 2000 + marker, or 3000 + marker on some maps; command 1002), the marker that leads to the
 part's own story scene (first + 1, for BT2_START_EPISODE=<episode>,<part>,marker:<m>), whether the first
-scene goes there itself without a marker (direct_story), the scenes reached and the commands used. Output: a JSON file in ignored work/ (the game's data stays local).
+scene goes there itself without a marker (direct_story; chase when it does so once the enemy chased on the map
+is caught, command 1013), the scenes reached and the commands used. Output: a JSON file in ignored work/ (the game's data stays local).
 """
 import argparse,json,struct
 from pathlib import Path
@@ -16,6 +17,7 @@ FIRST_ARCHIVE=(b'DATA',b'ZS2US_1.AFS;1')
 SECOND_ARCHIVE_START=13234
 GO_TO_SCENE={1004,1007,1012,1013}  # Event kinds 2 to 4: the next scene is the argument.
 MARKER_SCENE=1002                  # In a marker's block: the scene the marker leads to.
+CHASE_SCENE=1013                   # Event kind 3: the scene after the chase on the map (the enemy caught).
 MARKER_BLOCKS=(*range(2001,2026),*range(3001,3026)) # Block 2000 + marker, or 3000 + marker on maps with the flag 0x2AD1F0 tests.
 EPISODE_TABLE=0x344F30             # In the executable: 16 bytes per episode, the part count at +4.
 EPISODES=25
@@ -109,7 +111,7 @@ def survey(archive,part_counts):
     result=[];before=0
     for episode,parts in enumerate(part_counts):
         for part in range(parts):
-            first=33+3*(before+part);seen=set();todo=[first];commands={};markers={};direct=False
+            first=33+3*(before+part);seen=set();todo=[first];commands={};markers={};direct=chase=False
             while todo:
                 number=todo.pop()
                 if number in seen or number>=SECOND_ARCHIVE_START:continue
@@ -123,10 +125,11 @@ def survey(archive,part_counts):
                         if opcode in GO_TO_SCENE and value(arguments) is not None:todo.append(value(arguments))
                         if number==first and block in MARKER_BLOCKS and opcode==MARKER_SCENE and value(arguments) is not None:
                             markers[block%1000]=value(arguments)
-                        if number==first and block<2000 and opcode in GO_TO_SCENE and value(arguments)==first+1:direct=True
+                        if number==first and block<2000 and opcode in GO_TO_SCENE and value(arguments)==first+1:
+                            direct=True;chase=chase or opcode==CHASE_SCENE
                         commands[opcode]=commands.get(opcode,0)+1
             story=[m for m,s in markers.items() if s==first+1]
-            result.append({'episode':episode,'part':part,'first_scene':first,'markers':markers,'story_marker':story[0] if story else None,'direct_story':direct,
+            result.append({'episode':episode,'part':part,'first_scene':first,'markers':markers,'story_marker':story[0] if story else None,'direct_story':direct,'chase':chase,
                            'scenes':sorted(seen),'commands':commands})
         before+=parts
     return result
@@ -154,8 +157,8 @@ def main():
     parts=survey(archive,part_counts(a.executable))
     a.output.parent.mkdir(parents=True,exist_ok=True)
     a.output.write_text(json.dumps(parts,indent=1),encoding='utf-8')
-    marked=sum(p['story_marker'] is not None for p in parts);direct=sum(p['direct_story'] for p in parts)
-    print(f'{len(parts)} parts, {marked} with a marker to their story scene, {direct} going there without one, {sum(len(p["scenes"]) for p in parts)} scenes visited; {a.output}')
+    marked=sum(p['story_marker'] is not None for p in parts);direct=sum(p['direct_story'] for p in parts);chases=sum(p['chase'] for p in parts)
+    print(f'{len(parts)} parts, {marked} with a marker to their story scene, {direct} going there without one ({chases} after a chase), {sum(len(p["scenes"]) for p in parts)} scenes visited; {a.output}')
 
 
 if __name__=='__main__':main()

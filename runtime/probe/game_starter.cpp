@@ -24,10 +24,12 @@ constexpr std::uint32_t modes=64;       // Entries of the entry's mode table.
 BattleStart configured;
 std::uint32_t configured_mode=0;
 std::uint32_t configured_episode[2]{};
-// The story map's marker queries (STORY_MODE_PLAN.md): has the player reached a marker, and which.
-constexpr std::uint32_t marker_reached=0x20C870,marker_number=0x20C8E8;
+// The story map's queries (STORY_MODE_PLAN.md): has the player reached a marker, and which; in a
+// chase, has the player caught the enemy.
+constexpr std::uint32_t marker_reached=0x20C870,marker_number=0x20C8E8,chase_caught=0x20C8A0;
 constexpr unsigned map_frames_before_marker=120;
-PS2Runtime::RecompiledFunction original_marker_reached=nullptr,original_marker_number=nullptr;
+PS2Runtime::RecompiledFunction original_marker_reached=nullptr,original_marker_number=nullptr,original_chase_caught=nullptr;
+unsigned chase_queries=0;
 std::uint32_t configured_marker=0;
 unsigned marker_queries=0;
 bool marker_fired=false;
@@ -154,6 +156,14 @@ void reachedMarker(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime
     returnValue(rdram,context,runtime,configured_marker,marker_number);
 }
 
+// In a chase the map's exit test asks only whether the enemy is caught (a byte of the map object);
+// once it is, the map goes to the scene the chase's script named (command 1013). After the map has
+// run a while the enemy is reported caught, as when the player catches it.
+void catchEnemy(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(++chase_queries!=map_frames_before_marker) {original_chase_caught(rdram,context,runtime);return;}
+    returnValue(rdram,context,runtime,1,chase_caught);
+}
+
 // Confirmations (STORY_MODE_PLAN.md): story mode's waits for a button test port 0's pressed buttons
 // (0x3B0C34) for cross in a function called once per frame. Every advance_calls calls of such a
 // function, one call runs with cross shown as pressed, as when the player presses it; the game's own
@@ -230,6 +240,14 @@ template<std::size_t index> void confirm(std::uint8_t* rdram,R5900Context* conte
         }
     }
     press(rdram,context,runtime,point.original,pressed_buttons,cross);
+}
+// The story's battles: the pre-battle setup (0x255EA0) sets side 0 to the player (the side setter's
+// third argument 0) and side 1 to the CPU (1); the starter passes 1 for both, as the battle starter
+// does, so a story battle can be won without input.
+PS2Runtime::RecompiledFunction original_side_control=nullptr;
+void cpuSide(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    setRegister(context,6,1);
+    original_side_control(rdram,context,runtime);
 }
 template<std::size_t... index> void installConfirmations(EeRuntime& runtime,std::index_sequence<index...>) {
     ((confirmations[index].original=runtime.replaceFunction(confirmations[index].function,confirm<index>)),...);
@@ -311,6 +329,8 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
     configured_episode[0]=start.episode;configured_episode[1]=start.part;
     original_entry=runtime.replaceFunction(overlay_entry,startEpisode);
     installConfirmations(runtime,std::make_index_sequence<std::size(confirmations)>{});
+    original_side_control=runtime.replaceFunction(side_control,cpuSide);
+    original_chase_caught=runtime.replaceFunction(chase_caught,catchEnemy);
     if(start.marker) {
         configured_marker=start.marker;
         original_marker_reached=runtime.replaceFunction(marker_reached,reachMarker);
@@ -319,7 +339,7 @@ void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
 }
 
 std::string gameStarterReport() {
-    std::string text="\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
+    std::string text="\"starter_chase_caught\":"+std::string(chase_queries>=map_frames_before_marker?"true":"false")+",\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
         +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_confirmations\":[";
     for(const auto& point:confirmations) {
         if(text.back()!='[')text+=',';

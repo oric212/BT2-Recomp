@@ -17,23 +17,28 @@ Part of step 6 of the [whole-game coverage plan](WHOLE_GAME_COVERAGE_PLAN.md): r
 - **The pre-battle screen** (structure at `0x3879D0`, state at `+364`): state 0 lists the team's slots (`+416`, 20 bytes each, -1 when empty; `+616` slots, `+624` filled, cursor `+360`); cross on an empty slot picks a fighter (state 1), on a filled one opens a two-item menu (state 2: customisation, or "start" once every slot is filled, which asks for confirmation, state 3). Down in the repeating word moves the cursor.
 - **After the battle:** the story loop's after-battle step (`0x2AC4A0`) runs the results through `0x2582E8`, which returns nonzero when the battle was cleared (the story goes on; the save flow `0x2587A8`, state at `+20` of `0x387A00`: 9 "Save game data?", 21 "Exit saving?", both with the cursor on No) and zero when it was lost (the part is reset for another try, no save flow).
 - **A whole part without input (2026-10-19):** the episode starter answers these waits (every 30 calls of a waiting function one call sees cross pressed, and the game's own test decides; on the pre-battle screen it moves down to the next empty slot; on "Exit saving?" it first presses left, so nothing is saved) and ends the run 300 flips after the after-battle step, recording cleared or lost; a screen pressed past its limit counts as stuck and ends the run. Episode 0 part 0 runs map → marker 14 → the opening cutscene → the pre-battle screen (Piccolo against Raditz) → the battle → "CLEAR!!" → no save → the next part's map, in 4,543 flips. A sample of 8 parts (episodes 0, 1, 6, 9, 13, 17, 21, 24) all reached and finished their battle, nothing interpreted: 1 cleared, 7 lost (the player's side gets no input); 4 at a time they took 2 minutes. `tools/ps2recomp/story_sweep.py` runs this per part (`--jobs` for parallel runs).
+- **Both sides to the CPU (2026-10-19):** the pre-battle setup (`0x255EA0`) calls the side setter (`0x101AB0`) with control 0 for side 0 (the player) and 1 for side 1 (the CPU); the episode starter passes 1 for both, as `BT2_START_BATTLE` does. The sample of 8 then gave 6 cleared and 2 lost.
+- **Chases (found 2026-10-19):** in a chase part the first scene's start block (1001) places the enemy on the map (commands 8002, 8001) and sets event kind 3 with the story scene (command 1013) instead of going there at once (1012, kind 2). While the story state at `0x3B2654` is negative the map's exit test asks only whether the enemy is caught (`0x20C8A0`, byte `+0xA` of the map object, the byte after the marker byte) and then goes to the event's scene. The episode starter reports the enemy caught once, on the map's 120th query, which skips the chase as a marker start skips the flight. `story_scenes.py` marks these parts (`chase`): episode 4 part 4, episode 9 part 5 and episode 17 part 2.
+- **The story sweep (2026-10-19):** all 200 parts that can be started finished their battle, nothing interpreted: **73 cleared, 127 lost** (the CPU on the player's side loses many story battles, which are set against it). The first run, 6 parts at a time, took 56 minutes; 4 parts stopped and were rerun after the chase change: the 3 chases (they had waited on the map) and episode 0 part 5, whose battle has no time limit and needed 23,447 flips (budget 40,000 instead of 15,000).
 
 ## Map content besides the story marker (the user's description, 2026-10-19)
 
 - **Optional markers:** fights, and conversations with other characters on the map. In the scene files the first scene's other marker blocks lead to scenes beyond the 621 story scenes (episode 0 part 0: markers 5, 7, 8, 11 and 21 to scenes 664 to 734).
 - **A shop** the player can use on the map.
-- **Chases:** in some episodes an enemy has to be chased across the map before the fight (not looked at yet; the marker start may skip the chase).
+- **Chases:** in some episodes an enemy has to be chased across the map before the fight (found: three parts; the starter skips the chase itself, see above).
 
 ## What is missing
 
-- **Lost battles:** the player's side gets no input, so most story battles are lost; a lost part does not reach the save flow or the next part. Giving the player's side to the CPU (as `BT2_START_BATTLE` does) would let parts be cleared.
+- **Lost battles:** with the CPU on both sides 127 of 200 story battles are still lost; a lost part does not reach the save flow or the next part's map. Each part is started on its own, so its scenes and battle are covered either way; the save flow after a win is covered by the 73 cleared parts.
+- **The chase itself** (the enemy flying across the map, and how the game decides it is caught) runs only until the starter reports it caught.
 - **Optional markers and the shop** as coverage cases of their own.
 - Waits for a button that runs reach beyond those above: add each to the starter's table (`runtime/probe/game_starter.cpp`).
 
 ## Next steps
 
-1. Sweep the 200 parts that can be started (`story_sweep.py --jobs 4`; about 1 hour judging by the sample), when the user starts it.
-2. The player's side under CPU control, so parts can be cleared; then the optional markers, the shop and the chases.
+1. The optional markers (fights and conversations, scenes 654 and up) as cases of their own: start each from its marker as the story marker is started, and sweep them.
+2. The shop on the map.
+3. Repeat the story sweep after changes that touch story mode (`story_sweep.py --jobs 6`, about an hour).
 
 ## Limits
 

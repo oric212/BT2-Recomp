@@ -350,6 +350,9 @@ int main() {
                 ++calls;std::uint32_t buttons;std::memcpy(&buttons,r+0x3B0C34,4);if(buttons&0x4000)pressed_on=calls;};
             EeRuntime runtime;
             for(const std::uint32_t address:{0x3B7FA8u,0x2A7400u,0x255580u,0x2581F0u,0x29C640u,0x2AC4A0u,0x2582E8u})runtime.registerFunction(address,waiting);
+            static std::uint64_t control=0;
+            runtime.registerFunction(0x101AB0,+[](std::uint8_t*,R5900Context* c,PS2Runtime*){control=c->r[6].low;});
+            runtime.registerFunction(0x20C8A0,+[](std::uint8_t*,R5900Context* c,PS2Runtime*){c->r[2].low=0;});
             installEpisodeStarter(runtime,parseEpisodeStart("0,0"));
             const auto prebattle=runtime.replaceFunction(0x255580,waiting);
             std::vector<std::uint8_t> ram(0x400000);R5900Context context{};
@@ -357,6 +360,16 @@ int main() {
             std::uint32_t after;std::memcpy(&after,ram.data()+0x3B0C34,4);
             require(calls==30 && pressed_on==30 && after==0);
             require(gameStarterReport().find("[2446720,1]")!=std::string::npos);
+            // The player's side of a story battle goes to the CPU (the side setter's third argument).
+            const auto side=runtime.replaceFunction(0x101AB0,return_leaf);
+            context.r[6].low=0;side(ram.data(),&context,&runtime);
+            require(control==1);
+            // In a chase the enemy is reported caught once, on the map's 120th query.
+            const auto caught=runtime.replaceFunction(0x20C8A0,return_leaf);
+            context.r[31].low=runtime.expected_return;
+            unsigned answered_on=0;
+            for(unsigned n=1;n<=150;++n) {caught(ram.data(),&context,&runtime);if(context.r[2].low)answered_on=answered_on?~0u:n;}
+            require(answered_on==120 && gameStarterReport().find("\"starter_chase_caught\":true")!=std::string::npos);
         }
         {
             // Interior entries: the function holding the label runs with the pc at the label, and the

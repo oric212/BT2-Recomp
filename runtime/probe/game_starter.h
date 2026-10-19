@@ -39,7 +39,7 @@ struct EpisodeStart {
     std::uint32_t marker = 0; // ",marker:<m>" (1 to 25): the player is reported at that map marker once.
 };
 EpisodeStart parseEpisodeStart(std::string_view text);
-// Also answers story mode's waits for a button (message boxes, the pre-battle screen, the results, the
+// Gives both sides of the story's battles to the CPU. Also answers story mode's waits for a button (message boxes, the pre-battle screen, the results, the
 // save questions: no save is written) and ends the run 300 flips after the part's after-battle step (results, and the save flow after a win).
 void installEpisodeStarter(EeRuntime& runtime, const EpisodeStart& start);
 
