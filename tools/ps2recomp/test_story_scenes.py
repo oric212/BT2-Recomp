@@ -41,8 +41,22 @@ class StorySceneTests(unittest.TestCase):
         self.assertEqual(parts[0]['story_marker'],14)
         self.assertEqual(parts[0]['scenes'],[33,40])
         self.assertEqual(parts[0]['commands'],{1002:2,1012:1,11001:1})
+        self.assertFalse(parts[0]['direct_story'])
         self.assertIsNone(parts[1]['story_marker'])
         self.assertEqual(parts[1]['first_scene'],36)
+
+    def test_survey_reads_3000_marker_blocks_and_direct_story_scenes(self):
+        class Files:
+            def __init__(self,files):self.files=files
+            def entry(self,n):return self.files[n]
+        # Scene 33: block 3014 leads to scene 34; scene 36 goes to 37 itself from block 1001 (command 1012).
+        files={33:script([(3014,[0x03EA0101,0x10A])],[0,34]),36:script([(1001,[0x03F40101,0x10A])],[0,37]),
+               34:script([]),37:script([])}
+        parts=story_scenes.survey(Files(files),[2])
+        self.assertEqual(parts[0]['markers'],{14:34})
+        self.assertEqual(parts[0]['story_marker'],14)
+        self.assertIsNone(parts[1]['story_marker'])
+        self.assertTrue(parts[1]['direct_story'])
 
 
 if __name__=='__main__':unittest.main()

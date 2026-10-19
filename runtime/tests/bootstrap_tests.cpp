@@ -343,6 +343,22 @@ int main() {
             require(runtime.replaceFunction(0x300,return_leaf)==nested_call);
         }
         {
+            // The episode starter's confirmations: every 30th call of a waiting function sees cross
+            // pressed in port 0's pressed buttons; the word is restored after the call.
+            static unsigned calls=0,pressed_on=0;
+            const auto waiting=+[](std::uint8_t* r,R5900Context*,PS2Runtime*){
+                ++calls;std::uint32_t buttons;std::memcpy(&buttons,r+0x3B0C34,4);if(buttons&0x4000)pressed_on=calls;};
+            EeRuntime runtime;
+            for(const std::uint32_t address:{0x3B7FA8u,0x2A7400u,0x255580u,0x2581F0u,0x29C640u,0x2AC4A0u,0x2582E8u})runtime.registerFunction(address,waiting);
+            installEpisodeStarter(runtime,parseEpisodeStart("0,0"));
+            const auto prebattle=runtime.replaceFunction(0x255580,waiting);
+            std::vector<std::uint8_t> ram(0x400000);R5900Context context{};
+            for(int n=0;n<30;++n)prebattle(ram.data(),&context,&runtime);
+            std::uint32_t after;std::memcpy(&after,ram.data()+0x3B0C34,4);
+            require(calls==30 && pressed_on==30 && after==0);
+            require(gameStarterReport().find("[2446720,1]")!=std::string::npos);
+        }
+        {
             // Interior entries: the function holding the label runs with the pc at the label, and the
             // function counts as entered. Overlay entries are checked against their owner's bytes.
             EeRuntime runtime;runtime.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));

@@ -33,7 +33,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Demo fight (no input) | 🟢 Operational — the CPU-vs-CPU demo fights play and return to the title (the user confirmed the frames on 2026-10-13) |
 | Menus | 🟢 Operational — all ten main-menu screens open without input; Dueling, character and stage selection respond to input (the user confirmed the pictures) |
 | Versus battle | 🟢 Operational — 1P-vs-COM with a controller; CPU-vs-CPU without input for characters 0 to 129 and all 16 stages (sampled, see VALIDATION.md); music and effects |
-| Story mode | 🔧 Incomplete — episodes start without input and load their 3D maps; a part's story scene starts from its map marker and plays up to its first text box; story battles not reached yet |
+| Story mode | 🔧 Incomplete — a part runs without input from its map through its cutscene, pre-battle screen and battle to the results (200 of 207 parts can be started; a sample of 8 finished their battles); the full sweep, cleared battles, optional markers, the shop and chases are open |
 | Audio | 🟢 Operational — streams and sound effects mixed, to a WAV file or the audio device; volumes in the launcher and the in-game menu; the user confirmed a WAV of menus and a fight |
 | Saves | 🔧 Incomplete — the user's 100% save loads (confirmed by the user); writing saves is unit-tested, not tried in the game |
 

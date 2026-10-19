@@ -1,6 +1,7 @@
 #pragma once
 #include "ee/ee_runtime.h"
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 // Tool runs only (WHOLE_GAME_COVERAGE_PLAN.md, step 6): game states started without input. The
@@ -38,4 +39,9 @@ struct EpisodeStart {
     std::uint32_t marker = 0; // ",marker:<m>" (1 to 25): the player is reported at that map marker once.
 };
 EpisodeStart parseEpisodeStart(std::string_view text);
+// Also answers story mode's waits for a button (message boxes, the pre-battle screen, the results, the
+// save questions: no save is written) and ends the run 300 flips after the part's after-battle step (results, and the save flow after a win).
 void installEpisodeStarter(EeRuntime& runtime, const EpisodeStart& start);
+
+// The report's fields for the episode starter: parts completed and presses per waiting function.
+std::string gameStarterReport();

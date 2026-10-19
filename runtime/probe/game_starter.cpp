@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -153,6 +154,89 @@ void reachedMarker(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime
     returnValue(rdram,context,runtime,configured_marker,marker_number);
 }
 
+// Confirmations (STORY_MODE_PLAN.md): story mode's waits for a button test port 0's pressed buttons
+// (0x3B0C34) for cross in a function called once per frame. Every advance_calls calls of such a
+// function, one call runs with cross shown as pressed, as when the player presses it; the game's own
+// test decides whether the press counts, and the pad state is restored after the call. Functions with
+// a phase argument are pressed only in the phase that tests the button. Cursor moves use the repeating
+// buttons (0x3B0C44), as the screens read them:
+// - the yes/no dialogue keeps its default (No) except on the save flow's "Exit saving?", where left
+//   first moves its cursor to Yes: no tool run saves;
+// - the pre-battle screen (state at +364 of the structure at 0x3879D0) lists the team's slots (+416,
+//   20 bytes each, -1 when empty; +616 slots, +624 filled, the cursor at +360); while slots are empty
+//   and the cursor is on a filled one, down moves it on; cross on an empty slot picks a fighter.
+// A screen pressed more than its limit since the last part ended is stuck: the run ends.
+constexpr std::uint32_t pressed_buttons=0x3B0C34,repeated_buttons=0x3B0C44,cross=0x4000,left=0x80,down=0x40;
+constexpr unsigned advance_calls=30;
+constexpr std::uint32_t any_phase=~0u;
+constexpr std::uint32_t yes_no_dialogue=0x29C640,dialogue_pointer=0x387DA0,dialogue_cursor=88;
+constexpr std::uint32_t save_flow_pointer=0x387A00,save_flow_state=20,exit_saving=21;
+constexpr std::uint32_t prebattle_input=0x255580,prebattle_pointer=0x3879D0,prebattle_state=364,prebattle_cursor=360,
+                        team_slots=416,team_slot_size=20,team_size=616,team_filled=624;
+struct Confirmation {std::uint32_t function,phase;unsigned limit;PS2Runtime::RecompiledFunction original;unsigned calls,presses,since_part;};
+Confirmation confirmations[]={
+    {0x2A7400,2,400},             // The scene script's message command (13004), in its update phase, once the text is shown.
+    {prebattle_input,any_phase,40}, // The pre-battle screen's input step.
+    {0x2581F0,any_phase,20},        // The after-battle results' input step.
+    {yes_no_dialogue,any_phase,20}, // The yes/no dialogue (after a won story battle: "Save game data?", then "Exit saving?").
+};
+std::uint32_t stuck_function=0;
+void endRun(PS2Runtime* runtime,unsigned flips_from_now) {
+    auto& ee=*static_cast<EeRuntime*>(runtime);
+    if(!ee.frame_limit || ee.frame_limit>ee.gs_display_flips+flips_from_now)ee.frame_limit=ee.gs_display_flips+flips_from_now;
+}
+
+// The end of a part: the story loop's after-battle step (0x2AC4A0) runs the results and, after a win,
+// the save flow, through 0x2582E8, whose result is nonzero when the story goes on (cleared) and zero
+// when the part is reset for another try (lost). The run ends 300 flips after the step.
+constexpr std::uint32_t after_battle=0x2AC4A0,battle_results=0x2582E8;
+constexpr unsigned flips_after_part=300;
+PS2Runtime::RecompiledFunction original_after_battle=nullptr,original_results=nullptr;
+unsigned parts_completed=0,battles_cleared=0,battles_lost=0;
+void results(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    original_results(rdram,context,runtime);
+    ++(context->r[2].low?battles_cleared:battles_lost);
+}
+void afterBattle(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    original_after_battle(rdram,context,runtime);
+    ++parts_completed;
+    for(auto& point:confirmations)point.since_part=0;
+    endRun(runtime,flips_after_part);
+}
+void press(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime,PS2Runtime::RecompiledFunction original,
+           std::uint32_t address,std::uint32_t button) {
+    const std::uint32_t buttons=read32(rdram,address);
+    write32(rdram,address,buttons|button);
+    original(rdram,context,runtime);
+    write32(rdram,address,buttons);
+}
+template<std::size_t index> void confirm(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    auto& point=confirmations[index];
+    const bool phase=point.phase==any_phase || static_cast<std::uint32_t>(context->r[4].low)==point.phase;
+    if(!phase || ++point.calls<advance_calls) {point.original(rdram,context,runtime);return;}
+    point.calls=0;
+    ++point.presses;
+    if(++point.since_part>point.limit && !stuck_function) {stuck_function=point.function;endRun(runtime,1);}
+    if(point.function==yes_no_dialogue && read32(rdram,read32(rdram,save_flow_pointer)+save_flow_state)==exit_saving
+       && read32(rdram,read32(rdram,dialogue_pointer)+dialogue_cursor)!=0) {
+        press(rdram,context,runtime,point.original,repeated_buttons,left);return;
+    }
+    if(point.function==prebattle_input) {
+        const std::uint32_t screen=read32(rdram,prebattle_pointer);
+        const std::uint32_t cursor=read32(rdram,screen+prebattle_cursor);
+        const bool filled=static_cast<std::int32_t>(read32(rdram,screen+team_slots+cursor*team_slot_size))>=0;
+        if(read32(rdram,screen+prebattle_state)==0 && filled && read32(rdram,screen+team_filled)!=read32(rdram,screen+team_size)) {
+            press(rdram,context,runtime,point.original,repeated_buttons,down);return;
+        }
+    }
+    press(rdram,context,runtime,point.original,pressed_buttons,cross);
+}
+template<std::size_t... index> void installConfirmations(EeRuntime& runtime,std::index_sequence<index...>) {
+    ((confirmations[index].original=runtime.replaceFunction(confirmations[index].function,confirm<index>)),...);
+    original_after_battle=runtime.replaceFunction(after_battle,afterBattle);
+    original_results=runtime.replaceFunction(battle_results,results);
+}
+
 std::uint32_t number(std::string_view text,const char* name) {
     std::uint32_t value=0;
     const auto [end,error]=std::from_chars(text.data(),text.data()+text.size(),value);
@@ -226,9 +310,20 @@ EpisodeStart parseEpisodeStart(std::string_view text) {
 void installEpisodeStarter(EeRuntime& runtime,const EpisodeStart& start) {
     configured_episode[0]=start.episode;configured_episode[1]=start.part;
     original_entry=runtime.replaceFunction(overlay_entry,startEpisode);
+    installConfirmations(runtime,std::make_index_sequence<std::size(confirmations)>{});
     if(start.marker) {
         configured_marker=start.marker;
         original_marker_reached=runtime.replaceFunction(marker_reached,reachMarker);
         original_marker_number=runtime.replaceFunction(marker_number,reachedMarker);
     }
+}
+
+std::string gameStarterReport() {
+    std::string text="\"starter_parts_completed\":"+std::to_string(parts_completed)+",\"starter_battles_cleared\":"+std::to_string(battles_cleared)
+        +",\"starter_battles_lost\":"+std::to_string(battles_lost)+",\"starter_stuck\":"+std::to_string(stuck_function)+",\"starter_confirmations\":[";
+    for(const auto& point:confirmations) {
+        if(text.back()!='[')text+=',';
+        text+="["+std::to_string(point.function)+","+std::to_string(point.presses)+"]";
+    }
+    return text+"]";
 }

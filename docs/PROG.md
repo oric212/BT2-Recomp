@@ -17,7 +17,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Demo fight (no input) | 🟢 Operational — the CPU-vs-CPU demo fights play and return to the title (the user confirmed the frames on 2026-10-13) |
 | Menus | 🟢 Operational — all ten main-menu screens open without input; Dueling, character and stage selection respond to input (the user confirmed the pictures) |
 | Versus battle | 🟢 Operational — 1P-vs-COM with a controller; CPU-vs-CPU without input for characters 0 to 129 and all 16 stages (sampled, see VALIDATION.md); music and effects |
-| Story mode | 🔧 Incomplete — episodes start without input and load their 3D maps; a part's story scene starts from its map marker and plays up to its first text box; story battles not reached yet |
+| Story mode | 🔧 Incomplete — a part runs without input from its map through its cutscene, pre-battle screen and battle to the results (200 of 207 parts can be started; a sample of 8 finished their battles); the full sweep, cleared battles, optional markers, the shop and chases are open |
 | Audio | 🟢 Operational — streams and sound effects mixed, to a WAV file or the audio device; volumes in the launcher and the in-game menu; the user confirmed a WAV of menus and a fight |
 | Saves | 🔧 Incomplete — the user's 100% save loads (confirmed by the user); writing saves is unit-tested, not tried in the game |
 
@@ -54,7 +54,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode next ([plan](plans/ee/STORY_MODE_PLAN.md): decode the episode script machine, then start each story battle without input, then an overnight run of every episode and battle); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
+1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): story mode next ([plan](plans/ee/STORY_MODE_PLAN.md): the sweep of every part's battle, then cleared battles, optional markers, the shop and chases); runtime special cases generalized as runs reach them; exhaustive battle sweeps at the end, as validation.
 2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
 3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC; next the GPU renderer's intake on a graphics thread.
 4. **Later:** launcher extras (HD textures), 3D and film comparisons with the original, the CPU renderer in 3D (optional).

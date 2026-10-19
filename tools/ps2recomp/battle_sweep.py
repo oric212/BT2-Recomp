@@ -66,14 +66,19 @@ def write_summary(path,rows):
     path.write_text('\n'.join(lines)+'\n',encoding='utf-8')
 
 
-def run_case(case,disc,out,frames,stall,picture=0):
-    report=out/(name(case)+'.json');log=out/(name(case)+'.log')
+def run_case(case,disc,out,frames,stall,pictures=(),switch='BT2_START_BATTLE',label=None,passed=None):
+    """One run with <switch>=<case>; passed(report) decides 'ok' (default: the frame budget reached)."""
+    label=label or name(case)
+    report=out/(label+'.json');log=out/(label+'.log')
     cmd=run_startup_probe.command(ROOT,disc,'Release');cmd[2]=str(report)
     env=dict(os.environ)
-    for key in ('BT2_VIEWER','BT2_AUDIO_DEVICE','BT2_HOST_INPUT','BT2_PAD_RECORD','BT2_PAD_SCRIPT','BT2_PLAYER_SETTINGS'):env.pop(key,None)
-    env.update(BT2_START_BATTLE=case,BT2_FRAME_LIMIT=str(frames),BT2_STALL_FIELDS=str(stall),BT2_PAD_SCRIPT='')
-    ppm=out/(name(case)+'.ppm')
-    if picture:env['BT2_GPU_GS_SNAPSHOT']=f'{picture}:{ppm.as_posix()}'
+    for key in ('BT2_VIEWER','BT2_AUDIO_DEVICE','BT2_HOST_INPUT','BT2_PAD_RECORD','BT2_PAD_SCRIPT','BT2_PLAYER_SETTINGS',
+                'BT2_START_BATTLE','BT2_START_SCREEN','BT2_START_EPISODE'):env.pop(key,None)
+    env.update({switch:case,'BT2_FRAME_LIMIT':str(frames),'BT2_STALL_FIELDS':str(stall),'BT2_PAD_SCRIPT':''})
+    if isinstance(pictures,int):pictures=(pictures,) if pictures else ()
+    ppms=[out/(label+(f'-{flip}' if len(pictures)>1 else '')+'.ppm') for flip in pictures]
+    for ppm in ppms:ppm.unlink(missing_ok=True);ppm.with_suffix('.png').unlink(missing_ok=True) # No stale pictures from an earlier run.
+    if pictures:env['BT2_GPU_GS_SNAPSHOT']=';'.join(f'{flip}:{ppm.as_posix()}' for flip,ppm in zip(pictures,ppms))
     if run_startup_probe.gpu_build('Release'):env['BT2_GPU_GS']='on'
     start=time.time()
     with log.open('w',encoding='utf-8',errors='replace') as stream:
@@ -84,13 +89,14 @@ def run_case(case,disc,out,frames,stall,picture=0):
         return {'case':case,'result':'failed','seconds':seconds,'stop':stop_line(lines) or 'no report'},[]
     data=json.loads(report.read_text(encoding='utf-8'))
     interpreted=[e['entry'] for e in data.get('ee_interpreted_entries',[])]
-    passed=bool(data.get('frame_budget_reached'))
-    row={'case':case,'result':'ok' if passed else 'stop','flips':data.get('gs_display_flips',0),
+    ok=passed(data) if passed else bool(data.get('frame_budget_reached'))
+    row={'case':case,'result':'ok' if ok else 'stop','flips':data.get('gs_display_flips',0),
          'entered':data.get('distinct_ee_entered',0),'interpreted':len(interpreted),'seconds':seconds,
-         'stop':'' if passed else stop_line(lines)}
+         'stop':'' if ok else stop_line(lines)}
     for suffix in DUMPS:Path(str(report)+suffix).unlink(missing_ok=True)
-    if ppm.exists():to_png(ppm)
-    if passed and not interpreted:report.unlink();log.unlink()
+    for ppm in ppms:
+        if ppm.exists():to_png(ppm)
+    if ok and not interpreted:report.unlink();log.unlink()
     return row,interpreted
 
 
