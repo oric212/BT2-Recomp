@@ -15,7 +15,9 @@ public:
     GpuGsBackend();
     ~GpuGsBackend();
     // Creates the Vulkan device and the GS; throws a named error when no usable device exists.
-    void init();
+    // `super_sampling` (1, 2, 4, 8 or 16 samples per pixel): with 4 or more the scanout is at twice the
+    // resolution, built from the samples (docs/plans/graphics/IMAGE_QUALITY_PLAN.md).
+    void init(unsigned super_sampling=1);
     // GIF data in 128-bit units, as the GIF receives it on PATH3.
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.

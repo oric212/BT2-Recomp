@@ -141,8 +141,14 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
     screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed));
     screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
     screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
-    MenuEntry hd;hd.label="HD textures";hd.value=[]{return std::string("not available yet");};hd.enabled=false;
-    screen.entries.push_back(hd);
+    screen.entries.push_back(toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). From the next start."));
+    MenuEntry samples;samples.label="Super-sampling";
+    samples.value=[&s]{return s.super_sampling==1?std::string("Off"):std::to_string(s.super_sampling)+"x";};
+    samples.adjust=[&s,changed](int direction) { // 1, 2, 4, 8, 16, round.
+        s.super_sampling=direction<0?(s.super_sampling==1?16:s.super_sampling/2):(s.super_sampling==16?1:s.super_sampling*2);changed();
+    };
+    samples.note="Smoother edges and finer textures; 4x and more draw at twice the resolution (1280 x 896). From the next start.";
+    screen.entries.push_back(samples);
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {

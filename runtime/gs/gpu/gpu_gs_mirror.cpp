@@ -1,8 +1,8 @@
 #include "gs/gpu/gpu_gs_mirror.h"
 #include <iostream>
 
-void GpuGsMirror::attach(GsCommandSink& cpu) {
-    gpu_.init();
+void GpuGsMirror::attach(GsCommandSink& cpu,unsigned super_sampling) {
+    gpu_.init(super_sampling);
     cpu.on_accepted=[this](std::span<const std::uint8_t> data){FrameProfile::Scope timed(frame_profile.renderer);gpu_.transfer(data);};
     attached_=true;
 }

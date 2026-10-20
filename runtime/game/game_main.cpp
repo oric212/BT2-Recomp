@@ -55,6 +55,10 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     for(const char* name:{"BT2_VIEWER","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})SetEnvironmentVariableA(name,"1");
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());
+    // The picture settings the renderer takes at its start: HD textures (when a pack is there) and super-sampling.
+    const fs::path pack=settings.hd_textures?folders.texturePack():fs::path{};
+    SetEnvironmentVariableW(L"BT2_HD_TEXTURES",pack.empty()?nullptr:pack.wstring().c_str());
+    SetEnvironmentVariableA("BT2_SUPER_SAMPLING",std::to_string(settings.super_sampling).c_str());
     // The memory card folder in slot 1, when the settings name one of the saves folder.
     const fs::path card=folders.card(settings);
     SetEnvironmentVariableW(L"BT2_CARD_FOLDER",card.empty()?nullptr:card.wstring().c_str());

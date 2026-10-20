@@ -12,12 +12,15 @@ struct GpuGsBackend::State {
     Vulkan::Device device;
     ParallelGS::GSInterface gs;
     std::unique_ptr<HdTexturePack> pack; // After the GS: destroyed first.
+    bool high_resolution=false;
 };
 
 GpuGsBackend::GpuGsBackend()=default;
 GpuGsBackend::~GpuGsBackend()=default;
 
-void GpuGsBackend::init() {
+void GpuGsBackend::init(unsigned super_sampling) {
+    if(super_sampling!=1 && super_sampling!=2 && super_sampling!=4 && super_sampling!=8 && super_sampling!=16)
+        throw std::runtime_error("GPU GS: super-sampling must be 1, 2, 4, 8 or 16");
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
     state->context.set_num_thread_indices(1);
@@ -25,7 +28,9 @@ void GpuGsBackend::init() {
         throw std::runtime_error("GPU GS: no usable Vulkan device");
     state->device.set_context(state->context);
     state->device.init_frame_contexts(4);
-    if(!state->gs.init(&state->device,ParallelGS::GSOptions{}))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
+    ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
+    state->high_resolution=super_sampling>=4;
+    if(!state->gs.init(&state->device,options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
     state_=std::move(state);
 }
 
@@ -63,7 +68,7 @@ DisplayFrame GpuGsBackend::scanout(unsigned field) {
     info.dst_layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     info.dst_stage=VK_PIPELINE_STAGE_2_COPY_BIT;
     info.dst_access=VK_ACCESS_2_TRANSFER_READ_BIT;
-    info.force_progressive=true;info.anti_blur=true;
+    info.force_progressive=true;info.anti_blur=true;info.high_resolution_scanout=state_->high_resolution;
     const auto result=state_->gs.vsync(info);
     DisplayFrame frame;
     if(!result.image)return frame;

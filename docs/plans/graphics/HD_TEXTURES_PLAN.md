@@ -83,4 +83,4 @@ paraLLEl-GS does super-sampling (2× to 16×), not free upscaling. With 4× or m
 3. **The paraLLEl-GS hook — built 2026-10-20** (above); left: the drawn character palettes, the button art setting. (above) with BC3 images and their mips; the button-art choice; the duplicate rule.
 4. **Super-sampling setting** (off, 4×, 8×, 16×) and high-resolution output, measured in a battle in Release (GPU and processor time per picture).
 5. **The user's inspection:** pictures of the same scenes with and without the pack in `work/frames/`.
-6. **Settings:** the launcher's and the overlay's "HD textures" entry becomes available, with the pack folder `data/textures` next to the programs (like the disc image) and the button art choice.
+6. **Settings — built 2026-10-20** (HD textures and super-sampling under Display, the pack in `data/textures`; the button art choice still to come): the launcher's and the overlay's "HD textures" entry becomes available, with the pack folder `data/textures` next to the programs (like the disc image) and the button art choice.

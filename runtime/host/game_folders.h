@@ -14,15 +14,16 @@
 
 struct GameFolders {
     std::filesystem::path data,saves,assets; // assets: the launcher's pictures, copied there by the build.
+    std::filesystem::path textures;          // HD texture packs, in data (docs/plans/graphics/HD_TEXTURES_PLAN.md).
     explicit GameFolders(const std::filesystem::path& program_folder)
-        :data(program_folder/"data"),saves(program_folder/"saves"),assets(program_folder/"assets") {}
+        :data(program_folder/"data"),saves(program_folder/"saves"),assets(program_folder/"assets"),textures(data/"textures") {}
     std::filesystem::path logo() const {return assets/"logo.png";}
 
     // Makes the folders that are missing; returns whether any was made. Existing folders and their
     // files are left as they are.
     bool create() const {
         bool made=false;
-        for(const auto& folder:{data,saves}) {
+        for(const auto& folder:{data,saves,textures}) {
             std::error_code error;
             if(std::filesystem::is_directory(folder,error))continue;
             if(std::filesystem::exists(folder,error))throw std::runtime_error("Not a folder: "+utf8(folder)+" (the game keeps its files there)");
@@ -53,6 +54,15 @@ struct GameFolders {
         const auto path=saves/pathFromUtf8(settings.memory_card);
         std::error_code error;
         return std::filesystem::is_directory(path,error)?path:std::filesystem::path{};
+    }
+    // The HD texture pack: the first folder in `textures` (in name order) that holds a `replacements`
+    // folder, as PCSX2's packs do, or `textures` itself when it holds one; empty when there is none.
+    std::filesystem::path texturePack() const {
+        std::error_code error;
+        if(std::filesystem::is_directory(textures/"replacements",error))return textures;
+        for(const auto& name:names(textures,true,{}))
+            if(std::filesystem::is_directory(textures/pathFromUtf8(name)/"replacements",error))return textures/pathFromUtf8(name);
+        return {};
     }
     // Ready to play without the launcher: the settings name a disc image that is in `data`.
     bool configured(const Settings& settings) const {return !disc(settings).empty();}

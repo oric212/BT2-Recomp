@@ -21,6 +21,6 @@ PCSX2's patch database has a 16:9 patch for BT2's PAL release (SLES-54164, by se
 ## Order of work
 
 1. **Widescreen:** match each of the PAL patch's changes to SLUS-21441's code by its surroundings, make it a setting that writes them at the right moment, the window at 16:9; pictures of a battle, a cut-scene, the menus and the story map for the user.
-2. **Super-sampling and high-resolution output** as settings (with [HD textures](HD_TEXTURES_PLAN.md) step 4), measured in Release.
+2. **Super-sampling and high-resolution output** as settings (with [HD textures](HD_TEXTURES_PLAN.md) step 4), measured in Release. **Switch built 2026-10-20:** `BT2_SUPER_SAMPLING=<1|2|4|8|16>`; 4 or more scan out at 1,280 × 896. The Ultimate Battle Z screens and a fight with pack 2 (2,000 flips, Release): 27 s at 4×, 31 s at 16×, no renderer errors; the picture at 1,280 × 896 with smooth edges, the select screen's portraits crisp at twice the size (`work/frames/hd-textures/zoom-*.png`: original, HD at 1×, HD at 16×). Left: the setting for players and the frame time in a fight at each rate.
 3. **A 4× scanout** from 16× samples: find out whether paraLLEl-GS's scanout can be extended; decide from what it costs.
 4. **Display scaling:** integer (both axes for 4:3, vertical only for 16:9), bilinear, FSR1 with sharpening; the user compares pictures.

@@ -42,8 +42,9 @@ int main() {
         s.disc="a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
-        s.mapping.stick_sensitivity=150;s.window_scale=9;
+        s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;
         check(Settings::parse(s.text())==s,"changed settings read back");
+        check(refused([]{Settings::parse("super_sampling = 3\n");}) && refused([]{Settings::parse("super_sampling = 32\n");}),"super-sampling is 1, 2, 4, 8 or 16");
         // Older files: the dialog folders and the hidden cards are ignored, a card elsewhere is dropped.
         const auto old=Settings::parse("disc = E:\\x.iso\ndisc_folder = E:\\discs\ncard_folder = E:\\saves\\One\nhidden_card = Card 2\nmemory_card = E:\\saves\\My card\n");
         check(old.disc=="E:\\x.iso" && old.memory_card.empty(),"older keys are read and dropped");
@@ -151,6 +152,10 @@ int main() {
         }
         touch(program/"data"/"Game.ISO");touch(program/"data"/"notes.txt");touch(program/"saves"/"other.ps2");
         check(folders.discImages()==std::vector<std::string>{"Game.ISO"},"disc images: the .iso files, any case");
+        // HD texture packs: the first folder in data/textures that holds "replacements".
+        check(fs::is_directory(program/"data"/"textures") && folders.texturePack().empty(),"the textures folder is made, empty");
+        touch(program/"data"/"textures"/"A notes"/"readme.txt");touch(program/"data"/"textures"/"B pack"/"replacements"/"x.dds");
+        check(folders.texturePack()==program/"data"/"textures"/"B pack","a pack is the folder with replacements");
         check(folders.cards()==std::vector<std::string>{"Card A"} && folders.cardImages()==std::vector<std::string>{"other.ps2"},"cards are folders; card image files listed apart");
         Settings s;
         check(!folders.configured(s),"no disc chosen: not configured");

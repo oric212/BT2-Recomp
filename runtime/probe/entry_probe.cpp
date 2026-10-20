@@ -331,7 +331,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("BT2_GPU_GS must be mirror or on");
         if (gpu_mode) {
             const bool gpu_only = std::string_view(gpu_mode) == "on";
-            gpu_mirror.attach(runtime.gif_dma.gs);
+            // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
+            gpu_mirror.attach(runtime.gif_dma.gs, std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u);
             runtime.gif_dma.gs.rasterize = !gpu_only;
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
             // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).

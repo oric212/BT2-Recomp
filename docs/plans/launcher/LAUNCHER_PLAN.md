@@ -114,7 +114,7 @@ The mixer already has separate sources for streams (music, movies, voices in str
 
 ### HD textures
 
-The overlay and the launcher hold the "HD textures" entry. How the textures are found and drawn is the [HD textures plan](../graphics/HD_TEXTURES_PLAN.md) (2026-10-20: pack 2, made for the retail disc, is the one to use). Until it works, the launcher shows the checkbox as unavailable instead of accepting a setting that does nothing. The packs are never committed; their threads are credited in the README when the feature ships.
+The overlay and the launcher hold the "HD textures" entry (Display) since 2026-10-20, with "Super-sampling" (Off, 2x, 4x, 8x, 16x) next to it; both take effect from the next start, because the renderer takes them when it starts. The pack is the first folder in `data/textures` that holds a `replacements` folder, as PCSX2's packs do (the game program makes `data/textures` on its first start). How the textures are found and drawn is the [HD textures plan](../graphics/HD_TEXTURES_PLAN.md) (pack 2, made for the retail disc). The packs are never committed; their threads are credited in the README when the feature ships.
 
 ### 60 fps battles
 

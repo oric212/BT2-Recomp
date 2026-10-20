@@ -646,6 +646,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **HD textures.** `BT2_HD_TEXTURES=<pack folder>[:<budget MB>]` (GPU renderer) draws with a PCSX2 texture pack's replacements, budget 2,048 MB by default; the run ends with a line of how many draws were replaced, how many replacements were loaded and the peak video memory they used (docs/plans/graphics/HD_TEXTURES_PLAN.md). The renderer needs the project's paraLLEl-GS patch, which `fetch_parallel_gs.py` applies.
 
+**Super-sampling.** `BT2_SUPER_SAMPLING=<1|2|4|8|16>` (GPU renderer) draws with that many samples per pixel; with 4 or more the picture is scanned out at twice the resolution (1,280 × 896) from the samples (docs/plans/graphics/IMAGE_QUALITY_PLAN.md).
+
 **Fast forward measured.** `BT2_FAST_FORWARD=1` with the viewer (or the audio device) runs the whole run in fast forward, as when its key is held; with `BT2_VIEWER_STATS=1` the window's statistics give its speed.
 
 **Screen runs.** `python tools/ps2recomp/screen_run.py --disc <iso> [--modes 10,24,61] [--flips 30000] [--down-every 400] [--jobs 3]` runs main-menu screens through their battles without input: a generated pad script presses cross every 120 fields (and, with `--down-every`, down for 60 fields that often, which Ultimate Training's lessons need), and each run prints its result and the battles the screen starter recorded (kind, rule, the field it started, the lesson in Training, the result flags); pictures every `--pictures` flips go to `work/coverage/modes/`. Training (mode 61) with `--flips 90000 --down-every 400` runs all 21 lessons; Ultimate Battle Z (mode 10) with `--flips 600000` clears all 15 courses.
