@@ -102,6 +102,58 @@ int main() {
         upload(names,0x100,2,0x14,64,32,std::vector<std::uint8_t>(1024,0x22));
         names.reg(0x05,0);
         require(names.drawn.size()==2);
+        // Without count_drawn (HD textures without the naming log) draws are not named.
+        names.count_drawn=false;
+        names.reg(0x00,0x16);upload(names,0x100,2,0x14,64,32,std::vector<std::uint8_t>(1024,0x33));
+        names.reg(0x05,0);
+        require(names.drawn.size()==2);
+    }
+    {
+        // A transfer equal to the last one into its pages is not written again; the name stays. Other data,
+        // or a write into its pages in between, is written.
+        GsTextureNames names;
+        const unsigned psm=0x00; // 32-bit, 64 x 32: one page.
+        const std::uint64_t tex0=0x400|(std::uint64_t(1)<<14)|(std::uint64_t(6)<<26)|(std::uint64_t(5)<<30);
+        std::vector<std::uint8_t> a(64*32*4),b(64*32*4);
+        for(std::size_t i=0;i<a.size();++i) {a[i]=std::uint8_t(i*7);b[i]=std::uint8_t(i*13+1);}
+        upload(names,0x400,1,psm,64,32,a);
+        const auto first=names.name(tex0,0)->texture;
+        upload(names,0x400,1,psm,64,32,a);
+        require(names.repeated_uploads==1 && names.name(tex0,0)->texture==first);
+        upload(names,0x400,1,psm,64,32,b);
+        const auto second=names.name(tex0,0)->texture;
+        require(names.repeated_uploads==1 && second!=first);
+        upload(names,0x400,1,psm,64,32,a); // Equal to an earlier transfer, but the page changed since: written.
+        require(names.repeated_uploads==1 && names.name(tex0,0)->texture==first);
+        // In two pieces, with a name asked in between: the first piece is written at once.
+        names.reg(0x50,(std::uint64_t(0x400)<<32)|(std::uint64_t(1)<<48));names.reg(0x51,0);names.reg(0x52,64|(std::uint64_t(32)<<32));names.reg(0x53,0);
+        names.image(std::span(b).first(b.size()/2));
+        (void)names.name(tex0,0);
+        names.image(std::span(b).subspan(b.size()/2));
+        require(names.name(tex0,0)->texture==second);
+        // The same CLUT load again from unchanged memory is not read again.
+        const std::uint64_t t8=0x2000|(std::uint64_t(2)<<14)|(std::uint64_t(0x13)<<20)|(std::uint64_t(4)<<26)|(std::uint64_t(4)<<30)
+            |(std::uint64_t(0x400)<<37)|(std::uint64_t(1)<<61);
+        names.reg(0x06,t8);const auto loads=names.repeated_cluts;
+        names.reg(0x06,t8);
+        require(names.repeated_cluts==loads+1);
+        upload(names,0x400,1,psm,64,32,a); // The CLUT's memory changed: read again.
+        names.reg(0x06,t8);
+        require(names.repeated_cluts==loads+1);
+    }
+    {
+        // The page-table addresses equal the sink's for any start block, width and position.
+        std::uint32_t seed=12345;
+        auto next=[&]{seed=seed*1103515245u+12345u;return seed>>8;};
+        bool same=true;
+        for(int i=0;i<200000 && same;++i) {
+            const unsigned bp=next()%16384,bw=1+next()%32,x=next()%2048,y=next()%2048;
+            same=GsTextureNames::ct32Word(bp,bw,x,y)==GsCommandSink::ct32Word(bp,bw,x,y)
+                && GsTextureNames::t8Byte(bp,bw*2,x,y)==GsCommandSink::t8Byte(bp,bw*2,x,y)
+                && GsTextureNames::t4Nibble(bp,bw*2,x,y)==GsCommandSink::t4Nibble(bp,bw*2,x,y)
+                && GsTextureNames::t8Byte(bp,bw,x,y)==GsCommandSink::t8Byte(bp,bw,x,y);
+        }
+        require(same);
     }
     std::cout<<"Texture name checks passed."<<std::endl;
 }

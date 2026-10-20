@@ -31,6 +31,29 @@ unsigned blockInPage(unsigned psm,unsigned bx,unsigned by) {
     return (bx&1)|((by&1)<<1)|((bx&2)<<1)|((by&2)<<2)|((bx&4)<<2);
 }
 unsigned log2(unsigned v) {unsigned n=0;while(v>1){v>>=1;++n;}return n;}
+
+// Each format's place within one page (word, byte or nibble), from the sink's own layout functions.
+// An address is the start block's units, plus whole pages, plus this: the layouts are linear in them.
+struct PageLayouts {
+    std::array<std::uint16_t,32*64> ct32;std::array<std::uint16_t,64*128> t8;std::array<std::uint16_t,128*128> t4;
+    PageLayouts() {
+        for(unsigned y=0;y<32;++y)for(unsigned x=0;x<64;++x)ct32[y*64+x]=std::uint16_t(GsCommandSink::ct32Word(0,1,x,y));
+        for(unsigned y=0;y<64;++y)for(unsigned x=0;x<128;++x)t8[y*128+x]=std::uint16_t(GsCommandSink::t8Byte(0,2,x,y));
+        for(unsigned y=0;y<128;++y)for(unsigned x=0;x<128;++x)t4[y*128+x]=std::uint16_t(GsCommandSink::t4Nibble(0,2,x,y));
+    }
+};
+const PageLayouts page_layouts; // Built at start: no initialization check on each pixel.
+const PageLayouts& layouts() {return page_layouts;}
+}
+
+std::size_t GsTextureNames::ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+    return (std::size_t(bp)*64+(std::size_t(y/32)*bw+x/64)*2048+layouts().ct32[(y%32)*64+x%64])%memory_words;
+}
+std::size_t GsTextureNames::t8Byte(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+    return (std::size_t(bp)*256+(std::size_t(y/64)*(bw/2)+x/128)*8192+layouts().t8[(y%64)*128+x%128])%(memory_words*4);
+}
+std::size_t GsTextureNames::t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned y) {
+    return (std::size_t(bp)*512+(std::size_t(y/128)*(bw/2)+x/128)*16384+layouts().t4[(y%128)*128+x%128])%(memory_words*8);
 }
 
 std::string GsTextureNames::Name::text() const {
@@ -63,7 +86,8 @@ void GsTextureNames::reg(unsigned reg,std::uint64_t value) {
 }
 
 void GsTextureNames::startTransfer(std::uint64_t dir) {
-    transfer_=false;partial_=0;partial_bytes_=0;
+    writePending(); // An incomplete transfer: what arrived is in memory.
+    transfer_=false;partial_=0;partial_bytes_=0;direct_=false;
     const unsigned direction=unsigned(dir&3);
     if(direction==2) {++local_copies;all_written_=++generation_;return;}
     if(direction!=0)return;
@@ -72,46 +96,117 @@ void GsTextureNames::startTransfer(std::uint64_t dir) {
     x0_=unsigned((pos>>32)&0x7FF);y0_=unsigned((pos>>48)&0x7FF);w_=unsigned(size&0xFFF);h_=unsigned((size>>32)&0xFFF);x_=y_=0;
     const bool written=psm_==psm_ct32 || psm_==psm_ct24 || psm_==psm_t8 || psm_==psm_t4 || psm_==psm_t8h || psm_==psm_t4hl || psm_==psm_t4hh;
     if(!written || ((pos>>59)&3) || !w_ || !h_) {++unsupported_uploads;all_written_=++generation_;return;}
-    transfer_=true;++generation_;
+    transfer_=true;++generation_;++uploads;
+    const unsigned bits=psm_==psm_ct32?32:psm_==psm_ct24?24:(psm_==psm_t8 || psm_==psm_t8h)?8:4;
+    transfer_bytes_=(std::size_t(w_)*h_*bits+7)/8;
+    upload_key_={bitblt,pos,size};
+}
+
+void GsTextureNames::finishUpload() {
+    const auto hash=XXH3_64bits(pending_.data(),pending_.size());
+    if(const auto found=uploads_.find(upload_key_);found!=uploads_.end() && found->second.hash==hash && found->second.generation>=all_written_
+       && std::all_of(found->second.pages.begin(),found->second.pages.end(),[&](std::uint16_t page){return page_written_[page]==found->second.generation;})) {
+        ++repeated_uploads;uploaded_pixels+=std::uint64_t(w_)*h_;
+        pending_.clear();transfer_=false;
+        return;
+    }
+    written_pages_.clear();
+    writeBytes(pending_);
+    pending_.clear();
+    std::sort(written_pages_.begin(),written_pages_.end());
+    written_pages_.erase(std::unique(written_pages_.begin(),written_pages_.end()),written_pages_.end());
+    uploads_[upload_key_]={hash,generation_,written_pages_};
+}
+
+void GsTextureNames::writePending() {
+    if(pending_.empty())return;
+    direct_=true;
+    writeBytes(pending_);
+    pending_.clear();
 }
 
 void GsTextureNames::image(std::span<const std::uint8_t> data) {
     if(!transfer_)return;
-    ++generation_; // A hash taken between two pieces of a transfer is not kept past the next one.
-    const unsigned bytes=psm_==psm_ct32?4:psm_==psm_ct24?3:0;
-    for(const std::uint8_t b:data) {
-        if(!transfer_)return;
-        if(bytes) {
-            partial_|=std::uint32_t(b)<<(8*partial_bytes_);
-            if(++partial_bytes_==bytes) {writePixel(partial_);partial_=0;partial_bytes_=0;}
-        } else if(psm_==psm_t4 || psm_==psm_t4hl || psm_==psm_t4hh) {
-            writePixel(b&15);
-            if(transfer_)writePixel(b>>4);
-        } else writePixel(b);
-    }
+    if(direct_) {writeBytes(data);return;}
+    const std::size_t take=std::min(data.size(),transfer_bytes_-pending_.size());
+    pending_.insert(pending_.end(),data.begin(),data.begin()+std::ptrdiff_t(take));
+    if(pending_.size()==transfer_bytes_)finishUpload();
 }
 
-void GsTextureNames::writePixel(std::uint32_t value) {
-    const unsigned x=(x0_+x_)%2048,y=(y0_+y_)%2048;
-    auto& word=[&]()->std::uint32_t& {
+void GsTextureNames::writeBytes(std::span<const std::uint8_t> data) {
+    ++generation_; // A hash taken between two pieces of a transfer is not kept past the next one.
+    const auto& tables=layouts();
+    auto* const bytes=reinterpret_cast<std::uint8_t*>(memory_.data()); // GS memory is little-endian words.
+    std::size_t at=0,last_page=~std::size_t(0);
+    const auto mark=[&](std::size_t word) {
+        const std::size_t page=word/2048;
+        if(page==last_page)return;
+        last_page=page;
+        if(page_written_[page]!=generation_) {page_written_[page]=generation_;written_pages_.push_back(std::uint16_t(page));}
+    };
+    // The next pixel of the stream; a pixel split between two pieces waits in partial_ (for 4-bit
+    // formats partial_ holds the second pixel of a byte).
+    const auto take=[&](std::uint32_t& value)->bool {
         switch(psm_) {
-        case psm_t8:return memory_[GsCommandSink::t8Byte(bp_,bw_,x,y)/4];
-        case psm_t4:return memory_[GsCommandSink::t4Nibble(bp_,bw_,x,y)/8];
-        default:return memory_[GsCommandSink::ct32Word(bp_,bw_,x,y)];
+        case psm_ct32:case psm_ct24: {
+            const unsigned need=psm_==psm_ct32?4:3;
+            if(!partial_bytes_ && at+need<=data.size()) {value=0;std::memcpy(&value,data.data()+at,need);at+=need;return true;}
+            while(partial_bytes_<need) {
+                if(at==data.size())return false;
+                partial_|=std::uint32_t(data[at++])<<(8*partial_bytes_++);
+            }
+            value=partial_;partial_=0;partial_bytes_=0;return true;
         }
-    }();
-    switch(psm_) {
-    case psm_ct32:word=value;break;
-    case psm_ct24:word=(word&0xFF000000u)|(value&0xFFFFFFu);break;
-    case psm_t8: {const unsigned shift=unsigned(GsCommandSink::t8Byte(bp_,bw_,x,y)%4)*8;word=(word&~(0xFFu<<shift))|(value<<shift);break;}
-    case psm_t4: {const unsigned shift=unsigned(GsCommandSink::t4Nibble(bp_,bw_,x,y)%8)*4;word=(word&~(0xFu<<shift))|(value<<shift);break;}
-    case psm_t8h:word=(word&0x00FFFFFFu)|(value<<24);break;
-    case psm_t4hl:word=(word&0xF0FFFFFFu)|(value<<24);break;
-    case psm_t4hh:word=(word&0x0FFFFFFFu)|(value<<28);break;
+        case psm_t8:case psm_t8h:
+            if(at==data.size())return false;
+            value=data[at++];return true;
+        default: // Two pixels a byte, the low nibble first.
+            if(partial_bytes_) {value=partial_;partial_bytes_=0;return true;}
+            if(at==data.size())return false;
+            value=data[at]&15u;partial_=data[at++]>>4;partial_bytes_=1;return true;
+        }
+    };
+    while(transfer_) {
+        // A row's place: its pages' start and its line of each page's layout (gs_command_sink.h's
+        // functions, as ct32Word, t8Byte and t4Nibble above).
+        const unsigned y=(y0_+y_)%2048;
+        const std::size_t ct32_row=std::size_t(bp_)*64+std::size_t(y/32)*bw_*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
+        const std::size_t t8_row=std::size_t(bp_)*256+std::size_t(y/64)*(bw_/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
+        const std::size_t t4_row=std::size_t(bp_)*512+std::size_t(y/128)*(bw_/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
+        for(;x_<w_;++x_) {
+            std::uint32_t value;
+            if(!take(value))return;
+            const unsigned x=(x0_+x_)%2048;
+            switch(psm_) {
+            case psm_t8: {
+                const std::size_t byte=(t8_row+std::size_t(x/128)*8192+t8_line[x%128])%(memory_words*4);
+                bytes[byte]=std::uint8_t(value);mark(byte/4);
+                break;
+            }
+            case psm_t4: {
+                const std::size_t nibble=(t4_row+std::size_t(x/128)*16384+t4_line[x%128])%(memory_words*8);
+                auto& byte=bytes[nibble/2];
+                byte=std::uint8_t(nibble%2?(byte&0x0Fu)|(value<<4):(byte&0xF0u)|value);mark(nibble/8);
+                break;
+            }
+            default: {
+                const std::size_t at_word=(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words;
+                auto& word=memory_[at_word];
+                switch(psm_) {
+                case psm_ct32:word=value;break;
+                case psm_ct24:word=(word&0xFF000000u)|(value&0xFFFFFFu);break;
+                case psm_t8h:word=(word&0x00FFFFFFu)|(value<<24);break;
+                case psm_t4hl:word=(word&0xF0FFFFFFu)|(value<<24);break;
+                default:word=(word&0x0FFFFFFFu)|(value<<28);break; // T4HH
+                }
+                mark(at_word);
+            }
+            }
+            ++uploaded_pixels;
+        }
+        x_=0;
+        if(++y_==h_)transfer_=false;
     }
-    page_written_[(&word-memory_.data())/2048]=generation_;
-    ++uploaded_pixels;
-    if(++x_==w_) {x_=0;if(++y_==h_)transfer_=false;}
 }
 
 void GsTextureNames::loadClut(std::uint64_t tex0) {
@@ -119,22 +214,31 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     const unsigned csm=unsigned((tex0>>55)&1),csa=unsigned((tex0>>56)&31);
     const auto f=format(psm);
     if(!f || !f->palette)return;
+    ++clut_loads;
+    writePending();
+    // The same load as the last one from memory nothing wrote since: the CLUT already holds it.
+    const std::uint64_t key=std::uint64_t(f->palette)|(std::uint64_t(cbp)<<9)|(std::uint64_t(cpsm)<<23)|(std::uint64_t(csm)<<27)|(std::uint64_t(csa)<<28);
+    if(key==clut_key_ && all_written_<=clut_generation_ && page_written_[(cbp/32)%512]<=clut_generation_ && page_written_[((cbp+3)/32)%512]<=clut_generation_) {
+        ++repeated_cluts;return;
+    }
     ++generation_;
+    clut_key_=key;clut_generation_=generation_;
     // CSM1 with 32-bit entries: 16 entries as 8 x 2 pixels at CSA's 16; 256 as 16 x 16 pixels with index
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
     auto put=[&](unsigned entry,std::uint32_t value){clut_[entry]=std::uint16_t(value);clut_[entry+256]=std::uint16_t(value>>16);};
     if(f->palette==16) {
-        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,memory_[GsCommandSink::ct32Word(cbp,1,k%8,k/8)]);
+        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,memory_[ct32Word(cbp,1,k%8,k/8)]);
     } else {
         for(unsigned i=(csa&15)*16;i<256;++i) {
             const unsigned s=(i&~0x18u)|((i&0x08u)<<1)|((i&0x10u)>>1);
-            put(i,memory_[GsCommandSink::ct32Word(cbp,1,s%16,s/16)]);
+            put(i,memory_[ct32Word(cbp,1,s%16,s/16)]);
         }
     }
 }
 
 void GsTextureNames::kick() {
+    if(!count_drawn)return;
     const auto prim=(regs_[0x1A]&1)?regs_[0x00]:regs_[0x1B];
     if(!((prim>>4)&1))return; // TME
     const unsigned context=unsigned((prim>>9)&1);
@@ -145,6 +249,7 @@ void GsTextureNames::kick() {
 }
 
 std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std::uint64_t texa) {
+    writePending();
     const unsigned psm=unsigned((tex0>>20)&63);
     const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
     const unsigned cpsm=unsigned((tex0>>51)&15),csa=unsigned((tex0>>56)&31);
@@ -190,22 +295,33 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa)
     }
     XXH3_state_t state;XXH3_64bits_reset(&state);
     if(width<f.block_w || height<f.block_h || !f.full) {
-        // Read out row by row: the index for palette formats, RGBA otherwise.
+        // Read out row by row: the index for palette formats, RGBA otherwise (rows placed as in writeBytes).
+        const auto& tables=layouts();
+        const auto* const bytes=reinterpret_cast<const std::uint8_t*>(memory_.data());
         std::vector<std::uint8_t> row(std::size_t(width)*(f.palette?1:4));
         for(unsigned y=0;y<height;++y) {
-            for(unsigned x=0;x<width;++x) {
-                if(f.palette) {
-                    std::uint8_t index;
-                    switch(psm) {
-                    case psm_t8:index=std::uint8_t(memory_[GsCommandSink::t8Byte(tbp,tbw,x,y)/4]>>(GsCommandSink::t8Byte(tbp,tbw,x,y)%4*8));break;
-                    case psm_t4:index=std::uint8_t((memory_[GsCommandSink::t4Nibble(tbp,tbw,x,y)/8]>>(GsCommandSink::t4Nibble(tbp,tbw,x,y)%8*4))&15);break;
-                    case psm_t8h:index=std::uint8_t(memory_[GsCommandSink::ct32Word(tbp,tbw,x,y)]>>24);break;
-                    case psm_t4hl:index=std::uint8_t((memory_[GsCommandSink::ct32Word(tbp,tbw,x,y)]>>24)&15);break;
-                    default:index=std::uint8_t(memory_[GsCommandSink::ct32Word(tbp,tbw,x,y)]>>28);break;
-                    }
-                    row[x]=index;
-                } else {
-                    std::uint32_t pixel=memory_[GsCommandSink::ct32Word(tbp,tbw,x,y)];
+            const std::size_t ct32_row=std::size_t(tbp)*64+std::size_t(y/32)*tbw*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
+            const auto word=[&](unsigned x){return memory_[(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words];};
+            switch(psm) {
+            case psm_t8: {
+                const std::size_t t8_row=std::size_t(tbp)*256+std::size_t(y/64)*(tbw/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
+                for(unsigned x=0;x<width;++x)row[x]=bytes[(t8_row+std::size_t(x/128)*8192+t8_line[x%128])%(memory_words*4)];
+                break;
+            }
+            case psm_t4: {
+                const std::size_t t4_row=std::size_t(tbp)*512+std::size_t(y/128)*(tbw/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
+                for(unsigned x=0;x<width;++x) {
+                    const std::size_t nibble=(t4_row+std::size_t(x/128)*16384+t4_line[x%128])%(memory_words*8);
+                    row[x]=std::uint8_t((bytes[nibble/2]>>(nibble%2*4))&15);
+                }
+                break;
+            }
+            case psm_t8h:for(unsigned x=0;x<width;++x)row[x]=std::uint8_t(word(x)>>24);break;
+            case psm_t4hl:for(unsigned x=0;x<width;++x)row[x]=std::uint8_t((word(x)>>24)&15);break;
+            case psm_t4hh:for(unsigned x=0;x<width;++x)row[x]=std::uint8_t(word(x)>>28);break;
+            default:
+                for(unsigned x=0;x<width;++x) {
+                    std::uint32_t pixel=word(x);
                     if(psm==psm_ct24) {const std::uint32_t rgb=pixel&0xFFFFFFu;pixel=rgb|((aem && !rgb)?0u:std::uint32_t(ta0)<<24);}
                     std::memcpy(&row[std::size_t(x)*4],&pixel,4);
                 }

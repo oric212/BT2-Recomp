@@ -314,6 +314,8 @@ int main(int argc, char** argv) {
         static struct TextureNameLog {
             GsTextureNames names;std::string path;
             ~TextureNameLog() {
+                if (names.uploaded_pixels) std::cerr << "Texture names: " << names.uploads << " uploads (" << names.uploaded_pixels << " pixels), " << names.clut_loads << " CLUT loads; "
+                    << names.repeated_uploads << " uploads and " << names.repeated_cluts << " CLUT loads repeated into unchanged memory" << std::endl;
                 if (path.empty()) return;
                 std::ofstream out(path);
                 out << "# uploaded_pixels " << names.uploaded_pixels << " unsupported_uploads " << names.unsupported_uploads
@@ -346,6 +348,7 @@ int main(int argc, char** argv) {
                 std::string folder = hd;std::uint64_t budget_mb = 2048;
                 if (const auto colon = folder.rfind(':'); colon != std::string::npos && colon > 1) {budget_mb = std::stoull(folder.substr(colon + 1));folder.resize(colon);}
                 runtime.gif_dma.gs.texture_names = &texture_name_log.names;
+                texture_name_log.names.count_drawn = !texture_name_log.path.empty(); // Only the naming log counts draws.
                 gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
             }
             // The window shows the renderer's picture on the GPU, without reading it back (host/window_presenter.h);

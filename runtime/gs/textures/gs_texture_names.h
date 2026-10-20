@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // PCSX2-compatible texture names (docs/plans/graphics/HD_TEXTURES_PLAN.md): the name a texture
@@ -41,14 +42,24 @@ public:
     std::optional<Name> name(std::uint64_t tex0,std::uint64_t texa);
 
     // Names drawn with, and how many times each was named (a texture is named again after a change).
+    // Counted only with count_drawn (the naming log); the renderer asks for names itself when it caches
+    // a texture, so drawing with HD textures needs no naming per draw.
     std::map<std::string,unsigned> drawn;
+    bool count_drawn=true;
     // What the copy does not follow: image transfers in formats it does not write, transfers in other
     // directions or orders, CLUT loads in formats it does not read, textures in formats it does not name.
     unsigned unsupported_uploads=0,local_copies=0,unsupported_cluts=0,unsupported_textures=0;
     std::map<unsigned,unsigned> unsupported_formats; // Draws of textures not named, by PSM.
     std::uint64_t uploaded_pixels=0;
+    // Uploads and CLUT loads that repeated the last one into unchanged memory, so nothing changed.
+    std::uint64_t uploads=0,clut_loads=0,repeated_uploads=0,repeated_cluts=0;
 
     std::vector<std::uint32_t>& memory() {return memory_;}
+    // GS addresses as gs_command_sink.h computes them (word, byte, nibble), from a table of each page's
+    // layout: the same results at a fraction of the cost per pixel.
+    static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y);
+    static std::size_t t8Byte(unsigned bp,unsigned bw,unsigned x,unsigned y);
+    static std::size_t t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned y);
     std::array<std::uint16_t,512>& clut() {return clut_;}
 
 private:
@@ -59,6 +70,17 @@ private:
     // Host->local transfer in progress.
     bool transfer_=false;unsigned psm_=0,bp_=0,bw_=0,x0_=0,y0_=0,w_=0,h_=0,x_=0,y_=0;
     std::uint32_t partial_=0;unsigned partial_bytes_=0;
+    // A transfer's data is kept until it is complete: the game sends the same textures to the same place
+    // again and again (every frame in fights), and a transfer equal to the last one into its pages, which
+    // nothing wrote since, leaves memory as it is, so it is not written and keeps the hashes valid.
+    std::vector<std::uint8_t> pending_;std::size_t transfer_bytes_=0;bool direct_=false;
+    std::array<std::uint64_t,3> upload_key_{};
+    struct Upload {std::uint64_t hash,generation;std::vector<std::uint16_t> pages;};
+    struct UploadKeyHash {std::size_t operator()(const std::array<std::uint64_t,3>& k) const {return std::size_t((k[0]*0x9E3779B97F4A7C15ull)^(k[1]*0xC2B2AE3D27D4EB4Full)^k[2]);}};
+    std::unordered_map<std::array<std::uint64_t,3>,Upload,UploadKeyHash> uploads_;
+    std::vector<std::uint16_t> written_pages_; // Pages the current transfer wrote.
+    // The last CLUT load: its TEX0 fields and the generation it was read at.
+    std::uint64_t clut_key_=~0ull,clut_generation_=0;
     // Changes since a context's texture was last named.
     std::uint64_t generation_=0;
     std::uint64_t named_generation_[2]{~0ull,~0ull},named_tex0_[2]{},named_texa_[2]{};
@@ -67,11 +89,14 @@ private:
     std::array<std::uint64_t,512> page_written_{}; // The generation of the last transfer into each page.
     std::uint64_t all_written_=0;                  // A transfer this does not follow: every page.
     struct Hashed {std::uint64_t hash,generation;};
-    std::map<std::pair<std::uint64_t,std::uint64_t>,Hashed> hashed_;
+    struct KeyHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first*0x9E3779B97F4A7C15ull^k.second);}};
+    std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,Hashed,KeyHash> hashed_;
     std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa);
 
     void startTransfer(std::uint64_t dir);
-    void writePixel(std::uint32_t value);
+    void finishUpload();
+    void writePending(); // Writes the data kept so far; the rest of the transfer is written as it comes.
+    void writeBytes(std::span<const std::uint8_t> data);
     void loadClut(std::uint64_t tex0);
     void kick();
 };

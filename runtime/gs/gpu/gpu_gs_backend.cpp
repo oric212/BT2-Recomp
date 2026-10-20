@@ -34,7 +34,7 @@ void GpuGsBackend::init(unsigned super_sampling) {
     if(!state->context->init_instance_and_device(instance_extensions,2,device_extensions,1,Vulkan::CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT))
         throw std::runtime_error("GPU GS: no usable Vulkan device");
     state->device->set_context(*state->context);
-    state->device->init_frame_contexts(4);
+    state->device->init_frame_contexts(8);
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
