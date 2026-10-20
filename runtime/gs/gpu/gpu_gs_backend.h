@@ -43,6 +43,10 @@ public:
     // it has one. The summary line says what was found, loaded and dropped.
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
     std::string hdTextureSummary() const;
+    // GPU time by the renderer's stages (paraLLEl-GS timestamps), switched on before the first transfer;
+    // the summary gives milliseconds per frame (per flush).
+    void enableTimestamps();
+    std::string timestampSummary() const;
 private:
     struct State;
     std::unique_ptr<State> state_;

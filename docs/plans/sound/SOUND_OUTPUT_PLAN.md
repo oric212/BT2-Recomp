@@ -126,3 +126,5 @@ Status does not wait for this step: sound that works in the runs and that the us
 ## Stop conditions
 
 A sampling rate that does not divide 48 kHz, PCM outside IOP memory, a bank layout or a SOUNDS request whose meaning BT2's evidence does not settle: stop at a checked boundary, or stay silent and say so. No invented sound, and no BT3 constant used without BT2 evidence. A level set with the user's ear is allowed and is recorded as such.
+
+**One-channel streams (2026-10-20).** A stream's player has two buffers with a source each. Music and films give both sources data; speech (the fight's announcer) gives data to one only. Such a source is heard in both ears (`cri_audio.h`, `paired`: a partner that received data within the last 60 fields makes a pair). Before, it was heard on its buffer's side only: the user heard voices on the left only. Checked with recordings of a fight, the Ultimate Battle Z screens and story mode (no one-sided 0.1-second stretch; left and right within 1%).

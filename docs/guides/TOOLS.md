@@ -652,6 +652,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Viewer presentation.** With the GPU renderer the window shows the picture through a swapchain (`gs/gpu/gpu_window_presenter.cpp`); `BT2_VIEWER_GDI=1` reads each picture back and draws it with GDI instead. `BT2_VIEWER_STATS`'s "scanout" is the renderer's scanout (with GDI also the readback).
 
+**GPU time.** `BT2_GPU_TIMESTAMPS=1` (GPU renderer) times the renderer's work on the graphics card by stage and prints the milliseconds per frame at the end of the run (paraLLEl-GS timestamps; a card at low clocks shows longer times for the same work).
+
 **Uncapped fight.** `BT2_FIGHT_UNCAPPED=<flip>` (tool runs) lifts the fight's 30 fps wait (`0x28C790`) from that flip on, so the fight steps once per field (the 60 fps study: it then runs at double speed).
 
 **VIF1 recording.** `BT2_VIF1_DUMP=<first flip>,<flips>:<folder>` writes every VIF1 transfer of those flips to `<folder>/vif1-<flip>.bin` (each transfer as its word count and its words), for the 60 fps study (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md). The data is the game's: it stays in `work/`. `BT2_VIF1_REPLACE=<flip>:<file>` replaces that flip's VIF1 transfers, one for one and of equal sizes, with a file in the same form (what VU1 and the GS receive changes; guest memory does not).

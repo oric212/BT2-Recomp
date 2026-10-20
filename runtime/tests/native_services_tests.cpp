@@ -133,8 +133,13 @@ int main() {
             // A start still queued when its player was destroyed (a skipped film) is dropped; a start
             // for a player that never existed is refused. Paired sources are told from single ones.
             CriAudioFlow gone;gone.sourceCreated(1,0x11,0x100);gone.sourceCreated(2,0x12,0x200);gone.sourceCreated(3,0x21,0x300);
-            gone.playerCreated(9,0x11,0x12);gone.playerCreated(8,0x21,0x22);
-            require(gone.paired(1) && gone.paired(2) && !gone.paired(3) && !gone.paired(77),"two sources on one player are a pair");
+            gone.playerCreated(9,0x11,0x12);gone.playerCreated(8,0x21,0x22);gone.sourceCreated(4,0x22,0x400);
+            gone.dataWritten(1,0x1000,0x400,1);gone.dataWritten(2,0x2000,0x400,1);gone.dataWritten(3,0x3000,0x400,1);
+            require(gone.paired(1) && gone.paired(2) && !gone.paired(77),"two sources on one player given data are a pair");
+            // A one-channel stream: its partner source on the player's other buffer is never given data.
+            require(!gone.paired(3),"a source whose partner gets no data is one channel");
+            for(unsigned n=0;n<61;++n)gone.field();
+            require(!gone.paired(1),"a partner silent for a second is no longer a pair");
             gone.playerDestroyed(9);gone.play(9,1);gone.play(9,0);
             require(gone.commands_for_destroyed_players==2,"commands for a destroyed player are dropped");
             bool never=false;try{gone.play(7,1);}catch(const std::runtime_error&){never=true;}
@@ -153,6 +158,10 @@ int main() {
                 && pieces[0].bytes==first[0].bytes && pieces[1].source==2 && pieces[1].side==1 && pieces[1].address==0x3000,"audible stretches");
             heard.play(9,0);heard.field();
             require(heard.played(1).size()==2 && pieces.size()==2,"a stop's report is not heard");
+            // A one-channel stream on another player (its second source never given data) is heard in both ears.
+            heard.sourceCreated(5,0x31,0x500);heard.sourceCreated(6,0x32,0x600);heard.playerCreated(10,0x31,0x32);
+            heard.dataWritten(5,0x5000,0x400,1);heard.play(10,1);heard.field();(void)heard.played(1);
+            require(pieces.size()==3 && pieces[2].source==5 && pieces[2].side==2,"a one-channel stream is heard on both sides");
             heard.play(9,1);heard.dataWritten(1,0x1000,0x400,1);heard.playerDestroyed(9);
             require(silenced==std::vector<std::uint32_t>{1,2},"a destroyed player silences its sources");
         }
@@ -172,6 +181,11 @@ int main() {
             require(mixer.underruns==800-516,"the short voice ran dry");
             std::size_t samples=out.size()/2;for(unsigned n=0;n<4;++n)samples+=mixer.field().size()/2;
             require(samples==4004,"five fields are 4,004 samples");
+            {
+                AudioMixer both;std::vector<std::uint8_t> one(2048,0);const std::int16_t v=6400;for(std::size_t n=0;n<one.size();n+=2)std::memcpy(one.data()+n,&v,2);
+                both.push(3,2,48000,one);const auto o=both.field();
+                require(o[600*2]==2500 && o[600*2+1]==2500,"a voice on both sides is heard equally in each");
+            }
             std::vector<std::uint8_t> loud(2);const std::int16_t top=30000;std::memcpy(loud.data(),&top,2);
             AudioMixer sum;sum.push(1,0,48000,loud);sum.push(2,0,48000,loud);
             AudioMixer three;for(unsigned key=1;key<=3;++key)three.push(key,0,48000,loud);

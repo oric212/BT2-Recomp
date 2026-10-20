@@ -24,7 +24,7 @@ public:
     struct Message {std::uint32_t ee_object=0,address=0,bytes=0;};
     unsigned played_blocks=0,announced_bytes=0,commands_for_destroyed_players=0;
     // Sound output: each stretch of PCM a playing player consumed, as {source, side (0: the player's
-    // first buffer, 1: its second), sampling rate, IOP address, bytes}. Data a stop only reports back
+    // first buffer, 1: its second, 2: both, for a one-channel stream), sampling rate, IOP address, bytes}. Data a stop only reports back
     // is not heard and is not passed on. `on_silenced` names a source whose player was destroyed.
     std::function<void(std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes)> on_audible;
     std::function<void(std::uint32_t source)> on_silenced;
@@ -65,7 +65,7 @@ public:
     void dataWritten(std::uint32_t source,std::uint32_t address,std::uint32_t bytes,unsigned channel) {
         auto& s=known(sources_,source,"CRI audio data for an unknown source");
         if(!bytes)throw std::runtime_error("CRI audio data command without data");
-        s.written.push_back({address,bytes});s.channel=channel;announced_bytes+=bytes;
+        s.written.push_back({address,bytes});s.channel=channel;s.last_written=fields_+1;announced_bytes+=bytes;
     }
     // Stream command 2: start (argument 1) or stop (argument 0) the player. A stop ends playback and the
     // next returned buffer reports all data still announced as played (logged at the end of the logo movie).
@@ -83,6 +83,7 @@ public:
     }
     // One field elapses: playing players advance and their sources consume the blocks that ended.
     void field() {
+        ++fields_;
         for(auto& [handle,p]:players_) {
             if(!p.playing)continue;
             p.clock+=field_ticks;const unsigned blocks=unsigned(p.clock/block_ticks);p.clock%=block_ticks;
@@ -103,7 +104,7 @@ public:
                 if(!out.empty() && out.back().ee_object==s.ee_object && out.back().address+out.back().bytes==front.address)out.back().bytes+=take;
                 else out.push_back({s.ee_object,front.address,take});
                 if(&budget==&s.due && on_audible)for(const auto& [player,p]:players_)for(unsigned side=0;side<2;++side)
-                    if(p.buffers[side]==s.buffer)on_audible(handle,side,std::uint32_t(std::uint64_t(p.block)*48000/block_bytes),front.address,take);
+                    if(p.buffers[side]==s.buffer)on_audible(handle,paired(handle)?side:2u,std::uint32_t(std::uint64_t(p.block)*48000/block_bytes),front.address,take);
                 front.address+=take;front.bytes-=take;budget-=take;
                 if(!front.bytes)s.written.pop_front();
             }
@@ -114,14 +115,17 @@ public:
         return out;
     }
 
-    // Whether `source` is one channel of a pair: its player's other buffer has a source too (music and
-    // films). A source alone on its player is a one-channel stream (speech).
+    // Whether `source` is one channel of a pair: the source on its player's other buffer receives data
+    // too (music and films, written channel by channel in step). A one-channel stream (speech) also has a
+    // source on the other buffer, but it is never given data (seen in a fight's announcer, 2026-10-20); it
+    // is heard in both ears.
     bool paired(std::uint32_t source) const {
         const auto found=sources_.find(source);
         if(found==sources_.end())return false;
         for(const auto& [handle,p]:players_)for(unsigned side=0;side<2;++side) {
             if(p.buffers[side]!=found->second.buffer)continue;
-            for(const auto& [other,s]:sources_)if(other!=source && s.buffer==p.buffers[1-side])return true;
+            for(const auto& [other,s]:sources_)
+                if(other!=source && s.buffer==p.buffers[1-side] && s.last_written && s.last_written+pair_fields>fields_)return true;
         }
         return false;
     }
@@ -132,7 +136,11 @@ private:
     // Clock in fifths of a sample: a field is 800.8 samples (48,000 Hz at 59.94 fields/s), a block 512.
     static constexpr std::uint64_t field_ticks=4004,block_ticks=2560,initial_phase=1440; // Phase as captured.
     struct Stretch {std::uint32_t address=0,bytes=0;};
-    struct Source {std::uint32_t buffer=0,ee_object=0,due=0,flush=0;unsigned channel=0;std::deque<Stretch> written;};
+    // last_written: one more than the field of the last data written (0: none yet).
+    struct Source {std::uint32_t buffer=0,ee_object=0,due=0,flush=0;unsigned channel=0;std::uint64_t last_written=0;std::deque<Stretch> written;};
+    // A pair's channels are written within a few fields of each other; a partner silent for a second is not one.
+    static constexpr std::uint64_t pair_fields=60;
+    std::uint64_t fields_=0;
     struct Player {std::array<std::uint32_t,2> buffers{};bool playing=false;std::uint64_t clock=0;std::uint32_t block=block_bytes;};
     std::map<std::uint32_t,Source> sources_;
     std::map<std::uint32_t,Player> players_;

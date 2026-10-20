@@ -6,6 +6,7 @@
 #include "context.hpp"
 #include "device.hpp"
 #include "gs_interface.hpp"
+#include <cstdio>
 #include <stdexcept>
 
 struct GpuGsBackend::State {
@@ -13,7 +14,7 @@ struct GpuGsBackend::State {
     Vulkan::DeviceHandle device=Util::make_handle<Vulkan::Device>();
     ParallelGS::GSInterface gs;
     std::unique_ptr<HdTexturePack> pack; // After the GS: destroyed first.
-    bool high_resolution=false;
+    bool high_resolution=false,timestamps=false;unsigned scanouts=0;
     Vulkan::ImageHandle picture; // The last scanout.
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
     ~State() {presenter.reset();picture.reset();}
@@ -59,7 +60,7 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 }
 
 void GpuGsBackend::flush() {
-    state_->gs.flush();
+    state_->gs.flush();++state_->scanouts;
     if(state_->pack)state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
     state_->device->next_frame_context();
 }
@@ -130,6 +131,23 @@ void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uin
         const auto* image=state_->pack->find(name->text());
         return image?image->handle:Vulkan::ImageHandle{};
     };
+}
+
+void GpuGsBackend::enableTimestamps() {
+    ParallelGS::DebugMode mode;mode.timestamps=true;
+    state_->gs.set_debug_mode(mode);state_->timestamps=true;
+}
+
+std::string GpuGsBackend::timestampSummary() const {
+    if(!state_ || !state_->timestamps || !state_->scanouts)return {};
+    static constexpr const char* names[]{"host to VRAM","VRAM copies","palettes","texture uploads","triangle setup","binning","shading","readback","scanout"};
+    double total=0;std::string parts;
+    for(int n=0;n<int(ParallelGS::TimestampType::Count);++n) {
+        const double ms=state_->gs.get_accumulated_timestamps(ParallelGS::TimestampType(n))*1000/state_->scanouts;total+=ms;
+        char text[64];std::snprintf(text,sizeof text,"%s%s %.3f",parts.empty()?"":", ",names[n],ms);parts+=text;
+    }
+    char head[96];std::snprintf(head,sizeof head,"GPU time per frame (%u frames): %.3f ms: ",state_->scanouts,total);
+    return head+parts;
 }
 
 std::string GpuGsBackend::hdTextureSummary() const {

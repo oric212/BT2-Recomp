@@ -8,6 +8,8 @@
 
 <p align="center">
   <a href="#progress">Progress</a> &nbsp;·&nbsp;
+  <a href="#enhancements">Enhancements</a> &nbsp;·&nbsp;
+  <a href="#system-requirements">Requirements</a> &nbsp;·&nbsp;
   <a href="#building">Build</a> &nbsp;·&nbsp;
   <a href="#documentation">Documentation</a> &nbsp;·&nbsp;
   <a href="#credits--license">Credits &amp; license</a>
@@ -37,7 +39,34 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** performance (the picture shown on the GPU, graphics on its own thread), then optional 60 fps battles; HD textures for the characters' bodies; the final battle sweep. Built: HD texture packs made for PCSX2, super-sampling and widescreen, as launcher settings. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Next:** optional 60 fps battles (drawn in-between pictures; the fight itself unchanged), HD textures for the characters' bodies, the final battle sweep. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+
+## Enhancements
+
+Optional improvements on top of the original game. All are off by default and found under **Display** in the launcher and in the in-game menu (Escape, or the PS button); the picture settings take effect from the next start. None of them changes how the game plays: fights run at the same speed with the same results.
+
+| Enhancement | What it does |
+| --- | --- |
+| **HD textures** | Replaces the game's textures with high-resolution versions from a PCSX2 texture pack. Supported: [Sal9im's AI-upscaled pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included; put its folder, the one holding `replacements`, into `data/textures`). Stages, menus, portraits and text become sharp; the fighters' bodies keep their original textures for now. Textures use at most 2 GB of video memory. |
+| **Super-sampling** | Draws every pixel with 2 to 16 samples for smooth edges and finer detail. From 4x on, the picture is drawn at twice the resolution (1280 × 896). |
+| **Widescreen** | A 16:9 picture: fights, cut-scenes and the story map show more to the sides at the right proportions. Menus and the HUD are stretched. |
+| **Integer scaling, window size, fullscreen** | Sharp, pixel-exact scaling in whole multiples, or a smooth stretch to the window or the screen. |
+| **Fast forward** | Hold Tab (or a button of your choice) to speed up films, menus and fights. |
+
+Planned: 60 fps battles (extra in-between pictures drawn from the game's own commands, with the fight itself unchanged) and an edge-smoothing filter (FXAA or SMAA).
+
+## System requirements
+
+Estimated from measurements on one PC (Core i9-10900K, Radeon RX 6800 XT); not yet tried on other hardware. There, a fight uses about half of one processor core and 0.7 GB of memory, and the graphics card needs about 6 ms of the 33 ms a fight frame allows (10 ms with every enhancement on). What matters most is the speed of a single processor core.
+
+| | Minimum (original picture) | With every enhancement (16x super-sampling, HD textures, widescreen) |
+| --- | --- | --- |
+| **System** | Windows 10 or 11, 64-bit | Windows 10 or 11, 64-bit |
+| **Processor** | 4 cores, Intel Core i5-8400 or AMD Ryzen 5 3600 | 6 cores, Intel Core i5-10400 or AMD Ryzen 5 5600 |
+| **Memory** | 4 GB | 8 GB |
+| **Graphics** | Vulkan graphics card: GeForce GTX 1050 Ti, Radeon RX 570, Intel Arc A380 or similar (older integrated graphics such as Intel UHD 620 are too slow) | GeForce RTX 3060 or Radeon RX 6600 XT (4x super-sampling: GeForce GTX 1660 or Radeon RX 5500 XT) |
+| **Video memory** | 2 GB | 4 GB |
+| **Storage** | 3.2 GB (your disc image and the program) | 12 GB (with the 8.3 GB texture pack) |
 
 ## Building
 
@@ -97,6 +126,7 @@ Project owner and maintainer: [oric212](https://github.com/oric212).
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Function discovery |
 | [xxHash](https://github.com/Cyan4973/xxHash) by Yann Collet | XXH3, for PCSX2-compatible texture names (BSD-2-Clause) |
 | [PCSX2 patches](https://github.com/PCSX2/pcsx2_patches) | The widescreen patch's values for SLUS-21441 (Widescreen 16:9) |
+| [Sal9im](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) | The HD texture pack the port supports: [Dragon Ball Z: Budokai Tenkaichi 2 (SLUS-21441) AI Upscaled Texture Pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) on GBAtemp (not included) |
 
 ### License and game ownership
 

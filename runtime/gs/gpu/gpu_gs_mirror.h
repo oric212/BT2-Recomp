@@ -12,6 +12,7 @@ public:
     void attach(GsCommandSink& cpu,unsigned super_sampling=1);
     void flip() {FrameProfile::Scope timed(frame_profile.flush);gpu_.flush();}
     void readFifo(std::span<std::uint8_t> out) {gpu_.readFifo(out);} // Local->host data, GPU-only mode.
+    void enableTimestamps() {gpu_.enableTimestamps();}
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names) {gpu_.enableHdTextures(pack,budget_bytes,names);}
     void compare(const GsCommandSink& cpu,unsigned frame);
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and

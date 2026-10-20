@@ -342,6 +342,7 @@ int main(int argc, char** argv) {
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
             gpu_mirror.attach(runtime.gif_dma.gs, std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u);
             runtime.gif_dma.gs.rasterize = !gpu_only;
+            if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
             // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).
             if (const char* hd = std::getenv("BT2_HD_TEXTURES")) {

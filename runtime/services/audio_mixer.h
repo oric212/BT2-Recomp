@@ -1,6 +1,6 @@
 // Stream audio mixer (docs/plans/sound/SOUND_OUTPUT_PLAN.md): the PCM the CRI player reports as played
 // (cri_audio.h) becomes 48 kHz stereo output, one field at a time. Each voice is one CRI source, mono
-// 16-bit, routed left or right. The player hands data over in blocks of 512 output samples while a
+// 16-bit, routed left, right or (a one-channel stream) to both. The player hands data over in blocks of 512 output samples while a
 // field takes 800.8, so a voice starts with one block of silence: its queue then never runs dry
 // while the player keeps playing. Time is logical: one field per VBLANK.
 #pragma once
@@ -28,9 +28,9 @@ public:
     unsigned stream_percent=100,extra_percent=100,master_percent=100;
     std::uint64_t voice_samples=0;   // Output samples taken from voices.
 
-    // `bytes` of 16-bit little-endian mono PCM at `hertz` for voice `key`, heard on `side` (0 left, 1 right).
+    // `bytes` of 16-bit little-endian mono PCM at `hertz` for voice `key`, heard on `side` (0 left, 1 right, 2 both).
     void push(std::uint32_t key,unsigned side,unsigned hertz,std::span<const std::uint8_t> bytes) {
-        if(side>1 || !hertz || rate%hertz || bytes.size()%2)throw std::runtime_error("Audio voice format is not modelled: "+std::to_string(hertz)+" Hz, side "+std::to_string(side));
+        if(side>2 || !hertz || rate%hertz || bytes.size()%2)throw std::runtime_error("Audio voice format is not modelled: "+std::to_string(hertz)+" Hz, side "+std::to_string(side));
         auto& v=voices_[key];v.side=side;
         if(v.queue.empty() && !v.running) {v.queue.insert(v.queue.end(),block_samples,std::int16_t(0));v.running=true;}
         // Integer upsampling with linear interpolation from the voice's last sample.
@@ -51,7 +51,10 @@ public:
         for(auto& [key,v]:voices_) {
             if(!v.running)continue;
             const auto have=std::min(count,v.queue.size());
-            for(std::size_t n=0;n<have;++n)mix[n*2+v.side]+=v.queue[n]*stream_level_num/stream_level_den*std::int32_t(stream_percent)/100;
+            for(std::size_t n=0;n<have;++n) {
+                const std::int32_t sample=v.queue[n]*stream_level_num/stream_level_den*std::int32_t(stream_percent)/100;
+                if(v.side==2) {mix[n*2]+=sample;mix[n*2+1]+=sample;} else mix[n*2+v.side]+=sample;
+            }
             v.queue.erase(v.queue.begin(),v.queue.begin()+std::ptrdiff_t(have));
             voice_samples+=have;
             // A voice that runs dry has stopped (or stalled): it starts again with a block of silence.
