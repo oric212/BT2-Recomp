@@ -436,6 +436,23 @@ int main(int argc, char** argv) {
 #endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);
+        // BT2_VIF1_DUMP=<first flip>,<flips>:<folder>: every VIF1 transfer of those flips, one file per flip
+        // (vif1-<flip>.bin: each transfer as its word count and its words), for the 60 fps plan's study of a
+        // frame's commands (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md). The game's data: stays in work/.
+        if (const char* dump = std::getenv("BT2_VIF1_DUMP")) {
+            const std::string text = dump;const auto comma = text.find(','), colon = text.find(':', comma == std::string::npos ? 0 : comma);
+            if (comma == std::string::npos || colon == std::string::npos) throw std::runtime_error("BT2_VIF1_DUMP is <first flip>,<flips>:<folder>");
+            const unsigned first = static_cast<unsigned>(std::stoul(text.substr(0, comma))), count = static_cast<unsigned>(std::stoul(text.substr(comma + 1, colon - comma - 1)));
+            const std::string folder = text.substr(colon + 1);
+            runtime.on_vif1_transfer = [&runtime, first, count, folder](std::span<const std::uint32_t> words) {
+                const unsigned flip = runtime.gs_display_flips;
+                if (flip < first || flip >= first + count) return;
+                static unsigned open_flip = ~0u;static std::ofstream out;
+                if (open_flip != flip) {out.close();out.open(folder + "/vif1-" + std::to_string(flip) + ".bin", std::ios::binary);open_flip = flip;}
+                const auto size = static_cast<std::uint32_t>(words.size());
+                out.write(reinterpret_cast<const char*>(&size), 4);out.write(reinterpret_cast<const char*>(words.data()), std::streamsize(words.size() * 4));
+            };
+        }
         // BT2_GAME_PATCHES=<name>[,<name>]: the player's optional patches of the executable (ee/game_patches.h).
         if (const char* list = std::getenv("BT2_GAME_PATCHES"))
             for (const GamePatch* patch : parseGamePatches(list)) {applyGamePatch(runtime.memory(), *patch);std::cerr << "Game patch: " << patch->name << std::endl;}
