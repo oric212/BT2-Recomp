@@ -39,8 +39,12 @@ def render_flow(stages, esc):
 
 def render(data):
     groups = data["groups"]
-    if len(groups) != 3 or any(len(g["items"]) != 5 for g in groups):
-        raise ValueError("Status map expects three groups of five bounded scopes")
+    if len(groups) not in (3, 4) or any(len(g["items"]) != 5 for g in groups):
+        raise ValueError("Status map expects three or four groups of five bounded scopes")
+    gap = 18
+    column = (912 - gap * (len(groups) - 1)) / len(groups)
+    # Label limits that fit the column (13 px names, 11.5 px notes).
+    max_name, max_note = (28, 36) if len(groups) == 3 else (26, 32)
     esc = html.escape
     height = GROUPS_TOP + 14 + 5 * 62 + 16
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="960" height="{height}" viewBox="0 0 960 {height}" role="img" aria-labelledby="title desc">',
@@ -56,19 +60,19 @@ def render(data):
                   f'<text x="{x+17}" y="63" font-size="12" fill="#475569">{label}</text>']
     parts += render_flow(data["flow"], esc)
     for col, group in enumerate(groups):
-        x = 24 + col * 310
-        parts += [f'<text x="{x}" y="{GROUPS_TOP}" font-size="15" font-weight="600" fill="#334155">{esc(group["name"])}</text>']
+        x = 24 + col * (column + gap)
+        parts += [f'<text x="{x:.1f}" y="{GROUPS_TOP}" font-size="15" font-weight="600" fill="#334155">{esc(group["name"])}</text>']
         for row, item in enumerate(group["items"]):
             y = GROUPS_TOP + 14 + row * 62
             color, label = STATES[item["status"]]
-            if len(item["name"]) > 28 or len(item["note"]) > 36:
+            if len(item["name"]) > max_name or len(item["note"]) > max_note:
                 raise ValueError("Status map label too long; shorten it for readability")
             parts += [f'<g><title>{esc(item["name"])}: {esc(label)}. {esc(item["note"])}</title>',
-                      f'<rect x="{x}" y="{y}" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>',
-                      f'<rect x="{x}" y="{y+9}" width="3" height="36" rx="1.5" fill="{color}"/>',
-                      f'<circle cx="{x+17}" cy="{y+20}" r="3.5" fill="{color}"/>',
-                      f'<text x="{x+28}" y="{y+24}" font-size="13" font-weight="600" fill="#1e293b">{esc(item["name"])}</text>',
-                      f'<text x="{x+13}" y="{y+42}" font-size="11.5" fill="#64748b">{esc(item["note"])}</text></g>']
+                      f'<rect x="{x:.1f}" y="{y}" width="{column:.1f}" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>',
+                      f'<rect x="{x:.1f}" y="{y+9}" width="3" height="36" rx="1.5" fill="{color}"/>',
+                      f'<circle cx="{x+17:.1f}" cy="{y+20}" r="3.5" fill="{color}"/>',
+                      f'<text x="{x+28:.1f}" y="{y+24}" font-size="13" font-weight="600" fill="#1e293b">{esc(item["name"])}</text>',
+                      f'<text x="{x+13:.1f}" y="{y+42}" font-size="11.5" fill="#64748b">{esc(item["note"])}</text></g>']
     parts += ['</g></svg>']
     return "\n".join(parts) + "\n"
 

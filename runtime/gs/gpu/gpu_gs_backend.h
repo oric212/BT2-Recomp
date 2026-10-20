@@ -20,6 +20,11 @@ public:
     // `super_sampling` (1, 2, 4, 8 or 16 samples per pixel): with 4 or more the scanout is at twice the
     // resolution, built from the samples (docs/plans/graphics/IMAGE_QUALITY_PLAN.md).
     void init(unsigned super_sampling=1);
+    // A second renderer on `primary`'s device (the in-between pictures of 60 fps battles), with its own
+    // GS state; its pictures can be shown in `primary`'s window (showPictureOf).
+    void initShared(GpuGsBackend& primary,unsigned super_sampling=1);
+    // The window shows `source`'s last scanout (null or this: its own).
+    void showPictureOf(const GpuGsBackend* source);
     // GIF data in 128-bit units, as the GIF receives it on PATH3.
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.
@@ -43,11 +48,14 @@ public:
     // it has one. The summary line says what was found, loaded and dropped.
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
     std::string hdTextureSummary() const;
+    // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`.
+    void shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names);
     // GPU time by the renderer's stages (paraLLEl-GS timestamps), switched on before the first transfer;
     // the summary gives milliseconds per frame (per flush).
     void enableTimestamps();
     std::string timestampSummary() const;
 private:
+    void replaceTextures(GsTextureNames& names);
     struct State;
     std::unique_ptr<State> state_;
 };

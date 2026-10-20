@@ -10,11 +10,12 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
-| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; all 15 Ultimate Battle Z courses, repeated Dragon Tournaments and all 21 Ultimate Training lessons run without input |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; all 15 Ultimate Battle Z courses, Dragon Tournaments and the 21 Ultimate Training lessons run without input |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
-| Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); saga unlocks (a special saga by a won rule-3 battle) and a Dragon Ball picked up in a fight seen; not yet played through by the user |
-| Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
+| Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
+| Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
+| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen in the launcher; 60 fps battles in progress |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -23,37 +24,39 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Measurements
 
+One PC (Core i9-10900K, Radeon RX 6800 XT), Release build, a paced versus fight in the window ([performance plan](plans/ee/PERFORMANCE_PLAN.md)).
+
 | Item | Value |
 | --- | --- |
-| Functions entered | 2,007 / 1,998 in the gate's Debug run (1,000 frames, compared with the original); 3,732 in the gate's Release battle run (5,100 frames, against its own baseline); 3,500 to 3,800 per CPU-vs-CPU battle without input |
-| Release run time | The scripted fight (5,100 frames, headless) about 14.5 s; one battle without input to 4,500 flips about 70 s. One scene on one PC, not a gameplay performance figure |
-| Largest cost | The GPU renderer's packet intake: 3.7 s of the scripted fight ([performance plan](plans/ee/PERFORMANCE_PLAN.md)) |
+| Fight | 30 pictures per second (the original's rate); work per picture 15 to 21 ms of 33, also with every enhancement |
+| Processor and memory | About half of one core; 0.7 GB (0.85 GB with every enhancement) |
+| Graphics card | 6 ms per frame plain, 10 ms with 16x super-sampling, HD textures and widescreen; 0.8 to 1.2 GB of video memory |
+| Functions entered | 3,732 in the gate's battle run (5,100 frames); 3,500 to 3,800 per CPU-vs-CPU battle |
 
 ## Subsystems
 
 | Subsystem | Status | Scope |
 | --- | --- | --- |
-| EE CPU and kernel | 🟢 Operational | Every mapped function compiled, with its interior entries; unmapped code runs through a logged interpreter bridge and is compiled at the next build; threads, semaphores, interrupts, VBlank waits; five generator errors corrected when sources are prepared (`SQRT.S`, VF0 writes, VU0 random numbers, `MFC1` sign extension, `VCLIP` flags) |
-| IOP services | 🟢 Operational | Native disc, file, heap, LOADFILE, controller, memory card, sound and CRI services; no IOP code runs ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
-| GS | 🟢 Operational | paraLLEl-GS draws every screen reached, 2D and 3D, and answers readbacks; the CPU GS model draws 2D and is the test reference |
-| GIF / VIF / VU | 🟢 Operational | GIF and VIF1 DMA as the game uses them; VU0 macro mode inline; VU1 microprograms interpreted or native (the heaviest hand-written), checked against the interpreter in the gate |
-| IPU / video | 🟢 Operational | MPEG-2 decoding through the game's Sofdec library; both films play |
-| Audio | 🟢 Operational | ADX streams and a native sampler for effects, mixed to 48 kHz stereo; WAV file or audio device ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)) |
-| Input | 🟢 Operational | Scripted input, keyboard, XInput and DualSense; mapping in the launcher and the in-game menu |
-| Memory card | 🔧 Incomplete | A host folder per card; loading confirmed by the user; saving not yet tried ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
+| EE CPU and kernel | 🟢 Operational | Every mapped function compiled; unmapped code through a logged interpreter bridge, compiled at the next build; threads, semaphores, interrupts |
+| IOP services | 🟢 Operational | Native disc, file, heap, controller, memory card, sound and CRI services; no IOP code runs ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
+| GS and display | 🟢 Operational | paraLLEl-GS draws every screen; the picture goes to the window on the GPU; the CPU GS model is the 2D reference |
+| GIF / VIF / VU | 🟢 Operational | DMA as the game uses it; VU1 programs native (the heaviest hand-written), checked in the gate |
+| IPU / video | 🟢 Operational | Both films decode through the game's Sofdec library |
+| Audio | 🟢 Operational | ADX streams and a native effects sampler, 48 kHz stereo ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)) |
+| Input | 🟢 Operational | Keyboard, XInput and DualSense; mapping in the launcher and the in-game menu |
+| Memory card | 🔧 Incomplete | A host folder per card; loading confirmed; saving untried ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
 | Disc / filesystem | ✅ Verified | ISO reads; archive table and overlay byte-identical to the original |
 
 Proprietary inputs, generated code, captures and rendered frames stay local and ignored.
 
 ## Next steps
 
-Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [handoff](progress/ACTIVE_PASS.md):
+Details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): step 6's screens done (2026-10-20: all 15 Ultimate Battle Z courses, the Dragon Tournament's save question, the 21 Ultimate Training lessons); left: the exhaustive battle sweep as the final validation. The runtime generalization plan's groups 4 to 6 (the startup's own replays) come at the very end, once the game boots and everything works (the user, 2026-10-20).
-2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
-3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC, and the headroom 60 fps battles need; next the picture shown on the GPU without readback, then the GPU renderer's intake on a graphics thread.
-4. **Enhancements** (the user, 2026-10-20): built as launcher and overlay settings: [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) (pack 2), super-sampling and [widescreen](plans/graphics/IMAGE_QUALITY_PLAN.md) (the 16:9 patch plus the story map); next performance (the picture shown on the GPU, then graphics on its own thread), then optional [60 fps battles](plans/graphics/HIGH_FRAME_RATE_PLAN.md), the characters' drawn palettes; fast forward's faults fixed (not yet tried by the user).
-5. **Later:** 3D and film comparisons with the original, the CPU renderer in 3D (optional).
+1. **60 fps battles** ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)): in-between pictures drawn from the game's own commands, so the fight itself stays exactly as at 30 (the engine steps a fixed amount; measured). Offline picture done; next live, then the toggle.
+2. **Picture:** FSR 1 scaling with sharpening, an edge filter, HD textures for the fighters' bodies ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md), [HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
+3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward.
+4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
 
 ## Links
 

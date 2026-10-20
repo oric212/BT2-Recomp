@@ -2,100 +2,55 @@
 
 Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21441, running the original game logic natively on Windows 10/11 x64. Build with Visual Studio 2022, MSVC, C++20 and CMake.
 
-**Goal:** a native Windows x64 port with a minimal compatibility layer, not a PS2 emulator. The game's EE code is statically recompiled to C++. Underneath it, the PS2 hardware is replaced by native services rather than emulated: host file access for the disc, native audio for the sound modules, host input for the controller, host storage for the memory card, and GPU rendering through paraLLEl-GS. The first major gameplay goal is a playable versus battle.
+**Goal:** a native Windows x64 port with a minimal compatibility layer, not a PS2 emulator. The game's EE code is statically recompiled to C++; the PS2 hardware underneath is replaced by native services (disc, sound, controller, memory card) and GPU rendering through paraLLEl-GS. Then optional enhancements that never change how the game plays.
 
-## Direction (decided 2026-10-11)
+## Direction
 
 | Area | Decision |
 | --- | --- |
-| Game code | Keep the recompiled EE code as the base. Replace individual functions with hand-written C++ only where it pays off (hardware-facing code, hot loops), through the function table. No full decompilation. An EE interpreter only as a logged bridge for code the map does not hold yet, compiled natively at the next build (decided 2026-10-18, [plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)). |
-| IOP side | **Native RPC services** answer the game's SIF RPC requests (disc commands, FILEIO and heap, controller, memory card, SOUNDS, sound driver, CRI ADX) with host code. Done 2026-10-11; the emulated IOP is removed. |
-| Graphics | Keep consuming the game's own GIF and VIF packets; render them on the GPU with **[paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference)** (Vulkan). The CPU renderer draws the 2D screens and is the test reference for them; extending it to 3D, as a fallback for systems without a suitable Vulkan GPU (for example some integrated graphics), is an optional extra for the end of the project (decided 2026-10-13). VU1 programs, when reached, are handled one by one (shaders or a small interpreter), as [Tenkaichi3Decomp](../reference/REFERENCE_ARCHITECTURE.md#tenkaichi3decomp-native-port-reference) did. |
-| Movies | Plan native Sofdec (`.SFD`) playback, video plus ADX audio, instead of emulating the IPU. |
+| Game code | The recompiled EE code is the base. Hand-written C++ only where it pays off (hardware-facing code, hot loops). No full decompilation. An EE interpreter only as a logged bridge for code the map does not hold yet, compiled natively at the next build (2026-10-18, [plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)). |
+| IOP side | Native RPC services answer the game's SIF RPC requests (disc, files and heap, controller, memory card, sounds, CRI ADX); no IOP code runs (2026-10-11). |
+| Graphics | The game's own GIF and VIF packets, rendered on the GPU by [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference); VU1 programs native, the heaviest hand-written. The CPU GS model draws 2D and is the test reference; 3D on it is an optional extra for the end. |
+| Films and sound | The game's Sofdec library decodes the films through a native IPU; ADX streams and a native effects sampler are mixed by the port. |
+| Enhancements | Off by default, settings in the launcher and the in-game menu. They must leave the fight's speed, physics and results exactly as in the original (the user, 2026-10-20), and the port must not be held back by the processor or the graphics card. |
 
 ## Architecture rules
 
-### Minimal layer
-
-- **Native service over emulation.** Where the game asks a PS2 service for a result (a file, a sound, pad state, card data), produce that result natively. Emulate hardware only where the game itself drives it directly and no service boundary exists (EE DMA to the GS, VIF packets, the EE kernel).
-- **Choose the highest stable boundary.** Prefer the SIF RPC service or the EE library call over the hardware registers below it. Use the boundary that BT2's evidence shows clearly.
-- **Implement what BT2 requires.** Add behavior only when BT2 reaches it, in the simplest native form. Do not implement unreached PS2 features.
-- **One implementation per behavior.** Merge duplicated models (GIF channel 2 has four today, VIF1 two). Generalize verified special cases instead of adding handlers gated on guest PCs, stack offsets or call counts.
-- **Remove what a replacement makes obsolete**, once its tests and comparisons pass.
-
-### Correctness
-
-- **Game-visible results must match.** A native service must leave the same results in EE memory as the original (file bytes, RPC replies, structures the game reads). Compare EE-visible state and presented frames with PCSX2 captures of the original game.
-- **Fail explicitly.** Unsupported requests stop at a checked boundary that names them; never return fabricated success.
-- **Tests:** a unit test for each service request type and each generalized behavior. Comparisons of IOP internals are retired with the IOP code they checked; record which.
-- **Status vocabulary** of [PROG.md](../PROG.md): ✅ Verified, 🟢 Operational, 🔧 Incomplete, ⛔ Blocking, ⏳ Not Reached. Never infer gameplay performance from startup progress or a first-frame milestone.
-
-### Performance
-
-- Measure Release builds on representative workloads before optimizing. The CPU GS rasterizer took about 75% of the 650-frame startup run; the GPU path replaces it. IOP execution (about 10.9 million instructions per startup) disappears with the native services.
-- Record before/after measurements in the monthly history; report time per frame or share of run time, never projected gameplay performance.
+- **Native service over emulation**, at the highest boundary BT2's evidence supports; emulate only what the game drives directly (EE DMA, GIF and VIF packets, VU1, the IPU, the EE kernel).
+- **Implement what BT2 requires,** in the simplest native form; **one implementation per behavior**; generalize verified special cases instead of handlers gated on guest PCs, stack offsets or call counts; remove what a replacement makes obsolete.
+- **Game-visible results must match** the original (EE memory, files, replies, frames, sound); compare byte-exactly where possible. **Fail explicitly** at a checked boundary; never fabricate success.
+- **Tests** for each service request type and each generalized behavior; status in the vocabulary of [PROG.md](../PROG.md).
+- **Performance:** measure Release builds on representative workloads; report time per frame or share of run time, never projected gameplay performance.
 
 ## Milestones
 
-| Milestone | Status | Evidence |
-| --- | --- | --- |
-| Native foundation, local game validation, ELF inspection | ✅ Verified | Retail revision confirmed (`config/retail_revision.json`) |
-| PS2Recomp generation and integration | ✅ Verified | Provisional map, local generation, compile/link/execute |
-| Boot and startup to the main frame loop | ✅ Verified | Original comparisons; see [PROG.md](../PROG.md) |
-| First presented frame; controller and memory card checks | ✅ Verified | 650 frames before the movie; 1,000 with its first fields |
-| Opening movie | 🟢 Operational | Logo and opening movies play to the end (native IPU, native ADX flow, no sound) |
-| Title screen | 🟢 Operational | Option list and New Game dialogues respond to scripted input; pictures confirmed by the user |
-| Demo fight | 🟢 Operational | Two idle demo fights render in 3D through VIF1/VU1 on the GPU renderer and play to their end; frames confirmed by the user, not compared with the original |
-| Menus | 🟢 Operational | Main menu and Dueling menu render and respond; only the 1P-vs-COM path has been entered |
-| Character selection and battle loading | 🟢 Operational | Character, colour and map selection; loading with GS readback |
-| Versus battle | 🟢 Operational | A 1P-vs-COM duel runs with scripted input controlling the fighter; GPU renderer only, sound in a WAV file, about 19 frames per second of wall-clock time |
-| Playable versus battle | ⏳ Not Reached | First major gameplay goal: needs host input, sound and real-time speed |
-| Audio and a full match | ⏳ Not Reached | |
+| Milestone | Status |
+| --- | --- |
+| Foundation, generation, startup to the frame loop, controller and card checks | ✅ Verified |
+| Films, title, menus, all game modes | 🟢 Operational |
+| Versus battle with a controller, sound, real-time speed | 🟢 Operational |
+| Story mode (all parts and towns without input) | 🟢 Operational; not played through by the user |
+| Launcher, settings, in-game menu, fast forward | 🟢 Operational |
+| Saving | 🔧 Incomplete: not tried in the game |
+| Enhancements: HD textures, super-sampling, widescreen | 🟢 Operational |
+| Enhancements: 60 fps battles, FSR 1 scaling, fighters' HD bodies | ⏳ In progress |
+| Final validation: exhaustive battle sweep, comparisons of 3D frames | ⏳ Not reached |
 
 ## Current next step
 
-Each step keeps the game running to the current checkpoint (650 frames, then the GIF stop) with game-visible results unchanged.
+Done, in order: native services; GPU rendering; films; the 3D pipeline; menus and battle setup; sound; controller; launcher, settings and overlay; whole-game coverage (all modes without input); performance (fights at 30, menus at 60); HD textures, super-sampling and widescreen. Details in the [October 2026 history](../progress/2026-10.md).
 
-1. **Native services** — done 2026-10-11: every reached IOP service is answered natively and the emulated IOP is removed ([plan](../plans/iop/NATIVE_SERVICES_PLAN.md)).
-2. **Native audio output** — later: ADX decoding and sound bank playback behind the sound and CRI services, after the movie needs it.
-3. **GPU rendering** ([plan](../plans/graphics/GPU_RENDERING_PLAN.md)): paraLLEl-GS is integrated: mirror mode, scanout presentation and GPU-only mode (startup run 2.3 s instead of 19.1 s). Frames 1–29 match the CPU renderer exactly; later frames differ by one-step rounding in a few hundred words. Next: a PCSX2 GS dump to decide those, then make the GPU the default, with the CPU renderer as fallback.
-4. **GIF DMA chain mode** — done 2026-10-11: frame-phase GIF channel 2 runs source chains through the DMA chain walker shared with VIF1. Still open: merging the startup GIF channel-2 models into the frame one.
-5. **Opening movie** ([plan](../plans/video/SOFDEC_PLAN.md), [IPU plan](../plans/video/IPU_PLAN.md)), operational: the native IPU decodes both movies and the native CRI service paces them with the player's played-data reports. Next: the SOUNDS request after the movies (`0x50`, to be captured), then systematic frame comparison with ffmpeg.
+Next, in order (the user, 2026-10-20):
 
-6. **3D pipeline** ([plan](../plans/graphics/VU1_PIPELINE_PLAN.md)), operational since 2026-10-13: VIF1 display lists and a VU1 microprogram interpreter feed the GS; the demo fights render on the GPU renderer. Next: comparison with PCSX2 (VU1 memory, a frame), the CPU renderer's 3D drawing states, measured frame time.
-7. **Menus and battle setup** — operational since 2026-10-13: scripted input goes from the title screen through New Game, the main menu, Dueling, character and map selection and loading into a 1P-vs-COM battle ([GS readback plan](../plans/graphics/GS_READBACK_PLAN.md)).
-
-Order of the following passes (set by the user on 2026-10-13; on the same day the user asked for a launcher with settings as the final stage before play-testing, which reorders steps 9 and 10 as below):
-
-8. **Sound output** ([plan](../plans/sound/SOUND_OUTPUT_PLAN.md)), checked by tests and the user's listening; the comparison with the original is an [optional final step](../plans/sound/SOUND_OUTPUT_PLAN.md#verification). Since 2026-10-13 stream audio and sound effects (a native sampler behind SOUNDS, with looping sounds and the module's stop, fade and silence requests) are mixed and written to a WAV file; the user confirmed menus and a fight by listening. The probe plays the sound on the audio device (`--sound`), which holds the run at the game's speed. Open: the user's listening to live play; volume settings.
-9. **Controller support** — done 2026-10-13 with a default mapping: keyboard, XInput pad and DualSense (HID) into the native controller service; `run_startup_probe.py --play` plays in the viewer with sound and can record the buttons as a pad script. Gamepads are untried on hardware. First step of the [launcher plan](../plans/launcher/LAUNCHER_PLAN.md).
-10. **Launcher, settings and overlay** ([plan](../plans/launcher/LAUNCHER_PLAN.md)): a launcher in the style of the PS2 system menu, operated with a controller (its own program; the game shows it on first start), with control configuration, display and sound settings, the disc image, saves (memory card files from `user/memcards/`) and an HD textures switch; an in-game overlay on Start + Select for volumes, display, fast forward and quitting. No save states. HD textures need texture replacement in the GPU renderer, which is investigated last and does not hold play-testing back.
-11. **Play-testing by the user** instead of scripted presses and screenshots: live input in the viewer, the input recorded as a pad script, a stopped session replayed through `tools/ps2recomp/discovery_loop.py`. Covers the other menu entries and story mode. Battles must run at real-time speed first ([performance plan](../plans/ee/PERFORMANCE_PLAN.md)).
-
-Set by the user on 2026-10-18: playing or scripting input to find what is missing does not scale to the game's many states. Next, ahead of performance:
-
-12. **Whole-game coverage** ([plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): close the map statically (addresses built in code, entries inside functions as re-entry labels); a state hash per field; an EE interpreter as a logged bridge for code the map does not hold, compiled natively at the next build; a list of what the game's code asks of the runtime; general kernel and hardware handlers in place of those gated on guest PCs, stack offsets and call counts; a tool-only starter of game states (battles CPU vs CPU for every character and map, menu screens, story episodes) with a coverage corpus. Then the [performance plan](../plans/ee/PERFORMANCE_PLAN.md).
-
-Set by the user on 2026-10-20, after the coverage work and before the runtime generalization plan's last groups (which come at the very end, once the game boots and everything works):
-
-13. **Enhancements:** [HD textures](../plans/graphics/HD_TEXTURES_PLAN.md) first (pack 2; step 1, PCSX2's texture names, is built), then [image quality and widescreen](../plans/graphics/IMAGE_QUALITY_PLAN.md), then optional [60 fps battles](../plans/graphics/HIGH_FRAME_RATE_PLAN.md) in the overlay.
+1. **60 fps battles** ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): in-between pictures drawn from the game's commands on a second renderer, shown between two fight frames; the setting in the launcher and the overlay; checked against the 30 fps fight (identical game).
+2. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the fighters' HD bodies and the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)).
+3. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
+4. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
+5. **At the very end:** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)), once the game boots and everything works.
 
 ## Working method
 
-### What "continue" means
-
-A plain "continue" (including spelling/case variants) runs a goal-driven pass, as AGENTS.md defines. Work through "Current next step" above, in order, toward the next functional milestone. Each item follows: inspect → gather evidence → implement the native replacement or general behavior → tests and original comparisons → Release rerun → next item. Finishing one item is not the end of a pass; advance to the next one.
-
-A new execution boundary is input to the plan: decide whether it belongs behind a native service or needs general EE-side behavior, and implement it accordingly. If it opens a new major subsystem, write its plan first (in `docs/plans/<subsystem>/`) and continue when it is actionable. Stop only when required information or access is unavailable, or when the next change would be speculative.
-
-When more evidence is needed, use local captures, the tooling, [the reference architecture](../reference/REFERENCE_ARCHITECTURE.md) and its linked repositories. Adapt reference behavior to BT2's observed behavior; never copy implementations 1:1, decompiled game code, game-specific patches or unsupported success defaults.
-
-### Evidence and content rules
-
-- Keep game content in ignored `rom/` or `game_data/`, analysis output in ignored `work/` or `research/`, and generated code in ignored `game/generated/`. Never download or commit proprietary content.
-- Record confirmed facts, hypotheses and unknowns separately. Keep unknown function names neutral until evidence supports renaming.
-- Mapping and generation stay incremental: provisional function discovery/map → generation → compile/link → execution. New functions are selected when execution reaches them. Neutral naming and provenance remain required.
-
-### End of a pass
-
-Test the changes, update [PROG.md](../PROG.md) and the monthly history in `docs/progress/`, review the diff and staged files, commit and push. Earlier per-pass handoffs are archived in the [October 2026 history](../progress/2026-10.md).
+- **"Continue"** runs a goal-driven pass as [AGENTS.md](../../AGENTS.md) defines: work through "Current next step" in order: inspect → evidence → native replacement or general behavior → tests and comparisons → Release rerun → next item. A new subsystem gets its plan in `docs/plans/<subsystem>/` first.
+- **Evidence:** local captures, the tools and the [reference architecture](../reference/REFERENCE_ARCHITECTURE.md); adapt reference behavior, never copy implementations or decompiled game code. Record confirmed facts, hypotheses and unknowns separately; keep unknown names neutral.
+- **Content:** game content in ignored `rom/` or `game_data/`, analysis in `work/` or `research/`, generated code in `game/generated/`; never commit proprietary content.
+- **End of a pass:** the gate, [PROG.md](../PROG.md), the handoff and the monthly history, a review of the staged files, commit and push.

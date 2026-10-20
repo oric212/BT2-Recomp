@@ -1,51 +1,41 @@
 # Resume handoff
 
-Updated: 2026-10-20. **No pass in progress.** The last pass ran all 15 Ultimate Battle Z courses and repeated Dragon Tournaments without input (the screen starter takes the courses in turn, gives side 1 one health bar, answers the screens' "Exit saving?" with Yes), wrote the enhancement plans (HD textures, image quality and widescreen, 60 fps battles), built step 1 of the HD textures plan (PCSX2 texture names, `BT2_TEXTURE_NAMES`, `tools/graphics/textures/texture_name_check.py`; the check against the packs is not run yet) and fixed fast forward (off when the window loses the focus, the sound queue refilled when it ends, pictures shown at most once per field period, the mark cleared at once; `BT2_FAST_FORWARD`).
+Updated: 2026-10-20. **Pass in progress: live 60 fps in-between pictures** ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
-Current plan: [whole-game coverage](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), ahead of performance. Done: the map closed statically, the interpreter bridge, the state hash, the census of what the game asks of the runtime, and game states started without input (`runtime/probe/game_starter.cpp`, tool runs only):
+The whole game runs without input (all modes, all 200 story parts, 73 towns; [coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)); what each part was checked on is in [VALIDATION.md](VALIDATION.md). The enhancements HD textures (pack 2), super-sampling and widescreen are settings in the launcher and the in-game menu; the picture goes to the window on the GPU; a fight holds 30 pictures per second with every enhancement on.
 
-- `BT2_START_BATTLE=<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]`: a CPU-vs-CPU battle (characters 0 to 129, variants 0 to 8, stages 0 to 15).
-- `BT2_START_SCREEN=<mode>`: one of the ten main-menu screens.
-- `BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]`: a story part without input: its map (a chase's enemy reported caught), the scene the marker leads to, its text boxes, the pre-battle screen, the battle with the CPU on both sides and the results (no save is written); the run ends after the part's after-battle step. From an optional marker's town it visits every character (talk, items, the shop, fights). `tools/ps2recomp/story_scenes.py` lists the parts' markers and scenes; `tools/ps2recomp/story_sweep.py --jobs 6` runs the parts (about an hour; 4 of the 10 cores stay free for the user); `--optional` runs the 73 towns (about 25 minutes).
+**60 fps (this pass).** The engine steps a fixed amount 30 times a second (uncapped, the same fight runs at double speed), so the fight stays at 30 and in-between pictures are drawn from the game's own commands: the frame's VIF1 list with the camera and bone matrices halfway. Done: two frames' lists pair code for code; one in-between picture drawn offline, clean, with the game untouched. Built and tested: `runtime/vu/vif1_blend.*` (blending two frames' lists, `bt2-vif1-blend-tests`) and a second renderer on the same GPU device (`GpuGsBackend::initShared`, the HD pack shared, `showPictureOf`). Next:
+1. Record each frame's GS-bound inputs in order (VIF1 lists with the GS bytes they produce, other GIF transfers).
+2. A second pipeline (its own VIF1/VU1 copy, GS sink, texture names, the shared renderer): per frame the in-between picture of the last two frames, then the real frame so its state follows; first on the game's thread, checked by snapshots (the real replay must equal the main picture), then on a worker thread.
+3. Show the in-between picture in the field between two fight flips (the list built during flip F appears at F + 2, so it adds no delay); then the setting "60 fps battles" in the launcher and the overlay.
 
-What each has been checked on: [VALIDATION.md](VALIDATION.md) (add every new check there).
+**After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); HD textures for the fighters' bodies (their palettes are drawn on the GPU) and the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
 
-**Next (when the user starts the next pass):**
+**Waiting for the user** (built, gate passed, not confirmed in play): the enhancements in the launcher; the sound fix (speech was heard on the left only); fast forward; saving; special moves; the films with and without a skip; the launcher's screens; the camera in fights.
 
-1. **Story mode** ([plan](../plans/ee/STORY_MODE_PLAN.md)): done as far as the starter reaches: all 200 parts (62 cleared, 138 lost in the last sweep, `work/coverage/story/rules/battles.json` holds each battle's rule, rewards, sagas and Dragon Ball), the 73 towns, saga unlocks and a Dragon Ball pickup seen. Left: the plan's "What is missing" (the 18 saga rewards and the ball rewards need wins the CPU did not get).
-2. **The other modes' battles** ([coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md), "Step 6: what is left"): done 2026-10-20: all 15 Ultimate Battle Z courses, the Dragon Tournament through its save question and the 21 Ultimate Training lessons run without input (`tools/ps2recomp/screen_run.py`).
-3. **Runtime special cases** ([runtime generalization plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)): the startup's conditions on pcs, stack offsets, call counts and phases are replaced by the general kernel and hardware behavior group by group; groups 1 (kernel semaphores), 2 (the GS reset path; its two VSync waits moved to group 4) and 3 (the startup's thread calls, thread exit and deletion; blocking semaphore waits are reached by nothing and stay explicit stops) done; groups 4 to 6 (the startup's own replays) wait until after the final validation (the user's decision of 2026-10-20). Each group: unit tests, the gate (32/32 comparisons, battle hash unchanged), a sample of the sweeps.
-4. **Final validation** (the user's decision of 2026-10-19): the exhaustive battle sweep (`tools/ps2recomp/battle_sweep.py`: every character, variant and stage, about 70 s per battle, resumable) comes at the end.
-5. **Enhancements** (the user, 2026-10-20; HD textures first): [HD textures](../plans/graphics/HD_TEXTURES_PLAN.md): the name check is done and the replacements are drawn (`BT2_HD_TEXTURES`; pictures for the user in `work/frames/hd-textures/`); super-sampling with high-resolution output works (`BT2_SUPER_SAMPLING`, 1,280 × 896 at 4× and more); the launcher's and the overlay's Display page has HD textures and Super-sampling (from the next start; pack 2 is linked into `build/probe/Release/data/textures` on this machine); widescreen built (2026-10-20: the SLUS-21441 16:9 patch plus the story map's projection, `BT2_GAME_PATCHES=widescreen`, Display's "Widescreen"; pictures in `work/frames/widescreen/`). Order chosen 2026-10-20 (the user asked for performance, 60 fps and widescreen): widescreen, then performance (the [plan](../plans/ee/PERFORMANCE_PLAN.md)'s presenting on the GPU: done 2026-10-20; the waits at high super-sampling (frames in flight: 8 frame contexts) and the HD naming fixed 2026-10-20: 16x with pack 2 at 30 per second in the window (item 4a); next 60 fps by in-between pictures drawn from the game's commands (the [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)'s step 1 done 2026-10-20: two frames' VIF1 streams pair code for code, only bone and camera matrices change; step 2 done the same day: an in-between picture drawn offline from the game's commands, the game untouched; next step 3, live in-between pictures in their own GS memory), graphics on its own thread and the slow single pictures; the user: no CPU or GPU bottleneck, enhancements must not change the fight's speed or physics), then [60 fps battles](../plans/graphics/HIGH_FRAME_RATE_PLAN.md) (its steps 1 and 2, the uncapped fight and the time scale, can be measured before), each with its launcher and overlay setting; then the drawn character palettes, the button art choice; [image quality](../plans/graphics/IMAGE_QUALITY_PLAN.md) steps 3 to 5. The README has the enhancements and the system requirements (2026-10-20, estimated from this PC's measurements: update them when hardware is measured). The runtime generalization plan's groups 4 to 6 come at the very end.
-
-**Waiting for the user's test** (built, gate passed, not confirmed in play): HD textures, super-sampling and widescreen in the launcher; special moves and ultimates; saving (save, quit, start again); the films with and without a skip; the launcher's card list, controls and window size; the camera in fights.
-
-**Fixed, to be confirmed by the user's listening:** sound on one side only (the user, 2026-10-20: "certain audio only from the left channel, not balanced"; earlier "right ear only until a fight"): one-channel streams (speech, the fight's announcer) have a second source on their player's other buffer that is never given data, and were heard only on the first buffer's side. They are now heard in both ears; a fight's recording went from a 4.2-second left-only stretch and left/right 3,156/2,744 to no one-sided stretch and 3,156/3,191; the menus (2,366/2,358) and story mode (3,928/3,897) are balanced too. Fast forward: fixed and measured (a fight at 1.6 times its speed, limited by the fight's own work); to be tried by the user. Not compared with the original yet: memory card replies, GS readback pixels, 3D frames, VU1 memory.
+**Not compared with the original yet:** memory card replies, GS readback pixels, 3D frames, VU1 memory. The README's system requirements are estimates from this PC's measurements.
 
 ## How the user runs things
 
-- **Game folders:** next to `bt2-game.exe` (in `build\probe\Release`), `data` holds the disc image (a hard link to `rom\...iso` there now) and `saves` the cards (copied from `user\memcards` on the first start); the settings stay in `user\settings`.
-- Helper scripts in `work\scripts\` (local; `work\WORKING_WITHOUT_AI.md` describes them): `play.cmd` (the launcher), `discover.cmd`, `rebuild.cmd`, `gate.cmd`, `show-log.cmd` and others. Settings: `user/settings`; the last run's messages: `user/last-run.log`.
-- **A stop at untranslated code** ("Branch target" in the log, or the game's message after a session that ran interpreted code): `work\scripts\discover.cmd` (`discovery_loop.py --player-stop`) maps it and rebuilds.
+- **Game folders:** next to `bt2-game.exe` (in `build\probe\Release`), `data` holds the disc image and `data\textures` the texture pack (pack 2 is linked there on this PC); `saves` holds the cards; the settings stay in `user\settings`, the last run's messages in `user\last-run.log`.
+- Helper scripts in `work\scripts\` (`work\WORKING_WITHOUT_AI.md`): `play.cmd`, `discover.cmd` (a stop at untranslated code: maps it and rebuilds), `rebuild.cmd`, `gate.cmd`, `show-log.cmd`.
 - In the game: Escape, the PS button or both stick buttons open the menu; Tab is fast forward.
 
 ## How to run (automated)
 
-- **Gate:** `python tools/gate/run_gate.py --disc <iso>` (builds, unit tests, the Python suites, the probe runs with the original comparisons, the Release battle run against `5a4960667d4a3dff`).
-- **Scripted fight:** `run_startup_probe.py --config Release --frames 5100 --pad-script "<tools/gate/pad-fight.txt>"`. Pad scripts count fields; snapshots count flips.
-- **Without input:** the starters above with `--pad-script ""`; `BT2_STALL_FIELDS=600` ends a run that stops presenting frames.
-- **Pictures:** `BT2_GPU_GS_SNAPSHOT="<flip>:<absolute path>;…"` (PPM). **Audio:** `BT2_AUDIO_WAV=<absolute path>`.
-- **Did a change alter what the game sees:** `BT2_STATE_HASH=<file>` on both builds, then `tools/ps2recomp/compare_state_hash.py`.
-- **Tracing:** `BT2_EE_CALL_TRACE`, `BT2_EE_WATCH_QUADWORD`, `BT2_EE_WATCH_FLOAT` ([TOOLS.md](../guides/TOOLS.md)).
+- **Gate:** `python tools/gate/run_gate.py --disc <iso>` (builds, unit tests, Python suites, probe runs with the original comparisons, the Release battle run against `5a4960667d4a3dff`).
+- **Without input:** `BT2_START_BATTLE`, `BT2_START_SCREEN`, `BT2_START_EPISODE` with `--pad-script ""`; sweeps: `battle_sweep.py`, `story_sweep.py`, `screen_run.py` (at most 6 jobs).
+- **Pictures:** `BT2_GPU_GS_SNAPSHOT="<flip>:<absolute path>;…"`. **Audio:** `BT2_AUDIO_WAV=<absolute path>`. **Did the game change:** `BT2_STATE_HASH` on both runs, then `compare_state_hash.py`.
+- **Picture settings:** `BT2_HD_TEXTURES`, `BT2_SUPER_SAMPLING`, `BT2_GAME_PATCHES=widescreen`. **60 fps study:** `BT2_VIF1_DUMP`, `BT2_VIF1_REPLACE`, `BT2_FIGHT_UNCAPPED`. **Cost:** `BT2_VIEWER_STATS`, `BT2_GPU_TIMESTAMPS`, `BT2_SAMPLE_PROFILE` ([TOOLS.md](../guides/TOOLS.md)).
 - **Build times:** a runtime header about 16 s; everything about 6 minutes after a change to `ps2_runtime.h`, `ps2_runtime_macros.h` or `ps2_fpu.h`.
 
 ## Rules learned the hard way
 
-- **Build the player programs before handing a build over:** `python tools/build/msvc.py cmake --build build/probe --config Release`; a build fails to link while a game window is open.
-- **Runs with a window appear on the user's screen:** use `BT2_VIEWER_CLOSE=1`.
-- **Every VU1 or VIF1 change keeps the gate's baseline** (`tools/gate/battle_run.py`); a change that alters the 3D output on purpose updates `BASELINE` there.
+- **Build the player programs before handing a build over;** a build fails to link while a game window is open.
+- **Runs with a window appear on the user's screen** (`BT2_VIEWER_CLOSE=1`); runs with `--sound` play on the user's speakers.
+- **Every VU1 or VIF1 change keeps the gate's baseline** (`tools/gate/battle_run.py`).
 - **After a change to `prepare_runtime.py`:** run it (and `generate_interpreter.py --reuse`), then build.
 - **Shell heredocs corrupt backslashes:** write such files with the file tools.
-- **Commits carry no assistant attribution** (no Co-Authored-By lines).
+- **Commits carry no assistant attribution.**

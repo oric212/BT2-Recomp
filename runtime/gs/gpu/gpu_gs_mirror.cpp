@@ -7,6 +7,12 @@ void GpuGsMirror::attach(GsCommandSink& cpu,unsigned super_sampling) {
     attached_=true;
 }
 
+void GpuGsMirror::attachShared(GsCommandSink& cpu,GpuGsMirror& primary,unsigned super_sampling) {
+    gpu_.initShared(primary.gpu_,super_sampling);
+    cpu.on_accepted=[this](std::span<const std::uint8_t> data){gpu_.transfer(data);};
+    attached_=true;
+}
+
 void GpuGsMirror::compare(const GsCommandSink& cpu,unsigned frame) {
     const auto gpu=gpu_.readVram();
     std::size_t differing=0;

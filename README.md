@@ -15,7 +15,7 @@
   <a href="#credits--license">Credits &amp; license</a>
 </p>
 
-BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller, and every mode (story, Ultimate Battle Z, the Tournament, the training lessons) runs through without stopping; saving, performance and enhancements (HD textures, widescreen) are in progress.
+BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller at the original's speed, every mode (story, Ultimate Battle Z, the Tournament, the training lessons) runs through without stopping, and HD textures, super-sampling and widescreen are available as settings. Saving and 60 fps battles are in progress.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
@@ -28,11 +28,12 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
-| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; all 15 Ultimate Battle Z courses, repeated Dragon Tournaments and all 21 Ultimate Training lessons run without input |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; all 15 Ultimate Battle Z courses, Dragon Tournaments and the 21 Ultimate Training lessons run without input |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
-| Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); saga unlocks (a special saga by a won rule-3 battle) and a Dragon Ball picked up in a fight seen; not yet played through by the user |
-| Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
+| Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
+| Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
+| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen in the launcher; 60 fps battles in progress |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -43,17 +44,36 @@ Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking ·
 
 ## Enhancements
 
-Optional improvements on top of the original game. All are off by default and found under **Display** in the launcher and in the in-game menu (Escape, or the PS button); the picture settings take effect from the next start. None of them changes how the game plays: fights run at the same speed with the same results.
+Optional improvements on top of the original game, all off by default.
 
-| Enhancement | What it does |
-| --- | --- |
-| **HD textures** | Replaces the game's textures with high-resolution versions from a PCSX2 texture pack. Supported: [Sal9im's AI-upscaled pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included; put its folder, the one holding `replacements`, into `data/textures`). Stages, menus, portraits and text become sharp; the fighters' bodies keep their original textures for now. Textures use at most 2 GB of video memory. |
-| **Super-sampling** | Draws every pixel with 2 to 16 samples for smooth edges and finer detail. From 4x on, the picture is drawn at twice the resolution (1280 × 896). |
-| **Widescreen** | A 16:9 picture: fights, cut-scenes and the story map show more to the sides at the right proportions. Menus and the HUD are stretched. |
-| **Integer scaling, window size, fullscreen** | Sharp, pixel-exact scaling in whole multiples, or a smooth stretch to the window or the screen. |
-| **Fast forward** | Hold Tab (or a button of your choice) to speed up films, menus and fights. |
+- **Where:** under **Display** in the launcher, or in the in-game menu (Escape or the PS button). Picture settings apply from the next start.
+- **Gameplay is never changed:** fights run at the original speed, with the same physics and results.
 
-Planned: 60 fps battles (extra in-between pictures drawn from the game's own commands, with the fight itself unchanged) and an edge-smoothing filter (FXAA or SMAA).
+### HD textures
+Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Stages, menus, portraits and text look crisp; the fighters' bodies keep their original textures for now.
+
+- **Supported pack:** [Sal9im's AI-upscaled texture pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included).
+- **Setup:** put the pack's folder (the one holding `replacements`) into `data/textures`, then turn on **HD textures**.
+- Uses at most 2 GB of video memory.
+
+### Super-sampling
+Smooths jagged edges and adds fine detail by drawing every pixel several times (2x to 16x). From 4x on, the picture is drawn at twice the PS2's resolution (1280 × 896). 16x looks best; 4x suits weaker graphics cards.
+
+### Widescreen
+Shows the game in 16:9: fights, cut-scenes and the story map show more to the sides, at the right proportions. Menus and the HUD are stretched to fit.
+
+### Display options
+- **Integer scaling:** each game pixel becomes a sharp block of whole screen pixels.
+- **Scaling off:** a smooth stretch to the window or the screen.
+- **Window size and fullscreen.**
+
+### Fast forward
+Hold **Tab** (or a controller button of your choice) to speed up films, menus and fights.
+
+### Coming next
+- **60 fps battles:** smooth motion from extra pictures drawn between the game's own frames. The fight itself still runs exactly as on the PS2.
+- **Sharper scaling:** FSR 1 upscaling with sharpening.
+- **Edge smoothing:** a light filter (FXAA or SMAA) for graphics cards that can't afford super-sampling.
 
 ## System requirements
 

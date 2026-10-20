@@ -13,9 +13,10 @@ struct GpuGsBackend::State {
     Vulkan::ContextHandle context=Util::make_handle<Vulkan::Context>();
     Vulkan::DeviceHandle device=Util::make_handle<Vulkan::Device>();
     ParallelGS::GSInterface gs;
-    std::unique_ptr<HdTexturePack> pack; // After the GS: destroyed first.
+    std::shared_ptr<HdTexturePack> pack; // After the GS: destroyed first. Shared with a second renderer on the device.
     bool high_resolution=false,timestamps=false;unsigned scanouts=0;
     Vulkan::ImageHandle picture; // The last scanout.
+    const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
     ~State() {presenter.reset();picture.reset();}
 };
@@ -41,6 +42,17 @@ void GpuGsBackend::init(unsigned super_sampling) {
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
     state_=std::move(state);
 }
+
+void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
+    auto state=std::make_unique<State>();
+    state->context=primary.state_->context;state->device=primary.state_->device;
+    ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
+    state->high_resolution=super_sampling>=4;
+    if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");
+    state_=std::move(state);
+}
+
+void GpuGsBackend::showPictureOf(const GpuGsBackend* source) {state_->shown_from=source==this?nullptr:source;}
 
 void GpuGsBackend::transfer(std::span<const std::uint8_t> data) {
     if(data.size()%16)throw std::runtime_error("GPU GS: GIF transfer size is not a multiple of 16");
@@ -119,12 +131,24 @@ DisplayFrame GpuGsBackend::readback() {
 
 WindowPresenter& GpuGsBackend::windowPresenter() {
     if(!state_->presenter)
-        state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{return state_->picture.get();});
+        state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{
+            return (state_->shown_from?state_->shown_from->state_->picture:state_->picture).get();
+        });
     return *state_->presenter;
 }
 
 void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names) {
-    state_->pack=std::make_unique<HdTexturePack>(*state_->device,folder,budget_bytes);
+    state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes);
+    replaceTextures(names);
+}
+
+void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names) {
+    if(!primary.state_->pack)return;
+    state_->pack=primary.state_->pack;
+    replaceTextures(names);
+}
+
+void GpuGsBackend::replaceTextures(GsTextureNames& names) {
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};

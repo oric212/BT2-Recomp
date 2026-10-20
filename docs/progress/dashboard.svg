@@ -52,97 +52,128 @@
 <text x="876.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Saves</text>
 <text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#b77912">Loading confirmed</text>
 </g>
-<text x="24" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
-<g><title>EE CPU and kernel services: Operational. Every mapped function native</title>
-<rect x="24" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41" cy="230" r="3.5" fill="#2b78b8"/>
-<text x="52" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel services</text>
-<text x="37" y="252" font-size="11.5" fill="#64748b">Every mapped function native</text></g>
+<text x="24.0" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
+<g><title>EE CPU and kernel: Operational. Every mapped function native</title>
+<rect x="24.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="41.0" cy="230" r="3.5" fill="#2b78b8"/>
+<text x="52.0" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel</text>
+<text x="37.0" y="252" font-size="11.5" fill="#64748b">Every mapped function native</text></g>
 <g><title>IOP services: Operational. Native; no IOP code runs</title>
-<rect x="24" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41" cy="292" r="3.5" fill="#2b78b8"/>
-<text x="52" y="296" font-size="13" font-weight="600" fill="#1e293b">IOP services</text>
-<text x="37" y="314" font-size="11.5" fill="#64748b">Native; no IOP code runs</text></g>
+<rect x="24.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="41.0" cy="292" r="3.5" fill="#2b78b8"/>
+<text x="52.0" y="296" font-size="13" font-weight="600" fill="#1e293b">IOP services</text>
+<text x="37.0" y="314" font-size="11.5" fill="#64748b">Native; no IOP code runs</text></g>
 <g><title>Disc / filesystem: Verified. Reads byte-identical</title>
-<rect x="24" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="41" cy="354" r="3.5" fill="#16835d"/>
-<text x="52" y="358" font-size="13" font-weight="600" fill="#1e293b">Disc / filesystem</text>
-<text x="37" y="376" font-size="11.5" fill="#64748b">Reads byte-identical</text></g>
+<rect x="24.0" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24.0" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41.0" cy="354" r="3.5" fill="#16835d"/>
+<text x="52.0" y="358" font-size="13" font-weight="600" fill="#1e293b">Disc / filesystem</text>
+<text x="37.0" y="376" font-size="11.5" fill="#64748b">Reads byte-identical</text></g>
 <g><title>Input: Operational. Keyboard, XInput, DualSense</title>
-<rect x="24" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41" cy="416" r="3.5" fill="#2b78b8"/>
-<text x="52" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
-<text x="37" y="438" font-size="11.5" fill="#64748b">Keyboard, XInput, DualSense</text></g>
+<rect x="24.0" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24.0" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="41.0" cy="416" r="3.5" fill="#2b78b8"/>
+<text x="52.0" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
+<text x="37.0" y="438" font-size="11.5" fill="#64748b">Keyboard, XInput, DualSense</text></g>
 <g><title>Memory card: Incomplete. Loads; saving untried</title>
-<rect x="24" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="41" cy="478" r="3.5" fill="#b77912"/>
-<text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="37" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
-<text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
-<g><title>GS: Operational. GPU renderer; HD textures next</title>
-<rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="351" cy="230" r="3.5" fill="#2b78b8"/>
-<text x="362" y="234" font-size="13" font-weight="600" fill="#1e293b">GS</text>
-<text x="347" y="252" font-size="11.5" fill="#64748b">GPU renderer; HD textures next</text></g>
-<g><title>GIF / VIF: Operational. DMA as the game uses it</title>
-<rect x="334" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="351" cy="292" r="3.5" fill="#2b78b8"/>
-<text x="362" y="296" font-size="13" font-weight="600" fill="#1e293b">GIF / VIF</text>
-<text x="347" y="314" font-size="11.5" fill="#64748b">DMA as the game uses it</text></g>
+<rect x="24.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="24.0" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="41.0" cy="478" r="3.5" fill="#b77912"/>
+<text x="52.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
+<text x="37.0" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
+<text x="256.5" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and sound</text>
+<g><title>GS and display: Operational. GPU renderer, shown on GPU</title>
+<rect x="256.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="256.5" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="273.5" cy="230" r="3.5" fill="#2b78b8"/>
+<text x="284.5" y="234" font-size="13" font-weight="600" fill="#1e293b">GS and display</text>
+<text x="269.5" y="252" font-size="11.5" fill="#64748b">GPU renderer, shown on GPU</text></g>
+<g><title>GIF / VIF / VU: Operational. Native VU1, checked in gate</title>
+<rect x="256.5" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="256.5" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="273.5" cy="292" r="3.5" fill="#2b78b8"/>
+<text x="284.5" y="296" font-size="13" font-weight="600" fill="#1e293b">GIF / VIF / VU</text>
+<text x="269.5" y="314" font-size="11.5" fill="#64748b">Native VU1, checked in gate</text></g>
 <g><title>IPU / video: Operational. Both films decode</title>
-<rect x="334" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="351" cy="354" r="3.5" fill="#2b78b8"/>
-<text x="362" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
-<text x="347" y="376" font-size="11.5" fill="#64748b">Both films decode</text></g>
+<rect x="256.5" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="256.5" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="273.5" cy="354" r="3.5" fill="#2b78b8"/>
+<text x="284.5" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
+<text x="269.5" y="376" font-size="11.5" fill="#64748b">Both films decode</text></g>
 <g><title>Audio: Operational. Music, voices, effects</title>
-<rect x="334" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="351" cy="416" r="3.5" fill="#2b78b8"/>
-<text x="362" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="347" y="438" font-size="11.5" fill="#64748b">Music, voices, effects</text></g>
-<g><title>VU microprograms: Operational. Native, checked in the gate</title>
-<rect x="334" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="334" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="351" cy="478" r="3.5" fill="#2b78b8"/>
-<text x="362" y="482" font-size="13" font-weight="600" fill="#1e293b">VU microprograms</text>
-<text x="347" y="500" font-size="11.5" fill="#64748b">Native, checked in the gate</text></g>
-<text x="644" y="196" font-size="15" font-weight="600" fill="#334155">Pipeline and verification</text>
+<rect x="256.5" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="256.5" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="273.5" cy="416" r="3.5" fill="#2b78b8"/>
+<text x="284.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
+<text x="269.5" y="438" font-size="11.5" fill="#64748b">Music, voices, effects</text></g>
+<g><title>Launcher and menus: Operational. Settings, in-game menu</title>
+<rect x="256.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="256.5" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="273.5" cy="478" r="3.5" fill="#2b78b8"/>
+<text x="284.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
+<text x="269.5" y="500" font-size="11.5" fill="#64748b">Settings, in-game menu</text></g>
+<text x="489.0" y="196" font-size="15" font-weight="600" fill="#334155">Enhancements</text>
+<g><title>HD textures: Operational. Pack 2; fighters&#x27; bodies next</title>
+<rect x="489.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="489.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="506.0" cy="230" r="3.5" fill="#2b78b8"/>
+<text x="517.0" y="234" font-size="13" font-weight="600" fill="#1e293b">HD textures</text>
+<text x="502.0" y="252" font-size="11.5" fill="#64748b">Pack 2; fighters&#x27; bodies next</text></g>
+<g><title>Super-sampling: Operational. 2x to 16x at full speed</title>
+<rect x="489.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="489.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="506.0" cy="292" r="3.5" fill="#2b78b8"/>
+<text x="517.0" y="296" font-size="13" font-weight="600" fill="#1e293b">Super-sampling</text>
+<text x="502.0" y="314" font-size="11.5" fill="#64748b">2x to 16x at full speed</text></g>
+<g><title>Widescreen: Operational. 16:9, gameplay unchanged</title>
+<rect x="489.0" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="489.0" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="506.0" cy="354" r="3.5" fill="#2b78b8"/>
+<text x="517.0" y="358" font-size="13" font-weight="600" fill="#1e293b">Widescreen</text>
+<text x="502.0" y="376" font-size="11.5" fill="#64748b">16:9, gameplay unchanged</text></g>
+<g><title>60 fps battles: Incomplete. In-between pictures, in work</title>
+<rect x="489.0" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="489.0" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="506.0" cy="416" r="3.5" fill="#b77912"/>
+<text x="517.0" y="420" font-size="13" font-weight="600" fill="#1e293b">60 fps battles</text>
+<text x="502.0" y="438" font-size="11.5" fill="#64748b">In-between pictures, in work</text></g>
+<g><title>Performance: Operational. Half a core; GPU 6 to 10 ms</title>
+<rect x="489.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="489.0" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="506.0" cy="478" r="3.5" fill="#2b78b8"/>
+<text x="517.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Performance</text>
+<text x="502.0" y="500" font-size="11.5" fill="#64748b">Half a core; GPU 6 to 10 ms</text></g>
+<text x="721.5" y="196" font-size="15" font-weight="600" fill="#334155">Pipeline and checks</text>
 <g><title>Native Windows host: Verified. MSVC x64, Debug and Release</title>
-<rect x="644" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="219" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="661" cy="230" r="3.5" fill="#16835d"/>
-<text x="672" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
-<text x="657" y="252" font-size="11.5" fill="#64748b">MSVC x64, Debug and Release</text></g>
-<g><title>Launcher and menus: Operational. Launcher, menu; fast forward fixed</title>
-<rect x="644" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="661" cy="292" r="3.5" fill="#2b78b8"/>
-<text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
-<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, menu; fast forward fixed</text></g>
+<rect x="721.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="721.5" y="219" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="738.5" cy="230" r="3.5" fill="#16835d"/>
+<text x="749.5" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
+<text x="734.5" y="252" font-size="11.5" fill="#64748b">MSVC x64, Debug and Release</text></g>
 <g><title>Code generation: Verified. 11,139 + 494 functions</title>
-<rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="661" cy="354" r="3.5" fill="#16835d"/>
-<text x="672" y="358" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
-<text x="657" y="376" font-size="11.5" fill="#64748b">11,139 + 494 functions</text></g>
-<g><title>Tests: Verified. Unit tests and Python suites pass</title>
-<rect x="644" y="396" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
-<circle cx="661" cy="416" r="3.5" fill="#16835d"/>
-<text x="672" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
-<text x="657" y="438" font-size="11.5" fill="#64748b">Unit tests and Python suites pass</text></g>
-<g><title>Original comparisons: Incomplete. 32/32 pass; 3D not yet compared</title>
-<rect x="644" y="458" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="644" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="661" cy="478" r="3.5" fill="#b77912"/>
-<text x="672" y="482" font-size="13" font-weight="600" fill="#1e293b">Original comparisons</text>
-<text x="657" y="500" font-size="11.5" fill="#64748b">32/32 pass; 3D not yet compared</text></g>
+<rect x="721.5" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="721.5" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="738.5" cy="292" r="3.5" fill="#16835d"/>
+<text x="749.5" y="296" font-size="13" font-weight="600" fill="#1e293b">Code generation</text>
+<text x="734.5" y="314" font-size="11.5" fill="#64748b">11,139 + 494 functions</text></g>
+<g><title>Game coverage: Operational. All modes; final sweep left</title>
+<rect x="721.5" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="721.5" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
+<circle cx="738.5" cy="354" r="3.5" fill="#2b78b8"/>
+<text x="749.5" y="358" font-size="13" font-weight="600" fill="#1e293b">Game coverage</text>
+<text x="734.5" y="376" font-size="11.5" fill="#64748b">All modes; final sweep left</text></g>
+<g><title>Tests: Verified. Unit tests, Python suites pass</title>
+<rect x="721.5" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="721.5" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="738.5" cy="416" r="3.5" fill="#16835d"/>
+<text x="749.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
+<text x="734.5" y="438" font-size="11.5" fill="#64748b">Unit tests, Python suites pass</text></g>
+<g><title>Original comparisons: Incomplete. 32/32 pass; 3D not compared</title>
+<rect x="721.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
+<rect x="721.5" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
+<circle cx="738.5" cy="478" r="3.5" fill="#b77912"/>
+<text x="749.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Original comparisons</text>
+<text x="734.5" y="500" font-size="11.5" fill="#64748b">32/32 pass; 3D not compared</text></g>
 </g></svg>
