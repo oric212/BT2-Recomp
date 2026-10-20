@@ -218,6 +218,38 @@ def keep_vf0_constant(source):
     return text,count
 
 
+def patchable_code():
+    """The instruction words optional game patches change (config/game_patches.json): address ->
+    (original, patched). Only an immediate of LUI may change, so the rewrite stays one instruction."""
+    words={}
+    for name,patch in json.loads((ROOT/'config/game_patches.json').read_text(encoding='utf-8'))['patches'].items():
+        for address,original,patched in patch['code']:
+            address,original,patched=int(address,16),int(original,16),int(patched,16)
+            if original>>26!=0x0F or (original^patched)>>16:raise ValueError(f'Patch {name} at {address:#x} changes more than a LUI immediate')
+            if words.get(address,(original,))[0]!=original:raise ValueError(f'Patches disagree on the original word at {address:#x}')
+            words[address]=(original,patched)
+    return words
+
+
+def read_patchable_immediates(source,words=None):
+    # A LUI an optional patch changes reads its immediate from the instruction word in guest memory,
+    # so applying the patch (runtime/ee/game_patches.cpp) is a memory write, as on the PS2.
+    words=patchable_code() if words is None else words
+    pattern=re.compile(r'(// 0x([0-9a-f]+): 0x([0-9a-f]+)  lui[^\n]*\n(?:[ \t]*ctx->pc = 0x[0-9a-f]+u;\n)?)'
+                       r'([ \t]*)SET_GPR_S32\(ctx, (\d+), \(int32_t\)\(\(uint32_t\)(\d+) << 16\)\);\n')
+    count=0
+    def replace(m):
+        nonlocal count
+        address=int(m[2],16)
+        if address not in words:return m[0]
+        original=words[address][0]
+        if int(m[3],16)!=original or int(m[6])!=original&0xFFFF or int(m[5])!=(original>>16)&31:
+            raise ValueError(f"The instruction at {address:#x} is not the patch's original word")
+        count+=1
+        return f'{m[1]}{m[4]}SET_GPR_S32(ctx, {m[5]}, (int32_t)(READ32(0x{address:x}u) << 16));\n'
+    return pattern.sub(replace,source),count
+
+
 def widen_sign_branches(source):
     # BLTZ/BGEZ/BLEZ/BGTZ (and their likely/link forms) compare the full 64-bit register on the R5900;
     # the generator emits a 32-bit test, which misreads e.g. a 64-bit BUSY flag in bit 63.
@@ -247,6 +279,7 @@ def prepare_text(text,address):
     text,counts['clip_fixes']=fix_clip(text)
     text,counts['vf0_writes_dropped']=keep_vf0_constant(text)
     text,counts['local_indirect_jumps']=route_local_indirect_jumps(text)
+    text,counts['patchable_immediates']=read_patchable_immediates(text)
     return text,counts
 
 
@@ -313,6 +346,9 @@ def main():
         write_prepared(destination,text)
         prepared_sources.append({'source':source.name,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
                                  'prepared_sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),**counts})
+    # Every instruction an optional patch changes is in a prepared function, and only once.
+    patchable=sum(row.get('patchable_immediates',0) for row in prepared_sources)
+    if patchable!=len(patchable_code()):raise ValueError(f'{patchable} of {len(patchable_code())} patchable instructions found in the prepared functions')
     source = ROOT / 'game/generated/bt2/FUN_00331F38_0x331f38.cpp'
     text, count = route_data_cache(source.read_text(encoding='utf-8'))
     if count != 9 or 'CACHE instruction (ignored)' in text:

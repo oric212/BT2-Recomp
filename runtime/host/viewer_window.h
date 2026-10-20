@@ -17,7 +17,8 @@
 
 // Minimal Win32 presentation window: shows the latest decoded frame in the client area, either at the
 // largest integer scale that fits (pixel-exact) or at the largest size of the picture's proportions
-// that fits; centred, with black borders.
+// that fits; centred, with black borders. In widescreen (the game's widescreen patch, ee/game_patches.h)
+// the picture is shown 16:9: as wide as its height times 16/9, whole multiples counted vertically.
 // Messages are pumped by the caller at each presentation; closing the window sets closed(). The
 // window does not pace the run (host/frame_pacer.h does). The window's size is a multiple of the game's
 // picture (640 x 448) or the whole screen without a border; both, the scaling and a short status
@@ -39,6 +40,11 @@ public:
         pump();
     }
     void setScaling(Scaling scaling) {scaling_=scaling;}
+    void setWidescreen(bool widescreen) {
+        if(widescreen==widescreen_)return;
+        widescreen_=widescreen;
+        if(hwnd_)applyLayout();
+    }
     void setStatus(std::string text) {status_=std::move(text);} // Drawn in the top left corner; empty for none.
     // The multiple of 640 x 448 nearest to the screen the window is on (the main screen before it
     // exists): the largest that fits, or one more when that is closer, which cuts a little off the
@@ -47,7 +53,7 @@ public:
         MONITORINFO monitor{};monitor.cbSize=sizeof monitor;
         LONG width=GetSystemMetrics(SM_CXSCREEN),height=GetSystemMetrics(SM_CYSCREEN);
         if(hwnd_ && GetMonitorInfoA(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor)) {width=monitor.rcMonitor.right-monitor.rcMonitor.left;height=monitor.rcMonitor.bottom-monitor.rcMonitor.top;}
-        return nearestScale(width,height,640,448);
+        return nearestScale(width,height,LONG(pictureWidth(640,448)),448);
     }
     // The window's size as a multiple of 640 x 448, or the whole screen without a border.
     void setLayout(unsigned scale,bool fullscreen) {
@@ -57,7 +63,7 @@ public:
     }
     // The client area in pixels (640 x 448 times the scale before the window exists).
     std::pair<unsigned,unsigned> clientSize() const {
-        RECT client{0,0,LONG(640*scale_),LONG(448*scale_)};
+        RECT client{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};
         if(hwnd_)GetClientRect(hwnd_,&client);
         return {unsigned(std::max<LONG>(client.right,1)),unsigned(std::max<LONG>(client.bottom,1))};
     }
@@ -75,7 +81,9 @@ public:
     HWND handle() const {return hwnd_;} // For dialogs that belong to the window.
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
-    unsigned scale_=2;bool fullscreen_=false;std::string title_,status_;
+    unsigned scale_=2;bool fullscreen_=false,widescreen_=false;std::string title_,status_;
+    // The shown width of a picture: its own (one pixel for one pixel at scale 1), or 16:9 of its height.
+    unsigned pictureWidth(unsigned width,unsigned height) const {return widescreen_?(height*16+4)/9:width;}
     static unsigned nearestScale(LONG width,LONG height,LONG picture_width,LONG picture_height) {
         // The tighter of the two directions, rounded to the nearest whole number.
         const bool by_width=std::int64_t(width)*picture_height<=std::int64_t(height)*picture_width;
@@ -89,7 +97,7 @@ private:
             SetWindowPos(hwnd_,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,
                 monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED);
         } else {
-            RECT r{0,0,LONG(640*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+            RECT r{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
             SetWindowLongPtrA(hwnd_,GWL_STYLE,WS_OVERLAPPEDWINDOW|WS_VISIBLE);
             RECT at;GetWindowRect(hwnd_,&at);
             SetWindowPos(hwnd_,HWND_TOP,std::max<LONG>(at.left,0),std::max<LONG>(at.top,0),r.right-r.left,r.bottom-r.top,SWP_FRAMECHANGED);
@@ -100,7 +108,7 @@ private:
         WNDCLASSA wc{};wc.lpfnWndProc=&ViewerWindow::proc;wc.hInstance=GetModuleHandleA(nullptr);
         wc.lpszClassName="BT2RecompViewer";wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
         RegisterClassA(&wc);
-        RECT r{0,0,LONG(640*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+        RECT r{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
         hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,
             r.right-r.left,r.bottom-r.top,nullptr,nullptr,wc.hInstance,this);
         if(!hwnd_)throw std::runtime_error("Viewer window creation failed");
@@ -115,15 +123,16 @@ private:
         // The picture keeps its shape in every window: whole multiples of its size, or the largest
         // size of the same proportions that fits; the rest of the window is black.
         int w,h;
+        const LONG shown_width=LONG(pictureWidth(frame_.width,frame_.height)),shown_height=LONG(frame_.height);
         if(scaling_==Scaling::Integer) {
             // A window holds whole pictures; the whole screen takes the nearest multiple.
-            const int scale=fullscreen_?int(nearestScale(client.right,client.bottom,LONG(frame_.width),LONG(frame_.height)))
-                :std::max(1,int(std::min(client.right/LONG(frame_.width),client.bottom/LONG(frame_.height))));
-            w=int(frame_.width)*scale;h=int(frame_.height)*scale;
-        } else if(std::int64_t(client.right)*frame_.height<=std::int64_t(client.bottom)*frame_.width) {
-            w=std::max(1,int(client.right));h=std::max(1,int(std::int64_t(client.right)*frame_.height/frame_.width));
+            const int scale=fullscreen_?int(nearestScale(client.right,client.bottom,shown_width,shown_height))
+                :std::max(1,int(std::min(client.right/shown_width,client.bottom/shown_height)));
+            w=int(shown_width)*scale;h=int(shown_height)*scale;
+        } else if(std::int64_t(client.right)*shown_height<=std::int64_t(client.bottom)*shown_width) {
+            w=std::max(1,int(client.right));h=std::max(1,int(std::int64_t(client.right)*shown_height/shown_width));
         } else {
-            h=std::max(1,int(client.bottom));w=std::max(1,int(std::int64_t(client.bottom)*frame_.width/frame_.height));
+            h=std::max(1,int(client.bottom));w=std::max(1,int(std::int64_t(client.bottom)*shown_width/shown_height));
         }
         const int x=(client.right-w)/2,y=(client.bottom-h)/2;
         // Black only the borders around the frame: clearing the whole client area first made every
@@ -131,6 +140,8 @@ private:
         const auto black=static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
         const RECT borders[4]={{0,0,client.right,y},{0,y+h,client.right,client.bottom},{0,y,x,y+h},{x+w,y,client.right,y+h}};
         for(const auto& border:borders)if(border.right>border.left && border.bottom>border.top)FillRect(dc,&border,black);
+        // Pixels are copied, also where the stretch is not a whole multiple (widescreen, scaling off):
+        // GDI's filtered stretch (HALFTONE) took about 12 ms per picture at 1592 x 896.
         SetStretchBltMode(dc,COLORONCOLOR);
         StretchDIBits(dc,x,y,w,h,0,0,int(frame_.width),int(frame_.height),frame_.bgra.data(),&bi,DIB_RGB_COLORS,SRCCOPY);
         if(!status_.empty()) {

@@ -25,6 +25,8 @@ Dependency sources and binaries stay in ignored `work/` and `build/`; this repos
 
 paraLLEl-GS (LGPL-3.0, pinned in `config/parallel_gs.lock.json`) is built with the project's modification `tools/graphics/gpu/parallel_gs_texture_replacement.patch` (texture replacement hook and a GIF parsing fix); the patch is the modified source's difference and is published with the project. Retain copyright/license notices and satisfy applicable source and copyleft requirements when distributing dependencies. No upstream runtime is linked into `bt2-port`. Future runtime linking and generated-output licensing require assessment before distribution; generator use does not resolve ownership of retail-derived code. libdwarf's separate GPLv2 dwarfdump tool is disabled.
 
+The widescreen patch's words (`runtime/ee/game_patches.cpp`, `config/game_patches.json`) are addresses and values from PCSX2's patch database (`PCSX2/pcsx2_patches`, `patches/SLUS-21441_FE961D28.pnach`, which has no license file of its own); the port takes only those numbers and credits the source in the README.
+
 Review staged files before every commit; ignore rules help prevent accidental inclusion.
 
 The generated-code probe adapter is authored project code and links no upstream runtime. The local translated source and the resulting executable contain retail-derived code and remain ignored. Do not publish or commit either as part of the project foundation.

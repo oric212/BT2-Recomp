@@ -74,7 +74,7 @@ Against the requirements the fight needs its work cut to about 16 ms per picture
 1. **Hand-written native VU1 programs** (decided by the user on 2026-10-13; next section).
 2. **The slow single pictures in the fight** (37 to 59 ms while the average is in budget): find whether it is the work of single frames (uploads, the renderer) or the pacing.
 3. **Graphics on its own thread.** VIF1, VU1 and the GS packets do not feed back into the game except at a few points (path synchronization, readback, the flip). Running them on a second thread takes about half of the fight's work off the game's thread. Needs an ordered queue for all GS-bound data and those synchronization points.
-4. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI.
+4. **Presenting without readback** (about 3.5 ms per picture): show the renderer's image through a swapchain instead of copying it to the processor and drawing it with GDI. Also needed for filtered scaling: GDI's filtered stretch (HALFTONE) of the widescreen picture to 1,592 × 896 took about 12 ms per picture (2026-10-20), so the window copies pixels.
 5. **Game code and services** (about 5 to 7 ms): the other access widths and the per-call checks, guided by a new profile.
 6. **Loading hitches at screen changes:** spread the load over fields or do it off the game's thread.
 

@@ -17,6 +17,7 @@
 #include "host/wav_writer.h"
 #include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
+#include "ee/game_patches.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
 #include <algorithm>
@@ -260,6 +261,10 @@ int main(int argc, char** argv) {
         // the run stops until the window is closed. Closing the window during a run ends the process.
         const char* scale = std::getenv("BT2_VIEWER_SCALE");
         static ViewerWindow viewer(scale && std::string_view(scale) == "stretch" ? ViewerWindow::Scaling::Stretch : ViewerWindow::Scaling::Integer);
+        {   // The widescreen patch draws 16:9; the window shows it so.
+            const char* patches = std::getenv("BT2_GAME_PATCHES");
+            for (const GamePatch* patch : parseGamePatches(patches ? patches : "")) if (patch->name == "widescreen") viewer.setWidescreen(true);
+        }
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode && !std::getenv("BT2_VIEWER_CLOSE")}; // BT2_VIEWER_CLOSE: the window closes with the run (automated runs with a window).
         if (viewer_mode) runtime.on_display_flip = [&runtime] {
             const auto dispfb = runtime.gs_privileged[9] ? runtime.gs_privileged[9] : runtime.gs_privileged[7];
@@ -417,6 +422,9 @@ int main(int argc, char** argv) {
 #endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);
+        // BT2_GAME_PATCHES=<name>[,<name>]: the player's optional patches of the executable (ee/game_patches.h).
+        if (const char* list = std::getenv("BT2_GAME_PATCHES"))
+            for (const GamePatch* patch : parseGamePatches(list)) {applyGamePatch(runtime.memory(), *patch);std::cerr << "Game patch: " << patch->name << std::endl;}
         const std::uint32_t osd_word=loadStartupEvidence(runtime,modes,argv);
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start=startup_zero_start,zero_end=startup_zero_end;

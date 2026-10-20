@@ -1,6 +1,8 @@
 """Synthetic memory-layout and generated dispatch-hook checks."""
 import unittest
-from prepare_runtime import sign_extend_float_moves, route_vu_random, build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches, route_recursive_calls, route_vu_memory, detach_generated_headers
+from prepare_runtime import sign_extend_float_moves, route_vu_random, build_memory, route_tail_calls, route_direct_jumps, route_data_cache, route_vu_status,route_vu_control, route_indexed_cache, route_fast_halfword_reads, route_fast_byte_reads, widen_sign_branches, route_recursive_calls, route_vu_memory, detach_generated_headers, read_patchable_immediates, patchable_code
+import json, re
+from run_pipeline import ROOT
 
 
 class RuntimePreparationTests(unittest.TestCase):
@@ -221,6 +223,30 @@ class RuntimePreparationTests(unittest.TestCase):
         other = 'if (!runtime->dispatchGuestBranch(rdram, ctx, ctx->r[31], 0x10u, 0x0u, PS2Runtime::GuestBranchKind::Return, "JR")) {\n return;\n}'
         self.assertEqual(route_direct_jumps(other), (other, 0))
 
+    def test_patchable_lui_reads_guest_memory(self):
+        source=('    // 0x12ba08: 0x3c013f40  lui         $at, 0x3F40\n    ctx->pc = 0x12ba08u;\n'
+                '    SET_GPR_S32(ctx, 1, (int32_t)((uint32_t)16192 << 16));\n'
+                '    // 0x12ba0c: 0x3c023f40  lui         $v0, 0x3F40\n    ctx->pc = 0x12ba0cu;\n'
+                '    SET_GPR_S32(ctx, 2, (int32_t)((uint32_t)16192 << 16));\n')
+        words={0x12ba08:(0x3c013f40,0x3c013f10)}
+        text,count=read_patchable_immediates(source,words)
+        self.assertEqual(count,1)
+        self.assertIn('SET_GPR_S32(ctx, 1, (int32_t)(READ32(0x12ba08u) << 16));',text)
+        self.assertIn('SET_GPR_S32(ctx, 2, (int32_t)((uint32_t)16192 << 16));',text) # Not listed: unchanged.
+        self.assertEqual(read_patchable_immediates(text,words),(text,0))
+        # Another word at a listed address is another build of the game: refused.
+        with self.assertRaises(ValueError):read_patchable_immediates(source,{0x12ba08:(0x3c013f80,0x3c013f40)})
+
+    def test_patch_list_matches_the_runtime_table(self):
+        config=json.loads((ROOT/'config/game_patches.json').read_text(encoding='utf-8'))['patches']
+        table=(ROOT/'runtime/ee/game_patches.cpp').read_text(encoding='utf-8')
+        for name,patch in config.items():
+            body=re.search(r'GamePatchWord '+name+r'\[\]\{(.*?)\};',table,re.S)
+            self.assertIsNotNone(body,name)
+            runtime=sorted(tuple(int(x,16) for x in row) for row in re.findall(r'\{(0x[0-9A-F]+)u,(0x[0-9A-F]+)u,(0x[0-9A-F]+)u\}',body[1]))
+            listed=sorted(tuple(int(x,16) for x in row) for row in patch['code']+patch['data'])
+            self.assertEqual(runtime,listed,name)
+        self.assertEqual(len(patchable_code()),2)
 
 if __name__ == "__main__":
     unittest.main()

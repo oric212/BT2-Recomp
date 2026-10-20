@@ -19,6 +19,7 @@ struct Settings {
     unsigned master_volume=100,music_volume=100,effects_volume=100; // Percent.
     bool hd_textures=false;         // The texture pack in data/textures (host/game_folders.h), from the next start.
     unsigned super_sampling=1;      // Samples per pixel (1, 2, 4, 8, 16); 4 and more draw at twice the resolution. From the next start.
+    bool widescreen=false;          // The game's 16:9 patch (ee/game_patches.h), from the next start.
     InputMapping mapping;           // Keys and gamepad buttons of the PS2 buttons.
     // Fast forward: a key (virtual-key code, 0 for none) and a gamepad button (Count for none), held
     // or pressed once to switch.
@@ -37,7 +38,7 @@ struct Settings {
         std::ostringstream out;
         out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
-           <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nfast_forward_key = "<<fast_forward_key
+           <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
@@ -77,6 +78,7 @@ struct Settings {
             else if(key=="music_volume")s.music_volume=number(0,100);
             else if(key=="effects_volume")s.effects_volume=number(0,100);
             else if(key=="hd_textures")s.hd_textures=number(0,1);
+            else if(key=="widescreen")s.widescreen=number(0,1);
             else if(key=="super_sampling") {
                 s.super_sampling=number(1,16);
                 if(s.super_sampling&(s.super_sampling-1))throw std::runtime_error("Setting super_sampling is not 1, 2, 4, 8 or 16: "+value);

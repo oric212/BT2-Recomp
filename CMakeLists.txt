@@ -69,7 +69,8 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ee_gs_readback.cpp
     runtime/ee/ee_gs_privileged.cpp
     runtime/ee/ee_interpreter.cpp
-    runtime/ee/state_hash.cpp)
+    runtime/ee/state_hash.cpp
+    runtime/ee/game_patches.cpp)
 
 # XXH3 for PCSX2-compatible texture names (docs/plans/graphics/HD_TEXTURES_PLAN.md); fetch it with
 # tools/graphics/textures/fetch_xxhash.py.
@@ -159,6 +160,9 @@ if(BT2_BUILD_GENERATED_PROBE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/logo.png")
     endforeach()
     target_compile_definitions(bt2-launcher PRIVATE BT2_LAUNCHER_ALWAYS=1)
+    add_executable(bt2-game-patches-tests runtime/tests/game_patches_tests.cpp runtime/ee/game_patches.cpp)
+    bt2_target_defaults(bt2-game-patches-tests)
+    add_test(NAME game-patches COMMAND bt2-game-patches-tests)
     add_executable(bt2-dma-chain-tests runtime/tests/dma_chain_tests.cpp runtime/ee/dma_chain.cpp)
     bt2_target_defaults(bt2-dma-chain-tests)
     add_test(NAME dma-chain COMMAND bt2-dma-chain-tests)

@@ -37,7 +37,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** enhancements: HD texture packs made for PCSX2, then widescreen and the best picture quality, then optional 60 fps battles; the final battle sweep and performance (fights at a steady 30 frames per second) alongside. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Next:** performance (the picture shown on the GPU, graphics on its own thread), then optional 60 fps battles; HD textures for the characters' bodies; the final battle sweep. Built: HD texture packs made for PCSX2, super-sampling and widescreen, as launcher settings. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
 
 ## Building
 
@@ -96,6 +96,7 @@ Project owner and maintainer: [oric212](https://github.com/oric212).
 | [PCSX2](https://github.com/PCSX2/pcsx2) · [PS2SDK](https://github.com/ps2dev/ps2sdk) | Behavior references and original-game comparison captures |
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Function discovery |
 | [xxHash](https://github.com/Cyan4973/xxHash) by Yann Collet | XXH3, for PCSX2-compatible texture names (BSD-2-Clause) |
+| [PCSX2 patches](https://github.com/PCSX2/pcsx2_patches) | The widescreen patch's values for SLUS-21441 (Widescreen 16:9) |
 
 ### License and game ownership
 
