@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <tuple>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -347,6 +348,12 @@ int main(int argc, char** argv) {
                 runtime.gif_dma.gs.texture_names = &texture_name_log.names;
                 gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
             }
+            // The window shows the renderer's picture on the GPU, without reading it back (host/window_presenter.h);
+            // BT2_VIEWER_GDI=1 reads each picture back and draws it with GDI as before.
+            if (viewer_mode && !std::getenv("BT2_VIEWER_GDI")) {
+                viewer.setPresenter(&gpu_mirror.windowPresenter());
+                if (player) player->picture_source = [] { return gpu_mirror.readback(); };
+            }
             // GPU-only: VRAM lives in the renderer, which also answers local->host transfers.
             if (gpu_only) runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
@@ -385,19 +392,23 @@ int main(int argc, char** argv) {
                 static double scanout_s = 0, present_s = 0, slowest_s = 0, waited_at_window = 0;static unsigned window_fields = 0, late = 0;
                 static Clock::time_point last_flip = Clock::now();
                 const auto t0 = Clock::now();
-                const auto frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
+                // On the GPU path the picture stays in the renderer; it is read back only for a snapshot.
+                const bool on_gpu = viewer.gpuPresented();
+                DisplayFrame frame;unsigned width = 0, height = 0;
+                if (on_gpu) std::tie(width, height) = gpu_mirror.vsync(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
+                else {frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);width = frame.width;height = frame.height;}
                 const auto t1 = Clock::now();
                 if (snapshot != snapshots.end()) {
                     // The field is what a pad script counts in; flips are what snapshots count in.
-                    writePpm(snapshot->second, frame);
+                    writePpm(snapshot->second, on_gpu ? gpu_mirror.readback() : frame);
                     std::cerr << "Snapshot: flip " << flip << " at field " << runtime.vblank_deliveries << std::endl;
                 }
-                if (!show || !frame.width) return;
+                if (!show || !width) return;
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
                 if (pacer) pacer->wait(); // The picture appears at the field's deadline.
                 const auto t_shown = Clock::now();
-                if (player) player->shown(frame);
-                viewer.present(frame, flip);
+                if (player) player->shown(on_gpu ? nullptr : &frame);
+                if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
                 if (stats) {
                     const auto t2 = Clock::now();
                     scanout_s += std::chrono::duration<double>(t1 - t0).count();present_s += std::chrono::duration<double>(t2 - t_shown).count();
@@ -408,7 +419,7 @@ int main(int argc, char** argv) {
                     if (flip % 120 == 0) {
                         const double wall = std::chrono::duration<double>(t2 - window_start).count();
                         std::cerr << std::dec << "Viewer stats at flip " << flip << ": " << 120 / wall << " flips/s, " << (runtime.vblank_deliveries - window_fields) / wall
-                            << " fields/s; per flip " << wall / 120 * 1000 << " ms (slowest " << slowest_s * 1000 << " ms, " << late << " over 20.9 ms), work " << (wall - ((pacer ? pacer->waited_seconds : 0) - waited_at_window)) / 120 * 1000 << " ms, of it readback " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
+                            << " fields/s; per flip " << wall / 120 * 1000 << " ms (slowest " << slowest_s * 1000 << " ms, " << late << " over 20.9 ms), work " << (wall - ((pacer ? pacer->waited_seconds : 0) - waited_at_window)) / 120 * 1000 << " ms, of it scanout " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
                             << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000 << " ms, of it in the GPU renderer " << frame_profile.renderer / 120 * 1000
                             << " ms, GPU flush " << frame_profile.flush / 120 * 1000 << " ms" << std::endl;
                         window_start = t2;scanout_s = present_s = slowest_s = 0;late = 0;waited_at_window = pacer ? pacer->waited_seconds : 0;(void)waited_before;window_fields = runtime.vblank_deliveries;frame_profile = {};frame_profile.enabled = true;

@@ -2,6 +2,8 @@
 
 Requested by the user on 2026-10-20 (the second of two enhancements; [HD textures](HD_TEXTURES_PLAN.md) come first): battles at 60 pictures per second, although the game shows 30, as an optional toggle in the in-game overlay's Display entry ([launcher plan](../launcher/LAUNCHER_PLAN.md), Overlay).
 
+**Requirement** (the user, 2026-10-20): the fight's behavior stays exactly as at 30: the same game speed, the same physics, the same results. 60 fps may only add pictures between the game's steps, never make the game step faster or differently. The check is the same CPU-vs-CPU fight at 30 and 60: equal results and battle times, equal positions and health at the same moments.
+
 ## What is known (2026-10-20)
 
 - **Where the 30 comes from.** The fight's main loop (`0x102E80`, `0x102F30`) starts Timer 1 at the top of a frame, and before waiting for the vertical blank calls `0x28C790`, which spins until the timer has counted 400 lines (about 1.5 fields) and stops it. So a fight frame takes two fields. The menus' loops have no such wait and run at 60 ([performance plan](../ee/PERFORMANCE_PLAN.md), finding 3; the user confirmed 30 in fights on the original).

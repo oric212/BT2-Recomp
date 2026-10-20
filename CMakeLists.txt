@@ -182,7 +182,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         set(PARALLEL_GS_STANDALONE ON CACHE BOOL "" FORCE)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL") # Match our targets.
         add_subdirectory("${BT2_PARALLEL_GS_DIR}" parallel-gs EXCLUDE_FROM_ALL)
-        add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp runtime/gs/gpu/hd_texture_pack.cpp)
+        add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp runtime/gs/gpu/hd_texture_pack.cpp runtime/gs/gpu/gpu_window_presenter.cpp)
         bt2_target_defaults(bt2-gpu-gs)
         target_link_libraries(bt2-gpu-gs PRIVATE parallel-gs)
         add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp runtime/gs/textures/gs_texture_names.cpp)

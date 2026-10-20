@@ -6,9 +6,11 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <utility>
 
 struct DisplayFrame;
 class GsTextureNames;
+class WindowPresenter;
 
 class GpuGsBackend {
 public:
@@ -30,6 +32,12 @@ public:
     void privileged(unsigned index,std::uint64_t value);
     // Scans out the displayed circuits for one field and reads the image back (empty when nothing is displayed).
     DisplayFrame scanout(unsigned field);
+    // Scans out the displayed circuits for one field and keeps the image: its size, {0, 0} when nothing
+    // is displayed. readback() copies the kept image to the processor; the window presenter shows it.
+    std::pair<unsigned,unsigned> vsync(unsigned field);
+    DisplayFrame readback();
+    // Shows pictures in a window on this device (host/window_presenter.h); made at the first call.
+    WindowPresenter& windowPresenter();
     // HD textures (docs/plans/graphics/HD_TEXTURES_PLAN.md): each texture the renderer caches is named by
     // `names` (kept in step with the renderer by the GS sink) and drawn with the pack's replacement when
     // it has one. The summary line says what was found, loaded and dropped.

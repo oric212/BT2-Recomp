@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 
 class PlayerSession {
 public:
@@ -31,12 +32,16 @@ public:
         }
     }
     bool fastForward() const {return fast_;}
+    // The picture under the in-game menu when it opens; without it, the last picture given to shown().
+    // Set when pictures are shown on the GPU, which then reads the last one back only for the menu.
+    std::function<DisplayFrame()> picture_source;
 
     // Once per field: the controller state for the game. Opens the in-game menu when its combination
     // is pressed (the game stands still meanwhile) and follows the fast forward key and button.
     PadInput padInput() {
         if(pause_test_field_ && ++fields_==pause_test_field_) {
             DisplayFrame drawn;
+            takePicture();
             runOverlay(settings,path_,window_,input_,picture_,[this]{apply();},pause_test_ms_,&drawn);
             if(!pause_test_picture_.empty() && drawn.width)writePpm(pause_test_picture_,drawn);
             std::fprintf(stderr,"Pause test: menu shown at field %u over a picture of %u x %u\n",fields_,picture_.width,picture_.height);
@@ -45,6 +50,7 @@ public:
         const auto pad=input_.gamepad();
         if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
             setFast(false);
+            takePicture();
             const auto result=runOverlay(settings,path_,window_,input_,picture_,[this]{apply();});
             if(result!=OverlayResult::Resume)std::exit(result==OverlayResult::Launcher?launcher_exit_code:0);
             trigger_.swallow();swallow_=true;
@@ -57,9 +63,11 @@ public:
         if(swallow_) {if(mapped.pressed)mapped.pressed=0;else swallow_=false;}
         return mapped;
     }
-    // Each picture shown: kept for the in-game menu's background, counted for the frame rate display.
-    void shown(const DisplayFrame& frame) {
-        picture_=frame;++pictures_;
+    // Each picture shown: counted for the frame rate display; a picture given here is kept for the
+    // in-game menu's background (when there is no picture_source).
+    void shown(const DisplayFrame* frame=nullptr) {
+        if(frame && !picture_source)picture_=*frame;
+        ++pictures_;
         const auto now=std::chrono::steady_clock::now();
         const double seconds=std::chrono::duration<double>(now-window_start_).count();
         if(seconds>=0.5) {
@@ -75,6 +83,7 @@ private:
     unsigned pause_test_field_=0,pause_test_ms_=0,fields_=0;std::string pause_test_picture_;
     DisplayFrame picture_;unsigned pictures_=0;std::chrono::steady_clock::time_point window_start_=std::chrono::steady_clock::now();
 
+    void takePicture() {if(picture_source)picture_=picture_source();}
     void apply() {
         window_.setScaling(settings.integer_scaling?ViewerWindow::Scaling::Integer:ViewerWindow::Scaling::Stretch);
         window_.setLayout(settings.window_scale,settings.fullscreen);

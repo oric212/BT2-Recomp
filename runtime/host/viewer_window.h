@@ -11,9 +11,11 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include "display_frame.h"
+#include "window_presenter.h"
 
 // Minimal Win32 presentation window: shows the latest decoded frame in the client area, either at the
 // largest integer scale that fits (pixel-exact) or at the largest size of the picture's proportions
@@ -22,7 +24,9 @@
 // Messages are pumped by the caller at each presentation; closing the window sets closed(). The
 // window does not pace the run (host/frame_pacer.h does). The window's size is a multiple of the game's
 // picture (640 x 448) or the whole screen without a border; both, the scaling and a short status
-// text in the corner (the frame rate display) can change while it is open.
+// text in the corner (the frame rate display) can change while it is open. With a presenter
+// (host/window_presenter.h) the pictures are shown on the GPU; the renderer's own picture then
+// reaches the window without a copy through the processor (presentRenderer).
 class ViewerWindow {
 public:
     enum class Scaling {Integer,Stretch};
@@ -33,12 +37,24 @@ public:
     }
     void present(const DisplayFrame& frame,const std::string& title) {
         if(closed_)return;
-        frame_=frame;
         if(!hwnd_)create();
-        if(title!=title_) {title_=title;SetWindowTextA(hwnd_,title.c_str());}
+        setTitle(title);
+        if(presenter_) {showOnGpu(&frame,frame.width,frame.height);pump();return;}
+        frame_=frame;
         InvalidateRect(hwnd_,nullptr,FALSE);UpdateWindow(hwnd_);
         pump();
     }
+    // The renderer's last scanout (width x height), shown by the presenter.
+    void presentRenderer(unsigned width,unsigned height,unsigned flip) {
+        if(closed_)return;
+        if(!presenter_)throw std::runtime_error("Viewer: the renderer's picture needs a GPU presenter");
+        if(!hwnd_)create();
+        setTitle("BT2 Recomp - frame "+std::to_string(flip));
+        showOnGpu(nullptr,width,height);
+        pump();
+    }
+    void setPresenter(WindowPresenter* presenter) {presenter_=presenter;}
+    bool gpuPresented() const {return presenter_!=nullptr;}
     void setScaling(Scaling scaling) {scaling_=scaling;}
     void setWidescreen(bool widescreen) {
         if(widescreen==widescreen_)return;
@@ -82,6 +98,56 @@ public:
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
     unsigned scale_=2;bool fullscreen_=false,widescreen_=false;std::string title_,status_;
+    WindowPresenter* presenter_=nullptr;
+    std::string status_drawn_;DisplayFrame status_image_; // The status text as a picture, for the presenter.
+    void setTitle(const std::string& title) {if(title!=title_) {title_=title;SetWindowTextA(hwnd_,title.c_str());}}
+    // Where a picture of width x height goes in a client area: whole multiples of its shown size, or
+    // the largest size of its shown proportions that fits; centred.
+    WindowPresenter::Rect placement(LONG client_width,LONG client_height,unsigned width,unsigned height) const {
+        const LONG shown_width=LONG(pictureWidth(width,height)),shown_height=LONG(height);
+        int w,h;
+        if(scaling_==Scaling::Integer) {
+            // A window holds whole pictures; the whole screen takes the nearest multiple.
+            const int scale=fullscreen_?int(nearestScale(client_width,client_height,shown_width,shown_height))
+                :std::max(1,int(std::min(client_width/shown_width,client_height/shown_height)));
+            w=int(shown_width)*scale;h=int(shown_height)*scale;
+        } else if(std::int64_t(client_width)*shown_height<=std::int64_t(client_height)*shown_width) {
+            w=std::max(1,int(client_width));h=std::max(1,int(std::int64_t(client_width)*shown_height/shown_width));
+        } else {
+            h=std::max(1,int(client_height));w=std::max(1,int(std::int64_t(client_height)*shown_width/shown_height));
+        }
+        return {int(client_width-w)/2,int(client_height-h)/2,w,h};
+    }
+    void showOnGpu(const DisplayFrame* frame,unsigned width,unsigned height) {
+        RECT client;GetClientRect(hwnd_,&client);
+        if(client.right<=0 || client.bottom<=0 || !width || !height)return; // Minimized.
+        const auto at=placement(client.right,client.bottom,width,height);
+        if(status_!=status_drawn_) {status_drawn_=status_;status_image_=drawStatus(status_);}
+        // Whole multiples keep pixels as blocks; any other stretch (widescreen, scaling off) is filtered.
+        const bool smooth=at.width%int(width) || at.height%int(height);
+        presenter_->show(hwnd_,frame,at,unsigned(client.right),unsigned(client.bottom),smooth,status_image_,
+            {at.x+6,at.y+4,int(status_image_.width),int(status_image_.height)});
+    }
+    // The status text as the GDI path draws it (yellow on black), as a picture.
+    static DisplayFrame drawStatus(const std::string& text) {
+        DisplayFrame image;
+        if(text.empty())return image;
+        HDC screen=GetDC(nullptr);HDC dc=CreateCompatibleDC(screen);ReleaseDC(nullptr,screen);
+        SIZE size{};GetTextExtentPoint32A(dc,text.c_str(),int(text.size()),&size);
+        BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(bi.bmiHeader);bi.bmiHeader.biWidth=std::max<LONG>(size.cx,1);
+        bi.bmiHeader.biHeight=-std::max<LONG>(size.cy,1);bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+        void* bits=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&bits,nullptr,0);
+        if(!bitmap) {DeleteDC(dc);return image;}
+        const auto old=SelectObject(dc,bitmap);
+        SetBkMode(dc,OPAQUE);SetBkColor(dc,RGB(0,0,0));SetTextColor(dc,RGB(255,255,0));
+        TextOutA(dc,0,0,text.c_str(),int(text.size()));GdiFlush();
+        image.width=unsigned(bi.bmiHeader.biWidth);image.height=unsigned(-bi.bmiHeader.biHeight);
+        const auto* pixels=static_cast<const std::uint32_t*>(bits);
+        image.bgra.assign(pixels,pixels+std::size_t(image.width)*image.height);
+        for(auto& p:image.bgra)p|=0xFF000000u;
+        SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+        return image;
+    }
     // The shown width of a picture: its own (one pixel for one pixel at scale 1), or 16:9 of its height.
     unsigned pictureWidth(unsigned width,unsigned height) const {return widescreen_?(height*16+4)/9:width;}
     static unsigned nearestScale(LONG width,LONG height,LONG picture_width,LONG picture_height) {
@@ -116,25 +182,15 @@ private:
         if(fullscreen_)applyLayout();
     }
     void paint(HDC dc) {
+        if(presenter_)return; // The presenter draws the window.
         RECT client;GetClientRect(hwnd_,&client);
         if(frame_.bgra.empty()) {FillRect(dc,&client,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));return;}
         BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(bi.bmiHeader);bi.bmiHeader.biWidth=LONG(frame_.width);
         bi.bmiHeader.biHeight=-LONG(frame_.height);bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
         // The picture keeps its shape in every window: whole multiples of its size, or the largest
         // size of the same proportions that fits; the rest of the window is black.
-        int w,h;
-        const LONG shown_width=LONG(pictureWidth(frame_.width,frame_.height)),shown_height=LONG(frame_.height);
-        if(scaling_==Scaling::Integer) {
-            // A window holds whole pictures; the whole screen takes the nearest multiple.
-            const int scale=fullscreen_?int(nearestScale(client.right,client.bottom,shown_width,shown_height))
-                :std::max(1,int(std::min(client.right/shown_width,client.bottom/shown_height)));
-            w=int(shown_width)*scale;h=int(shown_height)*scale;
-        } else if(std::int64_t(client.right)*shown_height<=std::int64_t(client.bottom)*shown_width) {
-            w=std::max(1,int(client.right));h=std::max(1,int(std::int64_t(client.right)*shown_height/shown_width));
-        } else {
-            h=std::max(1,int(client.bottom));w=std::max(1,int(std::int64_t(client.bottom)*shown_width/shown_height));
-        }
-        const int x=(client.right-w)/2,y=(client.bottom-h)/2;
+        const auto at=placement(client.right,client.bottom,frame_.width,frame_.height);
+        const int x=at.x,y=at.y,w=at.width,h=at.height;
         // Black only the borders around the frame: clearing the whole client area first made every
         // presented frame flash black briefly (flicker).
         const auto black=static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));

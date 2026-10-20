@@ -1,5 +1,6 @@
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/gpu/hd_texture_image.h"
+#include "gs/gpu/gpu_window_presenter.h"
 #include "gs/textures/gs_texture_names.h"
 #include "host/display_frame.h"
 #include "context.hpp"
@@ -8,11 +9,14 @@
 #include <stdexcept>
 
 struct GpuGsBackend::State {
-    Vulkan::Context context;
-    Vulkan::Device device;
+    Vulkan::ContextHandle context=Util::make_handle<Vulkan::Context>();
+    Vulkan::DeviceHandle device=Util::make_handle<Vulkan::Device>();
     ParallelGS::GSInterface gs;
     std::unique_ptr<HdTexturePack> pack; // After the GS: destroyed first.
     bool high_resolution=false;
+    Vulkan::ImageHandle picture; // The last scanout.
+    std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
+    ~State() {presenter.reset();picture.reset();}
 };
 
 GpuGsBackend::GpuGsBackend()=default;
@@ -23,14 +27,17 @@ void GpuGsBackend::init(unsigned super_sampling) {
         throw std::runtime_error("GPU GS: super-sampling must be 1, 2, 4, 8 or 16");
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
-    state->context.set_num_thread_indices(1);
-    if(!state->context.init_instance_and_device(nullptr,0,nullptr,0,Vulkan::CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT))
+    state->context->set_num_thread_indices(1);
+    // The surface extensions let the window presenter make a swapchain on this device.
+    const char* instance_extensions[]{"VK_KHR_surface","VK_KHR_win32_surface"};
+    const char* device_extensions[]{"VK_KHR_swapchain"};
+    if(!state->context->init_instance_and_device(instance_extensions,2,device_extensions,1,Vulkan::CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT))
         throw std::runtime_error("GPU GS: no usable Vulkan device");
-    state->device.set_context(state->context);
-    state->device.init_frame_contexts(4);
+    state->device->set_context(*state->context);
+    state->device->init_frame_contexts(4);
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
     state->high_resolution=super_sampling>=4;
-    if(!state->gs.init(&state->device,options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
+    if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
     state_=std::move(state);
 }
 
@@ -54,7 +61,7 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 void GpuGsBackend::flush() {
     state_->gs.flush();
     if(state_->pack)state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
-    state_->device.next_frame_context();
+    state_->device->next_frame_context();
 }
 
 void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
@@ -63,17 +70,29 @@ void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
 }
 
 DisplayFrame GpuGsBackend::scanout(unsigned field) {
+    vsync(field);
+    return readback();
+}
+
+std::pair<unsigned,unsigned> GpuGsBackend::vsync(unsigned field) {
     ParallelGS::VSyncInfo info{};
     info.phase=field&1;
+    // Read by a copy (readback) or a blit (the window presenter).
     info.dst_layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    info.dst_stage=VK_PIPELINE_STAGE_2_COPY_BIT;
+    info.dst_stage=VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
     info.dst_access=VK_ACCESS_2_TRANSFER_READ_BIT;
     info.force_progressive=true;info.anti_blur=true;info.high_resolution_scanout=state_->high_resolution;
     const auto result=state_->gs.vsync(info);
+    state_->picture=result.image;
+    if(!result.image)return {0,0};
+    return {result.image->get_width(),result.image->get_height()};
+}
+
+DisplayFrame GpuGsBackend::readback() {
     DisplayFrame frame;
-    if(!result.image)return frame;
-    auto& device=state_->device;
-    const auto& image=*result.image;
+    if(!state_->picture)return frame;
+    auto& device=*state_->device;
+    const auto& image=*state_->picture;
     frame.width=image.get_width();frame.height=image.get_height();
     Vulkan::BufferCreateInfo buffer_info{};
     buffer_info.domain=Vulkan::BufferDomain::CachedHost;
@@ -97,8 +116,14 @@ DisplayFrame GpuGsBackend::scanout(unsigned field) {
     return frame;
 }
 
+WindowPresenter& GpuGsBackend::windowPresenter() {
+    if(!state_->presenter)
+        state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{return state_->picture.get();});
+    return *state_->presenter;
+}
+
 void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names) {
-    state_->pack=std::make_unique<HdTexturePack>(state_->device,folder,budget_bytes);
+    state_->pack=std::make_unique<HdTexturePack>(*state_->device,folder,budget_bytes);
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};

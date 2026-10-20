@@ -650,6 +650,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Game patches.** `BT2_GAME_PATCHES=<name>[,<name>]` applies optional patches of the executable after it is loaded (`runtime/ee/game_patches.cpp`; now `widescreen`, docs/plans/graphics/IMAGE_QUALITY_PLAN.md); each word's original is checked first. An instruction a patch changes must be listed in `config/game_patches.json`, so that `prepare_runtime.py` makes the generated code read it from memory (then run `prepare_runtime.py` and build).
 
+**Viewer presentation.** With the GPU renderer the window shows the picture through a swapchain (`gs/gpu/gpu_window_presenter.cpp`); `BT2_VIEWER_GDI=1` reads each picture back and draws it with GDI instead. `BT2_VIEWER_STATS`'s "scanout" is the renderer's scanout (with GDI also the readback).
+
 **Fast forward measured.** `BT2_FAST_FORWARD=1` with the viewer (or the audio device) runs the whole run in fast forward, as when its key is held; with `BT2_VIEWER_STATS=1` the window's statistics give its speed.
 
 **Screen runs.** `python tools/ps2recomp/screen_run.py --disc <iso> [--modes 10,24,61] [--flips 30000] [--down-every 400] [--jobs 3]` runs main-menu screens through their battles without input: a generated pad script presses cross every 120 fields (and, with `--down-every`, down for 60 fields that often, which Ultimate Training's lessons need), and each run prints its result and the battles the screen starter recorded (kind, rule, the field it started, the lesson in Training, the result flags); pictures every `--pictures` flips go to `work/coverage/modes/`. Training (mode 61) with `--flips 90000 --down-every 400` runs all 21 lessons; Ultimate Battle Z (mode 10) with `--flips 600000` clears all 15 courses.

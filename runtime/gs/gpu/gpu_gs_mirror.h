@@ -17,6 +17,11 @@ public:
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and
     // the video mode of its SetGsCrt request (2 NTSC, 3 PAL), which sets SMODE1 on hardware.
     DisplayFrame scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field);
+    // The same scanout kept on the GPU (its size; {0, 0} when nothing is displayed), for the window
+    // presenter; readback() copies it to the processor.
+    std::pair<unsigned,unsigned> vsync(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field);
+    DisplayFrame readback() {return gpu_.readback();}
+    WindowPresenter& windowPresenter() {return gpu_.windowPresenter();}
     ~GpuGsMirror(); // Prints the summary.
 private:
     GpuGsBackend gpu_;

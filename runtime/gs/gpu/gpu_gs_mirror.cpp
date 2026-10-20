@@ -24,10 +24,15 @@ void GpuGsMirror::compare(const GsCommandSink& cpu,unsigned frame) {
 }
 
 DisplayFrame GpuGsMirror::scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field) {
+    vsync(privileged,crt_mode,field);
+    return gpu_.readback();
+}
+
+std::pair<unsigned,unsigned> GpuGsMirror::vsync(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field) {
     if(crt_mode!=2 && crt_mode!=3)throw std::runtime_error("GPU GS: unsupported SetGsCrt video mode");
     for(unsigned n=0;n<privileged.size();++n)gpu_.privileged(n,privileged[n]);
     gpu_.privileged(1,(32u<<3)|(crt_mode<<13)); // SMODE1: analog line clock (LC 32), CMOD NTSC/PAL.
-    return gpu_.scanout(field);
+    return gpu_.vsync(field);
 }
 
 GpuGsMirror::~GpuGsMirror() {
