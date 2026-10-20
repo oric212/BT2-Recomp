@@ -31,6 +31,7 @@ DisplayFrame GpuGsMirror::scanout(const std::array<std::uint64_t,15>& privileged
 }
 
 GpuGsMirror::~GpuGsMirror() {
+    if(const auto hd=gpu_.hdTextureSummary();!hd.empty())std::cerr<<hd<<std::endl;
     if(!attached_ || !frames_)return;
     std::cerr<<"GPU mirror: "<<frames_<<" frames compared, "<<differing_frames_<<" differ";
     if(differing_frames_)std::cerr<<"; first at frame "<<first_frame_<<std::hex<<", word 0x"<<first_word_

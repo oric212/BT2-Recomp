@@ -333,6 +333,14 @@ int main(int argc, char** argv) {
             const bool gpu_only = std::string_view(gpu_mode) == "on";
             gpu_mirror.attach(runtime.gif_dma.gs);
             runtime.gif_dma.gs.rasterize = !gpu_only;
+            // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
+            // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).
+            if (const char* hd = std::getenv("BT2_HD_TEXTURES")) {
+                std::string folder = hd;std::uint64_t budget_mb = 2048;
+                if (const auto colon = folder.rfind(':'); colon != std::string::npos && colon > 1) {budget_mb = std::stoull(folder.substr(colon + 1));folder.resize(colon);}
+                runtime.gif_dma.gs.texture_names = &texture_name_log.names;
+                gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
+            }
             // GPU-only: VRAM lives in the renderer, which also answers local->host transfers.
             if (gpu_only) runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.

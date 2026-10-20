@@ -106,6 +106,10 @@ private:
     struct Clut {std::array<std::uint32_t,256> color{};std::array<bool,256> known{};};
     Clut clut_;
     void run(std::span<const std::uint8_t> data,bool apply);
+    // Texture names' lockstep (transferAll): the transfer being run, how much of it went on to the
+    // renderer, and where the qword being run starts.
+    std::span<const std::uint8_t> streaming_{};std::size_t forwarded_=0,cursor_=0;
+    void forwardBefore(std::size_t at);
     void image(std::span<const std::uint8_t> data);
     void startTransfer(std::uint64_t dir);
     void loadClut(std::uint64_t texture0);

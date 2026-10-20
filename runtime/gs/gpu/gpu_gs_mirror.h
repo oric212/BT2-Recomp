@@ -12,6 +12,7 @@ public:
     void attach(GsCommandSink& cpu);
     void flip() {FrameProfile::Scope timed(frame_profile.flush);gpu_.flush();}
     void readFifo(std::span<std::uint8_t> out) {gpu_.readFifo(out);} // Local->host data, GPU-only mode.
+    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names) {gpu_.enableHdTextures(pack,budget_bytes,names);}
     void compare(const GsCommandSink& cpu,unsigned frame);
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and
     // the video mode of its SetGsCrt request (2 NTSC, 3 PAL), which sets SMODE1 on hardware.

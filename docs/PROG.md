@@ -52,7 +52,7 @@ Order set by the user (2026-10-13, 2026-10-18, 2026-10-19); details in the [hand
 1. **Whole-game coverage** ([plan](plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): step 6's screens done (2026-10-20: all 15 Ultimate Battle Z courses, the Dragon Tournament's save question, the 21 Ultimate Training lessons); left: the exhaustive battle sweep as the final validation. The runtime generalization plan's groups 4 to 6 (the startup's own replays) come at the very end, once the game boots and everything works (the user, 2026-10-20).
 2. **The user's tests of what is built:** special moves and ultimates, saving, the launcher's screens, the camera in fights.
 3. **Performance** ([plan](plans/ee/PERFORMANCE_PLAN.md)): fights at a flat 30 pictures per second and menus at 60 on a mid- to low-end PC; next the GPU renderer's intake on a graphics thread.
-4. **Enhancements** (the user, 2026-10-20): [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) (pack 2; step 1, the name check, is built), [widescreen and image quality](plans/graphics/IMAGE_QUALITY_PLAN.md), then optional [60 fps battles](plans/graphics/HIGH_FRAME_RATE_PLAN.md); fast forward's faults fixed (not yet tried by the user).
+4. **Enhancements** (the user, 2026-10-20): [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) (pack 2's replacements drawn since 2026-10-20 with `BT2_HD_TEXTURES`; next super-sampling, the characters' drawn palettes, the setting), [widescreen and image quality](plans/graphics/IMAGE_QUALITY_PLAN.md), then optional [60 fps battles](plans/graphics/HIGH_FRAME_RATE_PLAN.md); fast forward's faults fixed (not yet tried by the user).
 5. **Later:** 3D and film comparisons with the original, the CPU renderer in 3D (optional).
 
 ## Links

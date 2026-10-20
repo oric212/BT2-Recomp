@@ -23,7 +23,7 @@ Dependency sources and binaries stay in ignored `work/` and `build/`; this repos
 | [nlohmann/json](https://github.com/nlohmann/json/tree/9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03) | v3.11.3 | `LICENSE.MIT`: MIT |
 | [xxHash](https://github.com/Cyan4973/xxHash/tree/e626a72bc2321cd320e953a0ccf1584cad60f363) | v0.8.3 (`config/xxhash.lock.json`) | `LICENSE`: BSD 2-Clause (the library); compiled into the runtime's texture names, so binaries keep its notice |
 
-Retain copyright/license notices and satisfy applicable source and copyleft requirements when distributing dependencies. No upstream runtime is linked into `bt2-port`. Future runtime linking and generated-output licensing require assessment before distribution; generator use does not resolve ownership of retail-derived code. libdwarf's separate GPLv2 dwarfdump tool is disabled.
+paraLLEl-GS (LGPL-3.0, pinned in `config/parallel_gs.lock.json`) is built with the project's modification `tools/graphics/gpu/parallel_gs_texture_replacement.patch` (texture replacement hook and a GIF parsing fix); the patch is the modified source's difference and is published with the project. Retain copyright/license notices and satisfy applicable source and copyleft requirements when distributing dependencies. No upstream runtime is linked into `bt2-port`. Future runtime linking and generated-output licensing require assessment before distribution; generator use does not resolve ownership of retail-derived code. libdwarf's separate GPLv2 dwarfdump tool is disabled.
 
 Review staged files before every commit; ignore rules help prevent accidental inclusion.
 

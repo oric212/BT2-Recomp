@@ -1,4 +1,5 @@
 {
   "parallel-gs": {"repository": "https://github.com/Arntzen-Software/parallel-gs.git", "revision": "cc6184af7e0c03da603045ca371ffa5dae9b0655"},
-  "submodules": ["Granite", "Granite/third_party/volk", "Granite/third_party/khronos/vulkan-headers"]
+  "submodules": ["Granite", "Granite/third_party/volk", "Granite/third_party/khronos/vulkan-headers"],
+  "patches": ["tools/graphics/gpu/parallel_gs_texture_replacement.patch"]
 }

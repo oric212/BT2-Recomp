@@ -2,10 +2,13 @@
 // Built only with BT2_GPU_GS; Vulkan and Granite stay behind this interface.
 #pragma once
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 
 struct DisplayFrame;
+class GsTextureNames;
 
 class GpuGsBackend {
 public:
@@ -25,6 +28,11 @@ public:
     void privileged(unsigned index,std::uint64_t value);
     // Scans out the displayed circuits for one field and reads the image back (empty when nothing is displayed).
     DisplayFrame scanout(unsigned field);
+    // HD textures (docs/plans/graphics/HD_TEXTURES_PLAN.md): each texture the renderer caches is named by
+    // `names` (kept in step with the renderer by the GS sink) and drawn with the pack's replacement when
+    // it has one. The summary line says what was found, loaded and dropped.
+    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
+    std::string hdTextureSummary() const;
 private:
     struct State;
     std::unique_ptr<State> state_;

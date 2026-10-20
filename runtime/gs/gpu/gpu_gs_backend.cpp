@@ -1,4 +1,6 @@
 #include "gs/gpu/gpu_gs_backend.h"
+#include "gs/gpu/hd_texture_image.h"
+#include "gs/textures/gs_texture_names.h"
 #include "host/display_frame.h"
 #include "context.hpp"
 #include "device.hpp"
@@ -9,6 +11,7 @@ struct GpuGsBackend::State {
     Vulkan::Context context;
     Vulkan::Device device;
     ParallelGS::GSInterface gs;
+    std::unique_ptr<HdTexturePack> pack; // After the GS: destroyed first.
 };
 
 GpuGsBackend::GpuGsBackend()=default;
@@ -45,6 +48,7 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 
 void GpuGsBackend::flush() {
     state_->gs.flush();
+    if(state_->pack)state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
     state_->device.next_frame_context();
 }
 
@@ -86,4 +90,22 @@ DisplayFrame GpuGsBackend::scanout(unsigned field) {
     device.unmap_host_buffer(*buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
     device.next_frame_context();
     return frame;
+}
+
+void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names) {
+    state_->pack=std::make_unique<HdTexturePack>(state_->device,folder,budget_bytes);
+    state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
+        const auto name=names.name(desc.tex0.bits,desc.texa.bits);
+        if(!name)return {};
+        const auto* image=state_->pack->find(name->text());
+        return image?image->handle:Vulkan::ImageHandle{};
+    };
+}
+
+std::string GpuGsBackend::hdTextureSummary() const {
+    if(!state_ || !state_->pack)return {};
+    const auto& p=*state_->pack;
+    return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
+        +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.loaded)+" loaded, "
+        +std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB";
 }

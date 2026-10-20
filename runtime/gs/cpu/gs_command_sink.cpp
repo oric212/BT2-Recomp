@@ -91,14 +91,32 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
     const auto saved_state=state;const auto saved_clut=clut_;
     logging_=true;
     const std::array<std::uint64_t,7> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads,frame_triangles};
-    try {for(const auto& data:group){run(data,true);++transfers;}endTransaction(false);}
+    // With texture names, the data goes on to the renderer in pieces that end before each change of GS
+    // memory or of the CLUT the names follow (forwardBefore), so the names' copy is never ahead of the
+    // renderer when it takes a texture; a refused group still ends the run, as it would anyway.
+    const bool lockstep=texture_names && on_accepted;
+    try {
+        for(const auto& data:group) {
+            if(lockstep) {streaming_=data;forwarded_=0;cursor_=0;}
+            run(data,true);
+            if(lockstep) {forwardBefore(data.size());streaming_={};}
+            ++transfers;
+        }
+        endTransaction(false);
+    }
     catch(...) {
+        streaming_={};
         endTransaction(true);
         state=saved_state;clut_=saved_clut;
         transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
         frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);frame_triangles=unsigned(saved_counts[6]);throw;
     }
-    if(on_accepted)for(const auto& data:group)on_accepted(data);
+    if(on_accepted && !lockstep)for(const auto& data:group)on_accepted(data);
+}
+
+void GsCommandSink::forwardBefore(std::size_t at) {
+    if(streaming_.empty() || at<=forwarded_)return;
+    on_accepted(streaming_.subspan(forwarded_,at-forwarded_));forwarded_=at;
 }
 
 void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
@@ -107,7 +125,7 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
     // The GIF path keeps its tag across DMA transfers: IMAGE data left over from an earlier transfer comes first.
     if(state.image_qwords_left) {
         const std::size_t take=std::min<std::size_t>(state.image_qwords_left,data.size()/16);
-        image(data.subspan(0,take*16));at=take*16;state.image_qwords_left-=unsigned(take);
+        cursor_=0;image(data.subspan(0,take*16));at=take*16;state.image_qwords_left-=unsigned(take);
     }
     while(at<data.size()) {
         const auto tag=read(at),regs=read(at+8);at+=16;
@@ -121,19 +139,19 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
                 // transfer registers, FINISH); vertex and texture data pass by unread.
                 for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
                     if(((regs>>(4*r))&15)==0xE)write(unsigned(read(at+8)&0xFF),read(at),apply);
-            } else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);
+            } else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16) {cursor_=at;packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);}
         } else if(flg==1) {
             const std::size_t words=std::size_t(nloop)*nreg;
             if(at+((words+1)/2)*16>data.size())throw std::runtime_error("GIF REGLIST data exceeds transfer");
             for(std::size_t w=0;w<words;++w) {
                 const unsigned d=unsigned((regs>>(4*(w%nreg)))&15);
                 // A+D has no REGLIST meaning; that descriptor's data is not a register write.
-                if(d!=0xE && d!=0xF)write(d,read(at+w*8),apply);
+                if(d!=0xE && d!=0xF) {cursor_=at+w/2*16;write(d,read(at+w*8),apply);}
             }
             at+=((words+1)/2)*16;
         } else {
             const std::size_t take=std::min<std::size_t>(nloop,(data.size()-at)/16);
-            image(data.subspan(at,take*16));at+=take*16;state.image_qwords_left=nloop-unsigned(take);
+            cursor_=at;image(data.subspan(at,take*16));at+=take*16;state.image_qwords_left=nloop-unsigned(take);
         }
         // EOP ends this GIF packet; any further data in the transfer starts the next packet.
     }
@@ -141,7 +159,7 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
 
 void GsCommandSink::image(std::span<const std::uint8_t> data) {
     // Host->local PSMCT32 pixels in transfer order (left to right, top to bottom).
-    if(texture_names)texture_names->image(data);
+    if(texture_names) {forwardBefore(cursor_);texture_names->image(data);}
     auto& t=state;
     if(!t.trx) {
         if(!rasterize)return; // GPU-only: a transfer this model does not track; the data is the GPU's.
@@ -267,7 +285,10 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     if(reg>=state.regs.size() || (reg>0x0F && reg<0x14) || reg==0x54)
         throw std::runtime_error("Unsupported GS register write");
     state.regs[reg]=value;if(apply)++register_writes;
-    if(texture_names)texture_names->reg(reg,value);
+    if(texture_names) {
+        if((reg==0x06 || reg==0x07 || reg==0x16 || reg==0x17) && (value>>61))forwardBefore(cursor_); // A CLUT load.
+        texture_names->reg(reg,value);
+    }
     if(reg==0x53) {startTransfer(value);return;}
     if(reg==0x61) {++state.finishes;return;}
     if(reg==0x06 || reg==0x07) {

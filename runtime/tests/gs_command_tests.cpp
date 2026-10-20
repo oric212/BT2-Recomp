@@ -1,6 +1,7 @@
 #include "gs/gif_dma_staging.h"
 #include "gs/texture_gif_startup.h"
 #include "gs/cpu/cpu_display.h"
+#include "gs/textures/gs_texture_names.h"
 #include <iostream>
 #include <set>
 #include <source_location>
@@ -341,6 +342,35 @@ int main() {
         t.clear();q(0x1000000000008004ULL,0xE);q(0x40ULL|(1ULL<<16)|(0x13ULL<<24),0x50);q(0,0x51);q(0x0000002000000010ULL,0x52);q(1,0x53);gpu.transfer(t);
         check(gpu.downloadQwords()==32);gpu.readDownload(row);check(gpu.downloadQwords()==31);
         GsCommandSink idle;refused=false;try{idle.readDownload(row);}catch(const std::runtime_error&){refused=true;}check(refused);
+    }
+    {
+        // Texture names in step with the renderer: with names attached, a transfer goes on in pieces that end
+        // before an upload's data and before a CLUT load, and the pieces put together are the transfer.
+        std::vector<std::uint8_t> t;
+        auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+        q(0x1000000000000004ULL,0xE);                 // NLOOP 4, A+D.
+        q(0x0000000000000000ULL|(0x300ULL<<32)|(1ULL<<48),0x50); // BITBLTBUF: DBP 0x300, DBW 1, PSMCT32.
+        q(0,0x51);q(8ULL|(2ULL<<32),0x52);q(0,0x53);    // TRXPOS 0, TRXREG 8 x 2, TRXDIR host to local.
+        const std::size_t image_data=t.size()+16;
+        q(0x0800000000008004ULL,0);                   // NLOOP 4, EOP, IMAGE.
+        for(unsigned i=0;i<4;++i)q(0x0403020108070605ULL+i,0x0C0B0A090F0E0D0CULL+i);
+        q(0x1000000000000002ULL,0xE);                 // NLOOP 2, A+D.
+        const std::size_t clut_load=t.size();
+        q(0x14ULL<<20|6ULL<<26|6ULL<<30|0x300ULL<<37|1ULL<<61,0x06); // TEX0_1: PSMT4 64 x 64, CBP 0x300, CLD 1.
+        q(0x16,0x00);                                 // PRIM: triangle strip with TME.
+        GsTextureNames names;GsCommandSink gs;gs.rasterize=false;gs.texture_names=&names;
+        std::vector<std::vector<std::uint8_t>> pieces;
+        gs.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
+        gs.transfer(t);
+        check(pieces.size()==3 && pieces[0].size()==image_data && pieces[0].size()+pieces[1].size()==clut_load);
+        std::vector<std::uint8_t> joined;for(const auto& p:pieces)joined.insert(joined.end(),p.begin(),p.end());
+        check(joined==t);
+        // The CLUT load read the uploaded colours: entry 0 is the first pixel.
+        check(names.clut()[0]==0x0605 && names.clut()[256]==0x0807);
+        // Without names the transfer goes on whole.
+        GsCommandSink whole;whole.rasterize=false;pieces.clear();
+        whole.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
+        whole.transfer(t);check(pieces.size()==1 && pieces[0]==t);
     }
     std::cout<<"GS scoped command tests passed\n";
 }

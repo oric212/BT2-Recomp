@@ -65,18 +65,19 @@ void GsTextureNames::reg(unsigned reg,std::uint64_t value) {
 void GsTextureNames::startTransfer(std::uint64_t dir) {
     transfer_=false;partial_=0;partial_bytes_=0;
     const unsigned direction=unsigned(dir&3);
-    if(direction==2) {++local_copies;++generation_;return;}
+    if(direction==2) {++local_copies;all_written_=++generation_;return;}
     if(direction!=0)return;
     const auto bitblt=regs_[0x50],pos=regs_[0x51],size=regs_[0x52];
     psm_=unsigned((bitblt>>56)&63);bp_=unsigned((bitblt>>32)&0x3FFF);bw_=unsigned((bitblt>>48)&63);
     x0_=unsigned((pos>>32)&0x7FF);y0_=unsigned((pos>>48)&0x7FF);w_=unsigned(size&0xFFF);h_=unsigned((size>>32)&0xFFF);x_=y_=0;
     const bool written=psm_==psm_ct32 || psm_==psm_ct24 || psm_==psm_t8 || psm_==psm_t4 || psm_==psm_t8h || psm_==psm_t4hl || psm_==psm_t4hh;
-    if(!written || ((pos>>59)&3) || !w_ || !h_) {++unsupported_uploads;++generation_;return;}
+    if(!written || ((pos>>59)&3) || !w_ || !h_) {++unsupported_uploads;all_written_=++generation_;return;}
     transfer_=true;++generation_;
 }
 
 void GsTextureNames::image(std::span<const std::uint8_t> data) {
     if(!transfer_)return;
+    ++generation_; // A hash taken between two pieces of a transfer is not kept past the next one.
     const unsigned bytes=psm_==psm_ct32?4:psm_==psm_ct24?3:0;
     for(const std::uint8_t b:data) {
         if(!transfer_)return;
@@ -108,6 +109,7 @@ void GsTextureNames::writePixel(std::uint32_t value) {
     case psm_t4hl:word=(word&0xF0FFFFFFu)|(value<<24);break;
     case psm_t4hh:word=(word&0x0FFFFFFFu)|(value<<28);break;
     }
+    page_written_[(&word-memory_.data())/2048]=generation_;
     ++uploaded_pixels;
     if(++x_==w_) {x_=0;if(++y_==h_)transfer_=false;}
 }
@@ -143,20 +145,56 @@ void GsTextureNames::kick() {
 }
 
 std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std::uint64_t texa) {
-    const unsigned psm=unsigned((tex0>>20)&63),tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63);
+    const unsigned psm=unsigned((tex0>>20)&63);
     const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
     const unsigned cpsm=unsigned((tex0>>51)&15),csa=unsigned((tex0>>56)&31);
     const auto f=format(psm);
     if(!f || tw>10 || th>10 || (f->palette && cpsm!=0 && cpsm!=1)) {++unsupported_textures;++unsupported_formats[psm];return std::nullopt;}
-    const unsigned width=1u<<tw,height=1u<<th;
     const unsigned ta0=unsigned(texa&0xFF),aem=unsigned((texa>>15)&1),ta1=unsigned((texa>>32)&0xFF);
+    Name n;
+    n.texture=textureHash(tex0,texa);
+    n.format=psm|(tw<<6)|(th<<10);
+    if(!f->palette && psm!=psm_ct32)n.format|=(ta0<<15)|(aem<<23)|(ta1<<24);
+    if(f->palette) {
+        std::array<std::uint32_t,256> entries{};
+        auto entry=[&](unsigned i){return std::uint32_t(clut_[i])|(std::uint32_t(clut_[i+256])<<16);};
+        if(f->palette==16)for(unsigned k=0;k<16;++k)entries[k]=entry((csa&15)*16+k);
+        else for(unsigned i=0;i<256;i+=16) {
+            // Groups past the last one clamp to it instead of wrapping.
+            const unsigned from=std::min(i+(csa&15)*16,240u);
+            for(unsigned k=0;k<16;++k)entries[i+k]=entry(from+k);
+        }
+        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;
+    }
+    return n;
+}
+
+std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa) {
+    const unsigned psm=unsigned((tex0>>20)&63),tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63);
+    const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
+    const auto f=*format(psm);
+    const unsigned width=1u<<tw,height=1u<<th;
+    const unsigned ta0=unsigned(texa&0xFF),aem=unsigned((texa>>15)&1);
+    // The pages the texture lies in: rows of pages TBW apart (half for 8-bit and 4-bit), each as many
+    // pages across as the width needs plus one when TBP is not at a page's start.
+    const unsigned pages_across=tbw>>(log2(f.page_w)-6);
+    auto pages=[&](auto&& each) {
+        const unsigned rows=(height+f.page_h-1)/f.page_h,across=(width+f.page_w-1)/f.page_w+(tbp%32?1:0);
+        for(unsigned r=0;r<rows;++r)for(unsigned c=0;c<across;++c)each((tbp/32+r*std::max(pages_across,1u)+c)%512);
+    };
+    const auto key=std::make_pair(tex0&0x3FFFFFFFFull,psm==psm_ct24?texa&0x80FFull:0ull);
+    if(auto found=hashed_.find(key);found!=hashed_.end() && found->second.generation>=all_written_) {
+        bool clean=true;
+        pages([&](unsigned page){if(page_written_[page]>found->second.generation)clean=false;});
+        if(clean)return found->second.hash;
+    }
     XXH3_state_t state;XXH3_64bits_reset(&state);
-    if(width<f->block_w || height<f->block_h || !f->full) {
+    if(width<f.block_w || height<f.block_h || !f.full) {
         // Read out row by row: the index for palette formats, RGBA otherwise.
-        std::vector<std::uint8_t> row(std::size_t(width)*(f->palette?1:4));
+        std::vector<std::uint8_t> row(std::size_t(width)*(f.palette?1:4));
         for(unsigned y=0;y<height;++y) {
             for(unsigned x=0;x<width;++x) {
-                if(f->palette) {
+                if(f.palette) {
                     std::uint8_t index;
                     switch(psm) {
                     case psm_t8:index=std::uint8_t(memory_[GsCommandSink::t8Byte(tbp,tbw,x,y)/4]>>(GsCommandSink::t8Byte(tbp,tbw,x,y)%4*8));break;
@@ -177,28 +215,14 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     } else {
         // Whole blocks in block order: rows of blocks, each left to right; pages follow each other across
         // and TBW pages (half of it for the 8-bit and 4-bit formats) down.
-        const unsigned pages_across=tbw>>(log2(f->page_w)-6);
-        for(unsigned by=0;by<height/f->block_h;++by)
-            for(unsigned bx=0;bx<width/f->block_w;++bx) {
-                const std::size_t block=(tbp+(by/f->blocks_h)*32*pages_across+(bx/f->blocks_w)*32
-                    +blockInPage(psm,bx%f->blocks_w,by%f->blocks_h))%max_blocks;
+        for(unsigned by=0;by<height/f.block_h;++by)
+            for(unsigned bx=0;bx<width/f.block_w;++bx) {
+                const std::size_t block=(tbp+(by/f.blocks_h)*32*pages_across+(bx/f.blocks_w)*32
+                    +blockInPage(psm,bx%f.blocks_w,by%f.blocks_h))%max_blocks;
                 XXH3_64bits_update(&state,&memory_[block*64],256);
             }
     }
-    Name n;
-    n.texture=XXH3_64bits_digest(&state);
-    n.format=psm|(tw<<6)|(th<<10);
-    if(!f->palette && psm!=psm_ct32)n.format|=(ta0<<15)|(aem<<23)|(ta1<<24);
-    if(f->palette) {
-        std::array<std::uint32_t,256> entries{};
-        auto entry=[&](unsigned i){return std::uint32_t(clut_[i])|(std::uint32_t(clut_[i+256])<<16);};
-        if(f->palette==16)for(unsigned k=0;k<16;++k)entries[k]=entry((csa&15)*16+k);
-        else for(unsigned i=0;i<256;i+=16) {
-            // Groups past the last one clamp to it instead of wrapping.
-            const unsigned from=std::min(i+(csa&15)*16,240u);
-            for(unsigned k=0;k<16;++k)entries[i+k]=entry(from+k);
-        }
-        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;
-    }
-    return n;
+    const auto hash=XXH3_64bits_digest(&state);
+    hashed_[key]={hash,generation_};
+    return hash;
 }

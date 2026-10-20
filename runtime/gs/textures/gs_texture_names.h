@@ -62,6 +62,13 @@ private:
     // Changes since a context's texture was last named.
     std::uint64_t generation_=0;
     std::uint64_t named_generation_[2]{~0ull,~0ull},named_tex0_[2]{},named_texa_[2]{};
+    // Texture hashes are kept until a transfer writes one of the 8 KB pages the texture lies in (the
+    // renderer asks again each time it caches a texture, which in fights is many times per frame).
+    std::array<std::uint64_t,512> page_written_{}; // The generation of the last transfer into each page.
+    std::uint64_t all_written_=0;                  // A transfer this does not follow: every page.
+    struct Hashed {std::uint64_t hash,generation;};
+    std::map<std::pair<std::uint64_t,std::uint64_t>,Hashed> hashed_;
+    std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa);
 
     void startTransfer(std::uint64_t dir);
     void writePixel(std::uint32_t value);
