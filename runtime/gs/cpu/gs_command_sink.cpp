@@ -21,6 +21,7 @@ struct GsCommandSink::Draw {
 struct GsCommandSink::Rgba {int r,g,b,a;};
 
 void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
+    if(on_input && packet.size()==240)on_input(packet); // Configuration packets are reported by consumeConfiguration.
     if(packet.size()!=240) {consumeConfiguration(packet);return;}
     auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,packet.data()+offset,8);return v;};
     auto reject=[](){throw std::runtime_error("Unsupported GS sprite packet/state");};
@@ -65,6 +66,7 @@ void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
 }
 
 void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
+    if(on_input)on_input(packet);
     auto reject=[](){throw std::runtime_error("Unsupported GS configuration packet");};
     if(!drawing_reset_ || packet.size()<32 || packet.size()%16)reject();
     auto read=[&](std::size_t offset) {std::uint64_t value;std::memcpy(&value,packet.data()+offset,8);return value;};
@@ -86,6 +88,7 @@ void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
 }
 
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
+    if(on_input)for(const auto& data:group)on_input(data);
     for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
     // Rollback: register state and CLUT are copied; VRAM pages are saved on first write (writable).
     const auto saved_state=state;const auto saved_clut=clut_;

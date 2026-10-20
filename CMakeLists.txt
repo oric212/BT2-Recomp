@@ -351,6 +351,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     bt2_ee_target(bt2-entry-probe)
     if(BT2_GPU_GS)
         target_link_libraries(bt2-entry-probe PRIVATE bt2-gpu-gs)
+        target_sources(bt2-entry-probe PRIVATE runtime/gs/gpu/in_between_frames.cpp) # Needs VIF1/VU1 and the GS sink as well.
         target_compile_definitions(bt2-entry-probe PRIVATE BT2_GPU_GS=1)
     endif()
     target_compile_definitions(bt2-entry-probe PRIVATE PS2X_STRICT_RETURN_DIAGNOSTICS=1)

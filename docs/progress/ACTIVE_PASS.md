@@ -1,15 +1,15 @@
 # Resume handoff
 
-Updated: 2026-10-20. **Pass in progress: live 60 fps in-between pictures** ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
+Updated: 2026-10-20. **No pass in progress.** The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
 The whole game runs without input (all modes, all 200 story parts, 73 towns; [coverage plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)); what each part was checked on is in [VALIDATION.md](VALIDATION.md). The enhancements HD textures (pack 2), super-sampling and widescreen are settings in the launcher and the in-game menu; the picture goes to the window on the GPU; a fight holds 30 pictures per second with every enhancement on.
 
-**60 fps (this pass).** The engine steps a fixed amount 30 times a second (uncapped, the same fight runs at double speed), so the fight stays at 30 and in-between pictures are drawn from the game's own commands: the frame's VIF1 list with the camera and bone matrices halfway. Done: two frames' lists pair code for code; one in-between picture drawn offline, clean, with the game untouched. Built and tested: `runtime/vu/vif1_blend.*` (blending two frames' lists, `bt2-vif1-blend-tests`) and a second renderer on the same GPU device (`GpuGsBackend::initShared`, the HD pack shared, `showPictureOf`). Next:
-1. Record each frame's GS-bound inputs in order (VIF1 lists with the GS bytes they produce, other GIF transfers).
-2. A second pipeline (its own VIF1/VU1 copy, GS sink, texture names, the shared renderer): per frame the in-between picture of the last two frames, then the real frame so its state follows; first on the game's thread, checked by snapshots (the real replay must equal the main picture), then on a worker thread.
-3. Show the in-between picture in the field between two fight flips (the list built during flip F appears at F + 2, so it adds no delay); then the setting "60 fps battles" in the launcher and the overlay.
+**60 fps (this pass).** The engine steps a fixed amount 30 times a second (uncapped, the same fight runs at double speed), so the fight stays at 30 and in-between pictures are drawn from the game's own commands: the frame's VIF1 list with the camera and bone matrices halfway. Done: two frames' lists pair code for code; one in-between picture drawn offline, clean, with the game untouched. Built and checked headless: `runtime/gs/gpu/in_between_frames.*` (`BT2_SIXTY_FPS=1`) records each frame's GS input and draws, on a second renderer, the in-between picture of the last two fight frames, then replays the newer frame; the second renderer follows the main one pixel for pixel (`BT2_SIXTY_FPS=replay`), and a live in-between picture lies between its neighbours. Next:
+1. **In the window:** the in-between picture is shown one field after a fight flip by the probe's per-field hook (`sixty_fps::field_picture`; built, not yet run with the viewer): check the order of fields and the 60 pictures per second with `BT2_VIEWER_STATS`.
+2. **Cost:** measure the second renderer's work per frame (it doubles the GS intake and adds a VU1 run); move it to a worker thread if the frame's budget needs it.
+3. **The setting** "60 fps battles" in the launcher and the in-game menu (from the next start), then the user's look in play, and a check that the fight is unchanged (state hash with and without).
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); HD textures for the fighters' bodies (their palettes are drawn on the GPU) and the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
 

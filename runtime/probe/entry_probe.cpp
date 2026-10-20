@@ -1,6 +1,7 @@
 #include "gs/cpu/cpu_display.h"
 #ifdef BT2_GPU_GS
 #include "gs/gpu/gpu_gs_mirror.h"
+#include "gs/gpu/in_between_frames.h"
 #endif
 #ifdef _WIN32
 #include "host/viewer_window.h"
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <deque>
+#include <functional>
 #include <tuple>
 #include <cstring>
 #include <fstream>
@@ -34,6 +37,14 @@
 // classifies the checked boundary where it stops, validates the reached checkpoint and writes the
 // private report. Stages live in probe_inputs.cpp, startup_bindings.cpp, checkpoint_checks.cpp and
 // probe_reports.cpp.
+
+// 60 fps battles (gs/gpu/in_between_frames.h): the picture shown in the field between two fight flips,
+// and the fight's 30 fps waits counted per frame (a frame that waited is a fight frame).
+namespace sixty_fps {
+std::function<void()> field_picture; // Called at each field's end before its deadline is waited for.
+unsigned fight_waits = 0;
+bool counting = false;
+}
 
 int main(int argc, char** argv) {
     try {
@@ -106,6 +117,7 @@ int main(int argc, char** argv) {
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
                 if (wav) wav->write(pcm);
                 if (pacer) {
+                    if (sixty_fps::field_picture) sixty_fps::field_picture(); // An in-between picture, at this field's deadline.
                     pacer->wait(); // The field that ends here, if it showed no picture.
                     // A queue above its target means the fields come faster than the device plays them: lengthen the period a little.
                     const double excess = speaker.device ? (double(speaker.device->queuedFrames()) - AudioMixer::rate / 20) / AudioMixer::rate : 0;
@@ -340,7 +352,8 @@ int main(int argc, char** argv) {
         if (gpu_mode) {
             const bool gpu_only = std::string_view(gpu_mode) == "on";
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
-            gpu_mirror.attach(runtime.gif_dma.gs, std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u);
+            const unsigned super_sampling = std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u;
+            gpu_mirror.attach(runtime.gif_dma.gs, super_sampling);
             runtime.gif_dma.gs.rasterize = !gpu_only;
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
@@ -351,6 +364,38 @@ int main(int argc, char** argv) {
                 runtime.gif_dma.gs.texture_names = &texture_name_log.names;
                 texture_name_log.names.count_drawn = !texture_name_log.path.empty(); // Only the naming log counts draws.
                 gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
+            }
+            // BT2_SIXTY_FPS=1 (the setting "60 fps battles"): a picture between each two fight frames, drawn
+            // from the game's commands by a second renderer (gs/gpu/in_between_frames.h); the game is unchanged.
+            // BT2_SIXTY_FPS=replay (a check): the second renderer only replays the frames, and
+            // BT2_SIXTY_FPS_SNAPSHOT="<flip>:<path>;..." writes its pictures, to compare with the main ones.
+            // BT2_SIXTY_FPS_DISPLAY=<n>: the display registers of the flip n flips back scan it out (default 1).
+            static std::unique_ptr<InBetweenFrames> in_between;
+            static bool in_between_ready = false;static std::uint64_t in_between_vblank = 0;
+            if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
+                if (!gpu_only) throw std::runtime_error("BT2_SIXTY_FPS needs BT2_GPU_GS=on");
+                if (std::getenv("BT2_VIF1_DUMP") || std::getenv("BT2_VIF1_REPLACE")) throw std::runtime_error("BT2_SIXTY_FPS excludes BT2_VIF1_DUMP and BT2_VIF1_REPLACE");
+                in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr);
+                in_between->replay_only = std::string_view(sixty) == "replay";
+                runtime.on_vif1_transfer = [](std::span<std::uint32_t> words) { in_between->vif1Transfer(words); };
+                runtime.gif_dma.gs.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
+                sixty_fps::counting = true;
+                sixty_fps::field_picture = [&runtime, viewer_mode] {
+                    if (!in_between_ready) return;
+                    if (runtime.vblank_deliveries != in_between_vblank + 1) {
+                        if (runtime.vblank_deliveries > in_between_vblank + 1) in_between_ready = false; // A flip came first.
+                        return;
+                    }
+                    in_between_ready = false;
+                    if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only) return;
+                    if (pacer) pacer->wait();
+                    gpu_mirror.showPictureOf(&in_between->renderer());
+                    const auto size = in_between->pictureSize();
+                    viewer.presentRenderer(size.first, size.second, runtime.gs_display_flips);
+                    gpu_mirror.showPictureOf(nullptr);
+                    if (player) player->shown();
+                };
+                std::cerr << "60 fps battles: in-between pictures on" << (in_between->replay_only ? " (replay check)" : "") << std::endl;
             }
             // The window shows the renderer's picture on the GPU, without reading it back (host/window_presenter.h);
             // BT2_VIEWER_GDI=1 reads each picture back and draws it with GDI as before.
@@ -383,6 +428,37 @@ int main(int argc, char** argv) {
                 static const unsigned profile_from = std::getenv("BT2_SAMPLE_FROM") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SAMPLE_FROM"))) : 1;
                 if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
+                if (in_between) {
+                    static std::deque<std::array<std::uint64_t, 15>> shown;
+                    shown.push_back(runtime.gs_privileged);if (shown.size() > 4) shown.pop_front();
+                    static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
+                    const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
+                    try {
+                        in_between_ready = in_between->flip(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip);
+                        in_between_vblank = runtime.vblank_deliveries;
+                    } catch (const std::exception& e) {
+                        // A failure ends the in-between pictures, not the game.
+                        std::cerr << "60 fps battles stopped at flip " << flip << ": " << e.what() << std::endl;
+                        runtime.on_vif1_transfer = nullptr;runtime.gif_dma.gs.on_input = nullptr;sixty_fps::field_picture = nullptr;
+                        in_between_ready = false;in_between.reset();
+                    }
+                    sixty_fps::fight_waits = 0;
+                    static std::map<unsigned, std::string> shots;
+                    static const bool parsed = [] {
+                        if (const char* list = std::getenv("BT2_SIXTY_FPS_SNAPSHOT")) {
+                            const std::string text = list;
+                            for (std::size_t at = 0; at < text.size();) {
+                                const auto end = std::min(text.find(';', at), text.size());const auto entry = text.substr(at, end - at);
+                                const auto colon = entry.find(':');
+                                if (colon != std::string::npos) shots[static_cast<unsigned>(std::stoul(entry))] = entry.substr(colon + 1);
+                                at = end + 1;
+                            }
+                        }
+                        return true;
+                    }();
+                    (void)parsed;
+                    if (in_between && in_between_ready) if (const auto shot = shots.find(flip); shot != shots.end()) writePpm(shot->second, in_between->renderer().readback());
+                }
                 const auto snapshot = snapshots.find(flip);
                 // In fast forward a picture is read back and shown only once per field period of the clock.
                 const bool show = viewer_mode && (!pacer || pacer->pictureDue());
@@ -516,12 +592,15 @@ int main(int argc, char** argv) {
         // count reached and returns at once, so the fight steps once per field. Shows whether the engine steps by
         // a fixed amount (the fight then runs at double speed) or by the time passed.
         // BT2_FIGHT_UNCAPPED=<flip>: from that flip on (0: from the start).
-        if (const char* uncapped = std::getenv("BT2_FIGHT_UNCAPPED")) {
-            if (std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_FIGHT_UNCAPPED is for tool runs, not a player's session");
+        // The 60 fps pictures count the same wait: a frame that waited is a fight frame.
+        const char* uncapped = std::getenv("BT2_FIGHT_UNCAPPED");
+        if (uncapped || sixty_fps::counting) {
+            if (uncapped && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_FIGHT_UNCAPPED is for tool runs, not a player's session");
             static PS2Runtime::RecompiledFunction original_wait = nullptr;
-            static unsigned from_flip = 0;from_flip = static_cast<unsigned>(std::stoul(uncapped));
+            static unsigned from_flip = UINT32_MAX;if (uncapped) from_flip = static_cast<unsigned>(std::stoul(uncapped));
             original_wait = runtime.replaceFunction(0x28C790, [](std::uint8_t* rdram, R5900Context* context, PS2Runtime* base) {
                 auto* ee = static_cast<EeRuntime*>(base);
+                ++sixty_fps::fight_waits;
                 if (ee->gs_display_flips >= from_flip) ee->timer1.setCount(0x190);
                 original_wait(rdram, context, base);
             });

@@ -63,6 +63,9 @@ public:
     std::uint64_t frame_pixels=0,image_pixels=0;
     // Accepted GIF data in order, after validation (GPU mirror, docs/plans/graphics/GPU_RENDERING_PLAN.md).
     std::function<void(std::span<const std::uint8_t>)> on_accepted;
+    // Every GIF transfer and startup packet as it arrives, before it is checked (the 60 fps in-between
+    // pictures record a frame's GS input; never changes what the sink does).
+    std::function<void(std::span<const std::uint8_t>)> on_input;
     // false (GPU-only mode): packets are still validated and tracked, but no pixels are drawn here.
     bool rasterize=true;
     // Optional (BT2_TEXTURE_NAMES): sees every register write and the image data, to name the textures
