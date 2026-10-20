@@ -12,7 +12,9 @@
 //   makes (characters, variants, stage, music; CPU on both sides) and the versus settings, and returns,
 //   so main runs its battle routine;
 // - BT2_START_SCREEN: writes the mode the main menu would and runs the original entry, which shows
-//   that screen; a battle the screen starts has the CPU on both sides;
+//   that screen; a battle the screen starts has the CPU on both sides, except in Ultimate Training,
+//   where side 0 stays with the pad and the starter takes the 21 lessons in turn and clears each
+//   lesson's practice through the game's task report;
 // - BT2_START_EPISODE: writes the story episode and the flag that makes main run the story routine,
 //   and returns.
 // Later calls run the original entry.

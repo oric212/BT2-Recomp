@@ -382,10 +382,12 @@ void touchedCharacters(std::uint8_t* rdram,R5900Context* context,PS2Runtime* run
 // The story's battles: the pre-battle setup (0x255EA0) sets side 0 to the player (the side setter's
 // third argument 0) and side 1 to the CPU (1); the starter passes 1 for both, as the battle starter
 // does, so a story battle can be won without input. The screen starter does the same for the battles
-// the other modes start.
+// the other modes start, except Ultimate Training's (main-menu mode 61): a lesson waits for the player to
+// do what it shows, so side 0 stays with the pad there (the lesson setup passes 0 for it).
 PS2Runtime::RecompiledFunction original_side_control=nullptr;
+constexpr std::uint32_t training_mode=61;
 void cpuSide(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
-    setRegister(context,6,1);
+    if(configured_mode!=training_mode)setRegister(context,6,1);
     original_side_control(rdram,context,runtime);
 }
 // The battles a screen leads to (WHOLE_GAME_COVERAGE_PLAN.md, step 6): the battle start (0x101BF0) and
@@ -416,7 +418,9 @@ void battleStart(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) 
     original_battle_start(rdram,context,runtime);
     const std::uint32_t system=read32(rdram,system_pointer);
     mode_battles+=std::string(mode_battles.empty()?"":",")+"{\"kind\":"+std::to_string(read32(rdram,system+battle_kind))
-        +",\"rule\":"+std::to_string(read32(rdram,system+battle_rule));
+        +",\"rule\":"+std::to_string(read32(rdram,system+battle_rule))
+        +",\"field\":"+std::to_string(static_cast<EeRuntime*>(runtime)->vblank_deliveries) // For timing pad scripts.
+        +(configured_mode==training_mode?",\"lesson\":"+std::to_string(read32(rdram,read32(rdram,progress_pointer)+0x484)):std::string());
 }
 void battleEnd(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     original_battle_end(rdram,context,runtime);
@@ -474,12 +478,73 @@ std::uint32_t parseScreenStart(std::string_view text) {
     return mode;
 }
 
+// Ultimate Training's lessons (WHOLE_GAME_COVERAGE_PLAN.md, step 6). The lesson menu (overlay 0x3EFE18)
+// writes the chosen lesson (its scroll position plus cursor) to progress +0x484 when cross is pressed; the
+// starter replaces it with the next of the 21 lessons in turn. In a lesson's practice every action the
+// lesson asks for reports its task bit to 0x211418 (fighter word +0x2B0 bit 0x400000 marks the practice);
+// when the fighter's done bits (+0x1468) equal the lesson's mask (21 words at 0x36FA10) the game marks the
+// lesson cleared (+0x1465), which the battle's end turns into a result bit. The pad script reaches some of
+// the tasks (a direction for Movement, direction and cross for Dash); the starter then reports the
+// lesson's whole mask at the first report, so the lesson is cleared by the game's own path, and ends the
+// practice as the pause menu's Exit training does (battle result +0x480 bit 8). Tool runs only.
+constexpr std::uint32_t lesson_menu=0x3EFE18,task_report=0x211418,progress_lesson=0x484,lesson_masks=0x36FA10;
+constexpr std::uint32_t practice_flags=0x2B0,practice_flag=0x400000,lesson_cleared=0x1465,result_exit=8,lessons=21;
+PS2Runtime::RecompiledFunction original_lesson_menu=nullptr,original_task_report=nullptr;
+std::uint32_t next_lesson=0;
+void lessonMenu(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    const std::uint32_t lesson=read32(rdram,progress_pointer)+progress_lesson,before=read32(rdram,lesson);
+    write32(rdram,lesson,~0u); // Marks whether this call chose a lesson.
+    original_lesson_menu(rdram,context,runtime);
+    if(read32(rdram,lesson)==~0u) {write32(rdram,lesson,before);return;}
+    write32(rdram,lesson,next_lesson%lessons);++next_lesson;
+}
+// The report with the lesson's whole mask; a cleared lesson ends the practice as Exit training does.
+void reportLesson(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime,std::uint32_t fighter,std::uint32_t lesson) {
+    context->r[5].low|=read32(rdram,lesson_masks+lesson*4);
+    original_task_report(rdram,context,runtime);
+    if(rdram[fighter+lesson_cleared]) {
+        const std::uint32_t result=read32(rdram,system_pointer)+battle_result;
+        write32(rdram,result,read32(rdram,result)|result_exit);
+    }
+}
+std::uint32_t practiceLesson(std::uint8_t* rdram,std::uint32_t fighter) {
+    const std::uint32_t lesson=read32(rdram,read32(rdram,progress_pointer)+progress_lesson);
+    return lesson<lessons && (read32(rdram,fighter+practice_flags)&practice_flag)?lesson:lessons;
+}
+void taskReport(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    const std::uint32_t fighter=static_cast<std::uint32_t>(context->r[4].low),lesson=practiceLesson(rdram,fighter);
+    if(lesson<lessons)reportLesson(rdram,context,runtime,fighter,lesson);
+    else original_task_report(rdram,context,runtime);
+}
+// A lesson whose tasks the pad script does not reach: after its practice has run a while (the fighters'
+// state step 0x214A08, once per fighter and frame), the starter reports the lesson's mask itself, as a
+// call from the step's own caller.
+constexpr std::uint32_t fighter_step=0x214A08,practice_steps=1200;
+PS2Runtime::RecompiledFunction original_fighter_step=nullptr;
+std::uint32_t practice_lesson=lessons;unsigned practice_count=0;
+void fighterStep(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    const std::uint32_t fighter=static_cast<std::uint32_t>(context->r[4].low),lesson=practiceLesson(rdram,fighter);
+    if(lesson<lessons && !rdram[fighter+lesson_cleared]) {
+        if(lesson!=practice_lesson) {practice_lesson=lesson;practice_count=0;}
+        if(++practice_count==practice_steps) {
+            const R5900Context saved=*context;
+            context->r[5].low=0;reportLesson(rdram,context,runtime,fighter,lesson);
+            *context=saved;
+        }
+    }
+    original_fighter_step(rdram,context,runtime);
+}
 void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
     configured_mode=mode;
     original_entry=runtime.replaceFunction(overlay_entry,startScreen);
     original_side_control=runtime.replaceFunction(side_control,cpuSide);
     original_battle_start=runtime.replaceFunction(battle_start,battleStart);
     original_battle_end=runtime.replaceFunction(battle_end,battleEnd);
+    if(mode==training_mode) {
+        original_lesson_menu=runtime.replaceFunction(lesson_menu,lessonMenu);
+        original_task_report=runtime.replaceFunction(task_report,taskReport);
+        original_fighter_step=runtime.replaceFunction(fighter_step,fighterStep);
+    }
 }
 
 EpisodeStart parseEpisodeStart(std::string_view text) {

@@ -21,6 +21,8 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 5. **SIF and IOP replays after the IOP reset** (the post-reset LOADFILE, SCMD and SIF register sequences): general SIF register and DMA behavior.
 6. **The rest** (dispatch, sound dispatch, services, VU0 macro): case by case.
 
+**Groups 4 to 6 paused (the user, 2026-10-20):** they are replays of the startup that run the same way on every boot; making them general rebuilds the startup's hardware model and most of the 32 startup comparisons, without changing anything the game can reach. Coverage comes first; these groups wait until after the final validation sweep.
+
 ## Group 1 result
 
 - CreateSema: 24 conditions that admitted a nonzero `attr` removed; any `attr` is accepted. The four that count the startup's own semaphores (the first CD-init call's, the CD semaphores, the disc and NCMD bind semaphores) remain as counters.
