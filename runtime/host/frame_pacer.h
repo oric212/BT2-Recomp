@@ -61,8 +61,17 @@ public:
         }
         waited_seconds+=std::chrono::duration<double>(Clock::now()-begin).count();
     }
+    // Whether this field's picture is shown: always at the game's speed; in fast forward only when a
+    // field period has passed since the last one shown, so the run does not spend its time reading
+    // back and drawing pictures nobody can see.
+    bool pictureDue() {
+        if(!free_run)return true;
+        const auto now=Clock::now();
+        if(now-last_picture_<std::chrono::duration<double>(field_seconds))return false;
+        last_picture_=now;return true;
+    }
 
 private:
-    HANDLE timer_=nullptr;Clock::time_point deadline_{};bool started_=false,waited_=false;
+    HANDLE timer_=nullptr;Clock::time_point deadline_{},last_picture_{};bool started_=false,waited_=false;
 };
 #endif

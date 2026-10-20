@@ -5,6 +5,7 @@
 #ifdef _WIN32
 #include "host/viewer_window.h"
 #endif
+#include "gs/textures/gs_texture_names.h"
 #include "probe_state.h"
 #include "game_starter.h"
 #include "host/audio_device.h"
@@ -94,10 +95,11 @@ int main(int argc, char** argv) {
         static std::unique_ptr<FramePacer> pacer;
         if (std::getenv("BT2_AUDIO_DEVICE")) {
             speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 4);
-            const std::vector<std::int16_t> silence(AudioMixer::rate / 20 * 2); // The queue starts at its target level.
-            speaker.device->write(silence);
+            speaker.device->fillTo(AudioMixer::rate / 20); // The queue starts at its target level.
         }
         if (viewer_mode || speaker.device) pacer = std::make_unique<FramePacer>();
+        // BT2_FAST_FORWARD: the whole run in fast forward, as when its key is held (to measure it).
+        if (pacer && std::getenv("BT2_FAST_FORWARD")) pacer->free_run = true;
         if (wav || pacer)
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
                 if (wav) wav->write(pcm);
@@ -107,7 +109,15 @@ int main(int argc, char** argv) {
                     const double excess = speaker.device ? (double(speaker.device->queuedFrames()) - AudioMixer::rate / 20) / AudioMixer::rate : 0;
                     pacer->fieldStarted(1.0 + excess * 0.1);
                 }
-                if (speaker.device && !(pacer && pacer->free_run)) speaker.device->write(pcm); // Fast forward is silent.
+                // Fast forward is silent; when it ends the device's queue, run empty meanwhile, is filled
+                // to its target with silence at once instead of running dry for seconds.
+                static bool was_fast = false;
+                const bool fast = pacer && pacer->free_run;
+                if (speaker.device && !fast) {
+                    if (was_fast) speaker.device->fillTo(AudioMixer::rate / 20);
+                    speaker.device->write(pcm);
+                }
+                was_fast = fast;
             };
         // BT2_SOUND_LOG=<folder>: the sound effects requests as text (requests.txt: field, kind, function,
         // command words) and each loaded bank's two blocks as files. Local evidence, not committed.
@@ -292,6 +302,24 @@ int main(int argc, char** argv) {
             }
         }
 #endif
+        // BT2_TEXTURE_NAMES=<path>: name each texture drawn as PCSX2's texture replacement does and write
+        // the names with how often each was named, and what the names' copy of GS memory did not follow,
+        // when the run ends (docs/plans/graphics/HD_TEXTURES_PLAN.md, step 1).
+        static struct TextureNameLog {
+            GsTextureNames names;std::string path;
+            ~TextureNameLog() {
+                if (path.empty()) return;
+                std::ofstream out(path);
+                out << "# uploaded_pixels " << names.uploaded_pixels << " unsupported_uploads " << names.unsupported_uploads
+                    << " local_copies " << names.local_copies << " unsupported_cluts " << names.unsupported_cluts
+                    << " unsupported_textures " << names.unsupported_textures << '\n';
+                for (const auto& [name, count] : names.drawn) out << name << ' ' << count << '\n';
+            }
+        } texture_name_log;
+        if (const char* path = std::getenv("BT2_TEXTURE_NAMES")) {
+            texture_name_log.path = path;
+            runtime.gif_dma.gs.texture_names = &texture_name_log.names;
+        }
 #ifdef BT2_GPU_GS
         // BT2_GPU_GS=mirror: render on paraLLEl-GS as well and compare VRAM at each flip.
         // BT2_GPU_GS=on: paraLLEl-GS draws alone; the CPU model only validates packets.
@@ -329,7 +357,9 @@ int main(int argc, char** argv) {
                 if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
                 const auto snapshot = snapshots.find(flip);
-                if (!viewer_mode && snapshot == snapshots.end()) return;
+                // In fast forward a picture is read back and shown only once per field period of the clock.
+                const bool show = viewer_mode && (!pacer || pacer->pictureDue());
+                if (!show && snapshot == snapshots.end()) return;
                 // BT2_VIEWER_STATS: every 120 flips, the wall-clock rate of flips and fields and the time
                 // per flip spent on the renderer's flush, on reading the picture back and on showing it.
                 using Clock = std::chrono::steady_clock;
@@ -346,7 +376,7 @@ int main(int argc, char** argv) {
                     writePpm(snapshot->second, frame);
                     std::cerr << "Snapshot: flip " << flip << " at field " << runtime.vblank_deliveries << std::endl;
                 }
-                if (!viewer_mode || !frame.width) return;
+                if (!show || !frame.width) return;
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
                 if (pacer) pacer->wait(); // The picture appears at the field's deadline.
                 const auto t_shown = Clock::now();

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <algorithm>
 #include "gs_command_sink.h"
+#include "gs/textures/gs_texture_names.h"
 
 // GsCommandSink implementation: GIF parsing, register writes, image/CLUT transfers and the
 // sprite/triangle rasterizer. Kept out of the header so rendering changes rebuild one translation
@@ -115,7 +116,7 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
         if((tag>>46)&1)write(0x00,(tag>>47)&0x7FF,apply); // PRE: PRIM from the tag.
         if(flg==0) {
             if(at+std::size_t(nloop)*nreg*16>data.size())throw std::runtime_error("GIF PACKED data exceeds transfer");
-            if(!rasterize) {
+            if(!rasterize && !texture_names) {
                 // GPU-only: the renderer draws. This model follows only what is set through A+D (the
                 // transfer registers, FINISH); vertex and texture data pass by unread.
                 for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
@@ -140,6 +141,7 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
 
 void GsCommandSink::image(std::span<const std::uint8_t> data) {
     // Host->local PSMCT32 pixels in transfer order (left to right, top to bottom).
+    if(texture_names)texture_names->image(data);
     auto& t=state;
     if(!t.trx) {
         if(!rasterize)return; // GPU-only: a transfer this model does not track; the data is the GPU's.
@@ -265,6 +267,7 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     if(reg>=state.regs.size() || (reg>0x0F && reg<0x14) || reg==0x54)
         throw std::runtime_error("Unsupported GS register write");
     state.regs[reg]=value;if(apply)++register_writes;
+    if(texture_names)texture_names->reg(reg,value);
     if(reg==0x53) {startTransfer(value);return;}
     if(reg==0x61) {++state.finishes;return;}
     if(reg==0x06 || reg==0x07) {

@@ -51,6 +51,7 @@ set(BT2_EE_RUNTIME_SOURCES
 set(BT2_EE_HOT_SOURCES
     runtime/ee/ps2_fpu.cpp
     runtime/gs/cpu/gs_command_sink.cpp
+    runtime/gs/textures/gs_texture_names.cpp
     runtime/ee/guest_interface.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
@@ -69,6 +70,14 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ee_gs_privileged.cpp
     runtime/ee/ee_interpreter.cpp
     runtime/ee/state_hash.cpp)
+
+# XXH3 for PCSX2-compatible texture names (docs/plans/graphics/HD_TEXTURES_PLAN.md); fetch it with
+# tools/graphics/textures/fetch_xxhash.py.
+set(BT2_XXHASH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/work/dependencies/xxhash-e626a72bc232" CACHE PATH "Pinned xxHash checkout")
+if(NOT EXISTS "${BT2_XXHASH_DIR}/xxhash.h")
+    message(FATAL_ERROR "Run tools/graphics/textures/fetch_xxhash.py first.")
+endif()
+set_source_files_properties(runtime/gs/textures/gs_texture_names.cpp PROPERTIES INCLUDE_DIRECTORIES "${BT2_XXHASH_DIR}")
 
 # Native translations of VU1 microprograms, when tools/vu1/translate_programs.py has generated them
 # (local, ignored); otherwise every program is interpreted. Tests always interpret.
@@ -116,6 +125,10 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-gs-command-tests runtime/tests/gs_command_tests.cpp)
     bt2_ee_target(bt2-gs-command-tests)
     add_test(NAME gs-command-consumption COMMAND bt2-gs-command-tests)
+    add_executable(bt2-texture-names-tests runtime/tests/texture_names_tests.cpp runtime/gs/textures/gs_texture_names.cpp)
+    bt2_ee_target(bt2-texture-names-tests)
+    target_include_directories(bt2-texture-names-tests PRIVATE "${BT2_XXHASH_DIR}")
+    add_test(NAME texture-names COMMAND bt2-texture-names-tests)
     add_executable(bt2-ipu-tests runtime/tests/ipu_tests.cpp runtime/ee/ipu_device.cpp runtime/ee/ipu_input.cpp runtime/ee/ipu_vlc.cpp runtime/ee/ipu_block.cpp runtime/ee/ipu_csc.cpp)
     bt2_target_defaults(bt2-ipu-tests)
     add_test(NAME ipu-setup COMMAND bt2-ipu-tests)
@@ -168,7 +181,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp)
         bt2_target_defaults(bt2-gpu-gs)
         target_link_libraries(bt2-gpu-gs PRIVATE parallel-gs)
-        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp)
+        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp runtime/gs/textures/gs_texture_names.cpp)
         bt2_ee_target(bt2-gpu-gs-tests)
         target_link_libraries(bt2-gpu-gs-tests PRIVATE bt2-gpu-gs)
         add_test(NAME gpu-gs COMMAND bt2-gpu-gs-tests)

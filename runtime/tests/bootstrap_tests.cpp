@@ -351,6 +351,26 @@ int main() {
             require(runtime.replaceFunction(0x300,return_leaf)==nested_call);
         }
         {
+            // Ultimate Battle Z's screen starter: Course Select gets the first course not cleared, and side 1's
+            // fighters share one health bar while side 0's get the highest of side 1's strength.
+            EeRuntime runtime;
+            for(const std::uint32_t address:{0x3B7FA8u,0x101AB0u,0x101BF0u,0x101D78u,0x3FE450u,0x3CEF10u,0x3F5F00u})runtime.registerFunction(address,return_leaf);
+            installScreenStarter(runtime,10);
+            std::vector<std::uint8_t> ram(0x800000);R5900Context context{};
+            const auto put=[&](std::uint32_t at,std::uint32_t value){std::memcpy(ram.data()+at,&value,4);};
+            const auto get=[&](std::uint32_t at){std::uint32_t value;std::memcpy(&value,ram.data()+at,4);return value;};
+            put(0x3876A4,0x500000);put(0x387F2C,0x600000);put(0x3876A0,0x700000);
+            ram[0x6002C0]=2;ram[0x6002C1]=1;ram[0x6002C3]=1; // Courses 0, 1 and 3 cleared.
+            runtime.replaceFunction(0x3F5F00,return_leaf)(ram.data(),&context,&runtime);
+            require(get(0x500064)==2);
+            const std::uint32_t side0=0x7000E0,side1=side0+0x1D0;
+            put(side0,1);put(side1,2);
+            put(side1+8+2*4,3);put(side1+8+0x58+2*4,5);put(side1+8+17*4,55000);put(side1+8+18*4,55000);put(side1+8+0x58+17*4,4000);
+            runtime.replaceFunction(0x101BF0,return_leaf)(ram.data(),&context,&runtime);
+            require(get(side1+8+17*4)==5000 && get(side1+8+18*4)==5000 && get(side1+8+0x58+17*4)==4000);
+            require(get(side0+8+2*4)==5 && get(side0+8+17*4)==0);
+        }
+        {
             // The episode starter's confirmations: every 30th call of a waiting function sees cross
             // pressed in port 0's pressed buttons; the word is restored after the call.
             static unsigned calls=0,pressed_on=0;

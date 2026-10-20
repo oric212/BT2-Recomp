@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-19 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-20 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -32,10 +32,10 @@
 <text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Films</text>
 <text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Play with sound</text>
 </g>
-<g><title>Title &amp; menus: Operational. All ten screens</title>
+<g><title>Title &amp; menus: Operational. All modes run</title>
 <rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title &amp; menus</text>
-<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">All ten screens</text>
+<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">All modes run</text>
 </g>
 <g><title>Versus battle: Operational. 130 characters</title>
 <rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
@@ -84,12 +84,12 @@
 <text x="52" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="37" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
 <text x="334" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and media</text>
-<g><title>GS: Operational. GPU renderer (paraLLEl-GS)</title>
+<g><title>GS: Operational. GPU renderer; HD textures next</title>
 <rect x="334" y="210" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="351" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="362" y="234" font-size="13" font-weight="600" fill="#1e293b">GS</text>
-<text x="347" y="252" font-size="11.5" fill="#64748b">GPU renderer (paraLLEl-GS)</text></g>
+<text x="347" y="252" font-size="11.5" fill="#64748b">GPU renderer; HD textures next</text></g>
 <g><title>GIF / VIF: Operational. DMA as the game uses it</title>
 <rect x="334" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="334" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
@@ -121,12 +121,12 @@
 <circle cx="661" cy="230" r="3.5" fill="#16835d"/>
 <text x="672" y="234" font-size="13" font-weight="600" fill="#1e293b">Native Windows host</text>
 <text x="657" y="252" font-size="11.5" fill="#64748b">MSVC x64, Debug and Release</text></g>
-<g><title>Launcher and menus: Operational. Launcher, in-game menu, cards</title>
+<g><title>Launcher and menus: Operational. Launcher, menu; fast forward fixed</title>
 <rect x="644" y="272" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="661" cy="292" r="3.5" fill="#2b78b8"/>
 <text x="672" y="296" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
-<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, in-game menu, cards</text></g>
+<text x="657" y="314" font-size="11.5" fill="#64748b">Launcher, menu; fast forward fixed</text></g>
 <g><title>Code generation: Verified. 11,139 + 494 functions</title>
 <rect x="644" y="334" width="292" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="644" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>

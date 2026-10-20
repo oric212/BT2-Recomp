@@ -76,6 +76,10 @@ Set by the user on 2026-10-18: playing or scripting input to find what is missin
 
 12. **Whole-game coverage** ([plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)): close the map statically (addresses built in code, entries inside functions as re-entry labels); a state hash per field; an EE interpreter as a logged bridge for code the map does not hold, compiled natively at the next build; a list of what the game's code asks of the runtime; general kernel and hardware handlers in place of those gated on guest PCs, stack offsets and call counts; a tool-only starter of game states (battles CPU vs CPU for every character and map, menu screens, story episodes) with a coverage corpus. Then the [performance plan](../plans/ee/PERFORMANCE_PLAN.md).
 
+Set by the user on 2026-10-20, after the coverage work and before the runtime generalization plan's last groups (which come at the very end, once the game boots and everything works):
+
+13. **Enhancements:** [HD textures](../plans/graphics/HD_TEXTURES_PLAN.md) first (pack 2; step 1, PCSX2's texture names, is built), then [image quality and widescreen](../plans/graphics/IMAGE_QUALITY_PLAN.md), then optional [60 fps battles](../plans/graphics/HIGH_FRAME_RATE_PLAN.md) in the overlay.
+
 ## Working method
 
 ### What "continue" means

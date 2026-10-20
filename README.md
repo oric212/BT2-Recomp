@@ -13,7 +13,7 @@
   <a href="#credits--license">Credits &amp; license</a>
 </p>
 
-BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller; story mode, saving and performance are in progress.
+BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller, and every mode (story, Ultimate Battle Z, the Tournament, the training lessons) runs through without stopping; saving, performance and enhancements (HD textures, widescreen) are in progress.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
@@ -26,7 +26,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound, also after a skip |
-| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; Ultimate Battle Z courses, the Dragon Tournament and all 21 Ultimate Training lessons run without input |
+| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; the screens explored past their first page without input, Item Fusion checked; all 15 Ultimate Battle Z courses, repeated Dragon Tournaments and all 21 Ultimate Training lessons run without input |
 | Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
 | Story mode | 🟢 Operational — without input: all 200 playable parts to their battle's end, and all 73 towns behind optional markers (conversations, items, Dragon Balls, the shop, fights); saga unlocks (a special saga by a won rule-3 battle) and a Dragon Ball picked up in a fight seen; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by the user's listening |
@@ -37,7 +37,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** runtime special cases found by the coverage runs, then performance: fights at a steady 30 frames per second. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Next:** enhancements: HD texture packs made for PCSX2, then widescreen and the best picture quality, then optional 60 fps battles; the final battle sweep and performance (fights at a steady 30 frames per second) alongside. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
 
 ## Building
 
@@ -95,6 +95,7 @@ Project owner and maintainer: [oric212](https://github.com/oric212).
 | [paraLLEl-GS](https://github.com/Arntzen-Software/parallel-gs) by Arntzen Software | GPU GS renderer (LGPL-3.0) |
 | [PCSX2](https://github.com/PCSX2/pcsx2) · [PS2SDK](https://github.com/ps2dev/ps2sdk) | Behavior references and original-game comparison captures |
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | Function discovery |
+| [xxHash](https://github.com/Cyan4973/xxHash) by Yann Collet | XXH3, for PCSX2-compatible texture names (BSD-2-Clause) |
 
 ### License and game ownership
 

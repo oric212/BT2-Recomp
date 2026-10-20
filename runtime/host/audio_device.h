@@ -42,6 +42,11 @@ public:
         timeEndPeriod(1);
     }
     unsigned queuedFrames() {reclaim();return queued_;}
+    // Silence up to `frames` queued: at the start, and after fast forward, which writes nothing.
+    void fillTo(unsigned frames) {
+        const unsigned queued=queuedFrames();
+        if(queued<frames)write(std::vector<std::int16_t>(std::size_t(frames-queued)*channels_));
+    }
 
     // Queues one field of interleaved samples; blocks while the device holds more than its queue.
     void write(std::span<const std::int16_t> samples) {

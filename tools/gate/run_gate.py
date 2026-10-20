@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 WORK=ROOT/'work/bt2-generation'
-SUITES=('capture_ee','ps2recomp','iop','ghidra','graphics/cpu','audio','perf','vu1','saves','gate','build')
+SUITES=('capture_ee','ps2recomp','iop','ghidra','graphics/cpu','graphics/textures','audio','perf','vu1','saves','gate','build')
 # Comparisons against captures taken before the end of the full run: each needs the probe stopped at
 # the same point (BT2_PHASE_STOP).
 PHASES={'311860':('dbzp_load',),'310518':('frame_vsync',),

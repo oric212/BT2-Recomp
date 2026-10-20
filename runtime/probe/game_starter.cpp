@@ -1,4 +1,5 @@
 #include "game_starter.h"
+#include <algorithm>
 #include <charconv>
 #include <cstring>
 #include <filesystem>
@@ -400,27 +401,72 @@ std::string mode_battles;
 // A course or a match goes on only after side 0 wins, but the modes give the opponent a CPU level (word 2
 // of a fighter record, 0x58 bytes from +8 of the side record at +0xE0 + 0x1D0 × side; side 0 has 0, the
 // player's) and strength values (words 5 to 12; 1 each without equipment) above side 0's. Before each
-// battle starts, side 0's fighters get at least those of side 1's first fighter, so the CPU on side 0 has
+// battle starts, side 0's fighters get at least the highest of side 1's fighters, so the CPU on side 0 has
 // an even fight (tool runs only).
 constexpr std::uint32_t side_records=0xE0,side_record_size=0x1D0,fighter_records=8,fighter_record_size=0x58;
 constexpr std::uint32_t even_words[]={2,5,6,7,8,9,10,11,12};
 void evenStrength(std::uint8_t* rdram,std::uint32_t system) {
-    const std::uint32_t side0=system+side_records,opponent=side0+side_record_size+fighter_records;
-    const std::uint32_t fighters=read32(rdram,side0);
+    const std::uint32_t side0=system+side_records,side1=side0+side_record_size;
+    const std::uint32_t fighters=read32(rdram,side0),opponents=std::max(std::min(read32(rdram,side1),6u),1u);
     for(std::uint32_t k=0;k<fighters && k<6;++k)
         for(const std::uint32_t w:even_words) {
-            const std::uint32_t at=side0+fighter_records+k*fighter_record_size+w*4,theirs=read32(rdram,opponent+w*4);
-            if(static_cast<std::int32_t>(theirs)>static_cast<std::int32_t>(read32(rdram,at)))write32(rdram,at,theirs);
+            const std::uint32_t at=side0+fighter_records+k*fighter_record_size+w*4;
+            for(std::uint32_t j=0;j<opponents;++j) {
+                const std::uint32_t theirs=read32(rdram,side1+fighter_records+j*fighter_record_size+w*4);
+                if(static_cast<std::int32_t>(theirs)>static_cast<std::int32_t>(read32(rdram,at)))write32(rdram,at,theirs);
+            }
+        }
+}
+// Ultimate Battle Z (main-menu mode 10): 15 courses of 1 to 8 battles; a course opens when the courses before
+// it that it needs are cleared (0x24B598 checks the save block's cleared byte per course, +0x2C0; every
+// course needs only lower-numbered ones), and Course Select (overlay 0x3F5F00) lists the open courses with
+// the cursor on the last course chosen (progress +0x64). The starter puts that cursor on the first course
+// not cleared, so the run takes the courses in turn, and gives side 1's fighters one health bar between them
+// (fighter record words 17 and 18, 10,000 per bar; a team of five, as Ginyu Force, gets a fifth each), so the CPU on side 0 wins a course's battles in turn and in
+// reasonable time (tool runs only).
+constexpr std::uint32_t ubz_mode=10,course_select=0x3F5F00,course_cleared=0x2C0,courses=15;
+constexpr std::uint32_t progress_course=0x64,health_words[]={17,18},health_bar=10000;
+PS2Runtime::RecompiledFunction original_course_select=nullptr;
+void courseSelect(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    const std::uint32_t save=read32(rdram,save_pointer);
+    for(std::uint32_t course=0;course<courses;++course)
+        if(!rdram[save+course_cleared+course]) {write32(rdram,read32(rdram,progress_pointer)+progress_course,course);break;}
+    original_course_select(rdram,context,runtime);
+}
+// The save flow after a cleared course or a won tournament asks "Save game data?" and then "Exit saving?",
+// both with No preselected, so the pad script's cross would go round them. The screens run their own
+// copies of the story's save flow (the same 23 states, 21 "Exit saving?"; the state word at a different
+// place): Ultimate Battle Z's (0x3FE450) and the Dragon Tournament's (0x3CEF10). As in story runs, left
+// moves "Exit saving?"'s cursor to Yes (every advance_calls calls of the flow), so no tool run saves.
+struct ScreenSaveFlow {std::uint32_t function,pointer,state;PS2Runtime::RecompiledFunction original;unsigned calls;};
+ScreenSaveFlow screen_save_flows[]={{0x3FE450,0x42A58C,0x50},{0x3CEF10,0x42311C,0x150}};
+template<std::size_t index> void screenSaveFlow(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    auto& flow=screen_save_flows[index];
+    if(++flow.calls>=advance_calls && read32(rdram,read32(rdram,flow.pointer)+flow.state)==exit_saving
+       && read32(rdram,read32(rdram,dialogue_pointer)+dialogue_cursor)!=0) {
+        flow.calls=0;
+        press(rdram,context,runtime,flow.original,repeated_buttons,left);return;
+    }
+    flow.original(rdram,context,runtime);
+}
+void oneHealthBar(std::uint8_t* rdram,std::uint32_t system) {
+    const std::uint32_t side1=system+side_records+side_record_size,fighters=std::min(read32(rdram,side1),6u);
+    for(std::uint32_t k=0;k<fighters;++k)
+        for(const std::uint32_t w:health_words) {
+            const std::uint32_t at=side1+fighter_records+k*fighter_record_size+w*4;
+            if(read32(rdram,at)>health_bar/fighters)write32(rdram,at,health_bar/fighters);
         }
 }
 void battleStart(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     evenStrength(rdram,read32(rdram,system_pointer));
+    if(configured_mode==ubz_mode)oneHealthBar(rdram,read32(rdram,system_pointer));
     original_battle_start(rdram,context,runtime);
     const std::uint32_t system=read32(rdram,system_pointer);
     mode_battles+=std::string(mode_battles.empty()?"":",")+"{\"kind\":"+std::to_string(read32(rdram,system+battle_kind))
         +",\"rule\":"+std::to_string(read32(rdram,system+battle_rule))
         +",\"field\":"+std::to_string(static_cast<EeRuntime*>(runtime)->vblank_deliveries) // For timing pad scripts.
-        +(configured_mode==training_mode?",\"lesson\":"+std::to_string(read32(rdram,read32(rdram,progress_pointer)+0x484)):std::string());
+        +(configured_mode==training_mode?",\"lesson\":"+std::to_string(read32(rdram,read32(rdram,progress_pointer)+0x484)):std::string())
+        +(configured_mode==ubz_mode?",\"course\":"+std::to_string(read32(rdram,read32(rdram,progress_pointer)+progress_course)):std::string());
 }
 void battleEnd(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     original_battle_end(rdram,context,runtime);
@@ -540,11 +586,14 @@ void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
     original_side_control=runtime.replaceFunction(side_control,cpuSide);
     original_battle_start=runtime.replaceFunction(battle_start,battleStart);
     original_battle_end=runtime.replaceFunction(battle_end,battleEnd);
+    screen_save_flows[0].original=runtime.replaceFunction(screen_save_flows[0].function,screenSaveFlow<0>);
+    screen_save_flows[1].original=runtime.replaceFunction(screen_save_flows[1].function,screenSaveFlow<1>);
     if(mode==training_mode) {
         original_lesson_menu=runtime.replaceFunction(lesson_menu,lessonMenu);
         original_task_report=runtime.replaceFunction(task_report,taskReport);
         original_fighter_step=runtime.replaceFunction(fighter_step,fighterStep);
     }
+    if(mode==ubz_mode)original_course_select=runtime.replaceFunction(course_select,courseSelect);
 }
 
 EpisodeStart parseEpisodeStart(std::string_view text) {

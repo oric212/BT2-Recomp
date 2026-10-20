@@ -11,6 +11,8 @@
 
 // Scoped software command consumption, separate from DMA and presentation.
 // Unwritten VRAM bits remain unknown; construction does not emulate a GS clear.
+class GsTextureNames;
+
 class GsCommandSink {
 public:
     struct Word { std::uint32_t value=0, known=0; };
@@ -63,6 +65,9 @@ public:
     std::function<void(std::span<const std::uint8_t>)> on_accepted;
     // false (GPU-only mode): packets are still validated and tracked, but no pixels are drawn here.
     bool rasterize=true;
+    // Optional (BT2_TEXTURE_NAMES): sees every register write and the image data, to name the textures
+    // drawn as PCSX2 does (gs/textures/gs_texture_names.h). In GPU-only mode PACKED data is then decoded.
+    GsTextureNames* texture_names=nullptr;
     // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
         unsigned bx=(x%64)/8,by=(y%32)/8;

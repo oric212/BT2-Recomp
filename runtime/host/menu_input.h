@@ -65,6 +65,7 @@ public:
         was_=pressed;
         return on_;
     }
+    void stop() {on_=false;} // The window lost the focus: its key and button are no longer seen.
 
 private:
     bool was_=false,on_=false;

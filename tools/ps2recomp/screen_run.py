@@ -3,7 +3,8 @@
 Starts each screen with BT2_START_SCREEN=<mode> and a generated pad script: cross every --cross-every fields
 from field 800 (menus, messages, loads, a battle's results) and, with --down-every, down held for 60 fields
 that often (it stops a cross press due then). The screen starter gives the battles of Ultimate Battle Z and
-the Dragon Tournament to the CPU on both sides; in Ultimate Training (mode 61) side 0 stays with the pad, the
+the Dragon Tournament to the CPU on both sides, takes Ultimate Battle Z's courses in turn (side 1 with one
+health bar) and answers the save flow's "Exit saving?" with Yes (no run saves); in Ultimate Training (mode 61) side 0 stays with the pad, the
 starter takes the 21 lessons in turn, and a lesson's practice is cleared by the game's own task report (the
 pad's down reaches Movement; the starter reports the lesson's other tasks after a while) and ended as the
 pause menu's Exit training does. Each run prints its result and the battles the starter recorded (kind,

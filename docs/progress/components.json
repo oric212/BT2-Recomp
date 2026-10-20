@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-19",
+  "updated": "2026-10-20",
   "flow": [
     {
       "name": "Startup",
@@ -19,7 +19,7 @@
     {
       "name": "Title & menus",
       "status": "working",
-      "note": "All ten screens"
+      "note": "All modes run"
     },
     {
       "name": "Versus battle",
@@ -75,7 +75,7 @@
         {
           "name": "GS",
           "status": "working",
-          "note": "GPU renderer (paraLLEl-GS)"
+          "note": "GPU renderer; HD textures next"
         },
         {
           "name": "GIF / VIF",
@@ -110,7 +110,7 @@
         {
           "name": "Launcher and menus",
           "status": "working",
-          "note": "Launcher, in-game menu, cards"
+          "note": "Launcher, menu; fast forward fixed"
         },
         {
           "name": "Code generation",

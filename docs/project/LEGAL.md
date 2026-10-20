@@ -21,6 +21,7 @@ Dependency sources and binaries stay in ignored `work/` and `build/`; this repos
 | [libdwarf](https://github.com/davea42/libdwarf-code/tree/2e088b983562860f497b4fd789a3e61524eb857c) | v2.2.0 | `COPYING` and `src/lib/libdwarf/LIBDWARFCOPYRIGHT`: LGPL 2.1 for the library, plus file-specific BSD/public-domain exceptions |
 | [Rabbitizer](https://github.com/Decompollaborate/rabbitizer/tree/d5804fa488474830a47fbf9f3693048ec1e45589) | 1.14.3 | `LICENSE`: MIT |
 | [nlohmann/json](https://github.com/nlohmann/json/tree/9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03) | v3.11.3 | `LICENSE.MIT`: MIT |
+| [xxHash](https://github.com/Cyan4973/xxHash/tree/e626a72bc2321cd320e953a0ccf1584cad60f363) | v0.8.3 (`config/xxhash.lock.json`) | `LICENSE`: BSD 2-Clause (the library); compiled into the runtime's texture names, so binaries keep its notice |
 
 Retain copyright/license notices and satisfy applicable source and copyleft requirements when distributing dependencies. No upstream runtime is linked into `bt2-port`. Future runtime linking and generated-output licensing require assessment before distribution; generator use does not resolve ownership of retail-derived code. libdwarf's separate GPLv2 dwarfdump tool is disabled.
 

@@ -114,12 +114,11 @@ The mixer already has separate sources for streams (music, movies, voices in str
 
 ### HD textures
 
-The local pack holds 1,244 PNG files for SLUS-21441 in the layout PCSX2's texture replacement uses: each file is named by a hash of the texture's data, a hash of its palette and a format word. Using it needs two things the port does not have:
+The overlay and the launcher hold the "HD textures" entry. How the textures are found and drawn is the [HD textures plan](../graphics/HD_TEXTURES_PLAN.md) (2026-10-20: pack 2, made for the retail disc, is the one to use). Until it works, the launcher shows the checkbox as unavailable instead of accepting a setting that does nothing. The packs are never committed; their threads are credited in the README when the feature ships.
 
-1. **The same names.** For each texture the game draws with, compute the name PCSX2 would give it. PCSX2's replacement code is the behavioural reference (which bytes are hashed, with which hash, what the format word holds); it is adapted, not copied, and confirmed by finding the pack's names among the textures of a real frame.
-2. **A way to draw with a larger texture.** The GPU renderer samples GS memory directly. Whether the pinned paraLLEl-GS can substitute a texture, and at what cost, is not known and is the first thing to find out.
+### 60 fps battles
 
-Until both work, the launcher shows the checkbox as unavailable instead of accepting a setting that does nothing. The pack is never committed; its source thread (noted in `work/HD_TEXTURES_FOR_LATER.txt`) is credited in the README when the feature ships.
+An optional entry under Display, off by default ([60 fps plan](../graphics/HIGH_FRAME_RATE_PLAN.md)); shown as unavailable until it works.
 
 ## Order of work
 

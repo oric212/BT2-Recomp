@@ -129,6 +129,10 @@ int main() {
         FastForward toggled;
         check(toggled.update(true,true) && toggled.update(true,true) && toggled.update(false,true),"a press switches it on and it stays");
         check(!toggled.update(true,true) && !toggled.update(false,true),"the next press switches it off");
+        FastForward unfocused;unfocused.update(true,true);unfocused.update(false,true);unfocused.stop();
+        check(!unfocused.update(false,true) && unfocused.update(true,true),"losing the focus stops it; the next press starts it again");
+        FastForward held_away;held_away.update(true,false);held_away.stop();
+        check(!held_away.update(false,false),"a key released while the window had no focus does not keep it on");
     }
     {
         // The game's folders next to the programs: made when missing, never replaced or emptied; their

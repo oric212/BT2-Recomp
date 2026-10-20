@@ -41,7 +41,7 @@ public:
             if(!pause_test_picture_.empty() && drawn.width)writePpm(pause_test_picture_,drawn);
             std::fprintf(stderr,"Pause test: menu shown at field %u over a picture of %u x %u\n",fields_,picture_.width,picture_.height);
         }
-        if(!window_.focused())return {};
+        if(!window_.focused()) {fast_switch_.stop();setFast(false);return {};}
         const auto pad=input_.gamepad();
         if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
             setFast(false);
@@ -81,7 +81,11 @@ private:
         mixer_.master_percent=settings.master_volume;mixer_.stream_percent=settings.music_volume;mixer_.extra_percent=settings.effects_volume;
         if(!settings.show_frame_rate && !fast_)window_.setStatus("");
     }
-    void setFast(bool on) {fast_=on;if(pacer_)pacer_->free_run=on;}
+    void setFast(bool on) {
+        if(on==fast_)return;
+        fast_=on;if(pacer_)pacer_->free_run=on;
+        if(!on && !settings.show_frame_rate)window_.setStatus(""); // The fast forward mark goes at once.
+    }
     // The fast forward button does not reach the game.
     GamepadState masked(GamepadState pad) const {
         if(settings.fast_forward_button<GamepadState::Count)pad.buttons&=~(1u<<settings.fast_forward_button);
