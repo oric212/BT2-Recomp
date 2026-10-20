@@ -444,7 +444,7 @@ int main(int argc, char** argv) {
             if (comma == std::string::npos || colon == std::string::npos) throw std::runtime_error("BT2_VIF1_DUMP is <first flip>,<flips>:<folder>");
             const unsigned first = static_cast<unsigned>(std::stoul(text.substr(0, comma))), count = static_cast<unsigned>(std::stoul(text.substr(comma + 1, colon - comma - 1)));
             const std::string folder = text.substr(colon + 1);
-            runtime.on_vif1_transfer = [&runtime, first, count, folder](std::span<const std::uint32_t> words) {
+            runtime.on_vif1_transfer = [&runtime, first, count, folder](std::span<std::uint32_t> words) {
                 const unsigned flip = runtime.gs_display_flips;
                 if (flip < first || flip >= first + count) return;
                 static unsigned open_flip = ~0u;static std::ofstream out;
@@ -452,6 +452,32 @@ int main(int argc, char** argv) {
                 const auto size = static_cast<std::uint32_t>(words.size());
                 out.write(reinterpret_cast<const char*>(&size), 4);out.write(reinterpret_cast<const char*>(words.data()), std::streamsize(words.size() * 4));
             };
+        }
+        // BT2_VIF1_REPLACE=<flip>:<file>: that flip's VIF1 transfers are replaced, one for one, by those of a
+        // file in BT2_VIF1_DUMP's form (the same sizes): what VU1 and the GS receive changes, the game does not
+        // (the 60 fps plan's in-between picture drawn offline).
+        else if (const char* replace = std::getenv("BT2_VIF1_REPLACE")) {
+            const std::string text = replace;const auto colon = text.find(':');
+            if (colon == std::string::npos) throw std::runtime_error("BT2_VIF1_REPLACE is <flip>:<file>");
+            const unsigned at_flip = static_cast<unsigned>(std::stoul(text.substr(0, colon)));
+            std::ifstream in(text.substr(colon + 1), std::ios::binary);
+            if (!in) throw std::runtime_error("BT2_VIF1_REPLACE: cannot read " + text.substr(colon + 1));
+            static std::vector<std::vector<std::uint32_t>> replacements;
+            for (std::uint32_t size; in.read(reinterpret_cast<char*>(&size), 4);) {
+                replacements.emplace_back(size);
+                in.read(reinterpret_cast<char*>(replacements.back().data()), std::streamsize(size) * 4);
+            }
+            runtime.on_vif1_transfer = [&runtime, at_flip](std::span<std::uint32_t> words) {
+                static std::size_t next = 0;
+                if (runtime.gs_display_flips != at_flip) return;
+                if (next >= replacements.size() || replacements[next].size() != words.size())
+                    throw std::runtime_error("BT2_VIF1_REPLACE: transfer " + std::to_string(next) + " does not match the file");
+                std::size_t changed = 0;
+                for (std::size_t i = 0; i < words.size(); ++i) changed += words[i] != replacements[next][i];
+                std::copy(replacements[next].begin(), replacements[next].end(), words.begin());++next;
+                std::cerr << "VIF1 replacement: transfer " << next << " of flip " << at_flip << ", " << changed << " words changed" << std::endl;
+            };
+            std::cerr << "VIF1 replacement at flip " << at_flip << ": " << replacements.size() << " transfers" << std::endl;
         }
         // BT2_GAME_PATCHES=<name>[,<name>]: the player's optional patches of the executable (ee/game_patches.h).
         if (const char* list = std::getenv("BT2_GAME_PATCHES"))
@@ -483,6 +509,21 @@ int main(int argc, char** argv) {
             if (battle) installBattleStarter(runtime, parseBattleStart(battle));
             if (screen) installScreenStarter(runtime, parseScreenStart(screen));
             if (episode) installEpisodeStarter(runtime, parseEpisodeStart(episode));
+        }
+        // BT2_FIGHT_UNCAPPED (tool runs; the 60 fps study, docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md): the fight's
+        // frame wait (0x28C790: until Timer 1 has counted 400 lines, which makes a fight frame two fields) finds the
+        // count reached and returns at once, so the fight steps once per field. Shows whether the engine steps by
+        // a fixed amount (the fight then runs at double speed) or by the time passed.
+        // BT2_FIGHT_UNCAPPED=<flip>: from that flip on (0: from the start).
+        if (const char* uncapped = std::getenv("BT2_FIGHT_UNCAPPED")) {
+            if (std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_FIGHT_UNCAPPED is for tool runs, not a player's session");
+            static PS2Runtime::RecompiledFunction original_wait = nullptr;
+            static unsigned from_flip = 0;from_flip = static_cast<unsigned>(std::stoul(uncapped));
+            original_wait = runtime.replaceFunction(0x28C790, [](std::uint8_t* rdram, R5900Context* context, PS2Runtime* base) {
+                auto* ee = static_cast<EeRuntime*>(base);
+                if (ee->gs_display_flips >= from_flip) ee->timer1.setCount(0x190);
+                original_wait(rdram, context, base);
+            });
         }
         // The interpreter bridge for code no generated function holds (ee_interpreter.cpp). BT2_EE_INTERPRET:
         // "off" stops at such code as before; "all" runs every generated function interpreted as well

@@ -547,7 +547,9 @@ public:
     std::uint32_t lastCallTarget() const {return last_branch_target_;}
     unsigned flipless_field_limit=3600; // Fields without a display flip before the run stops (probe: BT2_STALL_FIELDS).
     std::function<void()> on_display_flip; // Host presentation hook; never changes guest state.
-    std::function<void(std::span<const std::uint32_t>)> on_vif1_transfer; // Each VIF1 transfer's words before it runs (diagnostics).
+    // Each VIF1 transfer's words before it runs (diagnostics): a copy, never guest memory; a change to it
+    // changes only what VU1 and the GS receive.
+    std::function<void(std::span<std::uint32_t>)> on_vif1_transfer;
     std::function<void()> on_field_end; // At each VBLANK, before anything of the next field runs (state hash); never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
     std::function<void(unsigned field,std::uint16_t pressed)> on_pad_change; // Live input whose buttons changed, with the pad script's field number.
