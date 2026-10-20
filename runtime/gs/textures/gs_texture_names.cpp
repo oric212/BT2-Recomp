@@ -147,7 +147,7 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
     const unsigned cpsm=unsigned((tex0>>51)&15),csa=unsigned((tex0>>56)&31);
     const auto f=format(psm);
-    if(!f || tw>10 || th>10 || (f->palette && cpsm!=0 && cpsm!=1)) {++unsupported_textures;return std::nullopt;}
+    if(!f || tw>10 || th>10 || (f->palette && cpsm!=0 && cpsm!=1)) {++unsupported_textures;++unsupported_formats[psm];return std::nullopt;}
     const unsigned width=1u<<tw,height=1u<<th;
     const unsigned ta0=unsigned(texa&0xFF),aem=unsigned((texa>>15)&1),ta1=unsigned((texa>>32)&0xFF);
     XXH3_state_t state;XXH3_64bits_reset(&state);

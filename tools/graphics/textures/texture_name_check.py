@@ -24,19 +24,39 @@ def read_names(path):
     return names, notes
 
 
+def normalized(name):
+    """A pack's file name as PCSX2 reads it: the format word's bit 14 (TCC in older PCSX2 versions, which
+    packs made with them still carry) is cleared."""
+    parts = name.split('-')
+    try:
+        parts[-1] = f'{int(parts[-1], 16) & ~0x4000:08x}'
+    except ValueError:
+        return name
+    return '-'.join(parts)
+
+
 def pack_index(folder):
-    """Replacement names (file stems) of a pack: under its 'replacements' folder if it has one."""
+    """Replacement names of a pack, normalized: under its 'replacements' folder if it has one."""
     folder = Path(folder)
     root = folder / 'replacements' if (folder / 'replacements').is_dir() else folder
     index = {}
     for f in root.rglob('*'):
         if f.suffix.lower() in ('.dds', '.png'):
-            index.setdefault(f.stem, f.parent.relative_to(root).as_posix() or '.')
+            index.setdefault(normalized(f.stem), f.parent.relative_to(root).as_posix() or '.')
     return index
 
 
+def lookup(name, index):
+    """The pack's entry for a drawn name: the name itself, or a replacement made without the palette part
+    (it stands for every palette), as PCSX2 looks them up."""
+    if name in index:
+        return index[name]
+    parts = name.split('-')
+    return index.get(f'{parts[0]}-{parts[-1]}') if len(parts) == 3 else None
+
+
 def check(names, index):
-    found = {n: index[n] for n in names if n in index}
+    found = {n: lookup(n, index) for n in names if lookup(n, index) is not None}
     texture_hashes = {n.split('-')[0] for n in index}
     by_texture = sum(1 for n in names if n.split('-')[0] in texture_hashes)
     return found, by_texture

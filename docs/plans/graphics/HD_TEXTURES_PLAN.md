@@ -45,15 +45,32 @@ paraLLEl-GS is a vendored snapshot; the change is carried as a patch in the repo
 
 **The names need GS memory on the CPU.** paraLLEl-GS holds GS memory on the GPU. Reading it back for each new texture would stall the GPU. The CPU GS model already writes image transfers into its own copy of GS memory; it stopped doing so in GPU-only runs for speed ([performance plan](../ee/PERFORMANCE_PLAN.md), "Done"). With HD textures on, it does so again, and hashes from that copy. Textures the game renders itself (render targets read as textures) are not in the copy, and PCSX2 does not replace those either.
 
+**Video memory (the user, 2026-10-20: at most 8 GB of VRAM in all).** Textures stay BC3-compressed on the GPU (one byte per pixel; a 1,024 × 1,024 texture with its mips is about 1.4 MB, 512 × 512 about 0.35 MB). A scene draws a few hundred distinct textures (437 on the Ultimate Battle Z screens and a fight, 633 in a versus battle), under 1 GB even if all were 1,024 × 1,024. The HD textures get a fixed budget, 2 GB by default and adjustable in the settings, with least-recently-used eviction; the pack is never loaded whole. With the renderer's own memory (a few hundred MB, more at 16× super-sampling) the total stays well under 8 GB at the highest settings; the budget and the renderer's use are measured in step 4.
+
 **Loading:** 8.3 GB cannot be resident. An index of names is built at start (15,000 file names, no reads); a texture is loaded on its first use on a worker thread (the game draws the original until it is ready, as PCSX2 does), into GPU memory with a size budget and least-recently-used eviction.
 
 ## What it will look like
 
 paraLLEl-GS does super-sampling (2× to 16×), not free upscaling. With 4× or more and `high_resolution_scanout`, it presents at twice the resolution (1,280 × 896) and samples textures at up to four times the density per axis, so HD textures show real detail there. That is the ceiling: output at 1440p or 4K the way PCSX2's hardware renderer upscales is not something paraLLEl-GS does. How far that can be pushed, and widescreen, are the [image quality plan](IMAGE_QUALITY_PLAN.md). Its notes also warn that a game which copies its frame to the display buffer through a texture loses the super-sampled detail; whether BT2 does is checked in step 4.
 
+## The name check (step 1, run 2026-10-20)
+
+`BT2_TEXTURE_NAMES` runs, compared with both packs by `texture_name_check.py`:
+
+| Scene (2,200 to 3,000 flips) | Names drawn | Pack 2: same name | Pack 2: same texture hash | Pack 1: same name |
+| --- | --- | --- | --- | --- |
+| Ultimate Battle Z screens and a fight | 437 | 188 (Others 95, Text 51, Stages 27, Select pictures 7, Buttons 3, ...) | 225 | 153 |
+| Versus battle (character 4 against 70, stage 22) | 633 | 92 | 146 | 78 |
+| Story episode 0 (map) | 97 | 41 (Stages 35) | 58 | 5 |
+
+- **Our names are PCSX2's.** Texture and palette hashes agree with pack 2 bit for bit. Pack 2 was dumped by an older PCSX2 that also wrote TCC into bit 14 of the format word; PCSX2 clears that bit when it reads a pack's names, and so does the tool. A name without a palette part stands for every palette, as in PCSX2.
+- **Pack 2 is the pack.** Pack 1 also matches (it is not limited to the modified game), but it is a fraction of pack 2's coverage and has no character bodies.
+- **The characters' palettes are drawn by the game.** It uploads base palettes (8 × 2 pixels at blocks `0x3B00`, `0x3B40`, ...) and renders lit or tinted versions of them into the palette area (frame buffer page `0x1D6`, block `0x3AC0`), from which the body textures load their CLUT. Those palettes exist only in the GPU renderer's memory; the CPU copy has zeros there, so a body's texture hash matches pack 2 (Goku, Yamcha, Gohan, Android 18 seen) but its palette hash does not. PCSX2 reads such a palette back from its render target, which is why pack 2 has two or three palette variants of each body texture. Plan: fingerprint, on the CPU, the drawing that produced a palette (the source palette and the draw's registers and vertices); the first time a fingerprint appears, read the 64 or 1,024 bytes back from the GPU without waiting (a copy that completes with the frame), and from then on that fingerprint names the palette. Until then the texture is drawn as the original, as PCSX2 does while a replacement loads.
+- **Not named:** 16-bit (PSM 2) and depth-format (PSM 0x32) textures, about 7,300 draws in a battle: frame effects the game renders and reads back as textures; no pack holds them and PCSX2 does not replace render targets.
+
 ## Order of work
 
-1. **Name check (decides everything after it).** A diagnostic in tool runs: for each texture the GPU renderer creates, compute the PCSX2 name and report how many are found in each pack, per screen (title, menus, a battle, story). Expect most of pack 2's matching textures to be found on the screens that use them, and next to none of pack 1's. Compare a few names by hand with PCSX2's own dump of the same screen if the counts are low.
+1. **Name check (decides everything after it) — done 2026-10-20** (above); left from it: the drawn palettes. A diagnostic in tool runs: for each texture the GPU renderer creates, compute the PCSX2 name and report how many are found in each pack, per screen (title, menus, a battle, story). Expect most of pack 2's matching textures to be found on the screens that use them, and next to none of pack 1's. Compare a few names by hand with PCSX2's own dump of the same screen if the counts are low.
 2. **XXH3 and the hasher** as a runtime unit with tests (block order per format, small-texture and partial-format paths, palette expansion, format word), checked against names in pack 2.
 3. **The paraLLEl-GS hook** (above) with BC3 images and their mips; the button-art choice; the duplicate rule.
 4. **Super-sampling setting** (off, 4×, 8×, 16×) and high-resolution output, measured in a battle in Release (GPU and processor time per picture).

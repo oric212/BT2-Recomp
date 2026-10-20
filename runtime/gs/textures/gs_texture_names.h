@@ -45,6 +45,7 @@ public:
     // What the copy does not follow: image transfers in formats it does not write, transfers in other
     // directions or orders, CLUT loads in formats it does not read, textures in formats it does not name.
     unsigned unsupported_uploads=0,local_copies=0,unsupported_cluts=0,unsupported_textures=0;
+    std::map<unsigned,unsigned> unsupported_formats; // Draws of textures not named, by PSM.
     std::uint64_t uploaded_pixels=0;
 
     std::vector<std::uint32_t>& memory() {return memory_;}

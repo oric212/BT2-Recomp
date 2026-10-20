@@ -25,6 +25,17 @@ class TextureNameCheckTest(unittest.TestCase):
             self.assertEqual(found, {'1a-2b-00001a53': 'Stages', '9c-00000000': '.'})
             self.assertEqual(by_texture, 3)  # The second name differs in its palette only.
 
+    def test_old_tcc_bit_and_names_without_palette(self):
+        with tempfile.TemporaryDirectory() as d:
+            pack = Path(d) / 'replacements'
+            pack.mkdir()
+            (pack / '1a-2b-00005a53.dds').write_bytes(b'')  # Bit 14 set, as older PCSX2 versions wrote it.
+            (pack / '3c-00001a54.dds').write_bytes(b'')     # No palette part: every palette.
+            index = texture_name_check.pack_index(d)
+            self.assertEqual(set(index), {'1a-2b-00001a53', '3c-00001a54'})
+            found, _ = texture_name_check.check({'1a-2b-00001a53': 1, '3c-77-00001a54': 1, '3c-77-00001a53': 1}, index)
+            self.assertEqual(set(found), {'1a-2b-00001a53', '3c-77-00001a54'})
+
 
 if __name__ == '__main__':
     unittest.main()

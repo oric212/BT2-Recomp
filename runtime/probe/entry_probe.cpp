@@ -312,7 +312,9 @@ int main(int argc, char** argv) {
                 std::ofstream out(path);
                 out << "# uploaded_pixels " << names.uploaded_pixels << " unsupported_uploads " << names.unsupported_uploads
                     << " local_copies " << names.local_copies << " unsupported_cluts " << names.unsupported_cluts
-                    << " unsupported_textures " << names.unsupported_textures << '\n';
+                    << " unsupported_textures " << names.unsupported_textures;
+                for (const auto& [psm, count] : names.unsupported_formats) out << " psm_" << std::hex << psm << std::dec << ' ' << count;
+                out << '\n';
                 for (const auto& [name, count] : names.drawn) out << name << ' ' << count << '\n';
             }
         } texture_name_log;
