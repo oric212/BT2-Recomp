@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-21. **No pass in progress.** HD textures cover the fighters (detail over the game's colours); next the CPU renderer's removal. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
+Updated: 2026-10-21. **No pass in progress.** The CPU renderer is removed; next HD textures as PCSX2 does them and stable 60 fps. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
@@ -10,7 +10,9 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 **HD textures across the whole game — built 2026-10-21** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)): the fighters' bodies too. The game relights their palettes every frame, so exact PCSX2 names cannot cover them (22 to 29 % of draws even with palettes read back exactly; about 44 % of a fight's draws are a shading texture the pack lacks); the renderer draws the pack's texture as detail over the game's own colours (the user's direction), exact replacements as they are. Not yet seen in play; at 16x with 60 fps, HD and widescreen the GPU is near its limit in heavy moments (28.5 flips per second once; 8x holds 30).
 
-**Next: remove the CPU renderer** (the user, 2026-10-21): the sink's rasterizer, the `cpu` and `mirror` modes and the CPU-drawn reference renders (to GPU snapshots); keep the packet checks and register tracking the GPU path and the texture names use.
+**The CPU renderer is removed (2026-10-21).** The sink checks packets and follows registers only; the startup checks read its record of the accepted clears; the gate's full run uses the GPU.
+
+**Next (the user, 2026-10-21, after play): HD textures as seamless as PCSX2, and stable 60 fps.** The detail method showed artifacts in menus and is to be replaced. From the Tenkaichi 3 references: Tenkaichi3Decomp names textures as PCSX2 (in its pack, most files hash the palette range the texture uses, the rest the whole palette) and draws replacements filtered, without mips for 2D art, held to the piece's rectangle of its sheet, alpha kept at the original's; its in-between pictures interpolate bones as rotations (axes' lengths kept), skip camera cuts and are dropped when they do not fit the frame's time (never waited for).
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
 

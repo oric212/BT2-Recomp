@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 WORK=ROOT/'work/bt2-generation'
-SUITES=('capture_ee','ps2recomp','iop','ghidra','graphics/cpu','graphics/textures','audio','perf','vu1','saves','gate','build')
+SUITES=('capture_ee','ps2recomp','iop','ghidra','graphics/textures','audio','perf','vu1','saves','gate','build')
 # Comparisons against captures taken before the end of the full run: each needs the probe stopped at
 # the same point (BT2_PHASE_STOP).
 PHASES={'311860':('dbzp_load',),'310518':('frame_vsync',),
@@ -50,7 +50,7 @@ def main():
         if failed:sys.exit('Gate failed: '+', '.join(failed))
     probe=[sys.executable,str(ROOT/'tools/ps2recomp/run_startup_probe.py'),'--disc',str(disc)]
     steps=[('ctest',['ctest','--test-dir','build/probe','-C','Debug','-j',str(a.jobs),'--output-on-failure'],env),
-           ('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe+['--gs','cpu'],env)]
+           ('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe,env)]
     steps+=[(f'probe: phase {ph}',probe+['--report',str(WORK/f'phase-{ph}/entry-stop.json')],dict(env,BT2_PHASE_STOP=ph)) for ph in PHASES]
     steps.append(('battle run (Release)',[sys.executable,str(ROOT/'tools/gate/battle_run.py'),'--disc',str(disc)],env))
     # The map holds everything the programs name or build, and every address inside a function has a label.
@@ -61,9 +61,8 @@ def main():
         native=WORK/'entry-stop.json'
         checks=[(f'compare: {n}',verifier_command(n,native,disc),env) for n in full_run_verifiers()]
         checks+=[(f'compare at {ph}: {n}',verifier_command(n,WORK/f'phase-{ph}/entry-stop.json',disc),env) for ph,names in PHASES.items() for n in names]
-        checks.append(('render frame',[sys.executable,str(ROOT/'tools/graphics/cpu/render_gs_frame.py'),'--native',str(native),'--output',str(ROOT/'work/frames/frame-latest.png')],env))
         results=list(pool.map(lambda s:run(*s),checks));report(results,verbose=False)
-        print(f'{sum(ok for _,ok,_,_ in results)}/{len(results)} comparisons and renders pass')
+        print(f'{sum(ok for _,ok,_,_ in results)}/{len(results)} comparisons pass')
     print(f"{'GATE FAILED: '+', '.join(failed) if failed else 'GATE PASSED'} ({time.monotonic()-began:.0f} s)")
     sys.exit(1 if failed else 0)
 if __name__=='__main__':main()

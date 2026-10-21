@@ -5,20 +5,9 @@
 #include "gs_command_sink.h"
 #include "gs/textures/gs_texture_names.h"
 
-// GsCommandSink implementation: GIF parsing, register writes, image/CLUT transfers and the
-// sprite/triangle rasterizer. Kept out of the header so rendering changes rebuild one translation
-// unit instead of every generated unit that includes ps2_runtime.h.
-
-struct GsCommandSink::Draw {
-    std::uint64_t frame=0,texture0=0;unsigned fbp=0,width=0,psm=0,zbp=0,zpsm=0,ox=0,oy=0,tw=0,th=0,tfx=0,wms=0,wmt=0,sa=0,sb=0,sc=0,sd=0;
-    unsigned ztst=1; // 0 NEVER, 1 ALWAYS (or ZTE off), 2 GEQUAL, 3 GREATER.
-    bool zmsk=false,tme=false,abe=false,tcc=false,linear=false,colclamp=false,pabe_on=false;int fix=0;
-    int sx0=0,sy0=0,sx1=0,sy1=0; // Scissor and buffer limits: pixels in [sx0,sx1) x [sy0,sy1).
-    std::uint32_t mask=0,zmask=0;
-    unsigned tbp=0,tbw=0,csa=0;bool t8=false; // Texture buffer fields decoded once per primitive.
-};
-
-struct GsCommandSink::Rgba {int r,g,b,a;};
+// GsCommandSink implementation: GIF parsing, register writes and transfer tracking. Kept out of the
+// header so changes rebuild one translation unit instead of every generated unit that includes
+// ps2_runtime.h.
 
 void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
     if(on_input && packet.size()==240)on_input(packet); // Configuration packets are reported by consumeConfiguration.
@@ -49,18 +38,11 @@ void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
     x0=std::max(x0,int(v[3]&2047));y0=std::max(y0,int((v[3]>>32)&2047));
     x1=std::min(x1,int((v[3]>>16)&2047)+1);y1=std::min(y1,int((v[3]>>48)&2047)+1);
     if(x0<0 || y0<0 || x1>int(width*64) || y1>2048)reject();
-    std::uint32_t color=std::uint32_t(v[10]),mask=std::uint32_t(v[0]>>32);
-    std::uint32_t z=std::uint32_t(v[12]>>32)&0xFFFFFF;
     // All rejection occurs above: no partial effects on malformed requests.
-    for(int y=y0;y<y1;++y)for(int x=x0;x<x1;++x) {
-        auto& c=vram_[address(fbp,width,unsigned(x),unsigned(y),false)];
-        c.value=(c.value&mask)|(color&~mask);c.known|=~mask;
-        if(!(v[1]&(1ULL<<32))) {
-            auto& d=vram_[address(zbp,width,unsigned(x),unsigned(y),true)];
-            d.value=(d.value&0xFF000000)|z;d.known|=0xFFFFFF;
-        }
-        ++pixels;
-    }
+    (void)zbp;
+    if(clears.size()==64)clears.erase(clears.begin()); // The startup checks need the last few.
+    clears.push_back({fbp,width,x0,y0,x1,y1,std::uint32_t(v[10]),std::uint32_t(v[0]>>32)});
+    pixels+=std::uint64_t(x1-x0)*std::uint64_t(y1-y0);
     registers=v;++packets;++sprites;
     if(on_accepted)on_accepted(packet);
 }
@@ -90,10 +72,9 @@ void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
     if(on_input)for(const auto& data:group)on_input(data);
     for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
-    // Rollback: register state and CLUT are copied; VRAM pages are saved on first write (writable).
-    const auto saved_state=state;const auto saved_clut=clut_;
-    logging_=true;
-    const std::array<std::uint64_t,7> saved_counts{transfers,frame_sprites,register_writes,frame_pixels,image_pixels,clut_loads,frame_triangles};
+    // Rollback: the register state and the counters are copied.
+    const auto saved_state=state;
+    const std::array<unsigned,2> saved_counts{transfers,register_writes};
     // With texture names, the data goes on to the renderer in pieces that end before each change of GS
     // memory or of the CLUT the names follow (forwardBefore), so the names' copy is never ahead of the
     // renderer when it takes a texture; a refused group still ends the run, as it would anyway.
@@ -105,14 +86,10 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
             if(lockstep) {forwardBefore(data.size());streaming_={};}
             ++transfers;
         }
-        endTransaction(false);
     }
     catch(...) {
         streaming_={};
-        endTransaction(true);
-        state=saved_state;clut_=saved_clut;
-        transfers=unsigned(saved_counts[0]);frame_sprites=unsigned(saved_counts[1]);register_writes=unsigned(saved_counts[2]);
-        frame_pixels=saved_counts[3];image_pixels=saved_counts[4];clut_loads=unsigned(saved_counts[5]);frame_triangles=unsigned(saved_counts[6]);throw;
+        state=saved_state;transfers=saved_counts[0];register_writes=saved_counts[1];throw;
     }
     if(on_accepted && !lockstep)for(const auto& data:group)on_accepted(data);
 }
@@ -137,9 +114,9 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
         if((tag>>46)&1)write(0x00,(tag>>47)&0x7FF,apply); // PRE: PRIM from the tag.
         if(flg==0) {
             if(at+std::size_t(nloop)*nreg*16>data.size())throw std::runtime_error("GIF PACKED data exceeds transfer");
-            if(!rasterize && !texture_names) {
-                // GPU-only: the renderer draws. This model follows only what is set through A+D (the
-                // transfer registers, FINISH); vertex and texture data pass by unread.
+            if(!texture_names) {
+                // The renderer draws: this follows only what is set through A+D (the transfer registers,
+                // FINISH); vertex and texture data pass by unread.
                 for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
                     if(((regs>>(4*r))&15)==0xE)write(unsigned(read(at+8)&0xFF),read(at),apply);
             } else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16) {cursor_=at;packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);}
@@ -161,20 +138,8 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
 }
 
 void GsCommandSink::image(std::span<const std::uint8_t> data) {
-    // Host->local PSMCT32 pixels in transfer order (left to right, top to bottom).
+    // Host->local pixels: the renderer's GS memory takes them; the texture names follow them.
     if(texture_names) {forwardBefore(cursor_);texture_names->image(data);}
-    auto& t=state;
-    if(!t.trx) {
-        if(!rasterize)return; // GPU-only: a transfer this model does not track; the data is the GPU's.
-        throw std::runtime_error("GIF IMAGE without an active host-to-local transfer");
-    }
-    for(std::size_t i=0;i<data.size();i+=4) {
-        if(t.trx_y>=t.trx_h)throw std::runtime_error("GIF IMAGE data exceeds the transfer region");
-        std::uint32_t v;std::memcpy(&v,data.data()+i,4);
-        writable(ct32Word(t.trx_bp,t.trx_bw,t.trx_x0+t.trx_x,t.trx_y0+t.trx_y))={v,UINT32_MAX};++image_pixels;
-        if(++t.trx_x==t.trx_w) {t.trx_x=0;++t.trx_y;}
-    }
-    if(t.trx_y==t.trx_h)t.trx=false;
 }
 
 void GsCommandSink::startTransfer(std::uint64_t dir) {
@@ -182,29 +147,21 @@ void GsCommandSink::startTransfer(std::uint64_t dir) {
     const unsigned dbp=unsigned((bitblt>>32)&0x3FFF),dbw=unsigned((bitblt>>48)&63),dpsm=unsigned((bitblt>>56)&63);
     const unsigned dx=unsigned((pos>>32)&0x7FF),dy=unsigned((pos>>48)&0x7FF),order=unsigned((pos>>59)&3);
     const unsigned w=unsigned(reg&0xFFF),h=unsigned((reg>>32)&0xFFF);
-    // Host->local, CT32 destination, upper-left order, inside the buffer (one page when DBW is 0).
-    // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS.
-    // GPU-only: the GPU performs every host-to-local transfer and this model does not follow them;
-    // local-to-host (dir 1) is set up in both modes.
-    state.trx=false;state.download=false;
+    // A TRXDIR write starts a new transfer; an incomplete earlier one is abandoned, as on the GS. The
+    // renderer performs host->local and local->local transfers; local->host is followed here so its
+    // FIFO reads can be counted.
+    state.download=false;
     if((dir&3)==1) {
-        // Local->host: the source rectangle is read back through the FIFO. This model reads CT32 and
-        // CT24 buffers; the GPU renderer reads every format itself.
+        // Local->host: the source rectangle is read back through the FIFO (the renderer supplies the pixels).
         const unsigned sbp=unsigned(bitblt&0x3FFF),sbw=unsigned((bitblt>>16)&63),spsm=unsigned((bitblt>>24)&63);
         const unsigned sx=unsigned(pos&0x7FF),sy=unsigned((pos>>16)&0x7FF);
-        if(!w || !h || !sbw || (rasterize && spsm>1))
+        if(!w || !h || !sbw)
             throw std::runtime_error("Unsupported GS local-to-host transfer: spsm "+std::to_string(spsm)+" "+std::to_string(w)+"x"+std::to_string(h)
                 +" at "+std::to_string(sx)+","+std::to_string(sy)+" sbw "+std::to_string(sbw));
         state.download=true;state.dl_bp=sbp;state.dl_bw=sbw;state.dl_psm=spsm;state.dl_x=sx;state.dl_y=sy;state.dl_w=w;state.dl_h=h;state.dl_at=0;
         return;
     }
-    const bool unsupported=(dir&3)!=0 || dpsm!=0 || order || !w || !h
-        || (dbw ? dx+w>dbw*64u : (dx+w>64 || dy+h>32)) || dy+h>2048;
-    if(!rasterize)return; // GPU-only: host-to-local data goes to the GPU's memory only; this model keeps no copy.
-    if(unsupported)
-        throw std::runtime_error("Unsupported GS image transfer: dir "+std::to_string(dir&3)+" dpsm "+std::to_string(dpsm)
-            +" order "+std::to_string(order)+" "+std::to_string(w)+"x"+std::to_string(h)+" at "+std::to_string(dx)+","+std::to_string(dy)+" dbw "+std::to_string(dbw));
-    state.trx=true;state.trx_bp=dbp;state.trx_bw=dbw;state.trx_x0=dx;state.trx_y0=dy;state.trx_w=w;state.trx_h=h;state.trx_x=state.trx_y=0;
+    (void)dbp;(void)dbw;(void)dpsm;(void)dx;(void)dy;(void)order;
 }
 
 namespace {
@@ -231,42 +188,7 @@ std::size_t GsCommandSink::downloadQwords() const {
 void GsCommandSink::readDownload(std::span<std::uint8_t> out) {
     if(!state.download)throw std::runtime_error("GS FIFO read without a local-to-host transfer");
     std::fill(out.begin(),out.end(),std::uint8_t(0));
-    if(rasterize) {
-        const std::size_t size=state.dl_psm?3:4,pixels=std::size_t(state.dl_w)*state.dl_h;
-        for(std::size_t n=0;n<out.size();++n) {
-            const std::size_t at=state.dl_at+n,pixel=at/size;
-            if(pixel>=pixels)break;
-            const auto word=vram_[ct32Word(state.dl_bp,state.dl_bw,state.dl_x+unsigned(pixel%state.dl_w),state.dl_y+unsigned(pixel/state.dl_w))].value;
-            out[n]=std::uint8_t(word>>(8*(at%size)));
-        }
-    }
     state.dl_at+=out.size();
-}
-
-void GsCommandSink::loadClut(std::uint64_t texture0) {
-    // CLD 1: load at this TEX0 write. CSM1 with CT32 entries, from a 64-pixel-wide buffer at CBP:
-    // PSMT4 loads 16 entries (8x2) at CSA*16; PSMT8 loads 256 entries (16x16, index bits 3 and 4
-    // swapped in the layout).
-    const unsigned psm=unsigned((texture0>>20)&63),cbp=unsigned((texture0>>37)&0x3FFF),cpsm=unsigned((texture0>>51)&15);
-    const unsigned csm=unsigned((texture0>>55)&1),csa=unsigned((texture0>>56)&31);
-    const bool unsupported=(psm!=0x14 && psm!=0x13) || cpsm!=0 || csm || csa>15 || (psm==0x13 && csa);
-    if(unsupported && !rasterize)return; // GPU-only: the CLUT of this model is not used.
-    if(unsupported)
-        throw std::runtime_error("Unsupported GS CLUT load: psm "+std::to_string(psm)+" cpsm "+std::to_string(cpsm)+" csm "+std::to_string(csm)+" csa "+std::to_string(csa)+" cbp "+std::to_string(cbp));
-    if(psm==0x14) {
-        for(unsigned i=0;i<16;++i) {
-            const auto& w=vram_[ct32Word(cbp,1,i%8,i/8)];
-            clut_.color[csa*16+i]=w.value;clut_.known[csa*16+i]=w.known==UINT32_MAX;
-        }
-    } else {
-        // Entry offsets of the 16x16 CT32 layout relative to CBP, computed once.
-        static const auto offsets=[]{std::array<std::size_t,256> o{};for(unsigned i=0;i<256;++i){const unsigned s=(i&~0x18u)|((i&0x08u)<<1)|((i&0x10u)>>1);o[i]=ct32Word(0,1,s%16,s/16);}return o;}();
-        for(unsigned i=0;i<256;++i) {
-            const auto& w=vram_[(std::size_t(cbp)*64+offsets[i])%(1024*1024)];
-            clut_.color[i]=w.value;clut_.known[i]=w.known==UINT32_MAX;
-        }
-    }
-    ++clut_loads;
 }
 
 void GsCommandSink::packed(unsigned d,std::uint64_t lo,std::uint64_t hi,bool apply) {
@@ -297,243 +219,7 @@ void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {
     if(reg==0x06 || reg==0x07) {
         const unsigned cld=unsigned((value>>61)&7);
         if(cld>1)throw std::runtime_error("Unsupported GS CLUT load control");
-        if(cld==1 && rasterize)loadClut(value); // GPU-only: the renderer keeps the CLUT.
-        return;
+        return; // The renderer loads the CLUT.
     }
-    if(!rasterize)return; // GPU-only: no vertex queue; primitives are the renderer's.
-    if(reg==0x00)state.vertices=0;
-    if(reg!=0x04 && reg!=0x05 && reg!=0x0C && reg!=0x0D)return;
-    const auto prim=(state.regs[0x1A]&1)?state.regs[0x00]:state.regs[0x1B];
-    // Vertex queue: sprites and triangles restart after each primitive; a triangle strip keeps the
-    // last two vertices and a fan keeps the first and the last. XYZ3/XYZF3 queue without drawing.
-    const unsigned type=unsigned(state.regs[0x00]&7),needed=type==6?2:(type>=3 && type<=5)?3:0;
-    if(!needed) {
-        if(!rasterize)return; // GPU-only: points and lines are drawn by the GPU.
-        throw std::runtime_error("Unsupported GS primitive type "+std::to_string(type));
-    }
-    if(state.vertices>=needed) {
-        if(type==4) {for(unsigned k=0;k<2;++k){state.vertex_xyz[k]=state.vertex_xyz[k+1];state.vertex_rgbaq[k]=state.vertex_rgbaq[k+1];state.vertex_uv[k]=state.vertex_uv[k+1];}state.vertices=2;}
-        else if(type==5) {state.vertex_xyz[1]=state.vertex_xyz[2];state.vertex_rgbaq[1]=state.vertex_rgbaq[2];state.vertex_uv[1]=state.vertex_uv[2];state.vertices=2;}
-        else state.vertices=0;
-    }
-    state.vertex_xyz[state.vertices]=value;state.vertex_rgbaq[state.vertices]=state.regs[0x01];state.vertex_uv[state.vertices]=state.regs[0x03];++state.vertices;
-    if(state.vertices<needed || reg==0x0C || reg==0x0D)return;
-    if(type==6) {sprite(prim,apply);state.vertices=0;}
-    else triangle(prim,apply);
-}
-
-inline GsCommandSink::Rgba GsCommandSink::unpack(std::uint32_t c) {
-    return {int(c&255),int((c>>8)&255),int((c>>16)&255),int(c>>24)};
-}
-
-inline std::uint32_t GsCommandSink::texel(const Draw& d,int u,int v) const {
-    const unsigned tbp=d.tbp,tbw=d.tbw,csa=d.csa;const bool t8=d.t8;
-    const auto n=t8?t8Byte(tbp,tbw,unsigned(u),unsigned(v)):t4Nibble(tbp,tbw,unsigned(u),unsigned(v));
-    const auto& w=vram_[t8?n/4:n/8];const unsigned shift=t8?unsigned(n%4)*8:unsigned(n%8)*4,mask=t8?255u:15u;
-    if(((w.known>>shift)&mask)!=mask)throw std::runtime_error("GS texture reads unwritten VRAM at texel "+std::to_string(u)+","+std::to_string(v)+" (TBP "+std::to_string(tbp)+", TBW "+std::to_string(tbw)+", word "+std::to_string(t8?n/4:n/8)+")");
-    const unsigned index=t8?((w.value>>shift)&255):csa*16+((w.value>>shift)&15);
-    if(!clut_.known[index])throw std::runtime_error("GS texture reads an unloaded CLUT entry");
-    return clut_.color[index];
-}
-
-GsCommandSink::Draw GsCommandSink::prepare(std::uint64_t prim) const {
-    auto reject=[](const char* what){throw std::runtime_error(std::string("Unsupported GS drawing state: ")+what);};
-    // TME (with FST UVs) and ABE are supported; FGE/AA1 are not.
-    Draw d;d.tme=(prim>>4)&1;d.abe=(prim>>6)&1;const bool fst=(prim>>8)&1;
-    if(prim&0x20)reject("fogging (FGE)");
-    if(prim&0x80)reject("antialiasing (AA1)");
-    if(d.tme && !fst)reject("STQ texture coordinates (FST 0)");
-    const unsigned c=unsigned((prim>>9)&1);
-    d.frame=state.regs[0x4C+c];const auto zbuf=state.regs[0x4E+c],offset=state.regs[0x18+c],scissor=state.regs[0x40+c],test=state.regs[0x47+c];
-    d.fbp=unsigned(d.frame&511);d.width=unsigned((d.frame>>16)&63);d.psm=unsigned((d.frame>>24)&63);
-    d.zbp=unsigned(zbuf&511);d.zpsm=unsigned((zbuf>>24)&15);d.zmsk=(zbuf>>32)&1;
-    // Alpha and destination-alpha tests off; depth test off or ALWAYS; no dither or FBA.
-    if(!d.width)reject("frame width 0");
-    if(d.psm!=0 && d.psm!=1)reject("frame pixel format");
-    if(test&1)reject("alpha test");
-    if(test&0x4000)reject("destination alpha test");
-    d.ztst=(test>>16)&1?unsigned((test>>17)&3):1u;
-    if((!d.zmsk || d.ztst>=2) && d.zpsm!=0 && d.zpsm!=1)reject("depth buffer format");
-    if(state.regs[0x45]&1)reject("dithering");
-    if(state.regs[0x4A+c]&1)reject("FBA");
-    d.ox=unsigned(offset&0xFFFF);d.oy=unsigned((offset>>32)&0xFFFF);
-    d.sx0=int(scissor&2047);d.sy0=int((scissor>>32)&2047);
-    d.sx1=std::min(int((scissor>>16)&2047)+1,int(d.width*64));d.sy1=std::min(int((scissor>>48)&2047)+1,2048);
-    // Texture state: PSMT4 or PSMT8 with a loaded CT32 CLUT, modulate/decal, no mipmapping, one filter for
-    // magnification and minification (so the LOD cannot change the result), REPEAT/CLAMP wrap.
-    d.texture0=state.regs[0x06+c];const auto tex1=state.regs[0x14+c],clamp=state.regs[0x08+c];
-    d.tw=unsigned((d.texture0>>26)&15);d.th=unsigned((d.texture0>>30)&15);d.tfx=unsigned((d.texture0>>35)&3);
-    d.tbp=unsigned(d.texture0&0x3FFF);d.tbw=unsigned((d.texture0>>14)&63);d.csa=unsigned((d.texture0>>56)&31);d.t8=((d.texture0>>20)&63)==0x13;
-    d.tcc=(d.texture0>>34)&1;d.linear=(tex1>>5)&1;d.wms=unsigned(clamp&3);d.wmt=unsigned((clamp>>2)&3);
-    if(d.tme) {
-        if(((d.texture0>>20)&63)!=0x14 && ((d.texture0>>20)&63)!=0x13)reject("texture pixel format");
-        if(d.tw>10 || d.th>10)reject("texture size");
-        if(d.tfx>1)reject("texture function HIGHLIGHT/HIGHLIGHT2");
-        if(((tex1>>2)&7) || ((tex1>>6)&7)!=(d.linear?1u:0u))reject("mipmapping or mixed filters");
-        if(d.wms>1 || d.wmt>1)reject("REGION texture wrap");
-    }
-    // Blending: ((A-B)*C>>7)+D with A/B/D in {Cs,Cd,0} and C in {As,Ad,FIX}; COLCLAMP clamps.
-    const auto alpha=state.regs[0x42+c];
-    d.sa=unsigned(alpha&3);d.sb=unsigned((alpha>>2)&3);d.sc=unsigned((alpha>>4)&3);d.sd=unsigned((alpha>>6)&3);
-    d.fix=int((alpha>>32)&255);d.colclamp=state.regs[0x46]&1;d.pabe_on=state.regs[0x49]&1;
-    if(d.abe && (d.sa==3 || d.sb==3 || d.sc==3 || d.sd==3))reject("reserved blend selector");
-    d.mask=std::uint32_t(d.frame>>32)|(d.psm==1?0xFF000000u:0u);d.zmask=d.zpsm==1?0xFFFFFFu:0xFFFFFFFFu;
-    return d;
-}
-
-inline GsCommandSink::Rgba GsCommandSink::sample(const Draw& d,int u,int v) const {
-    // u,v in 1/16 texels at the pixel.
-    auto wrap=[](int t,unsigned size_log2,unsigned mode){const int size=1<<size_log2;return mode?std::clamp(t,0,size-1):(t&(size-1));};
-    if(!d.linear)return unpack(texel(d,wrap(u>>4,d.tw,d.wms),wrap(v>>4,d.th,d.wmt)));
-    const int uu=u-8,vv=v-8,fu=uu&15,fv=vv&15,iu=uu>>4,iv=vv>>4;
-    const auto c00=unpack(texel(d,wrap(iu,d.tw,d.wms),wrap(iv,d.th,d.wmt))),c10=unpack(texel(d,wrap(iu+1,d.tw,d.wms),wrap(iv,d.th,d.wmt)));
-    const auto c01=unpack(texel(d,wrap(iu,d.tw,d.wms),wrap(iv+1,d.th,d.wmt))),c11=unpack(texel(d,wrap(iu+1,d.tw,d.wms),wrap(iv+1,d.th,d.wmt)));
-    auto mix=[&](int a,int b,int c2,int e){return (a*(16-fu)*(16-fv)+b*fu*(16-fv)+c2*(16-fu)*fv+e*fu*fv)>>8;};
-    return {mix(c00.r,c10.r,c01.r,c11.r),mix(c00.g,c10.g,c01.g,c11.g),mix(c00.b,c10.b,c01.b,c11.b),mix(c00.a,c10.a,c01.a,c11.a)};
-}
-
-void GsCommandSink::plot(const Draw& d,int px,int py,Rgba vertex,int u,int v,std::uint32_t z) {
-    // Depth test before any write: NEVER draws nothing; GEQUAL/GREATER compare with the stored Z.
-    if(d.ztst==0)return;
-    if(d.ztst>=2) {
-        const auto zw=word(address(d.zbp,d.width,unsigned(px),unsigned(py),true));
-        if((zw.known&d.zmask)!=d.zmask)throw std::runtime_error("GS depth test reads unwritten depth buffer");
-        const auto stored=zw.value&d.zmask,incoming=z&d.zmask;
-        if(d.ztst==2?incoming<stored:incoming<=stored)return;
-    }
-    Rgba s=vertex;
-    if(d.tme) {
-        const auto t=sample(d,u,v);
-        if(d.tfx==0)s={std::min(255,(t.r*vertex.r)>>7),std::min(255,(t.g*vertex.g)>>7),std::min(255,(t.b*vertex.b)>>7),d.tcc?std::min(255,(t.a*vertex.a)>>7):vertex.a};
-        else s={t.r,t.g,t.b,d.tcc?t.a:vertex.a};
-    }
-    auto& w=writable(ct32Word(d.fbp*32,d.width,unsigned(px),unsigned(py)));
-    if(d.abe && !(d.pabe_on && s.a<0x80)) {
-        const std::uint32_t needed=((d.sa==1 || d.sb==1 || d.sd==1)?0xFFFFFFu:0u)|(d.sc==1?0xFF000000u:0u);
-        if((w.known&needed)!=needed)throw std::runtime_error("GS blend reads unwritten framebuffer");
-        const auto dst=unpack(w.value);
-        // ((A-B)*C>>7)+D per channel; A, B and D select Cs (0), Cd (1) or 0 (2).
-        const int ca=d.sc==0?s.a:d.sc==1?dst.a:d.fix;
-        const int cs[3]={s.r,s.g,s.b},cd[3]={dst.r,dst.g,dst.b};int out[3];
-        for(unsigned k=0;k<3;++k) {
-            const int a=d.sa==0?cs[k]:d.sa==1?cd[k]:0,b=d.sb==0?cs[k]:d.sb==1?cd[k]:0,e=d.sd==0?cs[k]:d.sd==1?cd[k]:0;
-            const int r=((a-b)*ca>>7)+e;out[k]=d.colclamp?std::clamp(r,0,255):(r&255);
-        }
-        s={out[0],out[1],out[2],s.a};
-    }
-    const std::uint32_t color=std::uint32_t(s.r)|(std::uint32_t(s.g)<<8)|(std::uint32_t(s.b)<<16)|(std::uint32_t(s.a&255)<<24);
-    w.value=(w.value&d.mask)|(color&~d.mask);w.known|=~d.mask;
-    if(!d.zmsk) {auto& zw=writable(address(d.zbp,d.width,unsigned(px),unsigned(py),true));zw.value=(zw.value&~d.zmask)|(z&d.zmask);zw.known|=d.zmask;}
-    ++frame_pixels;
-}
-
-void GsCommandSink::sprite(std::uint64_t prim,bool apply) {
-    // GPU-only: the primitive is counted; the drawing state is the GPU's to handle, so the limits
-    // of this rasterizer (prepare) do not apply.
-    if(!rasterize) {if(apply)++frame_sprites;return;}
-    const auto d=prepare(prim);
-    auto x=[&](unsigned v){return int(v&0xFFFF)-int(d.ox);};auto y=[&](unsigned v){return int((v>>16)&0xFFFF)-int(d.oy);};
-    const auto v0=state.vertex_xyz[0],v1=state.vertex_xyz[1];
-    const int X0=x(unsigned(v0)),X1=x(unsigned(v1)),Y0=y(unsigned(v0)),Y1=y(unsigned(v1));
-    int x0=(std::min(X0,X1)+15)>>4,x1=(std::max(X0,X1)+15)>>4;
-    int y0=(std::min(Y0,Y1)+15)>>4,y1=(std::max(Y0,Y1)+15)>>4;
-    // A sprite reaching past the scissored buffer is refused, as before (not clipped silently).
-    const auto scissor=state.regs[0x40+unsigned((prim>>9)&1)];
-    if(std::min(int((scissor>>16)&2047)+1,x1)>int(d.width*64) || std::min(int((scissor>>48)&2047)+1,y1)>2048)
-        throw std::runtime_error("Unsupported GS drawing state: sprite beyond the frame buffer");
-    x0=std::max(x0,d.sx0);y0=std::max(y0,d.sy0);x1=std::min(x1,d.sx1);y1=std::min(y1,d.sy1);
-    const int U0=int(state.vertex_uv[0]&0x3FFF),V0=int((state.vertex_uv[0]>>16)&0x3FFF);
-    const int U1=int(state.vertex_uv[1]&0x3FFF),V1=int((state.vertex_uv[1]>>16)&0x3FFF);
-    if(!apply)return;
-    const auto vertex=unpack(std::uint32_t(state.vertex_rgbaq[1]));
-    const std::uint32_t z=std::uint32_t(v1>>32);
-    // U depends only on the column and V only on the row: each is computed once.
-    std::vector<int> us(std::size_t(std::max(0,x1-x0)));
-    for(int px=x0;px<x1;++px)us[std::size_t(px-x0)]=X1==X0?U0:U0+int((std::int64_t(U1-U0)*(px*16-X0))/(X1-X0));
-    for(int py=y0;py<y1;++py) {
-        const int v=Y1==Y0?V0:V0+int((std::int64_t(V1-V0)*(py*16-Y0))/(Y1-Y0));
-        for(int px=x0;px<x1;++px)plot(d,px,py,vertex,us[std::size_t(px-x0)],v,z);
-    }
-    ++frame_sprites;
-}
-
-void GsCommandSink::triangle(std::uint64_t prim,bool apply) {
-    if(!rasterize) {if(apply)++frame_triangles;return;} // GPU-only, as for sprites.
-    const auto d=prepare(prim);
-    const bool gouraud=(prim>>3)&1;
-    std::array<std::int64_t,3> X{},Y{};
-    for(unsigned k=0;k<3;++k){X[k]=std::int64_t(state.vertex_xyz[k]&0xFFFF)-d.ox;Y[k]=std::int64_t((state.vertex_xyz[k]>>16)&0xFFFF)-d.oy;}
-    std::int64_t area=(X[1]-X[0])*(Y[2]-Y[0])-(Y[1]-Y[0])*(X[2]-X[0]);
-    if(!area){if(apply)++frame_triangles;return;} // Degenerate: no pixels.
-    std::array<unsigned,3> order{0,1,2};if(area<0){std::swap(order[1],order[2]);area=-area;}
-    const auto minx=std::min({X[0],X[1],X[2]}),maxx=std::max({X[0],X[1],X[2]}),miny=std::min({Y[0],Y[1],Y[2]}),maxy=std::max({Y[0],Y[1],Y[2]});
-    const int x0=std::max(int((minx+15)>>4),d.sx0),x1=std::min(int((maxx>>4)+1),d.sx1);
-    const int y0=std::max(int((miny+15)>>4),d.sy0),y1=std::min(int((maxy>>4)+1),d.sy1);
-    if(!apply)return;
-    // Edge k is opposite vertex order[k]. With positive area (y down), a point is inside when every
-    // edge function is >= 0; on an edge (== 0) only top edges (horizontal, above the triangle) and
-    // left edges own the pixel, so pixels shared by neighbouring triangles are drawn once.
-    struct Edge {std::int64_t a,b,c;bool inclusive;};std::array<Edge,3> edges{};
-    for(unsigned k=0;k<3;++k) {
-        const auto i=order[(k+1)%3],j=order[(k+2)%3];
-        const auto a=Y[i]-Y[j],b=X[j]-X[i];
-        edges[k]={a,b,-(a*X[i]+b*Y[i]),(a>0) || (a==0 && b>0)};
-    }
-    std::array<Rgba,3> col{};std::array<std::int64_t,3> U{},V{},Z{};
-    for(unsigned k=0;k<3;++k) {
-        col[k]=unpack(std::uint32_t(state.vertex_rgbaq[order[k]]));U[k]=std::int64_t(state.vertex_uv[order[k]]&0x3FFF);
-        V[k]=std::int64_t((state.vertex_uv[order[k]]>>16)&0x3FFF);Z[k]=std::int64_t(state.vertex_xyz[order[k]]>>32);
-    }
-    const auto flat=unpack(std::uint32_t(state.vertex_rgbaq[2]));
-    // Fast path: the edge functions and attribute numerators are linear in px, so each row starts from
-    // the direct formula and steps by constants. Attributes keep exact floor quotient/remainder pairs,
-    // equal to the truncating division below wherever a pixel is inside (numerators are then >= 0).
-    // Used only when no numerator can exceed 2^62; otherwise the direct per-pixel formula runs.
-    std::int64_t max_attribute=0,max_weight=0;
-    for(unsigned k=0;k<3;++k) {
-        max_attribute=std::max({max_attribute,Z[k],U[k],V[k],std::int64_t(255)});
-        for(const int cx:{x0,x1-1})for(const int cy:{y0,y1-1})
-            max_weight=std::max(max_weight,std::abs(edges[k].a*cx*16+edges[k].b*cy*16+edges[k].c));
-        max_weight=std::max(max_weight,std::abs(edges[k].a*16));
-    }
-    if(x0<x1 && y0<y1 && max_weight<=(std::int64_t(1)<<60)/max_attribute) {
-        auto floor_div=[&](std::int64_t n){std::int64_t q=n/area;if(n%area<0)--q;return q;};
-        struct Lerp {std::int64_t q=0,r=0,dq=0,dr=0;};
-        auto start=[&](std::int64_t n,std::int64_t dn){Lerp l;l.q=floor_div(n);l.r=n-l.q*area;l.dq=floor_div(dn);l.dr=dn-l.dq*area;return l;};
-        auto step=[&](Lerp& l){l.q+=l.dq;l.r+=l.dr;if(l.r>=area){l.r-=area;++l.q;}};
-        const unsigned attributes=gouraud?7u:3u; // Z, U, V, then R, G, B, A when Gouraud.
-        std::array<std::array<std::int64_t,3>,7> value{};value[0]=Z;value[1]=U;value[2]=V;
-        for(unsigned k=0;k<3;++k){value[3][k]=col[k].r;value[4][k]=col[k].g;value[5][k]=col[k].b;value[6][k]=col[k].a;}
-        for(int py=y0;py<y1;++py) {
-            std::array<std::int64_t,3> w{},dw{};
-            for(unsigned k=0;k<3;++k){w[k]=edges[k].a*x0*16+edges[k].b*py*16+edges[k].c;dw[k]=edges[k].a*16;}
-            std::array<Lerp,7> l{};
-            for(unsigned n=0;n<attributes;++n)
-                l[n]=start(value[n][0]*w[0]+value[n][1]*w[1]+value[n][2]*w[2],value[n][0]*dw[0]+value[n][1]*dw[1]+value[n][2]*dw[2]);
-            for(int px=x0;px<x1;++px) {
-                bool inside=true;
-                for(unsigned k=0;k<3;++k)if(w[k]<0 || (w[k]==0 && !edges[k].inclusive)){inside=false;break;}
-                if(inside) {
-                    const Rgba vertex=gouraud?Rgba{int(l[3].q),int(l[4].q),int(l[5].q),int(l[6].q)}:flat;
-                    plot(d,px,py,vertex,int(l[1].q),int(l[2].q),std::uint32_t(std::clamp<std::int64_t>(l[0].q,0,0xFFFFFFFFll)));
-                }
-                for(unsigned k=0;k<3;++k)w[k]+=dw[k];
-                for(unsigned n=0;n<attributes;++n)step(l[n]);
-            }
-        }
-        ++frame_triangles;return;
-    }
-    for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px) {
-        std::array<std::int64_t,3> w{};bool inside=true;
-        for(unsigned k=0;k<3;++k) {
-            w[k]=edges[k].a*px*16+edges[k].b*py*16+edges[k].c;
-            if(w[k]<0 || (w[k]==0 && !edges[k].inclusive)){inside=false;break;}
-        }
-        if(!inside)continue;
-        auto lerp=[&](std::int64_t a,std::int64_t b,std::int64_t c){return (a*w[0]+b*w[1]+c*w[2])/area;};
-        const Rgba vertex=gouraud?Rgba{int(lerp(col[0].r,col[1].r,col[2].r)),int(lerp(col[0].g,col[1].g,col[2].g)),int(lerp(col[0].b,col[1].b,col[2].b)),int(lerp(col[0].a,col[1].a,col[2].a))}:flat;
-        const auto z=std::uint32_t(std::clamp<std::int64_t>(lerp(Z[0],Z[1],Z[2]),0,0xFFFFFFFFll));
-        plot(d,px,py,vertex,int(lerp(U[0],U[1],U[2])),int(lerp(V[0],V[1],V[2])),z);
-    }
-    ++frame_triangles;
+    // Vertices and primitives are the renderer's.
 }

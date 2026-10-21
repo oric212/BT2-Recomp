@@ -1958,15 +1958,23 @@ int main() {
             tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0,0);
             vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gif_dma.gs.transfers==2 && vf.frame_vif1.tadr==0x3140);
-            tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x0800000000008001ull,0);tag(0x3220,0x70000000,0);
-            refuse(0x3200,0x50000000); // DIRECT IMAGE without a host-to-local transfer: refused by the GS.
+            tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x1000000000008001ull,0xE);tag(0x3220,0x70000000,0);
+            refuse(0x3200,0x50000000); // DIRECT whose PACKED GIF packet claims more data than it holds: refused by the GS.
         }
         {
             // GS readback (the library's store-image sequence): a normal-mode VIF1 packet starts a
             // local->host transfer and raises FINISH; with the FIFO and the bus turned around, a DMA
             // to memory and FIFO reads deliver the rectangle in order.
             EeRuntime rb;rb.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=rb.memory().data();rb.gs_display_flips=1;
-            for(unsigned y=0;y<4;++y)for(unsigned x=0;x<8;++x)rb.gif_dma.gs.seedForTest(GsCommandSink::ct32Word(0x40,1,x,y),0x22000000u|(y<<8)|x);
+            // The GPU renderer supplies the rectangle's pixels (8 x 4 CT32, row by row) through the download hook.
+            std::size_t delivered=0;
+            rb.gs_download_source=[&delivered](std::span<std::uint8_t> out) {
+                for(std::size_t n=0;n<out.size();++n,++delivered) {
+                    const std::size_t at=delivered/4;
+                    const std::uint32_t word=at<32?0x22000000u|std::uint32_t((at/8)<<8)|std::uint32_t(at%8):0u;
+                    out[n]=std::uint8_t(word>>(8*(delivered%4)));
+                }
+            };
             auto qword=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
             qword(0x4000,0x1300000006008000ull,0x5000000600000000ull); // MSKPATH3 on, FLUSHA, NOP, DIRECT 6.
             qword(0x4010,0x1000000000008005ull,0xE);qword(0x4020,0x40ull|(1ull<<16),0x50);qword(0x4030,0,0x51);

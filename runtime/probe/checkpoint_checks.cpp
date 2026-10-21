@@ -3,6 +3,17 @@
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 
+namespace {
+// Whether the startup clears left a 640 x 448 frame buffer (FBW 10) at page `fbp` black up to its last
+// pixel: the last accepted clear covering (639, 447) writes colour 0 with no bit masked.
+bool clearedToBlack(const GsCommandSink& gs,unsigned fbp) {
+    for(auto it=gs.clears.rbegin();it!=gs.clears.rend();++it)
+        if(it->fbp==fbp && it->width==10 && it->x0<=639 && it->x1>639 && it->y0<=447 && it->y1>447)
+            return it->color==0 && it->mask==0;
+    return false;
+}
+}
+
 // Checkpoint validation: the state each replayed startup checkpoint must reach at its boundary.
 // Later checkpoints are validated per request by their receivers; these checks cover the boundary.
 
@@ -179,11 +190,7 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
                         && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
                         && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
                         "Fresh SIF prior GS synchronization differs");
-                    // Frame-phase textured drawing reuses this memory with the 512-pixel layout.
-                    if(!runtime.gif_dma.gs.image_pixels)for(unsigned page : {0u,140u}) {
-                        const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
-                        require(pixel.value==0 && pixel.known==UINT32_MAX,"Fresh SIF startup framebuffer edge differs");
-                    }
+                    for(unsigned page : {0u,140u})require(clearedToBlack(runtime.gif_dma.gs,page),"Fresh SIF startup framebuffer edge differs");
                     if(loader_progress || cd_stop || loader_target || loader_stop) {
                         require(runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized && runtime.post_cd.binds==2 && runtime.post_cd.calls==1
                             && runtime.read32(runtime.memory().data(),0x3A87A8)==0 && runtime.read32(runtime.memory().data(),0x3A87CC)==0x43388
@@ -266,8 +273,7 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
                         "Post-reset SIF DMA status boundary differs");
                     for(unsigned page : {0u,140u}) {
                         if(page==0 && runtime.gif_dma.starts==1)continue;
-                        const auto pixel=runtime.gif_dma.gs.word(GsCommandSink::address(page,10,639,447,false));
-                        require(pixel.value==0 && pixel.known==UINT32_MAX,"Startup framebuffer clear edge differs");
+                        require(clearedToBlack(runtime.gif_dma.gs,page),"Startup framebuffer clear edge differs");
                     }
                 }
                 else if(runtime.gs_interrupt.acknowledgements==2 && !runtime.post_sif.supplied) require(runtime.gs_interrupt.polls==2

@@ -14,7 +14,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import run_startup_probe
 
 FIELDS=('case','result','flips','entered','interpreted','seconds','stop')
-DUMPS=('.ee.bin','.gs.bin','.iop.bin')
+DUMPS=('.ee.bin','.iop.bin')
 
 
 def numbers(text):

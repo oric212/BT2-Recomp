@@ -1,5 +1,5 @@
-// Mirror mode: every GIF transfer the CPU GS model accepts also goes to paraLLEl-GS; at each flip,
-// every VRAM word the CPU model knows is compared (docs/plans/graphics/GPU_RENDERING_PLAN.md).
+// The GPU renderer as the runtime uses it: every GIF transfer the GS command sink accepts goes to
+// paraLLEl-GS, which draws every picture (docs/plans/graphics/GPU_RENDERING_PLAN.md).
 #pragma once
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/cpu/gs_command_sink.h"
@@ -22,7 +22,6 @@ public:
     void readFifo(std::span<std::uint8_t> out) {gpu_.readFifo(out);} // Local->host data, GPU-only mode.
     void enableTimestamps() {gpu_.enableTimestamps();}
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names) {gpu_.enableHdTextures(pack,budget_bytes,names);}
-    void compare(const GsCommandSink& cpu,unsigned frame);
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and
     // the video mode of its SetGsCrt request (2 NTSC, 3 PAL), which sets SMODE1 on hardware.
     DisplayFrame scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field);
@@ -34,7 +33,4 @@ public:
     ~GpuGsMirror(); // Prints the summary.
 private:
     GpuGsBackend gpu_;
-    bool attached_=false;
-    unsigned frames_=0,differing_frames_=0,first_frame_=0;
-    std::size_t first_word_=0;std::uint32_t first_cpu_=0,first_gpu_=0;
 };

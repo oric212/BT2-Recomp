@@ -1,4 +1,3 @@
-#include "gs/cpu/cpu_display.h"
 #ifdef BT2_GPU_GS
 #include "gs/gpu/gpu_gs_mirror.h"
 #include "gs/gpu/in_between_frames.h"
@@ -279,14 +278,9 @@ int main(int argc, char** argv) {
             for (const GamePatch* patch : parseGamePatches(patches ? patches : "")) if (patch->name == "widescreen") viewer.setWidescreen(true);
         }
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode && !std::getenv("BT2_VIEWER_CLOSE")}; // BT2_VIEWER_CLOSE: the window closes with the run (automated runs with a window).
-        if (viewer_mode) runtime.on_display_flip = [&runtime] {
-            const auto dispfb = runtime.gs_privileged[9] ? runtime.gs_privileged[9] : runtime.gs_privileged[7];
-            const auto display = runtime.gs_privileged[9] ? runtime.gs_privileged[10] : runtime.gs_privileged[8];
-            const auto frame = decodeDisplay(runtime.gif_dma.gs, dispfb, display);
-            if (pacer) pacer->wait();
-            viewer.present(frame, runtime.gs_display_flips);
-            if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
-        };
+#ifndef BT2_GPU_GS
+        if (viewer_mode) throw std::runtime_error("The viewer needs a probe built with -DBT2_GPU_GS=ON (the GPU renderer draws every picture)");
+#endif
         // BT2_HOST_INPUT: the keyboard and a gamepad play the game while the viewer window has the focus
         // (default mapping, host/input_mapping.h); a pad script is then ignored.
         // BT2_PAD_RECORD=<path>: the buttons played, written as a pad script that replays the session
@@ -343,18 +337,15 @@ int main(int argc, char** argv) {
             runtime.gif_dma.gs.texture_names = &texture_name_log.names;
         }
 #ifdef BT2_GPU_GS
-        // BT2_GPU_GS=mirror: render on paraLLEl-GS as well and compare VRAM at each flip.
-        // BT2_GPU_GS=on: paraLLEl-GS draws alone; the CPU model only validates packets.
+        // paraLLEl-GS draws every picture; the GS command sink checks the packets and follows the registers.
+        // BT2_GPU_GS, when set, must be "on" (the GPU renderer is the only one).
         static GpuGsMirror gpu_mirror;
-        const char* gpu_mode = std::getenv("BT2_GPU_GS");
-        if (gpu_mode && std::string_view(gpu_mode) != "mirror" && std::string_view(gpu_mode) != "on")
-            throw std::runtime_error("BT2_GPU_GS must be mirror or on");
-        if (gpu_mode) {
-            const bool gpu_only = std::string_view(gpu_mode) == "on";
+        if (const char* gpu_mode = std::getenv("BT2_GPU_GS"); gpu_mode && std::string_view(gpu_mode) != "on")
+            throw std::runtime_error("BT2_GPU_GS must be on: the GPU renderer is the only renderer");
+        {
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
             const unsigned super_sampling = std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u;
             gpu_mirror.attach(runtime.gif_dma.gs, super_sampling);
-            runtime.gif_dma.gs.rasterize = !gpu_only;
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
             // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).
@@ -380,7 +371,6 @@ int main(int argc, char** argv) {
                 in_between_started = false;in_between.reset();
             };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
-                if (!gpu_only) throw std::runtime_error("BT2_SIXTY_FPS needs BT2_GPU_GS=on");
                 if (std::getenv("BT2_VIF1_DUMP") || std::getenv("BT2_VIF1_REPLACE")) throw std::runtime_error("BT2_SIXTY_FPS excludes BT2_VIF1_DUMP and BT2_VIF1_REPLACE");
                 in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr);
                 in_between->replay_only = std::string_view(sixty) == "replay";
@@ -417,7 +407,7 @@ int main(int argc, char** argv) {
                 if (player) player->picture_source = [] { return gpu_mirror.readback(); };
             }
             // GPU-only: VRAM lives in the renderer, which also answers local->host transfers.
-            if (gpu_only) runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
+            runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
             // BT2_GPU_GS_SNAPSHOT=<flip>:<path> writes that flip's GPU scanout as a binary PPM.
             // Several flips: <flip>:<path> entries separated by ';'.
@@ -432,7 +422,7 @@ int main(int argc, char** argv) {
                     at = end + 1;
                 }
             }
-            runtime.on_display_flip = [&runtime, viewer_mode, gpu_only] {
+            runtime.on_display_flip = [&runtime, viewer_mode] {
                 const auto flip = runtime.gs_display_flips;
                 // BT2_SAMPLE_PROFILE=<path>: sample where this thread executes, from flip
                 // BT2_SAMPLE_FROM (default 1) to the end of the run (host/sample_profiler.h).
@@ -443,7 +433,7 @@ int main(int argc, char** argv) {
                 // The worker's last frame ends before the main renderer's flip (they share the device and the HD pack).
                 bool in_between_ready = false;
                 if (in_between) try {in_between_ready = in_between->wait();} catch (const std::exception& e) {stop_in_between(e);}
-                if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
+                gpu_mirror.flip();
                 if (in_between) gpu_mirror.keepState(flip % 2); // The state the next frame starts from, for its in-between picture.
                 // The next frame goes to the worker when this flip's own work is done (its picture shown):
                 // the presenter's frame context would otherwise wait for the worker.
@@ -531,6 +521,7 @@ int main(int argc, char** argv) {
         }
 #else
         if (std::getenv("BT2_GPU_GS")) throw std::runtime_error("BT2_GPU_GS needs a probe built with -DBT2_GPU_GS=ON");
+        // Without the GPU renderer the run is headless: nothing draws its pictures.
 #endif
         if (const char* phase = std::getenv("BT2_PHASE_STOP")) runtime.phase_stop = static_cast<std::uint32_t>(std::stoul(phase, nullptr, 16));
         runtime.loadMemory(image);

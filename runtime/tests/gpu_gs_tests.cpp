@@ -1,4 +1,4 @@
-// paraLLEl-GS backend against the CPU GS model on synthetic GIF packets (no game data).
+// paraLLEl-GS backend on synthetic GIF packets (no game data): drawn pixels checked word by word.
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/cpu/gs_command_sink.h"
 #include "gs/gpu/hd_texture_pack.h"
@@ -17,20 +17,8 @@ std::vector<std::uint8_t> packet(std::initializer_list<std::pair<std::uint64_t,s
     return bytes;
 }
 
-// Every word the CPU model knows must equal the GPU's; returns the number compared.
-std::size_t compare(const GsCommandSink& cpu,std::span<const std::uint32_t> gpu) {
-    std::size_t compared=0;
-    for(std::size_t i=0;i<gpu.size();++i) {
-        const auto w=cpu.word(i);
-        if(!w.known)continue;
-        if((w.value&w.known)!=(gpu[i]&w.known)) {
-            std::cerr<<"VRAM word "<<i<<" differs: cpu "<<std::hex<<w.value<<" gpu "<<gpu[i]<<'\n';
-            throw std::runtime_error("GPU/CPU VRAM mismatch");
-        }
-        ++compared;
-    }
-    return compared;
-}
+// The PSMCT32 word at (x, y) of a frame buffer at page 0, 64 pixels wide.
+std::uint32_t pixel(std::span<const std::uint32_t> vram,unsigned x,unsigned y) {return vram[GsCommandSink::ct32Word(0,1,x,y)];}
 }
 
 // HD texture packs (hd_texture_pack.h): names as PCSX2 reads them and the DDS files the pack loads.
@@ -64,14 +52,17 @@ int main() try {
     GpuGsBackend gpu;
     try {gpu.init();}
     catch(const std::exception& e) {std::cout<<"skipped: "<<e.what()<<'\n';return 77;}
-    GsCommandSink cpu;
     // Flat sprite into a 64-pixel-wide PSMCT32 frame at page 0; depth writes masked.
     const auto sprite=packet({{0x4C,0x0000000000010000ULL},{0x4E,0x0000000101000020ULL},{0x18,0},
         {0x40,0x001F0000003F0000ULL},{0x47,0x30000},{0x00,6},{0x01,0x0000000080402010ULL},
         {0x05,0x0000000000400040ULL},{0x05,0x0000000001000100ULL}});
-    cpu.transfer(sprite);gpu.transfer(sprite);
-    const auto compared=compare(cpu,gpu.readVram());
-    if(compared<12*12)throw std::runtime_error("Sprite covered fewer words than expected");
+    gpu.transfer(sprite);
+    {
+        // Pixels (4,4) to (15,15) take the colour; the right and bottom edges and beyond do not.
+        const auto vram=gpu.readVram();
+        for(unsigned y=4;y<16;++y)for(unsigned x=4;x<16;++x)if(pixel(vram,x,y)!=0x80402010u)throw std::runtime_error("Sprite pixel missing");
+        if(pixel(vram,16,8)==0x80402010u || pixel(vram,8,16)==0x80402010u || pixel(vram,3,3)==0x80402010u)throw std::runtime_error("Sprite drew past its edges");
+    }
     {
         // A draw packet that reaches the renderer in pieces ending inside the packet (as the texture names'
         // lockstep sends it) draws as the whole packet does: a PACKED UV/RGBAQ/XYZ2 triangle strip (the layout
@@ -81,21 +72,22 @@ int main() try {
         q(4|(1ULL<<15)|(1ULL<<46)|(4ULL<<47)|(3ULL<<60),0x513); // NLOOP 4, EOP, PRE triangle strip, NREG 3: UV, RGBAQ, XYZ2.
         const std::uint64_t xy[4][2]={{0x200,0x80},{0x300,0x80},{0x200,0x180},{0x300,0x180}}; // 12.4: x 32..48, y 8..24.
         for(const auto& v:xy) {q(0,0);q(0x40ULL|(0x80ULL<<32),0x20ULL|(0x80ULL<<32));q(v[0]|(v[1]<<32),0);}
-        cpu.transfer(strip);
         // Each piece in its own buffer followed by poison (a vertex over the whole scissor area), so reading
-        // past a piece's end draws pixels the CPU model does not.
+        // past a piece's end draws pixels outside the square.
         for(std::size_t at=0;at<strip.size();at+=48) {
             const std::size_t size=std::min<std::size_t>(48,strip.size()-at);
             std::vector<std::uint8_t> piece(strip.begin()+std::ptrdiff_t(at),strip.begin()+std::ptrdiff_t(at+size));
             for(int k=0;k<8;++k) {const std::uint64_t poison[2]={0x0FF000000FF0ULL,0};piece.insert(piece.end(),reinterpret_cast<const std::uint8_t*>(poison),reinterpret_cast<const std::uint8_t*>(poison)+16);}
             gpu.transfer(std::span<const std::uint8_t>(piece).first(size));
         }
-        if(compare(cpu,gpu.readVram())<=compared)throw std::runtime_error("The strip drew nothing");
+        // The square x 32..47, y 8..23 in R 0x40, G 0x80, B 0x20, A 0x80; nothing outside it.
+        const auto vram=gpu.readVram();
+        for(unsigned y=8;y<24;++y)for(unsigned x=32;x<48;++x)if(pixel(vram,x,y)!=0x80208040u)throw std::runtime_error("Strip pixel missing");
+        if(pixel(vram,48,16) || pixel(vram,40,24) || pixel(vram,60,28))throw std::runtime_error("The strip drew outside its square (read past a piece)");
     }
-    // GPU-only mode: the CPU model accepts the packet's framing but neither draws nor counts the sprite.
-    GsCommandSink validator;validator.rasterize=false;validator.transfer(sprite);
-    if(validator.transfers!=1 || validator.frame_sprites!=0)throw std::runtime_error("GPU-only sink counted a sprite or lost the transfer");
-    for(std::size_t i=0;i<1024*1024;++i)if(validator.word(i).known)throw std::runtime_error("Validate-only sink drew pixels");
-    std::cout<<"GPU GS matches the CPU model on "<<compared<<" words\n";
+    // The sink checks the packet's framing and passes it on; it draws nothing.
+    GsCommandSink validator;validator.transfer(sprite);
+    if(validator.transfers!=1)throw std::runtime_error("The sink lost the transfer");
+    std::cout<<"GPU GS draws the sprite and the strip as expected\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

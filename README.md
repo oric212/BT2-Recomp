@@ -117,7 +117,7 @@ flowchart LR
 | --- | --- |
 | **EE runtime** | Memory, kernel, threads, timers, DMA, IPU, VU1 |
 | **Native services** | Answer the game's IOP requests on the host (disc, files, controller, memory card, sound, CRI); no IOP code runs |
-| **GS** | GPU rendering through paraLLEl-GS (Vulkan); a CPU renderer draws 2D and is the test reference |
+| **GS** | GPU rendering through paraLLEl-GS (Vulkan); the packets are checked on the processor |
 | **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results are compared with captures of the original game |
 
 ## Documentation

@@ -108,9 +108,8 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"vif1_unpacks\":" << runtime.vif1.unpacks << ",\"vif1_programs\":" << runtime.vif1.programs << ",\"vu1_runs\":" << runtime.vif1.vu.runs
         << ",\"vu1_instructions\":" << runtime.vif1.vu.instructions << ",\"vu1_native_runs\":" << runtime.vif1.vu.native_runs << ",\"vu1_hand_written_runs\":" << runtime.vif1.vu.hand_written_runs << ",\"vu1_verified_runs\":" << runtime.vif1.vu.verified_runs << ",\"vu1_kicks\":" << runtime.vif1.vu.kicks << ",\"vu1_kick_hash\":\"" << std::hex << runtime.vif1.vu.kick_hash << std::dec << "\""
         << ",\"vu1_early_q_reads\":" << runtime.vif1.vu.early_q_reads << ",\"vu1_early_clip_reads\":" << runtime.vif1.vu.early_clip_reads
-        << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_directs\":" << runtime.frame_vif1.directs << ",\"vif1_direct_qwords\":" << runtime.frame_vif1.direct_qwords << ",\"gs_image_pixels\":" << runtime.gif_dma.gs.image_pixels << ",\"gs_clut_loads\":" << runtime.gif_dma.gs.clut_loads << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
+        << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_directs\":" << runtime.frame_vif1.directs << ",\"vif1_direct_qwords\":" << runtime.frame_vif1.direct_qwords << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
         << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
-        << ",\"gs_frame_sprites\":" << runtime.gif_dma.gs.frame_sprites << ",\"gs_frame_triangles\":" << runtime.gif_dma.gs.frame_triangles << ",\"gs_frame_pixels\":" << runtime.gif_dma.gs.frame_pixels
         << ",\"frame_gs_resets\":" << runtime.frame_gs_resets << ",\"frame_gs_reset_step\":" << runtime.frame_gs_reset_step << ",\"frame_gs_crt_request\":[" << runtime.frame_gs_crt_request[0] << "," << runtime.frame_gs_crt_request[1] << "," << runtime.frame_gs_crt_request[2] << "],\"frame_vsync_handler_removed\":" << (runtime.frame_vsync_handler_removed?1:0) << ",\"frame_vsync_handler\":" << runtime.frame_vsync_handler
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
         << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10] << ",\"gs_dispfb1\":" << runtime.gs_privileged[7] << ",\"gs_display1\":" << runtime.gs_privileged[8]
@@ -308,15 +307,6 @@ void writeEvidenceDumps(EeRuntime& runtime,char** argv) {
             std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
             ee_dump.write(reinterpret_cast<const char*>(runtime.memory().data()),runtime.memory().size());
             if(!ee_dump)throw std::runtime_error("EE evidence dump failed");
-        }
-        if(runtime.gs_display_flips) {
-            // Owned GS memory model: per 32-bit word, value then known-bit mask (ignored evidence).
-            std::ofstream gs_dump(std::string(argv[2])+".gs.bin",std::ios::binary);
-            for(std::size_t i=0;i<1024*1024;++i) {
-                const auto w=runtime.gif_dma.gs.word(i);
-                gs_dump.write(reinterpret_cast<const char*>(&w.value),4);gs_dump.write(reinterpret_cast<const char*>(&w.known),4);
-            }
-            if(!gs_dump)throw std::runtime_error("GS evidence dump failed");
         }
         const auto& iop=runtime.nativeIopMemory(); // Native IOP memory store (uploaded data).
         std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);

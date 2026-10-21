@@ -4,29 +4,11 @@
 void GpuGsMirror::attach(GsCommandSink& cpu,unsigned super_sampling) {
     gpu_.init(super_sampling);
     cpu.on_accepted=[this](std::span<const std::uint8_t> data){FrameProfile::Scope timed(frame_profile.renderer);gpu_.transfer(data);};
-    attached_=true;
 }
 
 void GpuGsMirror::attachShared(GsCommandSink& cpu,GpuGsMirror& primary,unsigned super_sampling) {
     gpu_.initShared(primary.gpu_,super_sampling);
     cpu.on_accepted=[this](std::span<const std::uint8_t> data){gpu_.transfer(data);};
-    attached_=true;
-}
-
-void GpuGsMirror::compare(const GsCommandSink& cpu,unsigned frame) {
-    const auto gpu=gpu_.readVram();
-    std::size_t differing=0;
-    for(std::size_t i=0;i<gpu.size();++i) {
-        const auto w=cpu.word(i);
-        if(!((w.value^gpu[i])&w.known))continue;
-        if(!differing_frames_ && !differing) {first_frame_=frame;first_word_=i;first_cpu_=w.value;first_gpu_=gpu[i];}
-        ++differing;
-    }
-    ++frames_;
-    if(differing) {
-        if(differing_frames_<8)std::cerr<<"GPU mirror: frame "<<frame<<": "<<differing<<" VRAM words differ\n";
-        ++differing_frames_;
-    }
 }
 
 DisplayFrame GpuGsMirror::scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field) {
@@ -44,9 +26,4 @@ std::pair<unsigned,unsigned> GpuGsMirror::vsync(const std::array<std::uint64_t,1
 GpuGsMirror::~GpuGsMirror() {
     if(const auto hd=gpu_.hdTextureSummary();!hd.empty())std::cerr<<hd<<std::endl;
     if(const auto times=gpu_.timestampSummary();!times.empty())std::cerr<<times<<std::endl;
-    if(!attached_ || !frames_)return;
-    std::cerr<<"GPU mirror: "<<frames_<<" frames compared, "<<differing_frames_<<" differ";
-    if(differing_frames_)std::cerr<<"; first at frame "<<first_frame_<<std::hex<<", word 0x"<<first_word_
-        <<" (cpu 0x"<<first_cpu_<<", gpu 0x"<<first_gpu_<<")"<<std::dec;
-    std::cerr<<std::endl;
 }

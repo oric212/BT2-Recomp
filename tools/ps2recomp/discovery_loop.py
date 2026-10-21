@@ -156,7 +156,7 @@ class Loop:
             self.say('session without a report; the log names',len(logged),'places of interpreted code')
             return {'ee_interpreted_entries':[{'entry':a} for a in logged],'frame_budget_reached':True},lines
         if self.a.build_stamp().stat().st_mtime>report_path.stat().st_mtime:raise SystemExit('the runtime was rebuilt after that session; play again first')
-        for suffix in ('','.ee.bin','.gs.bin','.iop.bin'):
+        for suffix in ('','.ee.bin','.iop.bin'):
             source=Path(str(report_path)+suffix)
             if source.exists():shutil.copyfile(source,str(FOLDER/'entry-stop.json')+suffix)
         report=json.loads(report_path.read_text(encoding='utf-8'))

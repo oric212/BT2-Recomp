@@ -5,7 +5,6 @@
 
 InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures):primary_(primary) {
     sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
-    sink_.rasterize=false;     // The renderer draws; the sink checks and names.
     mirror_.attachShared(sink_,primary,super_sampling);
     if(hd_textures) {sink_.texture_names=&names_;mirror_.shareHdTextures(primary,names_);}
     recording_.start=std::make_unique<Vif1>(vif1);
