@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-21. **No pass in progress.** The CPU renderer is removed; next HD textures as PCSX2 does them and stable 60 fps. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
+Updated: 2026-10-21. **No pass in progress.** HD textures a PCSX2 drop-in again, 60 fps steadier; next the cost of both together. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
@@ -12,7 +12,9 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 **The CPU renderer is removed (2026-10-21).** The sink checks packets and follows registers only; the startup checks read its record of the accepted clears; the gate's full run uses the GPU.
 
-**Next (the user, 2026-10-21, after play): HD textures as seamless as PCSX2, and stable 60 fps.** The detail method showed artifacts in menus and is to be replaced. From the Tenkaichi 3 references: Tenkaichi3Decomp names textures as PCSX2 (in its pack, most files hash the palette range the texture uses, the rest the whole palette) and draws replacements filtered, without mips for 2D art, held to the piece's rectangle of its sheet, alpha kept at the original's; its in-between pictures interpolate bones as rotations (axes' lengths kept), skip camera cuts and are dropped when they do not fit the frame's time (never waited for).
+**HD textures and 60 fps reworked (2026-10-21, after the user's play; pass ended at the user's request).** HD textures are a PCSX2 drop-in again: replacements drawn instead of the originals, names as PCSX2's (used palette range first, the whole palette next), palettes the game draws on the GPU copied after each frame without waiting; 22.2 % of a fight's draws found (4.5 % before); the fighters' bodies HD only when their lighting matches one the pack holds, as in PCSX2 ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)). 60 fps: bones and camera blended as turning, no in-between picture across a camera cut, none waited for ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Not seen by the user yet.
+
+**Next:** HD textures with 60 fps exceed this PC (22 to 27 flips per second at 4x to 16x; each alone holds 30): find the main thread's extra 10 ms (texture naming in both renderers, HD lookups, the palette copies). Then the user's look at the menus with the pack (Tenkaichi3Decomp's sampling rules for replacements if needed) and at 60 fps (the camera-cut threshold).
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
 

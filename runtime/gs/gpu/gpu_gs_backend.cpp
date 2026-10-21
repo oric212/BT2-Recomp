@@ -8,6 +8,7 @@
 #include "gs_interface.hpp"
 #include "thread_id.hpp"
 #include <array>
+#include <span>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -23,6 +24,11 @@ struct GpuGsBackend::State {
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
     struct Kept {Vulkan::BufferHandle vram,clut;};
     std::array<Kept,2> kept; // keepState's slots.
+    // Drawn palettes (gs/textures/gs_texture_names.h): the pages the names watch, copied back after each
+    // frame into host memory in turn; a copy the GPU finished goes to every names object of the pack.
+    struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
+    std::array<PaletteCopy,3> palette_copies;unsigned next_palette_copy=0;
+    GsTextureNames* names=nullptr;std::vector<GsTextureNames*> palette_targets;
     ~State() {presenter.reset();picture.reset();}
 };
 
@@ -119,8 +125,45 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 
 void GpuGsBackend::flush() {
     state_->gs.flush();++state_->scanouts;
-    if(state_->pack)state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
+    if(state_->pack) {
+        state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
+        copyDrawnPalettes();
+    }
     state_->device->next_frame_context();
+}
+
+void GpuGsBackend::copyDrawnPalettes() {
+    auto& s=*state_;
+    if(!s.names)return;
+    auto& device=*s.device;
+    // Finished copies, oldest first, so the newest is what the names keep.
+    for(unsigned k=1;k<=s.palette_copies.size();++k) {
+        auto& copy=s.palette_copies[(s.next_palette_copy+k)%s.palette_copies.size()];
+        if(!copy.pending || !copy.fence->wait_timeout(0))continue;
+        const auto* words=static_cast<const std::uint32_t*>(device.map_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT));
+        for(const auto page:copy.pages)for(auto* names:s.palette_targets)names->takeDrawnPage(page,words+std::size_t(page)*2048);
+        device.unmap_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
+        copy.pending=false;copy.fence.reset();
+    }
+    auto pages=s.names->drawnPalettePages();
+    if(pages.empty())return;
+    auto& copy=s.palette_copies[s.next_palette_copy];
+    if(copy.pending)return; // The GPU is three frames behind: this frame's palettes are skipped.
+    s.next_palette_copy=(s.next_palette_copy+1)%unsigned(s.palette_copies.size());
+    const auto& vram=s.gs.get_vram_buffer(); // Its first 4 MB is GS memory as the host lays it out.
+    if(!copy.buffer) {
+        Vulkan::BufferCreateInfo info{};info.domain=Vulkan::BufferDomain::CachedHost;
+        info.size=4*1024*1024;info.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        copy.buffer=device.create_buffer(info);
+    }
+    std::vector<VkBufferCopy> regions;regions.reserve(pages.size());
+    for(const auto page:pages)regions.push_back({VkDeviceSize(page)*8192,VkDeviceSize(page)*8192,8192});
+    auto cmd=device.request_command_buffer();
+    cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
+    cmd->copy_buffer(*copy.buffer,vram,regions.data(),regions.size());
+    cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_HOST_BIT,VK_ACCESS_2_HOST_READ_BIT);
+    device.submit(cmd,&copy.fence);
+    copy.pages=std::move(pages);copy.pending=true;
 }
 
 void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
@@ -196,16 +239,18 @@ void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uin
 void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names) {
     if(!primary.state_->pack)return;
     state_->pack=primary.state_->pack;
+    primary.state_->palette_targets.push_back(&names); // Drawn palettes from the primary's copies.
     replaceTextures(names);
 }
 
 void GpuGsBackend::replaceTextures(GsTextureNames& names) {
-    // Exact: made with this palette, drawn instead of the texture; otherwise another palette's variant,
-    // drawn as detail over the game's colours (tools/graphics/gpu/parallel_gs_texture_replacement.patch).
-    state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc,bool& exact)->Vulkan::ImageHandle {
+    if(!state_->names) {state_->names=&names;state_->palette_targets.push_back(&names);}
+    state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
-        const auto* image=state_->pack->find(name->text(),&exact);
+        // As older PCSX2 versions named it (the used palette entries), then as newer ones do (the whole palette).
+        const auto* image=name->has_palette?state_->pack->find(name->textUsed()):nullptr;
+        if(!image)image=state_->pack->find(name->text());
         return image?image->handle:Vulkan::ImageHandle{};
     };
 }

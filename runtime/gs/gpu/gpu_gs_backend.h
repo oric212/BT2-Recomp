@@ -68,6 +68,7 @@ public:
     void enableTimestamps();
     std::string timestampSummary() const;
 private:
+    void copyDrawnPalettes(); // After a flush: the drawn palettes back to the texture names.
     void replaceTextures(GsTextureNames& names);
     struct State;
     std::unique_ptr<State> state_;

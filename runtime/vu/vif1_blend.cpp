@@ -1,5 +1,6 @@
 #include "vu/vif1_blend.h"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words) {
@@ -80,18 +81,35 @@ std::optional<std::vector<std::pair<std::size_t,std::size_t>>> alignSequences(st
     return pairs;
 }
 
-std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits) {
-    const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
-    if(!a || !b)return std::nullopt;
-    // An unpack is known by its code and its size (the size also depends on the cycle setting before it).
+namespace {
+float wordFloat(std::uint32_t w) {float f;std::memcpy(&f,&w,4);return f;}
+std::uint32_t floatWord(float f) {std::uint32_t w;std::memcpy(&w,&f,4);return w;}
+// The unpacks of two lists aligned by their codes and sizes (alignSequences).
+std::optional<std::vector<std::pair<std::size_t,std::size_t>>> alignUnpacks(const std::vector<Vif1Unpack>& a,const std::vector<Vif1Unpack>& b,std::size_t max_edits) {
     const auto keys=[](const std::vector<Vif1Unpack>& u) {
         std::vector<std::uint64_t> k;k.reserve(u.size());
         for(const auto& x:u)k.push_back(std::uint64_t(x.code)|std::uint64_t(x.words)<<32);
         return k;
     };
-    const auto ka=keys(*a),kb=keys(*b);
-    const auto pairs=alignSequences(ka,kb,max_edits);
+    return alignSequences(keys(a),keys(b),max_edits);
+}
+// A blended axis (x, y, z of a quadword at `at`) given the blended length of the two originals'.
+void keepAxisLength(std::span<const std::uint32_t> older,std::size_t older_at,std::span<const std::uint32_t> newer,std::size_t newer_at,
+                    std::vector<std::uint32_t>& out,float t) {
+    auto length=[](auto get){float s=0;for(int k=0;k<3;++k){const float v=get(k);s+=v*v;}return std::sqrt(s);};
+    const float la=length([&](int k){return wordFloat(older[older_at+k]);}),lb=length([&](int k){return wordFloat(newer[newer_at+k]);});
+    const float lm=length([&](int k){return wordFloat(out[newer_at+k]);});
+    if(!(lm>1e-12f) || !std::isfinite(la) || !std::isfinite(lb))return;
+    const float scale=(la+t*(lb-la))/lm;
+    for(int k=0;k<3;++k)out[newer_at+k]=floatWord(wordFloat(out[newer_at+k])*scale);
+}
+}
+
+std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
+                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits) {
+    const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
+    if(!a || !b)return std::nullopt;
+    const auto pairs=alignUnpacks(*a,*b,max_edits);
     if(!pairs)return std::nullopt;
     std::vector<std::uint32_t> out(newer.begin(),newer.end());
     std::size_t changed=0;
@@ -106,7 +124,40 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
             std::memcpy(&out[y.start+w],&mid,4);++changed;
         }
     }
+    // Matrix axes turn instead of shrinking (BT2's bone and camera blocks).
+    for(const auto& [i,j]:*pairs) {
+        const auto& x=(*a)[i];const auto& y=(*b)[j];
+        if(y.format!=0xC)continue;
+        std::initializer_list<unsigned> axes={};
+        static constexpr unsigned bone_axes[]={22,23,24,26,27,28},camera_axes[]={0,1,2,4,5,6};
+        const unsigned* list=nullptr;std::size_t count=0;
+        if(y.words==34*4) {list=bone_axes;count=6;}
+        else if(y.words==12*4) {list=camera_axes;count=6;}
+        (void)axes;
+        for(std::size_t n=0;n<count;++n)keepAxisLength(older,x.start+list[n]*4,newer,y.start+list[n]*4,out,t);
+    }
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();
     return out;
+}
+
+float cameraTurn(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,std::size_t max_edits) {
+    const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
+    if(!a || !b)return 1;
+    const auto pairs=alignUnpacks(*a,*b,max_edits);
+    if(!pairs)return 1;
+    float smallest=1;
+    for(const auto& [i,j]:*pairs) {
+        const auto& x=(*a)[i];const auto& y=(*b)[j];
+        if(y.format!=0xC || y.words!=12*4)continue;
+        for(unsigned q=4;q<7;++q) {
+            float dot=0,la=0,lb=0;
+            for(int k=0;k<3;++k) {
+                const float p=wordFloat(older[x.start+q*4+k]),r=wordFloat(newer[y.start+q*4+k]);
+                dot+=p*r;la+=p*p;lb+=r*r;
+            }
+            if(la>1e-12f && lb>1e-12f && std::isfinite(dot))smallest=std::min(smallest,dot/std::sqrt(la*lb));
+        }
+    }
+    return smallest;
 }

@@ -386,9 +386,8 @@ int main(int argc, char** argv) {
                     }
                     in_between_started = false;
                     if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only || in_between->scan_replay) return;
-                    bool ready = false;
-                    try {ready = in_between->wait();} catch (const std::exception& e) {stop_in_between(e);return;}
-                    if (!ready) return;
+                    // Never waited for: a picture not ready at its field is left out, so the game keeps its pace.
+                    if (!in_between->ready()) {if (in_between->busy()) ++in_between->late;return;}
                     if (pacer) pacer->wait();
                     gpu_mirror.submit(); // Between flips: the main renderer's open frame, before the presenter's frame context.
                     gpu_mirror.showPictureOf(&in_between->renderer());

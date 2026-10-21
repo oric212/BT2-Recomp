@@ -7,6 +7,12 @@
 // (Myers' algorithm), each unpack known by its code (address, count, format). Floats that differ in an
 // aligned pair are blended; an unpack only the newer list has, and words that are not normal floats
 // (tags, integers), are taken from the newer frame as they are.
+// BT2's matrices (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md, step 1): a 34-quadword unpack holds two
+// bone matrices (quadwords 22 to 25 and 26 to 29: three axes, then a position), a 12-quadword unpack the
+// camera (0 to 3 view-projection, 4 to 7 view). Their axes are blended as turning, not shrinking: each
+// blended axis keeps the blended length of its two originals (as Tenkaichi3Decomp's in-between pictures
+// do); positions are blended linearly. A camera whose view axes turn by more than 25 degrees between the
+// two frames is a cut: the lists are not blended (no in-between picture across it).
 #pragma once
 #include <cstdint>
 #include <optional>
@@ -26,6 +32,10 @@ std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t
 // list's unpacks without a partner.
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
                                                     std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t max_edits=1024);
+
+// The smallest cosine between a camera view axis of `older` and the same axis of `newer` over their
+// aligned 12-quadword unpacks (1 when there is none): below cos 25 degrees the camera cut.
+float cameraTurn(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,std::size_t max_edits=1024);
 
 // The aligned pairs of two sequences: index pairs (i, j) with a[i] == b[j], in order, of a shortest
 // edit script (Myers); nullopt when it needs more than `max_edits` insertions and deletions.

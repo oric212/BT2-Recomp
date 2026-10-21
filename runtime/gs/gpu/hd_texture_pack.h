@@ -5,7 +5,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace Vulkan {class Device;}
@@ -27,20 +26,12 @@ public:
     struct Image;
     HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons=true);
     ~HdTexturePack();
-    // The replacement for a texture name ("<texture>-<palette>-<format>" or "<texture>-<format>"); null
-    // when the pack has none or it is not loaded yet: a replacement asked for is loaded by the next
-    // loadPending, so the renderer never creates images while it takes GS data. A name with a palette
-    // part finds, in turn, the pack's name itself, its name without a palette part (every palette, as in
-    // PCSX2), and another palette's variant of the texture (the first in path order; the user's choice of
-    // 2026-10-21): the game relights the fighters' palettes every frame and a pack holds a few of them, so
-    // exact names alone would leave the bodies original most of the time. A variant holds the lighting it
-    // was captured with, so the renderer draws a variant as detail over the game's own colours (exact:
-    // false; tools/graphics/gpu/parallel_gs_texture_replacement.patch) and the lighting stays the game's.
-    // A texture the pack holds with several palettes always gets its one variant as detail, also when a
-    // name matches exactly: switching between the two as the lighting changes would flicker.
-    // Images are kept by file, so all palettes of a texture share one.
-    // `exact` (optional): the file is made for this palette (or every palette), not another palette's variant.
-    const Image* find(const std::string& name,bool* exact=nullptr);
+    // The replacement for a texture name ("<texture>-<palette>-<format>" or "<texture>-<format>"), as PCSX2
+    // finds it: the pack's name itself, or for a name with a palette part the pack's name without one
+    // (made for every palette); null when the pack has none or it is not loaded yet: a replacement asked
+    // for is loaded by the next loadPending, so the renderer never creates images while it takes GS data.
+    // Images are kept by file, so the names that find one file share its image.
+    const Image* find(const std::string& name);
     // Loads the replacements asked for since the last call (at a frame boundary, after the renderer's
     // flush) and keeps the budget.
     void loadPending();
@@ -61,8 +52,6 @@ private:
     struct Entry;
     std::unordered_map<std::string,Entry*> cache_;
     std::vector<std::string> pending_;
-    std::unordered_map<std::string,std::filesystem::path> variants_; // "<texture>-<format>": one of its palettes' file.
-    std::unordered_set<std::string> relit_; // Textures the pack holds with more than one palette.
     std::mutex lock_;
     void evict();
 };

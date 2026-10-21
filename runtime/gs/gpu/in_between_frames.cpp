@@ -16,7 +16,7 @@ InBetweenFrames::~InBetweenFrames() {
     changed_.notify_all();
     worker_.join();
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames; the game waited "<<waited_seconds*1000<<" ms for the worker"<<std::endl;
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for the worker"<<std::endl;
 }
 
 void InBetweenFrames::run() {
@@ -46,6 +46,16 @@ bool InBetweenFrames::wait() {
     }
     if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
     return ready_;
+}
+
+bool InBetweenFrames::busy() {
+    std::lock_guard<std::mutex> hold(lock_);
+    return pending_;
+}
+
+bool InBetweenFrames::ready() {
+    std::lock_guard<std::mutex> hold(lock_);
+    return !pending_ && !failure_ && ready_;
 }
 
 void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field,unsigned older_slot) {
@@ -89,6 +99,8 @@ bool InBetweenFrames::drawInBetween(const Frame& older,const Frame& newer,unsign
     for(std::size_t n=0;n<older.used;++n)if(older.events[n].vif1)a.push_back(&older.events[n]);
     for(std::size_t n=0;n<newer.used;++n)if(newer.events[n].vif1)b.push_back(&newer.events[n]);
     if(a.size()!=b.size() || b.empty() || !newer.start)return false;
+    // No in-between picture across a camera cut (vu/vif1_blend.h).
+    for(std::size_t i=0;i<b.size();++i)if(cameraTurn(a[i]->words,b[i]->words)<0.906f) {++camera_cuts;return false;}
     std::vector<std::vector<std::uint32_t>> blended;blended.reserve(b.size());
     for(std::size_t i=0;i<b.size();++i) {
         auto mid=blendVif1(a[i]->words,b[i]->words,scan_replay?1.0f:0.5f);

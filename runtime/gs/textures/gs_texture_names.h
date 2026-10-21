@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -20,7 +21,8 @@
 //   pixel, is hashed as read out instead: one byte per pixel (the index) for palette formats, four
 //   (RGBA, 24-bit with TEXA's alpha) otherwise, row by row;
 // - palette hash: XXH3-64 over the palette as 32-bit entries (16 for 4-bit, 256 for 8-bit), as read at
-//   CSA;
+//   CSA; packs made with older PCSX2 versions (pack 2) mostly hash only the entries from the lowest to the
+//   highest index the texture uses (found by Tenkaichi3Decomp on its game's pack), so a name has both;
 // - format word: PSM, TW << 6, TH << 10, and for non-palette formats below 32 bits TEXA's TA0 << 15,
 //   AEM << 23, TA1 << 24.
 // Behaviour adapted from PCSX2's texture replacement (pinned GSTextureCache.cpp, GSClut.cpp); GS
@@ -34,14 +36,16 @@ public:
     void image(std::span<const std::uint8_t> data);
 
     struct Name {
-        std::uint64_t texture=0,palette=0;std::uint32_t format=0;bool has_palette=false;
-        std::string text() const;
+        std::uint64_t texture=0,palette=0,palette_used=0;std::uint32_t format=0;bool has_palette=false;
+        std::string text() const;     // With the whole palette's hash.
+        std::string textUsed() const; // With the used entries' hash (the same as text() without a palette).
     };
     // The name of a texture as TEX0 and TEXA describe it, from the current memory and CLUT; none for a
     // format this does not name (counted).
     std::optional<Name> name(std::uint64_t tex0,std::uint64_t texa);
 
-    // Names drawn with, and how many times each was named (a texture is named again after a change).
+    // Names drawn with ("<used entries' name>/<whole palette's name>" for palette textures), and how many
+    // times each was named (a texture is named again after a change).
     // Counted only with count_drawn (the naming log); the renderer asks for names itself when it caches
     // a texture, so drawing with HD textures needs no naming per draw.
     std::map<std::string,unsigned> drawn;
@@ -55,6 +59,16 @@ public:
     std::uint64_t uploads=0,clut_loads=0,repeated_uploads=0,repeated_cluts=0;
 
     std::vector<std::uint32_t>& memory() {return memory_;}
+
+    // Palettes the game draws on the GPU (the fighters' lit palettes: each frame it draws the whole
+    // palette page from base palettes it uploads): only the renderer holds them, and PCSX2 names such a
+    // texture with the palette as drawn, read back from its render target. Pages CLUT loads read are
+    // watched; a primitive covering one marks it drawn. The renderer copies those pages after each frame
+    // without waiting for them (drawnPalettePages, takeDrawnPage); a CLUT load from a drawn page reads the
+    // latest copy, a frame or two old. The game relights slowly, so successive frames' pages are almost
+    // always the same, and this names as exactly as a read that waits (measured: the same share of draws).
+    std::vector<unsigned> drawnPalettePages() const;
+    void takeDrawnPage(unsigned page,const std::uint32_t* words); // The page's 2048 words.
     // GS addresses as gs_command_sink.h computes them (word, byte, nibble), from a table of each page's
     // layout: the same results at a fraction of the cost per pixel.
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y);
@@ -88,10 +102,10 @@ private:
     // renderer asks again each time it caches a texture, which in fights is many times per frame).
     std::array<std::uint64_t,512> page_written_{}; // The generation of the last transfer into each page.
     std::uint64_t all_written_=0;                  // A transfer this does not follow: every page.
-    struct Hashed {std::uint64_t hash,generation;};
+    struct Hashed {std::uint64_t hash,generation;unsigned lowest,highest;}; // With the indices a palette texture uses.
     struct KeyHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first*0x9E3779B97F4A7C15ull^k.second);}};
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,Hashed,KeyHash> hashed_;
-    std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa);
+    std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest=nullptr,unsigned* highest=nullptr);
 
     void startTransfer(std::uint64_t dir);
     void finishUpload();
@@ -99,4 +113,12 @@ private:
     void writeBytes(std::span<const std::uint8_t> data);
     void loadClut(std::uint64_t tex0);
     void kick();
+    // Drawn palettes: the pages CLUT loads read and those the renderer's copies hold, the generation of the
+    // last draw over each page, the last vertices (a primitive's area), the copies.
+    std::bitset<512> clut_pages_,copied_;
+    std::array<std::uint64_t,512> page_drawn_{};
+    std::array<std::uint64_t,3> vertices_{};unsigned vertex_count_=0;
+    std::vector<std::uint32_t> drawn_copy_;
+    void vertex(std::uint64_t xyz);
+    bool pageDrawn(unsigned page) const {return page_drawn_[page]>page_written_[page] && page_drawn_[page]>all_written_;}
 };

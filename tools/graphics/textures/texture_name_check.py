@@ -48,7 +48,14 @@ def pack_index(folder):
 
 def lookup(name, index):
     """The pack's entry for a drawn name: the name itself, or a replacement made without the palette part
-    (it stands for every palette), as PCSX2 looks them up."""
+    (it stands for every palette), as PCSX2 looks them up. A logged name may give two forms, "<used
+    entries' name>/<whole palette's name>": the first found counts."""
+    if '/' in name:
+        for form in name.split('/'):
+            found = lookup(form, index)
+            if found is not None:
+                return found
+        return None
     if name in index:
         return index[name]
     parts = name.split('-')

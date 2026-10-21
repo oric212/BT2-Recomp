@@ -33,7 +33,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen and 60 fps battles in the launcher; 60 fps not yet tried in play |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; HD with 60 fps too slow yet |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -50,7 +50,7 @@ Optional improvements on top of the original game, all off by default.
 - **Gameplay is never changed:** fights run at the original speed, with the same physics and results.
 
 ### HD textures
-Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Stages, menus, portraits and text look crisp. The fighters get the pack's detail on top of the game's own colours, so their lighting and colours still change as in the game.
+Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Stages, menus, portraits and text look crisp. Textures are found by the same names PCSX2 uses, so a pack works as it does there; the fighters' bodies are HD when their lighting matches one the pack holds (the game relights them all the time), as in PCSX2.
 
 - **Supported pack:** [Sal9im's AI-upscaled texture pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included).
 - **Setup:** put the pack's folder (the one holding `replacements`) into `data/textures`, then turn on **HD textures**.

@@ -49,6 +49,9 @@ public:
     // ready. Called before the main renderer's flip (the shared device and HD pack), before showing or
     // reading the second renderer's picture, and harmless when nothing is running.
     bool wait();
+    // Whether the worker's frame is done (without waiting) and its in-between picture is ready.
+    bool ready();
+    bool busy(); // Whether the worker is still drawing (without waiting).
     std::pair<unsigned,unsigned> pictureSize() const {return picture_;}
     GpuGsMirror& renderer() {return mirror_;}
     // For checks: when set, the frames are only replayed (no in-between pictures) and each replay is
@@ -57,7 +60,7 @@ public:
     // For checks: the "in-between" picture is drawn all the way to the newer frame (blend 1), so it must
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
-    unsigned drawn=0,unpaired=0,not_fights=0,shown=0; // shown: counted by the caller.
+    unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
     double waited_seconds=0; // The game's thread waiting for the worker.
 
 private:

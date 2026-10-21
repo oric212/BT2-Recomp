@@ -15,7 +15,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen and 60 fps battles in the launcher; 60 fps not yet tried in play |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; HD with 60 fps too slow yet |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -53,7 +53,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **HD textures as PCSX2 does them, and stable 60 fps** (the user, 2026-10-21): PCSX2's names (the palette as an older PCSX2 hashed it), replacements drawn instead of the originals with the sampling rules Tenkaichi3Decomp found; in-between pictures never waited for, none across camera cuts, bones interpolated as rotations.
+1. **HD textures with 60 fps together** (each alone runs at full speed): the game's thread needs 33 to 40 ms a flip with both; then the user's look at the reworked HD textures and 60 fps.
 2. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps battles: things that appear in a frame show one picture early ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)); HD textures: the fighters with the pack's detail on the game's colours, not yet seen in play ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
 3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen); 60 fps battles in play.
 4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.

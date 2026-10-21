@@ -56,6 +56,11 @@ std::size_t GsTextureNames::t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned
     return (std::size_t(bp)*512+(std::size_t(y/128)*(bw/2)+x/128)*16384+layouts().t4[(y%128)*128+x%128])%(memory_words*8);
 }
 
+std::string GsTextureNames::Name::textUsed() const {
+    Name used=*this;used.palette=palette_used;
+    return used.text();
+}
+
 std::string GsTextureNames::Name::text() const {
     char buffer[64];
     if(has_palette)std::snprintf(buffer,sizeof(buffer),"%llx-%llx-%08x",static_cast<unsigned long long>(texture),static_cast<unsigned long long>(palette),format);
@@ -82,7 +87,8 @@ void GsTextureNames::reg(unsigned reg,std::uint64_t value) {
         if(load)loadClut(value);
         return;
     }
-    if(reg==0x04 || reg==0x05)kick();
+    if(reg==0x00)vertex_count_=0; // PRIM starts a new primitive.
+    if(reg==0x04 || reg==0x05) {vertex(value);kick();}
 }
 
 void GsTextureNames::startTransfer(std::uint64_t dir) {
@@ -209,6 +215,52 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data) {
     }
 }
 
+void GsTextureNames::vertex(std::uint64_t xyz) {
+    vertices_[vertex_count_++%3]=xyz;
+    if(clut_pages_.none())return;
+    const auto prim=(regs_[0x1A]&1)?regs_[0x00]:regs_[0x1B];
+    const unsigned type=unsigned(prim&7),context=unsigned((prim>>9)&1);
+    // Whether this vertex completes a primitive (vertices count from the last PRIM write), and how many
+    // vertices it has: 1 for points, 2 for lines and sprites, 3 for triangles.
+    const unsigned count=type==0?1u:(type==6 || type==1 || type==2)?2u:3u;
+    const bool draws=type==0 || ((type==1 || type==6)?vertex_count_%2==0:type==3?vertex_count_%3==0:vertex_count_>=count);
+    if(!draws || vertex_count_<count)return;
+    const auto frame=regs_[0x4C+context];
+    const unsigned fbp=unsigned(frame&0x1FF),fbw=unsigned((frame>>16)&63),fpsm=unsigned((frame>>24)&63);
+    unsigned page_w=64,page_h;
+    if(fpsm==0x00 || fpsm==0x01 || fpsm==0x30 || fpsm==0x31)page_h=32;
+    else if(fpsm==0x02 || fpsm==0x0A || fpsm==0x32 || fpsm==0x3A)page_h=64;
+    else return;
+    const auto offset=regs_[0x18+context];
+    const int ofx=int(offset&0xFFFF),ofy=int((offset>>32)&0xFFFF);
+    int x0=INT32_MAX,y0=INT32_MAX,x1=INT32_MIN,y1=INT32_MIN;
+    for(unsigned k=0;k<count;++k) {
+        const auto v=vertices_[(vertex_count_-1-k)%3];
+        const int x=(int(v&0xFFFF)-ofx)>>4,y=(int((v>>16)&0xFFFF)-ofy)>>4;
+        x0=std::min(x0,x);y0=std::min(y0,y);x1=std::max(x1,x);y1=std::max(y1,y);
+    }
+    if(x1<0 || y1<0)return;
+    x0=std::max(x0,0);y0=std::max(y0,0);
+    if(x1-x0>2048 || y1-y0>2048)return;
+    for(int py=y0/int(page_h);py<=y1/int(page_h);++py)
+        for(int px=x0/int(page_w);px<=x1/int(page_w);++px) {
+            const unsigned page=(fbp+unsigned(py)*std::max(fbw,1u)+unsigned(px))%512;
+            if(clut_pages_[page])page_drawn_[page]=++generation_;
+        }
+}
+
+std::vector<unsigned> GsTextureNames::drawnPalettePages() const {
+    std::vector<unsigned> pages;
+    for(unsigned page=0;page<512;++page)if(clut_pages_[page] && pageDrawn(page))pages.push_back(page);
+    return pages;
+}
+
+void GsTextureNames::takeDrawnPage(unsigned page,const std::uint32_t* words) {
+    if(drawn_copy_.empty())drawn_copy_.resize(memory_.size());
+    std::copy_n(words,2048,drawn_copy_.begin()+std::ptrdiff_t(std::size_t(page%512)*2048));
+    copied_.set(page%512);++generation_;
+}
+
 void GsTextureNames::loadClut(std::uint64_t tex0) {
     const unsigned psm=unsigned((tex0>>20)&63),cbp=unsigned((tex0>>37)&0x3FFF),cpsm=unsigned((tex0>>51)&15);
     const unsigned csm=unsigned((tex0>>55)&1),csa=unsigned((tex0>>56)&31);
@@ -216,9 +268,12 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     if(!f || !f->palette)return;
     ++clut_loads;
     writePending();
+    const unsigned first_page=(cbp/32)%512,last_page=((cbp+3)/32)%512;
+    clut_pages_.set(first_page);clut_pages_.set(last_page);
+    const bool from_drawn=pageDrawn(first_page) || pageDrawn(last_page);
     // The same load as the last one from memory nothing wrote since: the CLUT already holds it.
     const std::uint64_t key=std::uint64_t(f->palette)|(std::uint64_t(cbp)<<9)|(std::uint64_t(cpsm)<<23)|(std::uint64_t(csm)<<27)|(std::uint64_t(csa)<<28);
-    if(key==clut_key_ && all_written_<=clut_generation_ && page_written_[(cbp/32)%512]<=clut_generation_ && page_written_[((cbp+3)/32)%512]<=clut_generation_) {
+    if(!from_drawn && key==clut_key_ && all_written_<=clut_generation_ && page_written_[first_page]<=clut_generation_ && page_written_[last_page]<=clut_generation_) {
         ++repeated_cluts;return;
     }
     ++generation_;
@@ -227,12 +282,16 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
     auto put=[&](unsigned entry,std::uint32_t value){clut_[entry]=std::uint16_t(value);clut_[entry+256]=std::uint16_t(value>>16);};
+    auto word=[&](std::size_t w)->std::uint32_t {
+        const unsigned page=unsigned(w/2048);
+        return from_drawn && pageDrawn(page) && copied_[page]?drawn_copy_[w]:memory_[w]; // A drawn page: its latest copy.
+    };
     if(f->palette==16) {
-        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,memory_[ct32Word(cbp,1,k%8,k/8)]);
+        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,word(ct32Word(cbp,1,k%8,k/8)));
     } else {
         for(unsigned i=(csa&15)*16;i<256;++i) {
             const unsigned s=(i&~0x18u)|((i&0x08u)<<1)|((i&0x10u)>>1);
-            put(i,memory_[ct32Word(cbp,1,s%16,s/16)]);
+            put(i,word(ct32Word(cbp,1,s%16,s/16)));
         }
     }
 }
@@ -245,7 +304,7 @@ void GsTextureNames::kick() {
     const auto tex0=regs_[6+context]&~(std::uint64_t(7)<<61),texa=regs_[0x3B];
     if(named_generation_[context]==generation_ && named_tex0_[context]==tex0 && named_texa_[context]==texa)return;
     named_generation_[context]=generation_;named_tex0_[context]=tex0;named_texa_[context]=texa;
-    if(const auto n=name(tex0,texa))++drawn[n->text()];
+    if(const auto n=name(tex0,texa))++drawn[n->has_palette?n->textUsed()+"/"+n->text():n->text()];
 }
 
 std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std::uint64_t texa) {
@@ -256,8 +315,8 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     const auto f=format(psm);
     if(!f || tw>10 || th>10 || (f->palette && cpsm!=0 && cpsm!=1)) {++unsupported_textures;++unsupported_formats[psm];return std::nullopt;}
     const unsigned ta0=unsigned(texa&0xFF),aem=unsigned((texa>>15)&1),ta1=unsigned((texa>>32)&0xFF);
-    Name n;
-    n.texture=textureHash(tex0,texa);
+    Name n;unsigned lowest=0,highest=255;
+    n.texture=textureHash(tex0,texa,&lowest,&highest);
     n.format=psm|(tw<<6)|(th<<10);
     if(!f->palette && psm!=psm_ct32)n.format|=(ta0<<15)|(aem<<23)|(ta1<<24);
     if(f->palette) {
@@ -270,11 +329,13 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
             for(unsigned k=0;k<16;++k)entries[i+k]=entry(from+k);
         }
         n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;
+        highest=std::min(highest,f->palette-1);lowest=std::min(lowest,highest);
+        n.palette_used=XXH3_64bits(entries.data()+lowest,std::size_t(highest-lowest+1)*4);
     }
     return n;
 }
 
-std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa) {
+std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest,unsigned* highest) {
     const unsigned psm=unsigned((tex0>>20)&63),tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63);
     const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
     const auto f=*format(psm);
@@ -291,8 +352,44 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa)
     if(auto found=hashed_.find(key);found!=hashed_.end() && found->second.generation>=all_written_) {
         bool clean=true;
         pages([&](unsigned page){if(page_written_[page]>found->second.generation)clean=false;});
-        if(clean)return found->second.hash;
+        if(clean) {
+            if(lowest)*lowest=found->second.lowest;
+            if(highest)*highest=found->second.highest;
+            return found->second.hash;
+        }
     }
+    // The palette indices the texture uses (for the used entries' palette hash): a texture hashed by whole
+    // blocks holds exactly its pixels' indices in them (taken while hashing); others are read pixel by pixel.
+    unsigned low=0,high=255;
+    const bool whole_blocks=width>=f.block_w && height>=f.block_h && f.full;
+    if(f.palette && whole_blocks) {low=255;high=0;}
+    if(f.palette && !whole_blocks) {
+        const auto& tables=layouts();
+        const auto* const bytes=reinterpret_cast<const std::uint8_t*>(memory_.data());
+        low=255;high=0;
+        for(unsigned y=0;y<height;++y) {
+            const std::size_t ct32_row=std::size_t(tbp)*64+std::size_t(y/32)*tbw*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
+            const auto word=[&](unsigned x){return memory_[(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words];};
+            const std::size_t t8_row=std::size_t(tbp)*256+std::size_t(y/64)*(tbw/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
+            const std::size_t t4_row=std::size_t(tbp)*512+std::size_t(y/128)*(tbw/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
+            for(unsigned x=0;x<width;++x) {
+                unsigned index;
+                switch(psm) {
+                case psm_t8:index=bytes[(t8_row+std::size_t(x/128)*8192+t8_line[x%128])%(memory_words*4)];break;
+                case psm_t4: {
+                    const std::size_t nibble=(t4_row+std::size_t(x/128)*16384+t4_line[x%128])%(memory_words*8);
+                    index=(bytes[nibble/2]>>(nibble%2*4))&15;break;
+                }
+                case psm_t8h:index=word(x)>>24;break;
+                case psm_t4hl:index=(word(x)>>24)&15;break;
+                default:index=word(x)>>28;break; // T4HH
+                }
+                low=std::min(low,index);high=std::max(high,index);
+            }
+        }
+    }
+    if(lowest)*lowest=low;
+    if(highest)*highest=high;
     XXH3_state_t state;XXH3_64bits_reset(&state);
     if(width<f.block_w || height<f.block_h || !f.full) {
         // Read out row by row: the index for palette formats, RGBA otherwise (rows placed as in writeBytes).
@@ -336,9 +433,16 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa)
                 const std::size_t block=(tbp+(by/f.blocks_h)*32*pages_across+(bx/f.blocks_w)*32
                     +blockInPage(psm,bx%f.blocks_w,by%f.blocks_h))%max_blocks;
                 XXH3_64bits_update(&state,&memory_[block*64],256);
+                if(f.palette) {
+                    const auto* b=reinterpret_cast<const std::uint8_t*>(&memory_[block*64]);
+                    std::uint8_t lo=255,hi=0;
+                    if(psm==psm_t8)for(unsigned k=0;k<256;++k){lo=std::min(lo,b[k]);hi=std::max(hi,b[k]);}
+                    else for(unsigned k=0;k<256;++k){const std::uint8_t l=b[k]&15,h=b[k]>>4;lo=std::min({lo,l,h});hi=std::max({hi,l,h});}
+                    low=std::min(low,unsigned(lo));high=std::max(high,unsigned(hi));
+                }
             }
     }
     const auto hash=XXH3_64bits_digest(&state);
-    hashed_[key]={hash,generation_};
+    hashed_[key]={hash,generation_,low,high};
     return hash;
 }

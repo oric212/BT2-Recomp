@@ -1,5 +1,6 @@
 // In-between VIF1 lists (runtime/vu/vif1_blend.h) on synthetic lists (no game data).
 #include "vu/vif1_blend.h"
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -49,6 +50,16 @@ int main() {
     const auto u=vif1Unpacks(skipping);
     check(u && u->size()==1 && (*u)[0].words==8,"WL > CL sizes the data by CL");
     check(!vif1Unpacks(std::vector<std::uint32_t>{0x6C020000u,1,2}),"data past the end is refused");
+    // A bone block (34 quadwords): an axis turning by 90 degrees keeps its length halfway (not 0.707).
+    auto block=[&](unsigned quadwords,unsigned at,float x,float y) {
+        std::vector<std::uint32_t> l{0x01000101u,0x6C000000u|(quadwords<<16)};
+        for(unsigned q=0;q<quadwords;++q)for(unsigned k=0;k<4;++k)l.push_back(bits(q==at?(k==0?x:k==1?y:0.0f):1.0f));
+        return l;
+    };
+    const auto turned=blendVif1(block(34,22,1,0),block(34,22,0,1),0.5f);
+    check(turned && std::abs(std::hypot(value((*turned)[2+22*4]),value((*turned)[2+22*4+1]))-1.0f)<1e-5f,"a bone axis keeps its length");
+    // A camera block (12 quadwords) whose view axis turns by 90 degrees is a cut; a small turn is not.
+    check(cameraTurn(block(12,4,1,0),block(12,4,0,1))<0.01f && cameraTurn(block(12,4,1,0),block(12,4,1,0.1f))>0.99f,"camera cuts found");
     std::cout<<"VIF1 blend tests passed\n";
     return 0;
 }
