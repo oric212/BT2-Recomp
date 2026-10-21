@@ -53,8 +53,8 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **HD textures across the whole game** (the user, 2026-10-21; [HD textures](plans/graphics/HD_TEXTURES_PLAN.md)): the fighters' bodies (their palettes are drawn by the game on the GPU) and what else a scene draws without a replacement.
-2. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps battles: things that appear in a frame show one picture early ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+1. **Remove the CPU renderer** (the user, 2026-10-21): the GPU renderer is the renderer; the packet checks stay.
+2. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps battles: things that appear in a frame show one picture early ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)); HD textures: the fighters with the pack's detail on the game's colours, not yet seen in play ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
 3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen); 60 fps battles in play.
 4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
 

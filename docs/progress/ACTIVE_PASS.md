@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-21. **No pass in progress.** 60 fps battles built (a setting); next HD textures across the whole game. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
+Updated: 2026-10-21. **No pass in progress.** HD textures cover the fighters (detail over the game's colours); next the CPU renderer's removal. The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
@@ -8,7 +8,9 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 **60 fps battles — built 2026-10-21, a setting** ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3): in-between pictures drawn by a second renderer on a worker thread from the main renderer's GPU state and the game's own commands with blended VIF1 lists (aligned unpack by unpack); exact by check (`BT2_SIXTY_FPS=check`); a fight holds 30 flips and 60 pictures per second, also with 16x, HD textures and widescreen (about 30 ms of work per flip of 33 there: little room). Left: things that appear in a frame show one picture early (the user's "pop-in"); a state-hash check that the fight is unchanged with the setting on; the user's look in play.
 
-**Next (the user, 2026-10-21): HD textures across the whole game** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)): the fighters' bodies (palettes drawn by the game: fingerprint the drawing, read the palette back once), then what else a scene draws without a replacement (counts per scene with `BT2_TEXTURE_NAMES`).
+**HD textures across the whole game — built 2026-10-21** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)): the fighters' bodies too. The game relights their palettes every frame, so exact PCSX2 names cannot cover them (22 to 29 % of draws even with palettes read back exactly; about 44 % of a fight's draws are a shading texture the pack lacks); the renderer draws the pack's texture as detail over the game's own colours (the user's direction), exact replacements as they are. Not yet seen in play; at 16x with 60 fps, HD and widescreen the GPU is near its limit in heavy moments (28.5 flips per second once; 8x holds 30).
+
+**Next: remove the CPU renderer** (the user, 2026-10-21): the sink's rasterizer, the `cpu` and `mirror` modes and the CPU-drawn reference renders (to GPU snapshots); keep the packet checks and register tracking the GPU path and the texture names use.
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
 

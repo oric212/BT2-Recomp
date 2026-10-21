@@ -71,24 +71,43 @@ HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path&
     for(const auto& file:ddsFiles(replacements))
         if(!index_.emplace(normalized(file.stem().string()),file).second)++duplicates;
     if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))index_[normalized(file.stem().string())]=file;
+    // Each texture's variant for palettes the pack lacks: the first file in path order.
+    std::unordered_map<std::string,unsigned> palettes;
+    for(const auto& [name,file]:index_) {
+        const auto first=name.find('-'),last=name.rfind('-');
+        if(first==last)continue;
+        const auto texture=name.substr(0,first)+name.substr(last);
+        auto& chosen=variants_[texture];
+        if(chosen.empty() || file<chosen)chosen=file;
+        ++palettes[texture];
+    }
+    for(const auto& [texture,count]:palettes)if(count>1)relit_.insert(texture);
 }
 
 HdTexturePack::~HdTexturePack() {for(auto& [name,entry]:cache_)delete entry;}
 
-const HdTexturePack::Image* HdTexturePack::find(const std::string& name) {
+const HdTexturePack::Image* HdTexturePack::find(const std::string& name,bool* exact) {
     std::lock_guard<std::mutex> hold(lock_);
-    auto cached=cache_.find(name);
+    const std::filesystem::path* file=nullptr;bool made_for=true;
+    const auto first=name.find('-'),last=name.rfind('-');
+    const auto any_palette=first!=last?name.substr(0,first)+name.substr(last):std::string();
+    if(first!=last && relit_.count(any_palette)) {
+        // A texture the pack holds with several palettes (the fighters, relit every frame): always its one
+        // variant as detail, so an exact match now and then does not switch the picture.
+        file=&variants_.find(any_palette)->second;made_for=false;
+    } else if(const auto same=index_.find(name);same!=index_.end())file=&same->second;
+    else if(first!=last) {
+        if(const auto every=index_.find(any_palette);every!=index_.end())file=&every->second;
+        else if(const auto variant=variants_.find(any_palette);variant!=variants_.end()) {file=&variant->second;made_for=false;}
+    }
+    if(exact)*exact=made_for;
+    if(!file) {++missing;return nullptr;}
+    const auto key=file->generic_string();
+    auto cached=cache_.find(key);
     if(cached==cache_.end()) {
-        auto path=index_.find(name);
-        if(path==index_.end()) {
-            // A name with a palette part also matches the pack's name without one.
-            const auto first=name.find('-'),last=name.rfind('-');
-            if(first!=last)path=index_.find(name.substr(0,first)+name.substr(last));
-        }
-        auto* entry=new Entry;
-        cached=cache_.emplace(name,entry).first;
-        if(path==index_.end())entry->none=true;
-        else {entry->path=path->second;pending_.push_back(name);} // Loaded at the next frame boundary.
+        auto* entry=new Entry;entry->path=*file;
+        cached=cache_.emplace(key,entry).first;
+        pending_.push_back(key); // Loaded at the next frame boundary.
     }
     auto* entry=cached->second;
     if(entry->none) {++missing;return nullptr;}

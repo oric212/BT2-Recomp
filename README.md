@@ -50,7 +50,7 @@ Optional improvements on top of the original game, all off by default.
 - **Gameplay is never changed:** fights run at the original speed, with the same physics and results.
 
 ### HD textures
-Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Stages, menus, portraits and text look crisp; the fighters' bodies keep their original textures for now.
+Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Stages, menus, portraits and text look crisp. The fighters get the pack's detail on top of the game's own colours, so their lighting and colours still change as in the game.
 
 - **Supported pack:** [Sal9im's AI-upscaled texture pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included).
 - **Setup:** put the pack's folder (the one holding `replacements`) into `data/textures`, then turn on **HD textures**.

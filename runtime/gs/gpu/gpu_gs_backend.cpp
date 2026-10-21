@@ -200,10 +200,12 @@ void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& n
 }
 
 void GpuGsBackend::replaceTextures(GsTextureNames& names) {
-    state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
+    // Exact: made with this palette, drawn instead of the texture; otherwise another palette's variant,
+    // drawn as detail over the game's colours (tools/graphics/gpu/parallel_gs_texture_replacement.patch).
+    state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc,bool& exact)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
-        const auto* image=state_->pack->find(name->text());
+        const auto* image=state_->pack->find(name->text(),&exact);
         return image?image->handle:Vulkan::ImageHandle{};
     };
 }

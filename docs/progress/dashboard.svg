@@ -115,12 +115,12 @@
 <text x="284.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
 <text x="269.5" y="500" font-size="11.5" fill="#64748b">Settings, in-game menu</text></g>
 <text x="489.0" y="196" font-size="15" font-weight="600" fill="#334155">Enhancements</text>
-<g><title>HD textures: Operational. Pack 2; fighters&#x27; bodies next</title>
+<g><title>HD textures: Operational. Pack 2, fighters as detail</title>
 <rect x="489.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="506.0" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="234" font-size="13" font-weight="600" fill="#1e293b">HD textures</text>
-<text x="502.0" y="252" font-size="11.5" fill="#64748b">Pack 2; fighters&#x27; bodies next</text></g>
+<text x="502.0" y="252" font-size="11.5" fill="#64748b">Pack 2, fighters as detail</text></g>
 <g><title>Super-sampling: Operational. 2x to 16x at full speed</title>
 <rect x="489.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>

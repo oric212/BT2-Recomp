@@ -72,7 +72,7 @@ Never commit your ISO, executable, BIOS, extracted assets, captures or proprieta
 This is a development workflow, not a player installation wizard. See [the tooling guide](TOOLS.md) for the complete commands and limitations.
 
 - Build the pinned PS2Recomp tools with `python tools/ps2recomp/build_tools.py`.
-- Check out the pinned xxHash with `python tools/graphics/textures/fetch_xxhash.py` (the runtime's texture names need it; the probe build stops with that instruction when it is missing) and, for the GPU renderer, paraLLEl-GS with `python tools/graphics/gpu/fetch_parallel_gs.py`.
+- Check out the pinned xxHash with `python tools/graphics/textures/fetch_xxhash.py` (the runtime's texture names need it; the probe build stops with that instruction when it is missing) and, for the GPU renderer, paraLLEl-GS with `python tools/graphics/gpu/fetch_parallel_gs.py` (it applies the project's patches and rebuilds the patched shader with the Vulkan SDK's `glslc`, so the SDK must be installed).
 - Install the Ghidra version recorded in `config/ghidra.lock.json`, its matching R5900 extension and a compatible JDK. Pass your own installation locations to `tools/ghidra/analyze_game.py` using `--ghidra-home` and `--java-home`.
 - Analyze your extracted executable, export provisional candidates and prepare the function map. Generated code and analysis output remain local and ignored.
 - Run `python tools/ps2recomp/run_pipeline.py` for the baseline generation/build/probe workflow. `--reuse-generated` reuses output only after provenance checks.
