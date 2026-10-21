@@ -48,7 +48,8 @@ struct GpuWindowPresenter::State {
     HWND window=nullptr;
     std::unique_ptr<WindowPlatform> platform;
     std::unique_ptr<Vulkan::WSI> wsi;
-    ~State() {wsi.reset();} // The swapchain goes before its platform.
+    Vulkan::ImageHandle enlarged; // The picture at whole multiples of its size, kept while the size stays.
+    ~State() {enlarged.reset();wsi.reset();} // The swapchain goes before its platform.
 };
 
 GpuWindowPresenter::GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<const Vulkan::Image*()> renderer_picture)
@@ -108,6 +109,29 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         if(u0>=u1 || v0>=v1)return;
         cmd->blit_image(target,from,corner(x0,y0),extent(x1-x0,y1-y0),corner(u0,v0),extent(u1-u0,v1-v0),0,0,0,0,1,filter);
     };
+    // A stretch that is not a whole multiple (widescreen, scaling off) is done in two steps: first the
+    // largest whole multiple that fits, pixels copied, then the rest filtered. A plain filtered stretch
+    // makes one-pixel lines thinner or thicker with where they fall, so thin edges pulse as the
+    // picture moves; this way only the lines' edges are smoothed.
+    if(source && smooth && at.width>0 && at.height>0) {
+        const unsigned kx=std::max(1u,unsigned(at.width)/source->get_width()),ky=std::max(1u,unsigned(at.height)/source->get_height());
+        if(kx>1 || ky>1) {
+            const unsigned w=source->get_width()*kx,h=source->get_height()*ky;
+            if(!s.enlarged || s.enlarged->get_width()!=w || s.enlarged->get_height()!=h) {
+                auto info=Vulkan::ImageCreateInfo::render_target(w,h,VK_FORMAT_R8G8B8A8_UNORM);
+                info.usage=VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;info.initial_layout=VK_IMAGE_LAYOUT_UNDEFINED;
+                s.enlarged=device.create_image(info);
+            }
+            auto& enlarged=*s.enlarged;
+            cmd->image_barrier(enlarged,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,0,VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT);
+            cmd->blit_image(enlarged,*source,corner(0,0),extent(int(w),int(h)),corner(0,0),
+                extent(int(source->get_width()),int(source->get_height())),0,0,0,0,1,VK_FILTER_NEAREST);
+            cmd->image_barrier(enlarged,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
+            source=&enlarged;
+        }
+    }
     if(source)blit(*source,at,smooth?VK_FILTER_LINEAR:VK_FILTER_NEAREST);
     if(status_image)blit(*status_image,status_at,VK_FILTER_NEAREST);
     cmd->image_barrier(target,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,

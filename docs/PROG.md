@@ -55,7 +55,7 @@ Details in the [handoff](progress/ACTIVE_PASS.md):
 
 1. **60 fps battles** ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)): in-between pictures drawn from the game's own commands, so the fight itself stays exactly as at 30 (the engine steps a fixed amount; measured). Drawn live by a second renderer that follows the main one pixel for pixel; next showing them in the window, their cost, then the setting.
 2. **Picture:** FSR 1 scaling with sharpening, an edge filter, HD textures for the fighters' bodies ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md), [HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
-3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward.
+3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen).
 4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
 
 ## Links

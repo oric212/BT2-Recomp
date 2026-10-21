@@ -104,6 +104,9 @@ std::pair<unsigned,unsigned> GpuGsBackend::vsync(unsigned field) {
 DisplayFrame GpuGsBackend::readback() {
     DisplayFrame frame;
     if(!state_->picture)return frame;
+    // Between flips (the in-game menu opens there) the renderer holds a command buffer of the frame
+    // it is drawing; the next frame context below waits for every requested one, so it is submitted first.
+    state_->gs.flush();
     auto& device=*state_->device;
     const auto& image=*state_->picture;
     frame.width=image.get_width();frame.height=image.get_height();

@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-20. **No pass in progress.** The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
+Updated: 2026-10-21. **No pass in progress.** The user's play test of 2026-10-21 found four faults, fixed (below); The last pass drew live 60 fps in-between pictures (headless; [plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), step 3).
 
 ## Where the work stands
 
@@ -12,6 +12,8 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 3. **The setting** "60 fps battles" in the launcher and the in-game menu (from the next start), then the user's look in play, and a check that the fight is unchanged (state hash with and without).
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); HD textures for the fighters' bodies (their palettes are drawn on the GPU) and the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)); the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end (the user's decision).
+
+**Play test fixes of 2026-10-21** (gate passed, not yet confirmed in play): the in-game menu froze the game (the picture read for its background waited for a command buffer the renderer still held between flips; it is now flushed first); input lag (the pad was read before the field's wait, so in fields without a flip the game got input up to a field old; it is now read after the wait, game-visible order unchanged); thin lines pulsing in a stretched picture (Cell Games tiles: the presenter's filtered stretch now enlarges by whole multiples first, then filters the rest); integer scaling with widescreen and 4x or more super-sampling showed the picture at half size (window and picture widths now both from the height). Measured: a menu press shows in the picture flipped four fields later (Options screen, pad script); the game's own pipeline, as on the PS2.
 
 **Waiting for the user** (built, gate passed, not confirmed in play): the enhancements in the launcher; the sound fix (speech was heard on the left only); fast forward; saving; special moves; the films with and without a skip; the launcher's screens; the camera in fights.
 

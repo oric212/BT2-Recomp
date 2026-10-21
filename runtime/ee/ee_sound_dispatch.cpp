@@ -193,8 +193,8 @@ void EeRuntime::deliverVblank(std::uint8_t* rdram,R5900Context* interrupted) {
             interrupted->pc,static_cast<std::uint32_t>(interrupted->r[31].low),current_thread_id,last_branch_source_,last_branch_target_);
         throw std::runtime_error("Bootstrap execution budget exceeded; no display flip for "+std::to_string(flipless_field_limit)+" fields"+where);
     }
-    nativePadVblank(rdram);       // Pad state for this field, before EE handlers run.
-    nativeCriVblank(interrupted); // CRI stream buffers returned for this field.
+    nativeCriVblank(interrupted); // CRI stream buffers returned for this field; a paced run waits for the field's deadline here.
+    nativePadVblank(rdram);       // Pad state for this field, before EE handlers run; live input is read after that wait.
     runIntcHandlers(rdram,interrupted,cause,"VBLANK_START handler");
     runReadyThreads(rdram,interrupted); // Woken threads above the interrupted one run on return.
 }

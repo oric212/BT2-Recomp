@@ -79,7 +79,7 @@ public:
     }
     // The client area in pixels (640 x 448 times the scale before the window exists).
     std::pair<unsigned,unsigned> clientSize() const {
-        RECT client{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};
+        RECT client{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};
         if(hwnd_)GetClientRect(hwnd_,&client);
         return {unsigned(std::max<LONG>(client.right,1)),unsigned(std::max<LONG>(client.bottom,1))};
     }
@@ -107,10 +107,13 @@ private:
         const LONG shown_width=LONG(pictureWidth(width,height)),shown_height=LONG(height);
         int w,h;
         if(scaling_==Scaling::Integer) {
-            // A window holds whole pictures; the whole screen takes the nearest multiple.
-            const int scale=fullscreen_?int(nearestScale(client_width,client_height,shown_width,shown_height))
-                :std::max(1,int(std::min(client_width/shown_width,client_height/shown_height)));
-            w=int(shown_width)*scale;h=int(shown_height)*scale;
+            // A window holds whole pictures; the whole screen takes the nearest multiple. In widescreen the
+            // width of a multiple is 16:9 of its height, so a super-sampled picture (1280 x 896) fills the
+            // same window as the game's (640 x 448) at half the multiple.
+            int scale=std::max(1,int(client_height/shown_height));
+            while(scale>1 && LONG(pictureWidth(width*scale,height*scale))>client_width)--scale;
+            if(fullscreen_)scale=int(nearestScale(client_width,client_height,shown_width,shown_height));
+            w=int(pictureWidth(width*scale,height*scale));h=int(shown_height)*scale;
         } else if(std::int64_t(client_width)*shown_height<=std::int64_t(client_height)*shown_width) {
             w=std::max(1,int(client_width));h=std::max(1,int(std::int64_t(client_width)*shown_height/shown_width));
         } else {
@@ -163,7 +166,7 @@ private:
             SetWindowPos(hwnd_,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,
                 monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED);
         } else {
-            RECT r{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+            RECT r{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
             SetWindowLongPtrA(hwnd_,GWL_STYLE,WS_OVERLAPPEDWINDOW|WS_VISIBLE);
             RECT at;GetWindowRect(hwnd_,&at);
             SetWindowPos(hwnd_,HWND_TOP,std::max<LONG>(at.left,0),std::max<LONG>(at.top,0),r.right-r.left,r.bottom-r.top,SWP_FRAMECHANGED);
@@ -174,7 +177,7 @@ private:
         WNDCLASSA wc{};wc.lpfnWndProc=&ViewerWindow::proc;wc.hInstance=GetModuleHandleA(nullptr);
         wc.lpszClassName="BT2RecompViewer";wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
         RegisterClassA(&wc);
-        RECT r{0,0,LONG(pictureWidth(640,448)*scale_),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
+        RECT r{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
         hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,
             r.right-r.left,r.bottom-r.top,nullptr,nullptr,wc.hInstance,this);
         if(!hwnd_)throw std::runtime_error("Viewer window creation failed");
