@@ -15,7 +15,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen in the launcher; 60 fps battles in progress |
+| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen and 60 fps battles in the launcher; 60 fps not yet tried in play |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -53,9 +53,9 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md):
 
-1. **60 fps battles** ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)): in-between pictures drawn from the game's own commands, so the fight itself stays exactly as at 30 (the engine steps a fixed amount; measured). Drawn live by a second renderer that follows the main one pixel for pixel; next showing them in the window, their cost, then the setting.
-2. **Picture:** FSR 1 scaling with sharpening, an edge filter, HD textures for the fighters' bodies ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md), [HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
-3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen).
+1. **HD textures across the whole game** (the user, 2026-10-21; [HD textures](plans/graphics/HD_TEXTURES_PLAN.md)): the fighters' bodies (their palettes are drawn by the game on the GPU) and what else a scene draws without a replacement.
+2. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps battles: things that appear in a frame show one picture early ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen); 60 fps battles in play.
 4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
 
 ## Links

@@ -16,6 +16,9 @@ public:
     // The window shows `source`'s pictures (null: this renderer's).
     void showPictureOf(const GpuGsMirror* source) {gpu_.showPictureOf(source?&source->gpu_:nullptr);}
     void flip() {FrameProfile::Scope timed(frame_profile.flush);gpu_.flush();}
+    void keepState(unsigned slot) {gpu_.keepState(slot);}
+    void takeState(const GpuGsMirror& primary,unsigned slot) {gpu_.takeState(primary.gpu_,slot);}
+    void submit() {gpu_.submit();} // The work so far, without ending the frame (gpu_gs_backend.h).
     void readFifo(std::span<std::uint8_t> out) {gpu_.readFifo(out);} // Local->host data, GPU-only mode.
     void enableTimestamps() {gpu_.enableTimestamps();}
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names) {gpu_.enableHdTextures(pack,budget_bytes,names);}

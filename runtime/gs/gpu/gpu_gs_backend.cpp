@@ -6,7 +6,10 @@
 #include "context.hpp"
 #include "device.hpp"
 #include "gs_interface.hpp"
+#include "thread_id.hpp"
+#include <array>
 #include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 struct GpuGsBackend::State {
@@ -18,6 +21,8 @@ struct GpuGsBackend::State {
     Vulkan::ImageHandle picture; // The last scanout.
     const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
+    struct Kept {Vulkan::BufferHandle vram,clut;};
+    std::array<Kept,2> kept; // keepState's slots.
     ~State() {presenter.reset();picture.reset();}
 };
 
@@ -29,7 +34,7 @@ void GpuGsBackend::init(unsigned super_sampling) {
         throw std::runtime_error("GPU GS: super-sampling must be 1, 2, 4, 8 or 16");
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
-    state->context->set_num_thread_indices(1);
+    state->context->set_num_thread_indices(2); // The game's thread and the in-between pictures' worker.
     // The surface extensions let the window presenter make a swapchain on this device.
     const char* instance_extensions[]{"VK_KHR_surface","VK_KHR_win32_surface"};
     const char* device_extensions[]{"VK_KHR_swapchain"};
@@ -49,6 +54,9 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");
+    // Its flushes only submit: the primary moves the shared device to its next frame context, so this
+    // renderer can flush from another thread while the primary's frame is open.
+    state->gs.set_frame_boundaries(false);
     state_=std::move(state);
 }
 
@@ -66,6 +74,44 @@ std::span<const std::uint32_t> GpuGsBackend::readVram() {
     return {words,size/4};
 }
 
+namespace {
+// A copy between buffers of equal size, ordered after all earlier work on the queue and before all later.
+void copyBuffers(Vulkan::Device& device,std::initializer_list<std::pair<const Vulkan::Buffer*,const Vulkan::Buffer*>> copies) {
+    auto cmd=device.request_command_buffer();
+    cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_READ_BIT|VK_ACCESS_2_MEMORY_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT|VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    for(const auto& [to,from]:copies) {
+        if(to->get_create_info().size!=from->get_create_info().size)throw std::runtime_error("GPU GS: state copy between buffers of different sizes");
+        cmd->copy_buffer(*to,*from);
+    }
+    cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_READ_BIT|VK_ACCESS_2_MEMORY_WRITE_BIT);
+    device.submit(cmd);
+}
+}
+
+void GpuGsBackend::keepState(unsigned slot) {
+    auto& s=*state_;
+    const auto& vram=s.gs.get_vram_buffer();const auto& clut=s.gs.get_clut_buffer();
+    auto& k=s.kept.at(slot);
+    if(!k.vram) {
+        Vulkan::BufferCreateInfo info{};info.domain=Vulkan::BufferDomain::Device;
+        info.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        info.size=vram.get_create_info().size;k.vram=s.device->create_buffer(info);
+        info.size=clut.get_create_info().size;k.clut=s.device->create_buffer(info);
+    }
+    copyBuffers(*s.device,{{k.vram.get(),&vram},{k.clut.get(),&clut}});
+}
+
+void GpuGsBackend::takeState(const GpuGsBackend& primary,unsigned slot) {
+    auto& s=*state_;
+    const auto& k=primary.state_->kept.at(slot);
+    if(!k.vram)throw std::runtime_error("GPU GS: no kept state in that slot");
+    s.gs.flush(); // This renderer's work so far goes first.
+    copyBuffers(*s.device,{{&s.gs.get_vram_buffer(),k.vram.get()},{&s.gs.get_clut_buffer(),k.clut.get()}});
+    s.gs.invalidate_vram();
+}
+
 void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
     if(out.size()%16)throw std::runtime_error("GPU GS: FIFO read size is not a multiple of 16");
     state_->gs.read_transfer_fifo(out.data(),std::uint32_t(out.size()/16));
@@ -81,6 +127,10 @@ void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
     if(index>14)throw std::runtime_error("GPU GS: privileged register index out of range");
     state_->gs.get_priv_register_state().qwords_lo[index*2]=value; // Same order as the PS2 register block.
 }
+
+void GpuGsBackend::submit() {state_->gs.flush();}
+
+void GpuGsBackend::registerWorkerThread() {Util::register_thread_index(1);}
 
 DisplayFrame GpuGsBackend::scanout(unsigned field) {
     vsync(field);
@@ -104,9 +154,7 @@ std::pair<unsigned,unsigned> GpuGsBackend::vsync(unsigned field) {
 DisplayFrame GpuGsBackend::readback() {
     DisplayFrame frame;
     if(!state_->picture)return frame;
-    // Between flips (the in-game menu opens there) the renderer holds a command buffer of the frame
-    // it is drawing; the next frame context below waits for every requested one, so it is submitted first.
-    state_->gs.flush();
+    submit(); // Between flips (the in-game menu opens there); the next frame context below waits for it.
     auto& device=*state_->device;
     const auto& image=*state_->picture;
     frame.width=image.get_width();frame.height=image.get_height();

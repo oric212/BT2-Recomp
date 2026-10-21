@@ -42,7 +42,7 @@ int main() {
         s.disc="a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
-        s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;
+        s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(refused([]{Settings::parse("super_sampling = 3\n");}) && refused([]{Settings::parse("super_sampling = 32\n");}),"super-sampling is 1, 2, 4, 8 or 16");
         // Older files: the dialog folders and the hidden cards are ignored, a card elsewhere is dropped.

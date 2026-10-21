@@ -26,11 +26,24 @@ int main() {
     check((*mid)[3]==0x00000007u,"a word that is not a normal float is the newer one");
     check((*mid)[12]==0x2222u,"DIRECT data is the newer frame's");
     check((*mid)[4]==bits(1.0f) && (*mid)[17]==0x00020001u,"equal words and other formats unchanged");
-    // Lists that do not pair: another number of unpacks, or another size.
+    // Lists that differ in places: unpacks are aligned by their codes; the rest pairs and is blended.
     auto shorter=newer;shorter.resize(16);
-    check(!blendVif1(older,shorter,0.5f),"a missing unpack does not pair");
+    std::size_t unmatched=9;
+    const auto without_last=blendVif1(older,shorter,0.5f,&blended,&unmatched);
+    check(without_last && blended==2 && unmatched==0 && value((*without_last)[2])==2.0f,"a missing unpack leaves the others paired");
     auto resized=newer;resized[1]=0x6C010000u;resized.erase(resized.begin()+6,resized.begin()+10);
-    check(!blendVif1(older,resized,0.5f),"an unpack of another size does not pair");
+    const auto other_size=blendVif1(older,resized,0.5f,&blended,&unmatched);
+    check(other_size && blended==0 && unmatched==1 && value((*other_size)[2])==3.0f,"an unpack of another code is the newer one");
+    // An unpack inserted in front: the ones after it still pair.
+    std::vector<std::uint32_t> inserted{0x6C010040u,bits(9.0f),bits(9.0f),bits(9.0f),bits(9.0f)};
+    inserted.insert(inserted.end(),newer.begin(),newer.end());
+    const auto with_insert=blendVif1(older,inserted,0.5f,&blended,&unmatched);
+    check(with_insert && blended==2 && unmatched==1 && value((*with_insert)[1])==9.0f && value((*with_insert)[7])==2.0f,"an inserted unpack keeps the rest paired");
+    // Alignment itself: a shortest edit script's equal elements.
+    const std::vector<std::uint64_t> sa{1,2,3,4,5,6},sb{1,3,4,7,5,6,8};
+    const auto aligned=alignSequences(sa,sb,16);
+    check(aligned && aligned->size()==5 && (*aligned)[1]==std::pair<std::size_t,std::size_t>(2,1) && (*aligned)[3]==std::pair<std::size_t,std::size_t>(4,4),"sequences aligned");
+    check(!alignSequences(sa,std::vector<std::uint64_t>{9,9,9,9,9,9},3),"too many edits refused");
     // STCYCL with WL > CL: the data covers CL of every WL elements.
     const std::vector<std::uint32_t> skipping{0x01000201u,0x6C040000u,1,2,3,4,5,6,7,8};
     const auto u=vif1Unpacks(skipping);

@@ -150,6 +150,7 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
     samples.note="Smoother edges and finer textures; 4x and more draw at twice the resolution (1280 x 896). From the next start.";
     screen.entries.push_back(samples);
     screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched. From the next start."));
+    screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. From the next start."));
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -29,10 +30,22 @@ public:
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.
     std::span<const std::uint32_t> readVram();
+    // The renderer's state on the GPU (GS memory with its super-samples, and the CLUT) kept in one of two
+    // slots after a flush (keepState), and a second renderer on the same device set to a kept state
+    // (takeState; its cached textures are dropped): the in-between pictures of 60 fps battles start from
+    // the main renderer's state. Copies on the GPU in submission order; neither waits for the GPU
+    // (tools/graphics/gpu/parallel_gs_vram_backup.patch).
+    void keepState(unsigned slot);
+    void takeState(const GpuGsBackend& primary,unsigned slot);
     // The next quadwords of the local->host transfer the last TRXDIR started (zero past its end).
     void readFifo(std::span<std::uint8_t> out);
     // Submits queued work at a frame boundary (each flip) and advances the frame context.
     void flush();
+    // Submits the work taken so far without ending the frame. Between flips the renderer holds a command
+    // buffer, and the device's next frame context (a readback, the window presenter) waits for it.
+    void submit();
+    // Called once on the thread that drives a second renderer (initShared): its own command pools.
+    static void registerWorkerThread();
     // Privileged register by its index in the 0x12000000 block (address offset / 16).
     void privileged(unsigned index,std::uint64_t value);
     // Scans out the displayed circuits for one field and reads the image back (empty when nothing is displayed).

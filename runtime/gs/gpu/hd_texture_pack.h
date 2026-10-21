@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -18,6 +19,8 @@ namespace Vulkan {class Device;}
 //   game's colours are not sRGB-encoded). Other files are refused by name (counted, drawn as originals).
 // - Budget: when the loaded images exceed it, the least recently used are dropped (the renderer may
 //   still hold one until the game overwrites its texture).
+// find may be called from two threads (a second renderer on the device, gs/gpu/in_between_frames.h);
+// loadPending runs only while the other thread draws nothing.
 class HdTexturePack {
 public:
     struct Image;
@@ -48,5 +51,6 @@ private:
     struct Entry;
     std::unordered_map<std::string,Entry*> cache_;
     std::vector<std::string> pending_;
+    std::mutex lock_;
     void evict();
 };

@@ -371,28 +371,41 @@ int main(int argc, char** argv) {
             // BT2_SIXTY_FPS_SNAPSHOT="<flip>:<path>;..." writes its pictures, to compare with the main ones.
             // BT2_SIXTY_FPS_DISPLAY=<n>: the display registers of the flip n flips back scan it out (default 1).
             static std::unique_ptr<InBetweenFrames> in_between;
-            static bool in_between_ready = false;static std::uint64_t in_between_vblank = 0;
+            // The worker's frame started at the field `in_between_vblank` (after flip `in_between_flip`).
+            static bool in_between_started = false;static std::uint64_t in_between_vblank = 0;static unsigned in_between_flip = 0;
+            // A failure ends the in-between pictures, not the game.
+            static const auto stop_in_between = [&runtime](const std::exception& e) {
+                std::cerr << "60 fps battles stopped at flip " << runtime.gs_display_flips << ": " << e.what() << std::endl;
+                runtime.on_vif1_transfer = nullptr;runtime.gif_dma.gs.on_input = nullptr; // field_picture checks in_between.
+                in_between_started = false;in_between.reset();
+            };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
                 if (!gpu_only) throw std::runtime_error("BT2_SIXTY_FPS needs BT2_GPU_GS=on");
                 if (std::getenv("BT2_VIF1_DUMP") || std::getenv("BT2_VIF1_REPLACE")) throw std::runtime_error("BT2_SIXTY_FPS excludes BT2_VIF1_DUMP and BT2_VIF1_REPLACE");
                 in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr);
                 in_between->replay_only = std::string_view(sixty) == "replay";
+                in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
                 runtime.on_vif1_transfer = [](std::span<std::uint32_t> words) { in_between->vif1Transfer(words); };
                 runtime.gif_dma.gs.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {
-                    if (!in_between_ready) return;
+                    if (!in_between || !in_between_started) return;
                     if (runtime.vblank_deliveries != in_between_vblank + 1) {
-                        if (runtime.vblank_deliveries > in_between_vblank + 1) in_between_ready = false; // A flip came first.
+                        if (runtime.vblank_deliveries > in_between_vblank + 1) in_between_started = false; // A flip came first.
                         return;
                     }
-                    in_between_ready = false;
-                    if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only) return;
+                    in_between_started = false;
+                    if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only || in_between->scan_replay) return;
+                    bool ready = false;
+                    try {ready = in_between->wait();} catch (const std::exception& e) {stop_in_between(e);return;}
+                    if (!ready) return;
                     if (pacer) pacer->wait();
+                    gpu_mirror.submit(); // Between flips: the main renderer's open frame, before the presenter's frame context.
                     gpu_mirror.showPictureOf(&in_between->renderer());
                     const auto size = in_between->pictureSize();
                     viewer.presentRenderer(size.first, size.second, runtime.gs_display_flips);
                     gpu_mirror.showPictureOf(nullptr);
+                    ++in_between->shown;
                     if (player) player->shown();
                 };
                 std::cerr << "60 fps battles: in-between pictures on" << (in_between->replay_only ? " (replay check)" : "") << std::endl;
@@ -427,22 +440,29 @@ int main(int argc, char** argv) {
                 static const char* profile_path = std::getenv("BT2_SAMPLE_PROFILE");
                 static const unsigned profile_from = std::getenv("BT2_SAMPLE_FROM") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SAMPLE_FROM"))) : 1;
                 if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
+                // The worker's last frame ends before the main renderer's flip (they share the device and the HD pack).
+                bool in_between_ready = false;
+                if (in_between) try {in_between_ready = in_between->wait();} catch (const std::exception& e) {stop_in_between(e);}
                 if (gpu_only) gpu_mirror.flip(); else gpu_mirror.compare(runtime.gif_dma.gs, flip);
-                if (in_between) {
-                    static std::deque<std::array<std::uint64_t, 15>> shown;
-                    shown.push_back(runtime.gs_privileged);if (shown.size() > 4) shown.pop_front();
-                    static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
-                    const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
-                    try {
-                        in_between_ready = in_between->flip(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip);
-                        in_between_vblank = runtime.vblank_deliveries;
-                    } catch (const std::exception& e) {
-                        // A failure ends the in-between pictures, not the game.
-                        std::cerr << "60 fps battles stopped at flip " << flip << ": " << e.what() << std::endl;
-                        runtime.on_vif1_transfer = nullptr;runtime.gif_dma.gs.on_input = nullptr;sixty_fps::field_picture = nullptr;
-                        in_between_ready = false;in_between.reset();
+                if (in_between) gpu_mirror.keepState(flip % 2); // The state the next frame starts from, for its in-between picture.
+                // The next frame goes to the worker when this flip's own work is done (its picture shown):
+                // the presenter's frame context would otherwise wait for the worker.
+                struct StartInBetween {
+                    EeRuntime& runtime;unsigned flip;
+                    ~StartInBetween() {
+                        if (!in_between) return;
+                        static std::deque<std::array<std::uint64_t, 15>> shown;
+                        shown.push_back(runtime.gs_privileged);if (shown.size() > 4) shown.pop_front();
+                        static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
+                        const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
+                        try {
+                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, (flip + 1) % 2);
+                            in_between_started = true;in_between_vblank = runtime.vblank_deliveries;in_between_flip = flip;
+                        } catch (const std::exception& e) {stop_in_between(e);}
+                        sixty_fps::fight_waits = 0;
                     }
-                    sixty_fps::fight_waits = 0;
+                } start_in_between{runtime, flip};
+                if (in_between) {
                     static std::map<unsigned, std::string> shots;
                     static const bool parsed = [] {
                         if (const char* list = std::getenv("BT2_SIXTY_FPS_SNAPSHOT")) {
@@ -457,7 +477,8 @@ int main(int argc, char** argv) {
                         return true;
                     }();
                     (void)parsed;
-                    if (in_between && in_between_ready) if (const auto shot = shots.find(flip); shot != shots.end()) writePpm(shot->second, in_between->renderer().readback());
+                    // The picture of the frame started at the last flip (BT2_SIXTY_FPS_SNAPSHOT counts that flip).
+                    if (in_between && in_between_ready) if (const auto shot = shots.find(in_between_flip); shot != shots.end()) writePpm(shot->second, in_between->renderer().readback());
                 }
                 const auto snapshot = snapshots.find(flip);
                 // In fast forward a picture is read back and shown only once per field period of the clock.

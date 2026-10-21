@@ -33,14 +33,14 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen in the launcher; 60 fps battles in progress |
+| Enhancements | 🟢 Operational — HD textures, super-sampling, widescreen and 60 fps battles in the launcher; 60 fps not yet tried in play |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** optional 60 fps battles (drawn in-between pictures; the fight itself unchanged), HD textures for the characters' bodies, the final battle sweep. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Next:** HD textures for the characters' bodies, the final battle sweep. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
 
 ## Enhancements
 
@@ -67,11 +67,13 @@ Shows the game in 16:9: fights, cut-scenes and the story map show more to the si
 - **Scaling off:** a smooth stretch to the window or the screen.
 - **Window size and fullscreen.**
 
+### 60 fps battles
+Smoother fights: a picture is drawn between each two of the game's 30 frames per second, from the game's own drawing commands with the camera and the characters halfway. The fight itself still runs exactly as on the PS2, and no delay is added. Something that appears in a frame (a hit flash, smoke) can show one picture early.
+
 ### Fast forward
 Hold **Tab** (or a controller button of your choice) to speed up films, menus and fights.
 
 ### Coming next
-- **60 fps battles:** smooth motion from extra pictures drawn between the game's own frames. The fight itself still runs exactly as on the PS2.
 - **Sharper scaling:** FSR 1 upscaling with sharpening.
 - **Edge smoothing:** a light filter (FXAA or SMAA) for graphics cards that can't afford super-sampling.
 

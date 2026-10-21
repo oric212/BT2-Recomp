@@ -60,6 +60,7 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     SetEnvironmentVariableW(L"BT2_HD_TEXTURES",pack.empty()?nullptr:pack.wstring().c_str());
     SetEnvironmentVariableA("BT2_SUPER_SAMPLING",std::to_string(settings.super_sampling).c_str());
     SetEnvironmentVariableA("BT2_GAME_PATCHES",settings.widescreen?"widescreen":nullptr); // ee/game_patches.h
+    SetEnvironmentVariableA("BT2_SIXTY_FPS",settings.sixty_fps?"1":nullptr); // gs/gpu/in_between_frames.h
     // The memory card folder in slot 1, when the settings name one of the saves folder.
     const fs::path card=folders.card(settings);
     SetEnvironmentVariableW(L"BT2_CARD_FOLDER",card.empty()?nullptr:card.wstring().c_str());

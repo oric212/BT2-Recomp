@@ -76,6 +76,7 @@ HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path&
 HdTexturePack::~HdTexturePack() {for(auto& [name,entry]:cache_)delete entry;}
 
 const HdTexturePack::Image* HdTexturePack::find(const std::string& name) {
+    std::lock_guard<std::mutex> hold(lock_);
     auto cached=cache_.find(name);
     if(cached==cache_.end()) {
         auto path=index_.find(name);
@@ -97,6 +98,7 @@ const HdTexturePack::Image* HdTexturePack::find(const std::string& name) {
 }
 
 void HdTexturePack::loadPending() {
+    std::lock_guard<std::mutex> hold(lock_);
     for(const auto& name:pending_) {
         const auto it=cache_.find(name);
         if(it==cache_.end())continue;
