@@ -10,6 +10,25 @@ void GpuGsMirror::attachShared(GsCommandSink& cpu,GpuGsMirror& primary,unsigned 
     primary.drain();
     gpu_.initShared(primary.gpu_,super_sampling);
     startThread(cpu,1);
+    primary_=&primary;primary.followers_.push_back(this);
+}
+
+void GpuGsMirror::whileFollowersPaused(const std::function<void()>& fn,std::size_t from) {
+    if(from==followers_.size()) {fn();return;}
+    auto& follower=*followers_[from];
+    const auto rest=[&]{whileFollowersPaused(fn,from+1);};
+    if(follower.thread_)follower.thread_->whilePaused([&follower]{std::lock_guard hold(follower.use_);follower.gpu_.submit();},rest);else rest();
+}
+
+void GpuGsMirror::whilePaused(const std::function<void()>& fn) {
+    const auto followers=[&]{whileFollowersPaused(fn);};
+    if(thread_)thread_->whilePaused([this]{std::lock_guard hold(use_);gpu_.submit();},followers);else followers();
+}
+
+WindowPresenter& GpuGsMirror::windowPresenter() {
+    drain();
+    // The presenter's thread waits for old GPU work first, then changes the device's frame while the GS threads stand still.
+    return gpu_.windowPresenter([this](const std::function<void()>& frame){gpu_.awaitFrameChange();whilePaused(frame);});
 }
 
 void GpuGsMirror::startThread(GsCommandSink& cpu,unsigned thread_index) {
@@ -44,11 +63,11 @@ void GpuGsMirror::drain() {
 
 DisplayFrame GpuGsMirror::scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field) {
     vsync(privileged,crt_mode,field);
-    return gpu_.readback();
+    return readback();
 }
 
 std::pair<unsigned,unsigned> GpuGsMirror::vsync(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field) {
-    drain();
+    const auto hold=use();
     if(crt_mode!=2 && crt_mode!=3)throw std::runtime_error("GPU GS: unsupported SetGsCrt video mode");
     for(unsigned n=0;n<privileged.size();++n)gpu_.privileged(n,privileged[n]);
     gpu_.privileged(1,(32u<<3)|(crt_mode<<13)); // SMODE1: analog line clock (LC 32), CMOD NTSC/PAL.
@@ -57,6 +76,8 @@ std::pair<unsigned,unsigned> GpuGsMirror::vsync(const std::array<std::uint64_t,1
 
 GpuGsMirror::~GpuGsMirror() {
     try {drain();} catch(const std::exception& e) {std::cerr<<"GPU GS: "<<e.what()<<std::endl;}
+    if(primary_)std::erase(primary_->followers_,this);
+    gpu_.closeWindowPresenter(); // Its thread pauses the GS thread.
     thread_.reset();
     if(const auto hd=gpu_.hdTextureSummary();!hd.empty())std::cerr<<hd<<std::endl;
     if(const auto times=gpu_.timestampSummary();!times.empty())std::cerr<<times<<std::endl;

@@ -36,7 +36,7 @@
         {"name": "HD textures", "status": "working", "note": "PCSX2 names, pack 2"},
         {"name": "Super-sampling", "status": "working", "note": "2x to 16x at full speed"},
         {"name": "Widescreen", "status": "working", "note": "16:9, gameplay unchanged"},
-        {"name": "60 fps battles", "status": "working", "note": "Fixed 10-25; HD partly in time"},
+        {"name": "60 fps battles", "status": "working", "note": "With HD at 16x since 10-26"},
         {"name": "Performance", "status": "working", "note": "GS threads; GPU 6 to 10 ms"}
       ]
     },

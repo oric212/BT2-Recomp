@@ -3,6 +3,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -41,6 +42,10 @@ public:
     void readFifo(std::span<std::uint8_t> out);
     // Submits queued work at a frame boundary (each flip) and advances the frame context.
     void flush();
+    // Before a frame change of the device (flush, readback, a picture shown in the window): waits for the GPU
+    // work that Granite's frame change waits for while it holds the device's lock (the frame context it
+    // reuses: about 7 changes back), so that wait stops no other thread; notes this change's work.
+    void awaitFrameChange();
     // Submits the work taken so far without ending the frame. Between flips the renderer holds a command
     // buffer, and the device's next frame context (a readback, the window presenter) waits for it.
     void submit();
@@ -55,15 +60,19 @@ public:
     // is displayed. readback() copies the kept image to the processor; the window presenter shows it.
     std::pair<unsigned,unsigned> vsync(unsigned field);
     DisplayFrame readback();
-    // Shows pictures in a window on this device (host/window_presenter.h); made at the first call.
-    WindowPresenter& windowPresenter();
+    // Shows pictures in a window on this device (host/window_presenter.h), on a thread of its own that runs
+    // each of its frames through `around_frame` (gpu_window_presenter.h); made at the first call.
+    WindowPresenter& windowPresenter(std::function<void(const std::function<void()>&)> around_frame);
+    void closeWindowPresenter(); // Stops its thread (before what around_frame uses goes).
     // HD textures (docs/plans/graphics/HD_TEXTURES_PLAN.md): each texture the renderer caches is named by
     // `names` (kept in step with the renderer by the GS sink) and drawn with the pack's replacement when
     // it has one. The summary line says what was found, loaded and dropped.
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
     std::string hdTextureSummary() const;
-    // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`.
-    void shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names);
+    // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`;
+    // `late_palettes`: it draws each frame after the primary's flip, so the palettes the primary drew reach
+    // it one flip late (else at once, for a renderer that draws a frame while the primary does).
+    void shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names,bool late_palettes);
     // GPU time by the renderer's stages (paraLLEl-GS timestamps), switched on before the first transfer;
     // the summary gives milliseconds per frame (per flush).
     void enableTimestamps();

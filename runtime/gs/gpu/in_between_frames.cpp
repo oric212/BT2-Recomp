@@ -1,17 +1,18 @@
 #include "gs/gpu/in_between_frames.h"
-#include "vu/vif1_blend.h"
 #include <algorithm>
 #include <bit>
 #include <chrono>
 #include <iostream>
 
-InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures)
-    :primary_(primary),thread_([](std::span<const std::uint8_t>,bool){throw std::logic_error("60 fps battles: the thread takes tasks only");},
-                               []{GpuGsBackend::registerRenderThread(1);}) {
+InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures,bool replay_only)
+    :replay_only(replay_only),primary_(primary),
+     thread_([](std::span<const std::uint8_t>,bool){throw std::logic_error("60 fps battles: the thread takes tasks only");},
+             []{GpuGsBackend::registerRenderThread(1);}) {
     sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
     mirror_.attachShared(sink_,primary,super_sampling);
     names_.count_drawn=false; // Only the main renderer's names keep the naming log.
-    if(hd_textures)mirror_.shareHdTextures(primary,names_); // The renderer's GS thread names its textures.
+    // The renderer's GS thread names its textures; replays draw each frame after its flip.
+    if(hd_textures)mirror_.shareHdTextures(primary,names_,replay_only);
     recording_.start=std::make_unique<Vif1>(vif1);
 }
 
@@ -28,22 +29,16 @@ void InBetweenFrames::run() {
     Job job;
     {std::lock_guard<std::mutex> hold(lock_);job=std::move(job_);}
     bool ready=false;std::exception_ptr failure;
-    const auto begin=std::chrono::steady_clock::now();
     try {ready=draw(std::move(job.frame),job);}
     catch(...) {failure=std::current_exception();}
-    if(ready) {
-        const double took=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
-        drawing_seconds+=took;slowest_seconds=std::max(slowest_seconds,took);
-    }
-    std::lock_guard<std::mutex> hold(lock_);ready_=ready;failure_=failure;pending_=false;
+    std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;pending_=false;
 }
 
 bool InBetweenFrames::wait() {
-    if(busy()) {
-        const auto begin=std::chrono::steady_clock::now();
-        thread_.drain();
-        waited_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
-    }
+    // Also what is drawn as it comes, when no frame is pending.
+    const auto begin=std::chrono::steady_clock::now();
+    thread_.drain();
+    waited_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::lock_guard<std::mutex> hold(lock_);
     if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
     return ready_;
@@ -64,15 +59,18 @@ bool InBetweenFrames::ready() {
     return !pending_ && !failure_ && ready_;
 }
 
-void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field,unsigned older_slot) {
+void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field,unsigned next_slot) {
     wait();
     // The recording becomes the job's frame; the oldest frame's buffers record the next one.
     Frame finished=std::move(recording_);
     finished.fight=fight;
-    recording_=std::move(spare_);recording_.used=0;recording_.fight=false;recording_.start=std::make_unique<Vif1>(vif1);
+    recording_=std::move(spare_);
+    recording_.used=0;recording_.handed=0;recording_.fight=false;recording_.streamed=false;
+    recording_.start=std::make_unique<Vif1>(vif1);recording_.slot=next_slot;
+    previous_fight_=fight && !replay_only; // The next frame is drawn as it comes.
     {
         std::lock_guard<std::mutex> hold(lock_);
-        job_.frame=std::move(finished);job_.privileged=privileged;job_.crt_mode=crt_mode;job_.field=field;job_.older_slot=older_slot;
+        job_.frame=std::move(finished);job_.privileged=privileged;job_.crt_mode=crt_mode;job_.field=field;
         ready_=false;pending_=true;
     }
     thread_.pushTask([this]{run();});
@@ -81,12 +79,13 @@ void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::ui
 InBetweenFrames::Event& InBetweenFrames::Frame::next(bool vif1) {
     if(used==events.size())events.emplace_back();
     auto& e=events[used++];
-    e.vif1=vif1;e.words.clear();e.output.clear();e.ends.clear();
+    e.vif1=vif1;e.words.clear();e.output.clear();e.ends.clear();e.walked=false;
     return e;
 }
 
 void InBetweenFrames::vif1Transfer(std::span<const std::uint32_t> words) {
     recording_.next(true).words.assign(words.begin(),words.end());
+    if(previous_fight_)hand();
 }
 
 void InBetweenFrames::gsInput(std::span<const std::uint8_t> data,bool from_vif1) {
@@ -95,50 +94,77 @@ void InBetweenFrames::gsInput(std::span<const std::uint8_t> data,bool from_vif1)
     e.output.insert(e.output.end(),data.begin(),data.end());e.ends.push_back(e.output.size());
 }
 
+void InBetweenFrames::hand() {
+    auto& f=recording_;
+    std::vector<const Event*> events;
+    for(std::size_t n=f.handed;n<f.used;++n)events.push_back(&f.events[n]);
+    if(events.empty())return;
+    const bool first=!f.streamed;
+    f.streamed=true;f.handed=f.used;
+    // Its failure is the frame's (wait rethrows it); nothing is drawn after one.
+    thread_.pushTask([this,events=std::move(events),first,start=f.start.get(),slot=f.slot] {
+        {std::lock_guard<std::mutex> hold(lock_);if(failure_)return;}
+        try {drawEvents(events,first,start,slot);}
+        catch(...) {std::lock_guard<std::mutex> hold(lock_);if(!failure_)failure_=std::current_exception();}
+    });
+}
+
 void InBetweenFrames::send(std::span<const std::uint8_t> data) {
     if(!data.empty())sink_.transfer(data);
 }
 
-bool InBetweenFrames::drawInBetween(const Frame& older,const Frame& newer,unsigned older_slot) {
-    // The VIF1 transfers pair in order; each pair must pair code for code.
-    std::vector<const Event*> a,b;
-    for(std::size_t n=0;n<older.used;++n)if(older.events[n].vif1)a.push_back(&older.events[n]);
-    for(std::size_t n=0;n<newer.used;++n)if(newer.events[n].vif1)b.push_back(&newer.events[n]);
-    if(a.size()!=b.size() || b.empty() || !newer.start)return false;
-    // No in-between picture across a camera cut (vu/vif1_blend.h).
-    for(std::size_t i=0;i<b.size();++i)if(cameraTurn(a[i]->words,b[i]->words)<0.906f) {++camera_cuts;return false;}
-    std::vector<std::vector<std::uint32_t>> blended;blended.reserve(b.size());
-    for(std::size_t i=0;i<b.size();++i) {
-        std::size_t refused=0;
-        std::size_t words=0,realigned=0;
-        auto mid=blendVif1(a[i]->words,b[i]->words,scan_replay?1.0f:0.5f,&words,nullptr,1024,&refused,&realigned);
-        refused_pairs+=refused;blended_words+=words;realigned_pairs+=realigned;
-        if(!mid)return false;
-        blended.push_back(std::move(*mid));
+// On the thread: the newer frame's input with its lists blended against the older frame's, run on a copy of
+// VIF1/VU1 as the frame started and drawn over the main renderer's GS state as it started. The VIF1 transfers
+// pair in order and each pair must pair code for code; no in-between picture across a camera cut
+// (vu/vif1_blend.h). Once a pair fails the rest runs as it is (that picture is not shown).
+void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool first,const Vif1* start,unsigned slot) {
+    const auto begin=std::chrono::steady_clock::now();
+    if(first) {
+        stream_=Stream{};
+        for(std::size_t n=0;n<previous_.used;++n)if(previous_.events[n].vif1)stream_.older.push_back(&previous_.events[n]);
+        stream_.vif1.emplace(*start);
+        mirror_.takeState(primary_,slot);
     }
-    // The newer frame's input with its lists blended, run on a copy of VIF1/VU1 as the frame started and
-    // drawn over the main renderer's GS state as it started.
-    mirror_.takeState(primary_,older_slot);
-    Vif1 vif1=*newer.start;
     const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data){send(data);};
-    std::size_t next=0;
-    for(std::size_t n=0;n<newer.used;++n) {
-        const auto& e=newer.events[n];
-        if(e.vif1)vif1.run(blended[next++],to_gs,to_gs);
-        else e.eachOutput([this](std::span<const std::uint8_t> data){send(data);});
+    for(const auto* e:events) {
+        if(!e->vif1) {e->eachOutput([this](std::span<const std::uint8_t> data){send(data);});continue;}
+        const Event* older=stream_.next<stream_.older.size()?stream_.older[stream_.next]:nullptr;
+        ++stream_.next;
+        std::optional<std::vector<std::uint32_t>> mid;
+        if(stream_.paired && older) {
+            const auto* x=older->walk();const auto* y=e->walk();
+            const auto pairing=x && y?pairVif1(*x,*y):std::nullopt;
+            if(!pairing)stream_.paired=false;
+            else if(cameraTurn(*pairing,older->words,e->words)<0.906f) {++camera_cuts;stream_.paired=false;}
+            else {
+                std::size_t refused=0,words=0,realigned=0;
+                mid=blendVif1(*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused,&realigned);
+                refused_pairs+=refused;blended_words+=words;realigned_pairs+=realigned;
+            }
+        } else stream_.paired=false;
+        stream_.vif1->run(mid?std::span<const std::uint32_t>(*mid):std::span<const std::uint32_t>(e->words),to_gs,to_gs);
     }
-    return true;
+    mirror_.submit(); // The device's frame changes never wait for an open command buffer of this renderer.
+    stream_.seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
 }
 
-// On the thread: the in-between picture, or else the real frame.
+// On the thread, at the newer frame's flip: the in-between picture drawn as the frame came, or else the
+// real frame. The second renderer only submits (its flushes leave the device's frame to the main renderer).
 bool InBetweenFrames::draw(Frame finished,const Job& job) {
+    const auto begin=std::chrono::steady_clock::now();
     bool ready=false;
-    // The second renderer only submits (its flushes leave the device's frame to the main renderer).
-    if(!replay_only && finished.fight && previous_.fight && drawInBetween(previous_,finished,job.older_slot)) {
+    if(finished.streamed) {
+        for(std::size_t n=finished.handed;n<finished.used;++n)finished.events[n].eachOutput([this](std::span<const std::uint8_t> data){send(data);});
         mirror_.submit();
-        picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);
-        ready=picture_.first!=0;
-        if(ready)++drawn;
+        if(finished.fight && stream_.paired && !stream_.older.empty() && stream_.next==stream_.older.size()) {
+            picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);
+            ready=picture_.first!=0;
+        }
+        if(ready) {
+            ++drawn;
+            const double took=stream_.seconds+std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+            drawing_seconds+=took;slowest_seconds=std::max(slowest_seconds,took);
+        } else ++(finished.fight?unpaired:not_fights);
     } else {
         if(!replay_only)++(finished.fight?unpaired:not_fights);
         for(std::size_t n=0;n<finished.used;++n)finished.events[n].eachOutput([this](std::span<const std::uint8_t> data){send(data);});

@@ -85,15 +85,8 @@ std::optional<std::vector<std::pair<std::size_t,std::size_t>>> alignSequences(st
 namespace {
 float wordFloat(std::uint32_t w) {float f;std::memcpy(&f,&w,4);return f;}
 std::uint32_t floatWord(float f) {std::uint32_t w;std::memcpy(&w,&f,4);return w;}
-// The unpacks of two lists aligned by their codes and sizes (alignSequences).
-std::optional<std::vector<std::pair<std::size_t,std::size_t>>> alignUnpacks(const std::vector<Vif1Unpack>& a,const std::vector<Vif1Unpack>& b,std::size_t max_edits) {
-    const auto keys=[](const std::vector<Vif1Unpack>& u) {
-        std::vector<std::uint64_t> k;k.reserve(u.size());
-        for(const auto& x:u)k.push_back(std::uint64_t(x.code)|std::uint64_t(x.words)<<32);
-        return k;
-    };
-    return alignSequences(keys(a),keys(b),max_edits);
-}
+// Four words equal (a quadword), compared in place.
+bool sameQuad(const std::uint32_t* a,const std::uint32_t* b) {return a[0]==b[0] && a[1]==b[1] && a[2]==b[2] && a[3]==b[3];}
 // A rigid transform at word `at`: three axes (w 0) of sensible length at nearly right angles, then a
 // position (w 1). BT2's bone matrices look like this wherever they stand in a block; shifted data,
 // constants and the screen matrices do not.
@@ -141,12 +134,30 @@ bool sameCamera(std::span<const std::uint32_t> older,std::size_t a,std::span<con
 }
 }
 
+// The unpacks of two lists aligned by their codes and sizes (alignSequences).
+std::optional<Vif1Pairing> pairVif1(const std::vector<Vif1Unpack>& older,const std::vector<Vif1Unpack>& newer,std::size_t max_edits) {
+    const auto keys=[](const std::vector<Vif1Unpack>& u) {
+        std::vector<std::uint64_t> k;k.reserve(u.size());
+        for(const auto& x:u)k.push_back(std::uint64_t(x.code)|std::uint64_t(x.words)<<32);
+        return k;
+    };
+    auto pairs=alignSequences(keys(older),keys(newer),max_edits);
+    if(!pairs)return std::nullopt;
+    return Vif1Pairing{&older,&newer,std::move(*pairs)};
+}
+
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
                                                     std::size_t* blended,std::size_t* unmatched,std::size_t max_edits,std::size_t* refused,std::size_t* realigned) {
     const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
     if(!a || !b)return std::nullopt;
-    const auto pairs=alignUnpacks(*a,*b,max_edits);
-    if(!pairs)return std::nullopt;
+    const auto pairing=pairVif1(*a,*b,max_edits);
+    if(!pairing)return std::nullopt;
+    return blendVif1(*pairing,older,newer,t,blended,unmatched,refused,realigned);
+}
+
+std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
+                                     std::size_t* blended,std::size_t* unmatched,std::size_t* refused,std::size_t* realigned) {
+    const auto* a=pairing.older;const auto* b=pairing.newer;const auto* pairs=&pairing.pairs;
     std::vector<std::uint32_t> out(newer.begin(),newer.end());
     if(t>=1)return out; // The newer list as it is.
     std::size_t changed=0,others=0,shifted=0;
@@ -157,7 +168,7 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
         const auto& x=(*a)[i];const auto& y=(*b)[j];
         if(y.format!=0xC)continue; // V4-32
         const std::size_t quadwords=y.words/4;
-        if(std::equal(older.begin()+std::ptrdiff_t(x.start),older.begin()+std::ptrdiff_t(x.start+x.words),newer.begin()+std::ptrdiff_t(y.start)))continue;
+        if(std::memcmp(older.data()+x.start,newer.data()+y.start,x.words*4)==0)continue;
         // A camera block: its screen matrices (projective, not rigid) blended linearly, and noted, so that every
         // copy of them in the list (objects carry the camera's matrices with their own data) moves with it.
         if(quadwords==12 && sameCamera(older,x.start,newer,y.start)) {
@@ -191,7 +202,7 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
             for(const auto q:transforms)n+=lined(shift,q)?8:0;
             for(std::size_t q=0;q<quadwords;++q) {
                 const std::ptrdiff_t at=base+std::ptrdiff_t(q)+shift;
-                if(at>=0 && at<run_q && std::equal(run.begin()+at*4,run.begin()+at*4+4,newer.begin()+std::ptrdiff_t(y.start+q*4)))++n;
+                if(at>=0 && at<run_q && sameQuad(run.data()+at*4,newer.data()+y.start+q*4))++n;
             }
             return n;
         };
@@ -215,7 +226,8 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
         for(std::size_t half=0;half<2;++half)
             for(std::size_t q=0;q+4<=y.words/4;++q) {
                 const std::size_t at=y.start+q*4;
-                if(!std::equal(c.newer.begin()+std::ptrdiff_t(half*16),c.newer.begin()+std::ptrdiff_t(half*16+16),newer.begin()+std::ptrdiff_t(at)))continue;
+                const auto* m=c.newer.data()+half*16;const auto* w=newer.data()+at;
+                if(w[0]!=m[0] || !sameQuad(w,m) || !sameQuad(w+4,m+4) || !sameQuad(w+8,m+8) || !sameQuad(w+12,m+12))continue;
                 std::copy(c.blend.begin()+std::ptrdiff_t(half*16),c.blend.begin()+std::ptrdiff_t(half*16+16),out.begin()+std::ptrdiff_t(at));
                 changed+=16;q+=3;
             }
@@ -230,11 +242,14 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
 float cameraTurn(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,std::size_t max_edits) {
     const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
     if(!a || !b)return 1;
-    const auto pairs=alignUnpacks(*a,*b,max_edits);
-    if(!pairs)return 1;
+    const auto pairing=pairVif1(*a,*b,max_edits);
+    return pairing?cameraTurn(*pairing,older,newer):1;
+}
+
+float cameraTurn(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer) {
     float smallest=1;
-    for(const auto& [i,j]:*pairs) {
-        const auto& x=(*a)[i];const auto& y=(*b)[j];
+    for(const auto& [i,j]:pairing.pairs) {
+        const auto& x=(*pairing.older)[i];const auto& y=(*pairing.newer)[j];
         if(y.format!=0xC || y.words!=12*4 || !sameCamera(older,x.start,newer,y.start))continue;
         for(unsigned q=4;q<7;++q) {
             float dot=0,la=0,lb=0;

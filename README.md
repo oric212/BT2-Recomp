@@ -33,7 +33,7 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); with HD about a third of the in-between pictures in time |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); HD and 60 fps together at 16x since 2026-10-26 (30 flips per second, 83% of the in-between pictures shown) |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->

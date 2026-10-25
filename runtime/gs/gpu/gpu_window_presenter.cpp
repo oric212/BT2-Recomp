@@ -6,6 +6,7 @@
 #endif
 #include <windows.h>
 #include "gs/gpu/gpu_window_presenter.h"
+#include "thread_id.hpp"
 #include "wsi.hpp"
 #include <vulkan/vulkan_win32.h>
 #include <algorithm>
@@ -52,16 +53,57 @@ struct GpuWindowPresenter::State {
     ~State() {enlarged.reset();wsi.reset();} // The swapchain goes before its platform.
 };
 
-GpuWindowPresenter::GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<const Vulkan::Image*()> renderer_picture)
-    :state_(std::make_unique<State>()),context_(std::move(context)),device_(std::move(device)),renderer_picture_(std::move(renderer_picture)) {}
+GpuWindowPresenter::GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<Vulkan::ImageHandle()> renderer_picture,
+                                       std::function<void(const std::function<void()>&)> around_frame)
+    :state_(std::make_unique<State>()),context_(std::move(context)),device_(std::move(device)),
+     renderer_picture_(std::move(renderer_picture)),around_frame_(std::move(around_frame)),thread_([this]{run();}) {}
 
 GpuWindowPresenter::~GpuWindowPresenter() {
+    {std::lock_guard guard(lock_);stop_=true;}
+    changed_.notify_all();
+    thread_.join();
     if(device_)device_->wait_idle();
     state_.reset();
 }
 
 void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,unsigned client_width,unsigned client_height,bool smooth,
                               const DisplayFrame& status,Rect status_at) {
+    Request request;
+    request.window=window;request.at=at;request.client_width=client_width;request.client_height=client_height;request.smooth=smooth;
+    request.status=status;request.status_at=status_at;
+    if(frame)request.frame=*frame;else request.picture=renderer_picture_();
+    {
+        std::lock_guard guard(lock_);
+        if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
+        pending_=std::move(request);
+    }
+    changed_.notify_all();
+}
+
+void GpuWindowPresenter::run() {
+    Util::register_thread_index(thread_index);
+    for(;;) {
+        Request request;
+        {
+            std::unique_lock guard(lock_);
+            changed_.wait(guard,[this]{return pending_ || stop_;});
+            if(!pending_)return;
+            request=std::move(*pending_);pending_.reset();
+        }
+        try {
+            bool presenting=false;
+            around_frame_([&]{presenting=present(request);});
+            if(presenting && !state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
+        }
+        catch(...) {std::lock_guard guard(lock_);if(!failure_)failure_=std::current_exception();}
+    }
+}
+
+bool GpuWindowPresenter::present(const Request& request) {
+    void* window=request.window;const Rect at=request.at;const bool smooth=request.smooth;
+    const unsigned client_width=request.client_width,client_height=request.client_height;
+    const DisplayFrame* frame=request.frame?&*request.frame:nullptr;
+    const DisplayFrame& status=request.status;const Rect status_at=request.status_at;
     auto& s=*state_;
     if(s.window!=static_cast<HWND>(window)) { // The first picture (or a new window): its swapchain.
         s.wsi.reset();
@@ -74,6 +116,7 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         s.wsi->set_present_mode(Vulkan::PresentMode::UnlockedMaybeTear);
         s.wsi->set_backbuffer_format(Vulkan::BackbufferFormat::UNORM); // The picture's values as they are.
         s.wsi->set_extra_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT);   // Pictures are copied in.
+        s.wsi->set_end_frame_context_by_caller(true); // Ended in around_frame, presented after it (run).
         if(!s.wsi->init_from_existing_context(context_) || !s.wsi->init_device(device_) || !s.wsi->init_surface_swapchain())
             throw std::runtime_error("GPU presenter: no swapchain for the window");
     }
@@ -90,7 +133,7 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
     };
     const Vulkan::Image* source=nullptr;
     if(frame) {if(frame->width)uploaded=upload(*frame);source=uploaded.get();}
-    else source=renderer_picture_();
+    else source=request.picture.get();
     if(status.width)status_image=upload(status);
     auto& target=device.get_swapchain_view().get_image();
     const int width=int(target.get_width()),height=int(target.get_height());
@@ -138,5 +181,6 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_NONE,0);
     cmd->swapchain_touch_in_stages(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
     device.submit(cmd);
-    if(!s.wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
+    device.end_frame_context();
+    return true;
 }

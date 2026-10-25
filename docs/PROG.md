@@ -15,7 +15,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); with HD about a third of the in-between pictures in time |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); HD and 60 fps together at 16x since 2026-10-26 (30 flips per second, 83% of the in-between pictures shown) |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -29,7 +29,7 @@ One PC (Core i9-10900K, Radeon RX 6800 XT), Release build, a paced versus fight 
 | Item | Value |
 | --- | --- |
 | Fight | 30 pictures per second (the original's rate), also with every enhancement; the game's thread works 12 to 24 ms of 33 with HD textures, 60 fps and 16x (the GS work on GS threads since 2026-10-25) |
-| Processor and memory | The game's thread, a GS thread and with 60 fps two more; 0.7 GB (0.85 GB with every enhancement) |
+| Processor and memory | The game's thread, a GS thread, a present thread and with 60 fps two more; 0.7 GB (0.85 GB with every enhancement) |
 | Graphics card | 6 ms per frame plain, 10 ms with 16x super-sampling, HD textures and widescreen; 0.8 to 1.2 GB of video memory |
 | Functions entered | 3,732 in the gate's battle run (5,100 frames); 3,500 to 3,800 per CPU-vs-CPU battle |
 
@@ -53,7 +53,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
-1. **60 fps in play:** the user's look at the fixed in-between pictures; HD in-between pictures in time at 16x ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+1. **60 fps in play:** the user's look at the in-between pictures, with and without HD ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
 2. **Native texture streaming:** replacements read ahead into RAM and kept in VRAM, no pop-in ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 8); then **the fighters' HD bodies** by colour-matched variants (step 9).
 3. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 4. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.

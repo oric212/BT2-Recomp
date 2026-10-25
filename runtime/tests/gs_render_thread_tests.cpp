@@ -91,6 +91,36 @@ int main() {
         try {thread.push(small,true);thread.drain();} catch(const std::runtime_error&) {thrown=true;}
         check(thrown && taken==2,"the failure stays: later data is refused too");
     }
+    // A pause: `at_pause` runs on the thread between two items, then the caller's function while nothing is
+    // taken; a pause of an idle thread works too, and taking goes on afterwards.
+    {
+        std::atomic<unsigned> taken{0};std::atomic<bool> slow{true};
+        GsRenderThread* self=nullptr;
+        GsRenderThread thread([&](std::span<const std::uint8_t>,bool) {
+            ++taken;
+            if(slow)std::this_thread::sleep_for(std::chrono::microseconds(200));
+        });
+        self=&thread;
+        std::vector<std::uint8_t> data(16);
+        for(unsigned n=0;n<20000;++n)thread.push(data,false);
+        thread.pushTask([]{}); // Hands the last chunk.
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        bool at_pause_on_thread=false;unsigned during=0,after=0;
+        thread.whilePaused([&]{at_pause_on_thread=self->onThread();},[&] {
+            during=taken;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            after=taken;
+        });
+        check(at_pause_on_thread,"the pause's step runs on the thread");
+        check(during>0 && during<20000 && after==during,"nothing is taken while paused, in the middle of a chunk");
+        slow=false;thread.drain();
+        check(taken==20000,"taking goes on after the pause");
+        bool ran=false;
+        thread.whilePaused([&]{ran=true;},[]{});
+        check(ran,"an idle thread pauses too");
+        thread.push(data,false);thread.drain();
+        check(taken==20001,"and goes on");
+    }
     // The destructor takes what is still queued.
     {
         unsigned taken=0;

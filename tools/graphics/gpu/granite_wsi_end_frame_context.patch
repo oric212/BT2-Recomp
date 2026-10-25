@@ -1,0 +1,45 @@
+diff --git a/Granite/vulkan/wsi.cpp b/Granite/vulkan/wsi.cpp
+index 83a866f..00e14bf 100644
+--- a/Granite/vulkan/wsi.cpp
++++ b/Granite/vulkan/wsi.cpp
+@@ -1695,9 +1695,15 @@ void WSI::set_next_present_is_duplicated()
+ 	next_present_is_dupe = true;
+ }
+ 
++void WSI::set_end_frame_context_by_caller(bool enable)
++{
++	end_frame_context_by_caller = enable;
++}
++
+ bool WSI::end_frame()
+ {
+-	device->end_frame_context();
++	if (!end_frame_context_by_caller)
++		device->end_frame_context();
+ 
+ 	// Take ownership of the release semaphore so that the external user can use it.
+ 	if (frame_is_external)
+diff --git a/Granite/vulkan/wsi.hpp b/Granite/vulkan/wsi.hpp
+index d0d0dab..3558663 100644
+--- a/Granite/vulkan/wsi.hpp
++++ b/Granite/vulkan/wsi.hpp
+@@ -316,6 +316,11 @@ public:
+ 	// 2 -> Conservative, but useful when GPU bound to avoid pumping. Forced when using low gpu submit latency path.
+ 	void set_present_wait_latency(uint32_t latency);
+ 
++	// BT2 Recomp patch: the caller ends the device's frame context itself (Device::end_frame_context) before
++	// end_frame, which then only presents: the frame context ends while the caller's other threads stand
++	// still, and the present (which may wait for the window's compositor) runs while they go on.
++	void set_end_frame_context_by_caller(bool enable);
++
+ 	// For external swapchains we don't have a normal acquire -> present cycle.
+ 	// - set_external_frame()
+ 	//   - index replaces the acquire next image index.
+@@ -437,6 +442,7 @@ private:
+ 	Semaphore external_acquire;
+ 	Semaphore external_release;
+ 	bool frame_is_external = false;
++	bool end_frame_context_by_caller = false;
+ 
+ 	BackbufferFormat backbuffer_format = BackbufferFormat::sRGB;
+ 	BackbufferFormat current_backbuffer_format = BackbufferFormat::sRGB;

@@ -31,6 +31,11 @@ public:
     void pushTask(std::function<void()> task);
     // Returns when everything pushed so far has been taken.
     void drain();
+    // Runs `paused` on the calling thread while the thread stands between two items, after `at_pause` ran on
+    // it (its renderer's work submitted, so a frame change of the shared device waits for no open command
+    // buffer of it); what is pushed meanwhile waits, and drains wait too. Requests from several threads are
+    // taken one at a time.
+    void whilePaused(const std::function<void()>& at_pause,const std::function<void()>& paused);
     bool onThread() const {return std::this_thread::get_id()==id_.load();} // Called from a task or the consumer.
     // The thread's working time since the last call, in seconds.
     double takeBusySeconds();
@@ -40,12 +45,16 @@ private:
     struct Chunk {std::vector<std::uint8_t> bytes;std::vector<std::function<void()>> tasks;};
     void hand(); // The chunk being filled goes to the thread.
     void run();
+    void pauseHere(std::unique_lock<std::mutex>& guard); // On the thread, for whilePaused.
     Consumer consumer_;
     Chunk filling_; // The game's thread's.
     std::mutex lock_;std::condition_variable changed_;
     std::deque<Chunk> ready_;   // Filled chunks in order.
     std::vector<Chunk> spare_;  // Taken chunks, reused.
     bool busy_=false,stop_=false;std::exception_ptr failure_;
+    bool paused_=false;const std::function<void()>* at_pause_=nullptr; // whilePaused's request (at_pause_ set) and the thread's answer.
+    std::atomic<bool> pause_wanted_{false}; // Looked at between items.
+    std::mutex pause_requests_; // whilePaused's callers, one at a time.
     std::int64_t busy_ns_=0;
     std::atomic<std::thread::id> id_{}; // The thread's, set first on it.
     std::thread thread_; // Last: it starts in the constructor and uses the members above.

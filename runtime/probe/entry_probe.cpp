@@ -13,6 +13,7 @@
 #include "host/host_input.h"
 #include "host/input_mapping.h"
 #include "host/player_session.h"
+#include "host/power_throttling.h"
 #include "host/sample_profiler.h"
 #include "host/wav_writer.h"
 #include "vu/vu1_program.h"
@@ -54,6 +55,7 @@ int main(int argc, char** argv) {
     for (const int kind : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {_CrtSetReportMode(kind, _CRTDBG_MODE_FILE);_CrtSetReportFile(kind, _CRTDBG_FILE_STDERR);}
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
+    stopPowerThrottling();
     try {
         if (argc < 3 || argc > 25) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const ProbeModes modes=ProbeModes::fromArgc(argc);
@@ -381,8 +383,8 @@ int main(int argc, char** argv) {
             };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
                 if (std::getenv("BT2_VIF1_DUMP") || std::getenv("BT2_VIF1_REPLACE")) throw std::runtime_error("BT2_SIXTY_FPS excludes BT2_VIF1_DUMP and BT2_VIF1_REPLACE");
-                in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr);
-                in_between->replay_only = std::string_view(sixty) == "replay";
+                in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr,
+                                                               std::string_view(sixty) == "replay");
                 in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
                 runtime.on_vif1_transfer = [](std::span<std::uint32_t> words) { in_between->vif1Transfer(words); };
                 runtime.gif_dma.gs.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
@@ -403,7 +405,6 @@ int main(int argc, char** argv) {
                     const bool ready = in_between->ready();
                     if (!ready && in_between->busy()) ++in_between->late;
                     if (!in_between->keepsUp(ready)) return; // Not ready, or they have not been keeping up: a steady 30.
-                    gpu_mirror.submit(); // Between flips: the main renderer's open frame, before the presenter's frame context.
                     gpu_mirror.showPictureOf(&in_between->renderer());
                     const auto size = in_between->pictureSize();
                     viewer.presentRenderer(size.first, size.second, runtime.gs_display_flips);
@@ -459,7 +460,7 @@ int main(int argc, char** argv) {
                         static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
                         const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
                         try {
-                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, (flip + 1) % 2);
+                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % 2);
                             in_between_started = true;in_between_vblank = runtime.vblank_deliveries;in_between_flip = flip;
                         } catch (const std::exception& e) {stop_in_between(e);}
                         sixty_fps::fight_waits = 0;

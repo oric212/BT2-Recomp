@@ -8,10 +8,15 @@
 #include "gs_interface.hpp"
 #include "thread_id.hpp"
 #include <array>
+#include <mutex>
 #include <span>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+
+namespace {
+constexpr std::size_t frame_contexts=8; // The device's: how far the GPU may be behind before a frame change waits.
+}
 
 struct GpuGsBackend::State {
     Vulkan::ContextHandle context=Util::make_handle<Vulkan::Context>();
@@ -28,10 +33,15 @@ struct GpuGsBackend::State {
     // frame into host memory in turn; a copy the GPU finished goes to every names object of the pack.
     struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
     std::array<PaletteCopy,3> palette_copies;unsigned next_palette_copy=0;
-    GsTextureNames* names=nullptr;std::vector<GsTextureNames*> palette_targets;
-    // The pages a second renderer's names get one flip late: it replays the frame before, which the main
-    // renderer drew with the copies it had then (gs/gpu/in_between_frames.h).
-    std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages;
+    // The names that take the copies: this renderer's, and a second renderer's, at once when it draws a
+    // frame as this one does, or one flip late when it draws each frame after its flip (with the copies
+    // this renderer had when it drew it; gs/gpu/in_between_frames.h).
+    struct PaletteTarget {GsTextureNames* names;bool late;};
+    GsTextureNames* names=nullptr;std::vector<PaletteTarget> palette_targets;
+    std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages; // For the late ones.
+    // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
+    std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
+    std::mutex frame_change_lock; // The game's thread and the presenter's thread.
     ~State() {presenter.reset();picture.reset();}
 };
 
@@ -43,17 +53,23 @@ void GpuGsBackend::init(unsigned super_sampling) {
         throw std::runtime_error("GPU GS: super-sampling must be 1, 2, 4, 8 or 16");
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
-    state->context->set_num_thread_indices(2); // 0: the game's thread and the GS thread, one at a time; 1: the second renderer's (gpu_gs_mirror.h).
+    // 0: the game's thread and the GS thread, one at a time; 1: the second renderer's (gpu_gs_mirror.h); 2: the
+    // window presenter's thread (gpu_window_presenter.h).
+    state->context->set_num_thread_indices(3);
     // The surface extensions let the window presenter make a swapchain on this device.
     const char* instance_extensions[]{"VK_KHR_surface","VK_KHR_win32_surface"};
     const char* device_extensions[]{"VK_KHR_swapchain"};
     if(!state->context->init_instance_and_device(instance_extensions,2,device_extensions,1,Vulkan::CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT))
         throw std::runtime_error("GPU GS: no usable Vulkan device");
     state->device->set_context(*state->context);
-    state->device->init_frame_contexts(8);
+    state->device->init_frame_contexts(frame_contexts);
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
+    // Its flushes only submit: the device changes its frame at a flip, a readback or a picture shown
+    // (flush, readback, the window presenter), never in the middle of a frame on the GS thread, where it
+    // would wait for the second renderer's open work and for the GPU while holding the device.
+    state->gs.set_frame_boundaries(false);
     state_=std::move(state);
 }
 
@@ -139,7 +155,7 @@ void GpuGsBackend::copyDrawnPalettes() {
     auto& s=*state_;
     if(!s.names)return;
     auto& device=*s.device;
-    for(const auto& [page,words]:s.late_pages)for(auto* names:s.palette_targets)if(names!=s.names)names->takeDrawnPage(page,words.data());
+    for(const auto& [page,words]:s.late_pages)for(const auto& target:s.palette_targets)if(target.late)target.names->takeDrawnPage(page,words.data());
     s.late_pages.clear();
     // Finished copies, oldest first, so the newest is what the names keep.
     for(unsigned k=1;k<=s.palette_copies.size();++k) {
@@ -148,8 +164,9 @@ void GpuGsBackend::copyDrawnPalettes() {
         const auto* words=static_cast<const std::uint32_t*>(device.map_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT));
         for(const auto page:copy.pages) {
             const auto* page_words=words+std::size_t(page)*2048;
-            s.names->takeDrawnPage(page,page_words);
-            if(s.palette_targets.size()>1)s.late_pages.emplace_back(page,std::vector<std::uint32_t>(page_words,page_words+2048));
+            bool late=false;
+            for(const auto& target:s.palette_targets)if(target.late)late=true;else target.names->takeDrawnPage(page,page_words);
+            if(late)s.late_pages.emplace_back(page,std::vector<std::uint32_t>(page_words,page_words+2048));
         }
         device.unmap_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
         copy.pending=false;copy.fence.reset();
@@ -181,6 +198,15 @@ void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
 }
 
 void GpuGsBackend::submit() {state_->gs.flush();}
+
+void GpuGsBackend::awaitFrameChange() {
+    auto& s=*state_;
+    std::lock_guard guard(s.frame_change_lock);
+    auto& fence=s.frame_changes[s.next_frame_change];
+    if(fence) {fence->wait();fence.reset();}
+    s.device->submit_empty(Vulkan::CommandBuffer::Type::Generic,&fence);
+    s.next_frame_change=(s.next_frame_change+1)%unsigned(s.frame_changes.size());
+}
 
 void GpuGsBackend::registerRenderThread(unsigned index) {Util::register_thread_index(index);}
 
@@ -232,29 +258,31 @@ DisplayFrame GpuGsBackend::readback() {
     return frame;
 }
 
-WindowPresenter& GpuGsBackend::windowPresenter() {
+WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::function<void()>&)> around_frame) {
     if(!state_->presenter)
         state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{
-            return (state_->shown_from?state_->shown_from->state_->picture:state_->picture).get();
-        });
+            return state_->shown_from?state_->shown_from->state_->picture:state_->picture;
+        },std::move(around_frame));
     return *state_->presenter;
 }
+
+void GpuGsBackend::closeWindowPresenter() {state_->presenter.reset();}
 
 void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names) {
     state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes);
     replaceTextures(names);
 }
 
-void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names) {
+void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& names,bool late_palettes) {
     if(!primary.state_->pack)return;
     state_->pack=primary.state_->pack;
-    primary.state_->palette_targets.push_back(&names); // Drawn palettes from the primary's copies.
-    if(primary.state_->names)names.shareHashesWith(*primary.state_->names); // It names the same textures a frame later.
+    primary.state_->palette_targets.push_back({&names,late_palettes}); // Drawn palettes from the primary's copies.
+    if(primary.state_->names)names.shareHashesWith(*primary.state_->names); // It names the same textures.
     replaceTextures(names);
 }
 
 void GpuGsBackend::replaceTextures(GsTextureNames& names) {
-    if(!state_->names) {state_->names=&names;state_->palette_targets.push_back(&names);}
+    if(!state_->names) {state_->names=&names;state_->palette_targets.push_back({&names,false});}
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
