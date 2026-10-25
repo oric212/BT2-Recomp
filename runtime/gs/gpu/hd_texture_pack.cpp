@@ -88,6 +88,7 @@ HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path&
     for(const auto& file:ddsFiles(replacements))
         if(const auto k=key(file.stem().string()))if(!index_.emplace(*k,file).second)++duplicates;
     if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))if(const auto k=key(file.stem().string()))index_[*k]=file;
+    for(const auto& named:index_)if(named.first.has_palette)variants_[Key{named.first.texture,0,named.first.format,false}].push_back(&named);
     loader_=std::thread([this]{run();});
 }
 
@@ -102,7 +103,7 @@ HdTexturePack::Entry* HdTexturePack::entry(const std::filesystem::path* file) {
     if(const auto cached=cache_.find(file);cached!=cache_.end())return cached->second;
     auto* made=new Entry;made->path=*file;
     cache_.emplace(file,made);
-    wanted_.push_back(file);
+    wanted_.push_back({file,false});
     changed_.notify_all();
     return made;
 }
@@ -129,6 +130,27 @@ HdTexturePack::Found HdTexturePack::find(const Key& name) {
     return {&e->image,false};
 }
 
+HdTexturePack::Choice HdTexturePack::closest(std::uint64_t texture,std::uint32_t format,const TextureColours& wanted) {
+    std::lock_guard<std::mutex> hold(lock_);
+    const auto list=variants_.find(Key{texture,0,format,false});
+    if(list==variants_.end())return {};
+    const Key* best=nullptr;float nearest=0;bool loading=false;
+    for(const auto* variant:list->second) {
+        auto& c=colours_[&variant->second];
+        if(!c.done) {
+            if(!c.asked) {c.asked=true;wanted_.push_back({&variant->second,true});changed_.notify_all();}
+            loading=true;continue;
+        }
+        if(!c.colours)continue;
+        if(const auto d=TextureColours::distance(wanted,*c.colours);d && (!best || *d<nearest)) {best=&variant->first;nearest=*d;}
+    }
+    if(loading)return {std::nullopt,true};
+    if(!best)return {};
+    if(nearest>variant_limit) {++variants_too_far;return {};}
+    ++variants_chosen;
+    return {*best,false};
+}
+
 void HdTexturePack::waitLoaded() {
     std::unique_lock<std::mutex> hold(lock_);
     changed_.wait(hold,[this]{return wanted_.empty() && !busy_;});
@@ -148,6 +170,19 @@ void HdTexturePack::load(Entry& entry) {
     entry.bytes=bytes;
 }
 
+namespace {
+// A variant's colours: from its smallest level of at least 16 x 16 pixels (enough blocks for the cells'
+// averages; a 4 x 4 level is a single block's two colours), or its largest when it has none.
+std::optional<TextureColours> variantColours(const HdTexturePack::Dds& dds) {
+    const unsigned bc=dds.block_bytes==8?1:dds.format==VK_FORMAT_BC2_UNORM_BLOCK?2:dds.format==VK_FORMAT_BC3_UNORM_BLOCK?3:0;
+    std::size_t chosen=0;unsigned width=dds.width,height=dds.height;
+    for(std::size_t level=1,w=dds.width/2,h=dds.height/2;level<dds.levels.size() && w>=16 && h>=16;++level,w/=2,h/=2) {
+        chosen=level;width=unsigned(w);height=unsigned(h);
+    }
+    return TextureColours::ofBlocks(bc,width,height,dds.levels[chosen]);
+}
+}
+
 void HdTexturePack::run() {
     Util::register_thread_index(loader_thread_index);
     for(;;) {
@@ -156,7 +191,21 @@ void HdTexturePack::run() {
             std::unique_lock<std::mutex> hold(lock_);
             changed_.wait(hold,[this]{return stop_ || !wanted_.empty();});
             if(stop_)return;
-            const auto it=cache_.find(wanted_.front());wanted_.pop_front();
+            const auto job=wanted_.front();wanted_.pop_front();
+            if(job.colours) {
+                busy_=true;hold.unlock();
+                std::optional<TextureColours> colours;
+                try {
+                    std::ifstream in(*job.file,std::ios::binary);
+                    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
+                    if(const auto dds=readDds(file))colours=variantColours(*dds);
+                } catch(...) {}
+                hold.lock();
+                auto& c=colours_[job.file];c.done=true;c.colours=colours;busy_=false;
+                hold.unlock();changed_.notify_all();
+                continue;
+            }
+            const auto it=cache_.find(job.file);
             if(it==cache_.end() || it->second->done)continue;
             e=it->second;busy_=true;
         }

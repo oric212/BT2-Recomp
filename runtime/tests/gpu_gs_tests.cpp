@@ -67,6 +67,16 @@ void hdTexturePackLoading(GpuGsBackend& gpu) {
     file.resize(file.size()+4*16);
     std::ofstream(folder/"replacements"/"1a-2b-00005a53.dds",std::ios::binary).write(reinterpret_cast<const char*>(file.data()),std::streamsize(file.size()));
     std::ofstream(folder/"replacements"/"3c-00001a54.dds")<<"not a DDS file";
+    // Two lit variants of texture 77, opaque red and opaque blue, 16 x 16 BC3.
+    for(const auto& [palette,colour]:{std::pair<const char*,std::uint16_t>{"1",0xF800},{"2",0x001F}}) {
+        std::vector<std::uint8_t> variant(file.begin(),file.begin()+148);
+        const std::uint32_t side=16;std::memcpy(variant.data()+12,&side,4);std::memcpy(variant.data()+16,&side,4);
+        for(int block=0;block<16;++block) {
+            const std::uint8_t b[16]{255,255,0,0,0,0,0,0,std::uint8_t(colour),std::uint8_t(colour>>8),std::uint8_t(colour),std::uint8_t(colour>>8),0,0,0,0};
+            variant.insert(variant.end(),b,b+16);
+        }
+        std::ofstream(folder/"replacements"/(std::string("77-")+palette+"-00001a53.dds"),std::ios::binary).write(reinterpret_cast<const char*>(variant.data()),std::streamsize(variant.size()));
+    }
     GsTextureNames names;
     gpu.enableHdTextures(folder,64<<20,names);
     auto& pack=*gpu.hdTexturePack();
@@ -81,6 +91,14 @@ void hdTexturePackLoading(GpuGsBackend& gpu) {
     require(!refused.image && !refused.loading && pack.refused==1,"not a DDS file: refused");
     const auto none=pack.find(absent);
     require(!none.image && !none.loading,"a name not in the pack");
+    // Lit variants: the colours are read by the loader first; then the nearer variant within the limit.
+    const auto colours=[](float r,float g,float b){TextureColours c;for(unsigned cell=0;cell<TextureColours::cells;++cell)c.add(cell,r,g,b,1,1);c.finish();return c;};
+    require(pack.closest(0x77,0x1a53,colours(240,10,0)).loading,"variants' colours read first");
+    pack.waitLoaded();
+    const auto reddish=pack.closest(0x77,0x1a53,colours(240,10,0));
+    require(reddish.key && reddish.key->palette==1 && pack.variants_chosen==1,"the nearer variant");
+    require(!pack.closest(0x77,0x1a53,colours(0,200,0)).key && pack.variants_too_far==1,"none near enough");
+    require(!pack.closest(0x78,0x1a53,colours(240,10,0)).key,"a texture without variants");
     std::error_code error;std::filesystem::remove_all(folder,error);
 }
 

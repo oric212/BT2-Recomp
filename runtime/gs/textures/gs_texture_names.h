@@ -1,4 +1,5 @@
 #pragma once
+#include "gs/textures/texture_colours.h"
 #include <array>
 #include <bitset>
 #include <cstdint>
@@ -38,12 +39,18 @@ public:
 
     struct Name {
         std::uint64_t texture=0,palette=0,palette_used=0;std::uint32_t format=0;bool has_palette=false;
+        bool palette_drawn=false; // The CLUT was loaded from a palette the game drew (the fighters' lit palettes).
         std::string text() const;     // With the whole palette's hash.
         std::string textUsed() const; // With the used entries' hash (the same as text() without a palette).
     };
     // The name of a texture as TEX0 and TEXA describe it, from the current memory and CLUT; none for a
     // format this does not name (counted).
     std::optional<Name> name(std::uint64_t tex0,std::uint64_t texa);
+    // A palette texture's colours with the current CLUT (texture_colours.h), to choose among a pack's lit
+    // variants of it (docs/plans/graphics/HD_TEXTURES_PLAN.md, step 9); none for other formats. How many
+    // pixels of each index lie in each cell is kept by the texture's hash, so a new palette costs only
+    // the sum over those counts.
+    std::optional<TextureColours> colours(std::uint64_t tex0,std::uint64_t texa);
 
     // Names drawn with ("<used entries' name>/<whole palette's name>" for palette textures), and how many
     // times each was named (a texture is named again after a change).
@@ -104,7 +111,7 @@ private:
     std::unordered_map<std::array<std::uint64_t,3>,Upload,UploadKeyHash> uploads_;
     std::vector<std::uint16_t> written_pages_; // Pages the current transfer wrote.
     // The last CLUT load: its TEX0 fields and the generation it was read at.
-    std::uint64_t clut_key_=~0ull,clut_generation_=0;
+    std::uint64_t clut_key_=~0ull,clut_generation_=0;bool clut_drawn_=false;
     // Changes since a context's texture was last named.
     std::uint64_t generation_=0;
     std::uint64_t named_generation_[2]{~0ull,~0ull},named_tex0_[2]{},named_texa_[2]{};
@@ -116,6 +123,12 @@ private:
     struct KeyHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first*0x9E3779B97F4A7C15ull^k.second);}};
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,Hashed,KeyHash> hashed_;
     std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest=nullptr,unsigned* highest=nullptr);
+    // The palette as the texture reads it at CSA (16 or 256 entries; the rest zero).
+    std::array<std::uint32_t,256> paletteEntries(std::uint64_t tex0,unsigned entries) const;
+    template<class Each> void forEachIndex(std::uint64_t tex0,Each&& each) const; // each(x, y, index), row by row.
+    // The pixels of each index in each colour cell, by texture hash and TEX0's format and size fields.
+    struct CellCount {std::uint16_t index;std::uint8_t cell;std::uint32_t pixels;};
+    std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::vector<CellCount>,KeyHash> cell_counts_;
     struct SharedHashes;
     std::shared_ptr<SharedHashes> shared_;
     std::array<std::uint64_t,512> page_content_{}; // Each page's content identity (with shared_ only).

@@ -9,6 +9,7 @@
 #include "thread_id.hpp"
 #include <array>
 #include <mutex>
+#include <unordered_map>
 #include <span>
 #include <cstdio>
 #include <cstring>
@@ -39,6 +40,9 @@ struct GpuGsBackend::State {
     struct PaletteTarget {GsTextureNames* names;bool late;};
     GsTextureNames* names=nullptr;std::vector<PaletteTarget> palette_targets;
     std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages; // For the late ones.
+    // The lit variant chosen for each drawn palette (texture and format mixed, palette); none: drawn as the original.
+    struct PairHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first^(k.second*0xC2B2AE3D27D4EB4Full));}};
+    std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;
     // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
@@ -291,6 +295,23 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
         const auto look=[&](std::uint64_t palette){const auto found=state_->pack->find(key(palette));loading=loading || found.loading;return found.image;};
         const auto* image=name->has_palette?look(name->palette_used):nullptr;
         if(!image)image=look(name->palette);
+        // A palette the game drew (the fighters' lit bodies) without a file of its own: the closest lit
+        // variant (step 9), chosen once per palette.
+        if(!image && !loading && name->has_palette && name->palette_drawn) {
+            const auto at=std::make_pair(name->texture^(std::uint64_t(name->format)*0x9E3779B97F4A7C15ull),name->palette);
+            auto chosen=state_->variants.find(at);
+            if(chosen==state_->variants.end()) {
+                if(const auto colours=names.colours(desc.tex0.bits,desc.texa.bits)) {
+                    const auto choice=state_->pack->closest(name->texture,name->format,*colours);
+                    if(choice.loading)loading=true;
+                    else {
+                        if(state_->variants.size()>=4096)state_->variants.clear();
+                        chosen=state_->variants.emplace(at,choice.key).first;
+                    }
+                }
+            }
+            if(chosen!=state_->variants.end() && chosen->second)image=look(chosen->second->palette);
+        }
         if(!image && loading)state_->gs.texture_replacement_pending=true; // The original is not kept meanwhile.
         return image?image->handle:Vulkan::ImageHandle{};
     };
@@ -319,6 +340,7 @@ std::string GpuGsBackend::hdTextureSummary() const {
     if(!state_ || !state_->pack)return {};
     const auto& p=*state_->pack;
     return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
-        +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.loaded)+" loaded, "
+        +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.variants_chosen)+" drawn palettes by a lit variant, "
+        +std::to_string(p.variants_too_far)+" with none near enough; "+std::to_string(p.loaded)+" loaded, "
         +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB";
 }

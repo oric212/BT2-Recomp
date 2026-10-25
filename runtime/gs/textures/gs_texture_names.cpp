@@ -311,7 +311,7 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
         ++repeated_cluts;return;
     }
     ++generation_;
-    clut_key_=key;clut_generation_=generation_;
+    clut_key_=key;clut_generation_=generation_;clut_drawn_=from_drawn;
     // CSM1 with 32-bit entries: 16 entries as 8 x 2 pixels at CSA's 16; 256 as 16 x 16 pixels with index
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
@@ -345,7 +345,7 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     writePending();
     const unsigned psm=unsigned((tex0>>20)&63);
     const unsigned tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
-    const unsigned cpsm=unsigned((tex0>>51)&15),csa=unsigned((tex0>>56)&31);
+    const unsigned cpsm=unsigned((tex0>>51)&15);
     const auto f=format(psm);
     if(!f || tw>10 || th>10 || (f->palette && cpsm!=0 && cpsm!=1)) {++unsupported_textures;++unsupported_formats[psm];return std::nullopt;}
     const unsigned ta0=unsigned(texa&0xFF),aem=unsigned((texa>>15)&1),ta1=unsigned((texa>>32)&0xFF);
@@ -354,19 +354,82 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     n.format=psm|(tw<<6)|(th<<10);
     if(!f->palette && psm!=psm_ct32)n.format|=(ta0<<15)|(aem<<23)|(ta1<<24);
     if(f->palette) {
-        std::array<std::uint32_t,256> entries{};
-        auto entry=[&](unsigned i){return std::uint32_t(clut_[i])|(std::uint32_t(clut_[i+256])<<16);};
-        if(f->palette==16)for(unsigned k=0;k<16;++k)entries[k]=entry((csa&15)*16+k);
-        else for(unsigned i=0;i<256;i+=16) {
-            // Groups past the last one clamp to it instead of wrapping.
-            const unsigned from=std::min(i+(csa&15)*16,240u);
-            for(unsigned k=0;k<16;++k)entries[i+k]=entry(from+k);
-        }
-        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;
+        const auto entries=paletteEntries(tex0,f->palette);
+        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;n.palette_drawn=clut_drawn_;
         highest=std::min(highest,f->palette-1);lowest=std::min(lowest,highest);
         n.palette_used=XXH3_64bits(entries.data()+lowest,std::size_t(highest-lowest+1)*4);
     }
     return n;
+}
+
+std::array<std::uint32_t,256> GsTextureNames::paletteEntries(std::uint64_t tex0,unsigned count) const {
+    const unsigned csa=unsigned((tex0>>56)&31);
+    std::array<std::uint32_t,256> entries{};
+    auto entry=[&](unsigned i){return std::uint32_t(clut_[i])|(std::uint32_t(clut_[i+256])<<16);};
+    if(count==16)for(unsigned k=0;k<16;++k)entries[k]=entry((csa&15)*16+k);
+    else for(unsigned i=0;i<256;i+=16) {
+        // Groups past the last one clamp to it instead of wrapping.
+        const unsigned from=std::min(i+(csa&15)*16,240u);
+        for(unsigned k=0;k<16;++k)entries[i+k]=entry(from+k);
+    }
+    return entries;
+}
+
+template<class Each> void GsTextureNames::forEachIndex(std::uint64_t tex0,Each&& each) const {
+    const unsigned psm=unsigned((tex0>>20)&63),tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63);
+    const unsigned width=1u<<((tex0>>26)&15),height=1u<<((tex0>>30)&15);
+    const auto& tables=layouts();
+    const auto* const bytes=reinterpret_cast<const std::uint8_t*>(memory_.data());
+    for(unsigned y=0;y<height;++y) {
+        const std::size_t ct32_row=std::size_t(tbp)*64+std::size_t(y/32)*tbw*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
+        const auto word=[&](unsigned x){return memory_[(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words];};
+        const std::size_t t8_row=std::size_t(tbp)*256+std::size_t(y/64)*(tbw/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
+        const std::size_t t4_row=std::size_t(tbp)*512+std::size_t(y/128)*(tbw/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
+        for(unsigned x=0;x<width;++x) {
+            unsigned index;
+            switch(psm) {
+            case psm_t8:index=bytes[(t8_row+std::size_t(x/128)*8192+t8_line[x%128])%(memory_words*4)];break;
+            case psm_t4: {
+                const std::size_t nibble=(t4_row+std::size_t(x/128)*16384+t4_line[x%128])%(memory_words*8);
+                index=(bytes[nibble/2]>>(nibble%2*4))&15;break;
+            }
+            case psm_t8h:index=word(x)>>24;break;
+            case psm_t4hl:index=(word(x)>>24)&15;break;
+            default:index=word(x)>>28;break; // T4HH
+            }
+            each(x,y,index);
+        }
+    }
+}
+
+std::optional<TextureColours> GsTextureNames::colours(std::uint64_t tex0,std::uint64_t texa) {
+    writePending();
+    const unsigned psm=unsigned((tex0>>20)&63),tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15),cpsm=unsigned((tex0>>51)&15);
+    const auto f=format(psm);
+    if(!f || !f->palette || tw>10 || th>10 || (cpsm!=0 && cpsm!=1))return std::nullopt;
+    const auto key=std::make_pair(textureHash(tex0,texa),tex0&(0x3FFFull<<20)); // PSM, TW, TH.
+    auto counts=cell_counts_.find(key);
+    if(counts==cell_counts_.end()) {
+        if(cell_counts_.size()>=4096)cell_counts_.clear(); // Bounded; kept again as textures are drawn.
+        const unsigned width=1u<<tw,height=1u<<th,side=TextureColours::side;
+        std::vector<std::uint32_t> pixels(std::size_t(TextureColours::cells)*f->palette);
+        forEachIndex(tex0,[&](unsigned x,unsigned y,unsigned index){++pixels[((y*side/height)*side+x*side/width)*f->palette+index];});
+        std::vector<CellCount> made;
+        for(unsigned cell=0;cell<TextureColours::cells;++cell)
+            for(unsigned index=0;index<f->palette;++index)
+                if(const auto n=pixels[std::size_t(cell)*f->palette+index])made.push_back({std::uint16_t(index),std::uint8_t(cell),n});
+        counts=cell_counts_.emplace(key,std::move(made)).first;
+    }
+    // CT32 entries: alpha 0x80 is opaque; CT24 ones are opaque.
+    const auto entries=paletteEntries(tex0,f->palette);
+    TextureColours colours;
+    for(const auto& c:counts->second) {
+        const std::uint32_t e=entries[c.index];
+        const float alpha=cpsm==1?1.0f:std::min(1.0f,float(e>>24)/128.0f);
+        colours.add(c.cell,float(e&0xFF),float((e>>8)&0xFF),float((e>>16)&0xFF),alpha,float(c.pixels));
+    }
+    colours.finish();
+    return colours;
 }
 
 std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest,unsigned* highest) {
@@ -413,29 +476,8 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,
     const bool whole_blocks=width>=f.block_w && height>=f.block_h && f.full;
     if(f.palette && whole_blocks) {low=255;high=0;}
     if(f.palette && !whole_blocks) {
-        const auto& tables=layouts();
-        const auto* const bytes=reinterpret_cast<const std::uint8_t*>(memory_.data());
         low=255;high=0;
-        for(unsigned y=0;y<height;++y) {
-            const std::size_t ct32_row=std::size_t(tbp)*64+std::size_t(y/32)*tbw*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
-            const auto word=[&](unsigned x){return memory_[(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words];};
-            const std::size_t t8_row=std::size_t(tbp)*256+std::size_t(y/64)*(tbw/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
-            const std::size_t t4_row=std::size_t(tbp)*512+std::size_t(y/128)*(tbw/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
-            for(unsigned x=0;x<width;++x) {
-                unsigned index;
-                switch(psm) {
-                case psm_t8:index=bytes[(t8_row+std::size_t(x/128)*8192+t8_line[x%128])%(memory_words*4)];break;
-                case psm_t4: {
-                    const std::size_t nibble=(t4_row+std::size_t(x/128)*16384+t4_line[x%128])%(memory_words*8);
-                    index=(bytes[nibble/2]>>(nibble%2*4))&15;break;
-                }
-                case psm_t8h:index=word(x)>>24;break;
-                case psm_t4hl:index=(word(x)>>24)&15;break;
-                default:index=word(x)>>28;break; // T4HH
-                }
-                low=std::min(low,index);high=std::max(high,index);
-            }
-        }
+        forEachIndex(tex0,[&](unsigned,unsigned,unsigned index){low=std::min(low,index);high=std::max(high,index);});
     }
     if(lowest)*lowest=low;
     if(highest)*highest=high;

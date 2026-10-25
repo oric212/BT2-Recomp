@@ -15,7 +15,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); HD and 60 fps together at 16x since 2026-10-26 (30 flips per second, 83% of the in-between pictures shown) |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); HD and 60 fps together at 16x since 2026-10-26 (30 flips per second, 83 to 91% of the in-between pictures shown); HD textures streamed, and the fighters' relit bodies drawn with the pack's nearest lit variant (2026-10-26) |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -54,7 +54,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
 1. **60 fps in play:** the user's look at the in-between pictures, with and without HD ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
-2. **The fighters' HD bodies** by colour-matched variants ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 9; native texture streaming, step 8, built 2026-10-26).
+2. **The fighters' HD bodies in play:** the user's look at the lit variants (built 2026-10-26, [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) step 9; pictures in `work/frames/variants/`).
 3. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 4. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
 5. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.

@@ -52,6 +52,7 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ps2_fpu.cpp
     runtime/gs/cpu/gs_command_sink.cpp
     runtime/gs/textures/gs_texture_names.cpp
+    runtime/gs/textures/texture_colours.cpp
     runtime/ee/guest_interface.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
@@ -131,7 +132,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     bt2_target_defaults(bt2-gs-render-thread-tests)
     target_link_libraries(bt2-gs-render-thread-tests PRIVATE winmm) # The diagnostic sampler (host/sample_profiler.h).
     add_test(NAME gs-render-thread COMMAND bt2-gs-render-thread-tests)
-    add_executable(bt2-texture-names-tests runtime/tests/texture_names_tests.cpp runtime/gs/textures/gs_texture_names.cpp)
+    add_executable(bt2-texture-names-tests runtime/tests/texture_names_tests.cpp runtime/gs/textures/gs_texture_names.cpp runtime/gs/textures/texture_colours.cpp)
     bt2_ee_target(bt2-texture-names-tests)
     target_include_directories(bt2-texture-names-tests PRIVATE "${BT2_XXHASH_DIR}")
     add_test(NAME texture-names COMMAND bt2-texture-names-tests)
@@ -194,7 +195,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         bt2_target_defaults(bt2-gpu-gs)
         target_link_libraries(bt2-gpu-gs PRIVATE parallel-gs)
         target_link_libraries(bt2-gpu-gs PUBLIC winmm) # The GS threads' diagnostic sampler (host/sample_profiler.h).
-        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp runtime/gs/textures/gs_texture_names.cpp)
+        add_executable(bt2-gpu-gs-tests runtime/tests/gpu_gs_tests.cpp runtime/gs/cpu/gs_command_sink.cpp runtime/gs/textures/gs_texture_names.cpp runtime/gs/textures/texture_colours.cpp)
         target_include_directories(bt2-gpu-gs-tests PRIVATE "${BT2_XXHASH_DIR}")
         bt2_ee_target(bt2-gpu-gs-tests)
         target_link_libraries(bt2-gpu-gs-tests PRIVATE bt2-gpu-gs)

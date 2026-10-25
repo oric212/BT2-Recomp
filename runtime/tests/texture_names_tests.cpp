@@ -188,5 +188,47 @@ int main() {
         const auto later=main.name(t4,0);
         require(later && later->texture==expected->texture && main.shared_hits==1);
     }
+    {
+        // A texture's colours with its palette (lit variants, texture_colours.h): a 4-bit 64 x 32 texture,
+        // index 1 on the left half and 2 on the right; entry 1 opaque red, entry 2 blue at half alpha.
+        GsTextureNames names;
+        std::vector<std::uint8_t> pixels(64*32/2);
+        for(unsigned i=0;i<64*32;++i)if(i%64>=32)pixels[i/2]|=std::uint8_t(2u<<(i%2*4));else pixels[i/2]|=std::uint8_t(1u<<(i%2*4));
+        upload(names,0x100,2,0x14,64,32,pixels);
+        std::vector<std::uint8_t> palette(16*4);
+        const std::uint8_t red[4]{255,0,0,0x80},blue[4]{0,0,255,0x40};
+        std::memcpy(&palette[4],red,4);std::memcpy(&palette[8],blue,4);
+        upload(names,0x300,1,0x00,8,2,palette);
+        names.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));
+        const auto t4=tex0(0x100,2,0x14,6,5,0x300);
+        const auto lit=names.colours(t4,0);
+        require(lit && lit->rgb[0][0]==255 && lit->rgb[0][2]==0 && lit->cover[0]==1 && lit->rgb[5][0]==255);
+        require(lit->rgb[3][2]==255 && lit->rgb[3][0]==0 && lit->cover[3]==0.5f && lit->rgb[14][2]==255);
+        require(TextureColours::distance(*lit,*lit)==0.0f);
+        // Relit: the entries swapped; the cells follow (the index counts are kept by the texture's hash).
+        std::memcpy(&palette[4],blue,4);std::memcpy(&palette[8],red,4);
+        upload(names,0x300,1,0x00,8,2,palette);
+        names.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));
+        const auto relit=names.colours(t4,0);
+        require(relit && relit->rgb[0][2]==255 && relit->rgb[3][0]==255 && *TextureColours::distance(*lit,*relit)>200);
+        require(!names.colours(tex0(0x100,2,0x00,6,5),0)); // Not a palette format.
+        // A palette drawn by the game is marked on the name; one uploaded is not.
+        require(!names.name(t4,0)->palette_drawn);
+    }
+    {
+        // Block-compressed levels: BC1 opaque red, then an 8 x 8 level of four blocks, red at the top left
+        // and blue elsewhere (each block covers 2 x 2 of the 4 x 4 cells); BC3 fully transparent covers nothing.
+        const std::uint8_t red[8]{0x00,0xF8,0x00,0xF8,0,0,0,0},blue[8]{0x1F,0x00,0x1F,0x00,0,0,0,0};
+        const auto one=TextureColours::ofBlocks(1,4,4,std::span<const std::uint8_t>(red,8));
+        require(one && one->rgb[0][0]==255 && one->rgb[15][0]==255 && one->rgb[15][2]==0 && one->cover[7]==1);
+        std::vector<std::uint8_t> four(red,red+8);
+        for(int k=0;k<3;++k)four.insert(four.end(),blue,blue+8);
+        const auto quad=TextureColours::ofBlocks(1,8,8,four);
+        require(quad && quad->rgb[0][0]==255 && quad->rgb[5][0]==255 && quad->rgb[2][2]==255 && quad->rgb[10][2]==255 && quad->rgb[2][0]==0);
+        std::uint8_t clear[16]{0,0,0,0,0,0,0,0,0x00,0xF8,0x00,0xF8,0,0,0,0};
+        const auto none=TextureColours::ofBlocks(3,4,4,std::span<const std::uint8_t>(clear,16));
+        require(none && none->cover[0]==0 && !TextureColours::distance(*none,*one));
+        require(!TextureColours::ofBlocks(7,4,4,std::span<const std::uint8_t>(clear,16)) && !TextureColours::ofBlocks(1,4,4,{}));
+    }
     std::cout<<"Texture name checks passed."<<std::endl;
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "gs/textures/texture_colours.h"
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -24,6 +25,10 @@ namespace Vulkan {class Device;}
 //   thread index 3), so nothing is loaded on the game's thread. A renderer that first needs one waits for
 //   it a little (first_wait); one not ready by then is drawn as the original without the original being
 //   kept (texture_replacement_pending), so the replacement shows from the first draw after it is loaded.
+// - Lit variants (step 9): the game relights the fighters' palettes all the time and the pack holds a
+//   few lit variants of each body texture (files of one texture and format under different palettes).
+//   For a palette it has no file for, closest gives the variant whose colours are nearest; each variant's
+//   colours are read once by the loader, from its smallest level of at least 16 x 16.
 // - Budget: when the loaded images exceed it, the least recently used are dropped (the renderer may
 //   still hold one until the game overwrites its texture).
 // find is called by the renderers on their GS threads (gs/gpu/gpu_gs_mirror.h).
@@ -44,6 +49,16 @@ public:
     // is still on it. Images are kept by file, so the names that find one file share its image.
     struct Found {const Image* image=nullptr;bool loading=false;};
     Found find(const Key& name);
+    // The lit variant closest in colour (texture_colours.h) to a texture of the pack's texture hash and
+    // format under a palette it has no file for. `key` none: no variant within variant_limit (or none in
+    // the pack); `loading`: the loader is still reading the variants' colours.
+    struct Choice {std::optional<Key> key;bool loading=false;};
+    Choice closest(std::uint64_t texture,std::uint32_t format,const TextureColours& wanted);
+    // The root mean square colour difference (0 to 255) beyond which a variant is not drawn: measured
+    // in a fight, half the palettes are within 9 of a variant and four in five within 24; past about 40
+    // a variant's colours are plainly another lighting or another texture's.
+    static constexpr float variant_limit=24.0f;
+    unsigned variants_chosen=0,variants_too_far=0; // Palettes given a variant, and left original.
     // Waits until the loader has nothing left to do (tests, measurements).
     void waitLoaded();
 
@@ -64,9 +79,14 @@ private:
     Vulkan::Device& device_;std::uint64_t budget_;std::uint64_t tick_=0;
     struct KeyHash {std::size_t operator()(const Key& k) const {return std::size_t(k.texture*0x9E3779B97F4A7C15ull^k.palette*0xC2B2AE3D27D4EB4Full^(std::uint64_t(k.format)<<1|std::uint64_t(k.has_palette)));}};
     std::unordered_map<Key,std::filesystem::path,KeyHash> index_;
+    // The files with a palette part by texture and format (keys without a palette part).
+    std::unordered_map<Key,std::vector<const std::pair<const Key,std::filesystem::path>*>,KeyHash> variants_;
+    struct Colours {bool asked=false,done=false;std::optional<TextureColours> colours;};
+    std::unordered_map<const std::filesystem::path*,Colours> colours_; // Variants' colours, kept (small).
     struct Entry;
     std::unordered_map<const std::filesystem::path*,Entry*> cache_; // By the file in index_ (its nodes stay put).
-    std::deque<const std::filesystem::path*> wanted_; // To load, in the order the renderers asked.
+    struct Job {const std::filesystem::path* file;bool colours;}; // Make the image, or read the colours only.
+    std::deque<Job> wanted_; // In the order the renderers asked.
     std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;
     Entry* entry(const std::filesystem::path* file); // Under lock_: made when missing.
     void load(Entry& entry); // On the loader thread, without lock_.
