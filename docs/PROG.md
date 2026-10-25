@@ -15,9 +15,9 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; HD with 60 fps too slow yet |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; with HD and 60 fps the fight holds 30 flips, but the in-between pictures are not ready in time yet |
 
-**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 32/32 comparisons with the original, the battle run against its baseline.
+**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
@@ -28,8 +28,8 @@ One PC (Core i9-10900K, Radeon RX 6800 XT), Release build, a paced versus fight 
 
 | Item | Value |
 | --- | --- |
-| Fight | 30 pictures per second (the original's rate); work per picture 15 to 21 ms of 33, also with every enhancement |
-| Processor and memory | About half of one core; 0.7 GB (0.85 GB with every enhancement) |
+| Fight | 30 pictures per second (the original's rate), also with every enhancement; the game's thread works 12 to 24 ms of 33 with HD textures, 60 fps and 16x (the GS work on GS threads since 2026-10-25) |
+| Processor and memory | The game's thread, a GS thread and with 60 fps two more; 0.7 GB (0.85 GB with every enhancement) |
 | Graphics card | 6 ms per frame plain, 10 ms with 16x super-sampling, HD textures and widescreen; 0.8 to 1.2 GB of video memory |
 | Functions entered | 3,732 in the gate's battle run (5,100 frames); 3,500 to 3,800 per CPU-vs-CPU battle |
 
@@ -51,12 +51,13 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 ## Next steps
 
-Details in the [handoff](progress/ACTIVE_PASS.md):
+Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
-1. **HD textures with 60 fps together** (each alone runs at full speed): the game's thread needs 33 to 40 ms a flip with both; then the user's look at the reworked HD textures and 60 fps.
-2. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps battles: things that appear in a frame show one picture early ([plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)); HD textures: the fighters with the pack's detail on the game's colours, not yet seen in play ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md)).
-3. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward; the play test fixes of 2026-10-21 (in-game menu freeze, input lag, pulsing lines in a stretched picture, integer scaling with widescreen); 60 fps battles in play.
-4. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
+1. **HD textures with 60 fps:** the second renderer takes the main one's texture names, so an in-between picture fits in its field ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 7).
+2. **Native texture streaming:** replacements read ahead into RAM and kept in VRAM, no pop-in (step 8); then **the fighters' HD bodies** by colour-matched variants (step 9).
+3. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
+4. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
+5. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
 
 ## Links
 

@@ -19,8 +19,8 @@ namespace Vulkan {class Device;}
 //   game's colours are not sRGB-encoded). Other files are refused by name (counted, drawn as originals).
 // - Budget: when the loaded images exceed it, the least recently used are dropped (the renderer may
 //   still hold one until the game overwrites its texture).
-// find may be called from two threads (a second renderer on the device, gs/gpu/in_between_frames.h);
-// loadPending runs only while the other thread draws nothing.
+// find is called by the renderers on the GS thread (gs/gpu/gpu_gs_mirror.h), loadPending on the game's
+// thread while the GS thread is idle (after the main renderer's flush).
 class HdTexturePack {
 public:
     struct Image;

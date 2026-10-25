@@ -44,8 +44,9 @@ public:
     // Submits the work taken so far without ending the frame. Between flips the renderer holds a command
     // buffer, and the device's next frame context (a readback, the window presenter) waits for it.
     void submit();
-    // Called once on the thread that drives a second renderer (initShared): its own command pools.
-    static void registerWorkerThread();
+    // Called once on a GS thread (gs/gpu/gs_render_thread.h): the main renderer's (index 0) records with
+    // the game thread's command pools, which the two use one at a time; a second renderer's has index 1.
+    static void registerRenderThread(unsigned index);
     // Privileged register by its index in the 0x12000000 block (address offset / 16).
     void privileged(unsigned index,std::uint64_t value);
     // Scans out the displayed circuits for one field and reads the image back (empty when nothing is displayed).

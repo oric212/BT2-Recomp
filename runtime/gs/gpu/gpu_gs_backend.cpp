@@ -40,7 +40,7 @@ void GpuGsBackend::init(unsigned super_sampling) {
         throw std::runtime_error("GPU GS: super-sampling must be 1, 2, 4, 8 or 16");
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
-    state->context->set_num_thread_indices(2); // The game's thread and the in-between pictures' worker.
+    state->context->set_num_thread_indices(2); // 0: the game's thread and the GS thread, one at a time; 1: the second renderer's (gpu_gs_mirror.h).
     // The surface extensions let the window presenter make a swapchain on this device.
     const char* instance_extensions[]{"VK_KHR_surface","VK_KHR_win32_surface"};
     const char* device_extensions[]{"VK_KHR_swapchain"};
@@ -61,7 +61,7 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");
     // Its flushes only submit: the primary moves the shared device to its next frame context, so this
-    // renderer can flush from another thread while the primary's frame is open.
+    // renderer can flush while the primary's frame is open.
     state->gs.set_frame_boundaries(false);
     state_=std::move(state);
 }
@@ -173,7 +173,7 @@ void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
 
 void GpuGsBackend::submit() {state_->gs.flush();}
 
-void GpuGsBackend::registerWorkerThread() {Util::register_thread_index(1);}
+void GpuGsBackend::registerRenderThread(unsigned index) {Util::register_thread_index(index);}
 
 DisplayFrame GpuGsBackend::scanout(unsigned field) {
     vsync(field);

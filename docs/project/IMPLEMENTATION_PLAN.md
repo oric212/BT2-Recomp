@@ -10,9 +10,10 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | --- | --- |
 | Game code | The recompiled EE code is the base. Hand-written C++ only where it pays off (hardware-facing code, hot loops). No full decompilation. An EE interpreter only as a logged bridge for code the map does not hold yet, compiled natively at the next build (2026-10-18, [plan](../plans/ee/WHOLE_GAME_COVERAGE_PLAN.md)). |
 | IOP side | Native RPC services answer the game's SIF RPC requests (disc, files and heap, controller, memory card, sounds, CRI ADX); no IOP code runs (2026-10-11). |
-| Graphics | The game's own GIF and VIF packets, rendered on the GPU by [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference); VU1 programs native, the heaviest hand-written. The only renderer; the GS command sink checks the packets (the CPU renderer was removed 2026-10-21). |
+| Graphics | The game's own GIF and VIF packets, rendered on the GPU by [paraLLEl-GS](../reference/REFERENCE_ARCHITECTURE.md#parallel-gs-gs-rendering-reference); VU1 programs native, the heaviest hand-written. The only renderer; the GS command sink checks the packets on the game's thread (the CPU renderer was removed 2026-10-21), and each renderer takes its data on a GS thread of its own (2026-10-25). |
 | Films and sound | The game's Sofdec library decodes the films through a native IPU; ADX streams and a native effects sampler are mixed by the port. |
 | Enhancements | Off by default, settings in the launcher and the in-game menu. They must leave the fight's speed, physics and results exactly as in the original (the user, 2026-10-20), and the port must not be held back by the processor or the graphics card. |
+| Hardware use | The port uses the machine: work that does not feed back into the game runs on threads of its own (the GS threads, the in-between pictures), and RAM and VRAM hold what avoids waits (HD textures streamed ahead). Emulated work becomes native code where a measurement shows it pays (the user, 2026-10-25). The game's own computation (its lighting, its physics) stays the game's. |
 
 ## Architecture rules
 
@@ -21,6 +22,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 - **Game-visible results must match** the original (EE memory, files, replies, frames, sound); compare byte-exactly where possible. **Fail explicitly** at a checked boundary; never fabricate success.
 - **Tests** for each service request type and each generalized behavior; status in the vocabulary of [PROG.md](../PROG.md).
 - **Performance:** measure Release builds on representative workloads; report time per frame or share of run time, never projected gameplay performance.
+- **Threads:** a renderer is used by one thread at a time; the game's thread waits for a GS thread only where it needs the renderer's result. A threading change is checked unpaced (headless) as well as in the window, and under AddressSanitizer when it crashes.
 
 ## Milestones
 
@@ -33,20 +35,24 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Launcher, settings, in-game menu, fast forward | 🟢 Operational |
 | Saving | 🔧 Incomplete: not tried in the game |
 | Enhancements: HD textures, super-sampling, widescreen | 🟢 Operational |
-| Enhancements: 60 fps battles, FSR 1 scaling, fighters' HD bodies | ⏳ In progress |
+| Enhancements: 60 fps battles (the fight unchanged, checked by state hash), HD textures with 60 fps, streaming, fighters' HD bodies, FSR 1 scaling | ⏳ In progress |
 | Final validation: exhaustive battle sweep, comparisons of 3D frames | ⏳ Not reached |
 
 ## Current next step
 
 Done, in order: native services; GPU rendering; films; the 3D pipeline; menus and battle setup; sound; controller; launcher, settings and overlay; whole-game coverage (all modes without input); performance (fights at 30, menus at 60); HD textures, super-sampling and widescreen. Details in the [October 2026 history](../progress/2026-10.md).
 
-Next, in order (the user, 2026-10-20):
+Done since: GS threads for the GS work (2026-10-25: the game's thread checks and copies the GIF data, the GS threads name textures and feed paraLLEl-GS) and the 60 fps crash (a Granite fix).
 
-1. **60 fps battles** ([plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): in-between pictures drawn from the game's commands on a second renderer, shown between two fight frames; the setting in the launcher and the overlay; checked against the 30 fps fight (identical game).
-2. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the fighters' HD bodies and the button art choice ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)).
-3. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
-4. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
-5. **At the very end:** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)), once the game boots and everything works.
+Next, in order (the user, 2026-10-20 and 2026-10-25):
+
+1. **HD textures with 60 fps** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 7; [60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): the second renderer takes the main renderer's texture names, so an in-between picture fits in its field with HD; then the camera-cut threshold and the newer frame's own things (hit flashes).
+2. **Native texture streaming** (HD textures plan, step 8): the pack's files read ahead into RAM on a background thread and kept in VRAM, so no replacement appears late and a stage's start does not hitch.
+3. **The fighters' HD bodies** (HD textures plan, step 9): colour-matched variants of the pack for the palettes the game relights; the game's lighting unchanged.
+4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
+5. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
+6. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
+7. **At the very end:** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)), once the game boots and everything works.
 
 ## Working method
 

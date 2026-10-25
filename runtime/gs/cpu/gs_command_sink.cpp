@@ -91,7 +91,8 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
         streaming_={};
         state=saved_state;transfers=saved_counts[0];register_writes=saved_counts[1];throw;
     }
-    if(on_accepted && !lockstep)for(const auto& data:group)on_accepted(data);
+    if(lockstep)return;
+    if(const auto& accepted=on_accepted_transfer?on_accepted_transfer:on_accepted)for(const auto& data:group)accepted(data);
 }
 
 void GsCommandSink::forwardBefore(std::size_t at) {

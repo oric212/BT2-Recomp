@@ -235,6 +235,28 @@ int main() {
         GsCommandSink whole;pieces.clear();
         whole.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
         whole.transfer(t);check(pieces.size()==1 && pieces[0]==t);
+        // The GS thread (gs/gpu/gpu_gs_mirror.h): the game's sink without names hands transfers to
+        // on_accepted_transfer and startup packets to on_accepted; a sink with names, given the accepted
+        // transfers one by one, hands the renderer the same bytes in step and names as the direct path did,
+        // also when IMAGE data continues into the next transfer of a group.
+        const std::size_t split=image_data+32; // Two of the four IMAGE quadwords in the first transfer.
+        const std::vector<std::uint8_t> first(t.begin(),t.begin()+std::ptrdiff_t(split)),second(t.begin()+std::ptrdiff_t(split),t.end());
+        GsCommandSink game;game.resetDrawingState();
+        std::vector<std::vector<std::uint8_t>> transfers,packets;
+        game.on_accepted=[&](std::span<const std::uint8_t> d){packets.emplace_back(d.begin(),d.end());};
+        game.on_accepted_transfer=[&](std::span<const std::uint8_t> d){transfers.emplace_back(d.begin(),d.end());};
+        const std::array<std::span<const std::uint8_t>,2> group{first,second};
+        game.transferAll(group);
+        std::vector<std::uint8_t> config;
+        auto c=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);config.insert(config.end(),b,b+16);};
+        c(0x1000000000008001ULL,0xE);c(1,0x49); // PABE on.
+        game.consumeConfiguration(config);
+        check(transfers.size()==2 && transfers[0]==first && transfers[1]==second && packets.size()==1 && packets[0]==config);
+        GsTextureNames thread_names;GsCommandSink named;named.texture_names=&thread_names;pieces.clear();
+        named.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
+        for(const auto& data:transfers)named.transfer(data);
+        joined.clear();for(const auto& p:pieces)joined.insert(joined.end(),p.begin(),p.end());
+        check(joined==t && thread_names.clut()==names.clut() && thread_names.memory()==names.memory());
     }
     std::cout<<"GS scoped command tests passed\n";
 }

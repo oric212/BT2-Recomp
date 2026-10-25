@@ -1,0 +1,33 @@
+diff --git a/Granite/vulkan/buffer_pool.cpp b/Granite/vulkan/buffer_pool.cpp
+index 9b487b1..3659d39 100644
+--- a/Granite/vulkan/buffer_pool.cpp
++++ b/Granite/vulkan/buffer_pool.cpp
+@@ -94,9 +94,8 @@ BufferBlock BufferPool::request_block(VkDeviceSize minimum_size)
+ 
+ void BufferPool::recycle_block(BufferBlock &block)
+ {
+-	VK_ASSERT(block.size == block_size);
+-
+-	if (blocks.size() < max_retained_blocks)
++	// Blocks of other sizes (made for one large allocation) are released, not kept.
++	if (block.size == block_size && blocks.size() < max_retained_blocks)
+ 		blocks.push_back(std::move(block));
+ 	else
+ 		block = {};
+diff --git a/Granite/vulkan/device.cpp b/Granite/vulkan/device.cpp
+index 4ee4f96..6b9a867 100644
+--- a/Granite/vulkan/device.cpp
++++ b/Granite/vulkan/device.cpp
+@@ -1191,8 +1191,10 @@ static void request_block(Device &device, BufferBlock &block, VkDeviceSize size,
+ 	}
+ 	else
+ 	{
+-		if (block.get_size() == pool.get_block_size())
+-			recycle.push_back(block);
++		// A used block of any size is kept until its frame begins again, under the device lock: an
++		// allocation the caller still holds must never be the block's last reference, since it may be
++		// released on a thread that does not hold the lock (internal sync).
++		recycle.push_back(block);
+ 	}
+ 
+ 	if (size)

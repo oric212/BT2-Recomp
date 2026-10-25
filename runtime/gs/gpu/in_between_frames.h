@@ -10,7 +10,9 @@
 // scans it out. A frame without an in-between picture (not a fight, or lists that do not align) is
 // replayed instead, so the second renderer still takes every register the game writes. The frame recorded up to flip F is on screen at flip F + 1 (checked pixel for pixel), so
 // the picture between F - 1 and F can be shown a field after flip F, before F's own: no delay is added.
-// The drawing runs on a worker thread, from the end of one flip's work to the field after it; the game's
+// The drawing runs on a thread of its own, at the same time as the main renderer's GS thread, from the
+// end of one flip's work to the field after it: it runs the blended VIF1 lists and checks the GS data,
+// which the second renderer's GS thread names and draws meanwhile (gs/gpu/gpu_gs_mirror.h). The game's
 // thread hands it a frame (start) and waits for it only where it needs the result or the device (wait).
 #pragma once
 #include "gs/cpu/gs_command_sink.h"
@@ -18,10 +20,8 @@
 #include "gs/textures/gs_texture_names.h"
 #include "vu/vif1.h"
 #include <array>
-#include <condition_variable>
 #include <exception>
 #include <mutex>
-#include <thread>
 #include <memory>
 #include <span>
 #include <vector>
@@ -41,17 +41,17 @@ public:
     // After a display flip's own work (the main renderer's flip and picture): the frame recorded since
     // the last flip is complete; `fight` says it was a fight frame (it waited for the fight's 30 fps step).
     // `vif1` is the VIF1 state as the next frame starts; the main renderer's state as the newer frame
-    // started is in its keepState slot `older_slot`. The worker draws the in-between picture of the last
+    // started is in its keepState slot `older_slot`. The thread draws the in-between picture of the last
     // two frames when both were fight frames whose lists pair, scanning it out with `privileged` (display
     // registers that show the newer frame's buffer); otherwise it replays the newer frame.
     void start(bool fight,const Vif1& vif1,const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field,unsigned older_slot);
-    // Waits for the worker's frame (rethrowing its failure); returns whether an in-between picture is
-    // ready. Called before the main renderer's flip (the shared device and HD pack), before showing or
-    // reading the second renderer's picture, and harmless when nothing is running.
+    // Waits for the frame (rethrowing its failure); returns whether an in-between picture is
+    // ready. Called before the main renderer's flip, before showing or reading the second renderer's
+    // picture, and harmless when nothing is running.
     bool wait();
-    // Whether the worker's frame is done (without waiting) and its in-between picture is ready.
+    // Whether the frame is done (without waiting) and its in-between picture is ready.
     bool ready();
-    bool busy(); // Whether the worker is still drawing (without waiting).
+    bool busy(); // Whether the frame is still to be drawn (without waiting).
     std::pair<unsigned,unsigned> pictureSize() const {return picture_;}
     GpuGsMirror& renderer() {return mirror_;}
     // For checks: when set, the frames are only replayed (no in-between pictures) and each replay is
@@ -61,7 +61,8 @@ public:
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
     unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
-    double waited_seconds=0; // The game's thread waiting for the worker.
+    double waited_seconds=0; // The game's thread waiting for the frame.
+    double drawing_seconds=0,slowest_seconds=0; // The thread's time on the in-between pictures drawn, and the longest.
 
 private:
     // An event's GS data: the transfers one after another, `ends` where each ends.
@@ -75,16 +76,16 @@ private:
     // Frames are reused, so their buffers keep their size from frame to frame: `used` events are this frame's.
     struct Frame {std::vector<Event> events;std::size_t used=0;std::unique_ptr<Vif1> start;bool fight=false;Event& next(bool vif1);};
     Frame recording_,previous_,spare_;
-    // The worker's job: the finished frame and how to scan it out.
+    // The thread's job: the finished frame and how to scan it out.
     struct Job {Frame frame;std::array<std::uint64_t,15> privileged{};unsigned crt_mode=0,field=0,older_slot=0;};
-    Job job_;bool pending_=false,stop_=false,ready_=false;std::exception_ptr failure_;
-    std::mutex lock_;std::condition_variable changed_;
-    std::thread worker_; // Last: it starts in the constructor and uses the members above.
-    void run();
+    Job job_;bool pending_=false,ready_=false;std::exception_ptr failure_;
+    std::mutex lock_;
+    void run(); // The task: draws job_.
     bool draw(Frame finished,const Job& job);
     GpuGsMirror& primary_;
     GsCommandSink sink_;
     GsTextureNames names_;
+    GsRenderThread thread_; // Tasks only (thread index 1, as the renderer's GS thread); destroyed after the renderer.
     GpuGsMirror mirror_;
     std::pair<unsigned,unsigned> picture_{0,0};
     void send(std::span<const std::uint8_t> data);

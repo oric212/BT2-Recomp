@@ -31,6 +31,9 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#if defined(_WIN32) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
 
 // Entry probe: runs the generated BT2 entry on a prepared guest image with the supplied evidence,
 // classifies the checked boundary where it stops, validates the reached checkpoint and writes the
@@ -46,6 +49,11 @@ bool counting = false;
 }
 
 int main(int argc, char** argv) {
+#if defined(_WIN32) && defined(_DEBUG)
+    // Automated runs: the debug library's assertions and heap reports go to the error output, not a dialog.
+    for (const int kind : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {_CrtSetReportMode(kind, _CRTDBG_MODE_FILE);_CrtSetReportFile(kind, _CRTDBG_FILE_STDERR);}
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
     try {
         if (argc < 3 || argc > 25) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
         const ProbeModes modes=ProbeModes::fromArgc(argc);
@@ -260,9 +268,9 @@ int main(int argc, char** argv) {
             static const struct Totals {
                 ~Totals() {
                     std::cerr << "Profile totals: VIF1 without VU1 " << frame_profile.vif1 - frame_profile.vu1 << " s, VU1 without its GS packets "
-                              << frame_profile.vu1 - frame_profile.vu1_gs << " s, GS packet handling " << frame_profile.gs - frame_profile.renderer
-                              << " s (of VU1's packets " << frame_profile.vu1_gs << " s with the renderer's share), GPU renderer intake "
-                              << frame_profile.renderer << " s, GPU flush " << frame_profile.flush << " s" << std::endl;
+                              << frame_profile.vu1 - frame_profile.vu1_gs << " s, GS packet handling " << frame_profile.gs
+                              << " s (of VU1's packets " << frame_profile.vu1_gs << " s), the GS threads' work " << frame_profile.renderer
+                              << " s, waited for them " << frame_profile.gs_wait << " s, GPU flush " << frame_profile.flush << " s" << std::endl;
                 }
             } totals;
         }
@@ -346,13 +354,14 @@ int main(int argc, char** argv) {
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
             const unsigned super_sampling = std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u;
             gpu_mirror.attach(runtime.gif_dma.gs, super_sampling);
+            // The names follow the renderer on the GS thread (gs/gpu/gpu_gs_mirror.h), not the game's sink.
+            if (runtime.gif_dma.gs.texture_names) {gpu_mirror.nameTextures(*runtime.gif_dma.gs.texture_names);runtime.gif_dma.gs.texture_names = nullptr;}
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
             // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).
             if (const char* hd = std::getenv("BT2_HD_TEXTURES")) {
                 std::string folder = hd;std::uint64_t budget_mb = 2048;
                 if (const auto colon = folder.rfind(':'); colon != std::string::npos && colon > 1) {budget_mb = std::stoull(folder.substr(colon + 1));folder.resize(colon);}
-                runtime.gif_dma.gs.texture_names = &texture_name_log.names;
                 texture_name_log.names.count_drawn = !texture_name_log.path.empty(); // Only the naming log counts draws.
                 gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
             }
@@ -477,7 +486,7 @@ int main(int argc, char** argv) {
                 // per flip spent on the renderer's flush, on reading the picture back and on showing it.
                 using Clock = std::chrono::steady_clock;
                 static const bool stats = std::getenv("BT2_VIEWER_STATS") != nullptr;
-                frame_profile.enabled = stats;
+                if (stats) frame_profile.enabled = true; // Never off here: BT2_PROFILE_TOTALS may have switched it on.
                 static Clock::time_point window_start = Clock::now();
                 static double scanout_s = 0, present_s = 0, slowest_s = 0, waited_at_window = 0;static unsigned window_fields = 0, late = 0;
                 static Clock::time_point last_flip = Clock::now();
@@ -510,7 +519,7 @@ int main(int argc, char** argv) {
                         const double wall = std::chrono::duration<double>(t2 - window_start).count();
                         std::cerr << std::dec << "Viewer stats at flip " << flip << ": " << 120 / wall << " flips/s, " << (runtime.vblank_deliveries - window_fields) / wall
                             << " fields/s; per flip " << wall / 120 * 1000 << " ms (slowest " << slowest_s * 1000 << " ms, " << late << " over 20.9 ms), work " << (wall - ((pacer ? pacer->waited_seconds : 0) - waited_at_window)) / 120 * 1000 << " ms, of it scanout " << scanout_s / 120 * 1000 << " ms, show " << present_s / 120 * 1000
-                            << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000 << " ms, of it in the GPU renderer " << frame_profile.renderer / 120 * 1000
+                            << " ms, VIF1 " << (frame_profile.vif1 - frame_profile.vu1) / 120 * 1000 << " ms, VU1 with its GS packets " << frame_profile.vu1 / 120 * 1000 << " ms, GS packets (all) " << frame_profile.gs / 120 * 1000 << " ms, the GS threads' work " << frame_profile.renderer / 120 * 1000 << " ms, waited for them " << frame_profile.gs_wait / 120 * 1000
                             << " ms, GPU flush " << frame_profile.flush / 120 * 1000 << " ms" << std::endl;
                         window_start = t2;scanout_s = present_s = slowest_s = 0;late = 0;waited_at_window = pacer ? pacer->waited_seconds : 0;(void)waited_before;window_fields = runtime.vblank_deliveries;frame_profile = {};frame_profile.enabled = true;
                     }

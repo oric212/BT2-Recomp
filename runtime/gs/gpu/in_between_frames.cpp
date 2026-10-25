@@ -1,49 +1,46 @@
 #include "gs/gpu/in_between_frames.h"
 #include "vu/vif1_blend.h"
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 
-InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures):primary_(primary) {
+InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures)
+    :primary_(primary),thread_([](std::span<const std::uint8_t>,bool){throw std::logic_error("60 fps battles: the thread takes tasks only");},
+                               []{GpuGsBackend::registerRenderThread(1);}) {
     sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
     mirror_.attachShared(sink_,primary,super_sampling);
-    if(hd_textures) {sink_.texture_names=&names_;mirror_.shareHdTextures(primary,names_);}
+    if(hd_textures)mirror_.shareHdTextures(primary,names_); // The renderer's GS thread names its textures.
     recording_.start=std::make_unique<Vif1>(vif1);
-    worker_=std::thread([this]{run();});
 }
 
 InBetweenFrames::~InBetweenFrames() {
-    {std::lock_guard<std::mutex> hold(lock_);stop_=true;}
-    changed_.notify_all();
-    worker_.join();
+    try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for the worker"<<std::endl;
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them; "
+        <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)"<<std::endl;
 }
 
 void InBetweenFrames::run() {
-    GpuGsBackend::registerWorkerThread();
-    for(;;) {
-        Job job;
-        {
-            std::unique_lock<std::mutex> hold(lock_);
-            changed_.wait(hold,[this]{return pending_ || stop_;});
-            if(stop_)return;
-            job=std::move(job_);
-        }
-        bool ready=false;std::exception_ptr failure;
-        try {ready=draw(std::move(job.frame),job);}
-        catch(...) {failure=std::current_exception();}
-        {std::lock_guard<std::mutex> hold(lock_);ready_=ready;failure_=failure;pending_=false;}
-        changed_.notify_all();
+    Job job;
+    {std::lock_guard<std::mutex> hold(lock_);job=std::move(job_);}
+    bool ready=false;std::exception_ptr failure;
+    const auto begin=std::chrono::steady_clock::now();
+    try {ready=draw(std::move(job.frame),job);}
+    catch(...) {failure=std::current_exception();}
+    if(ready) {
+        const double took=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+        drawing_seconds+=took;slowest_seconds=std::max(slowest_seconds,took);
     }
+    std::lock_guard<std::mutex> hold(lock_);ready_=ready;failure_=failure;pending_=false;
 }
 
 bool InBetweenFrames::wait() {
-    std::unique_lock<std::mutex> hold(lock_);
-    if(pending_) {
+    if(busy()) {
         const auto begin=std::chrono::steady_clock::now();
-        changed_.wait(hold,[this]{return !pending_;});
+        thread_.drain();
         waited_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     }
+    std::lock_guard<std::mutex> hold(lock_);
     if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
     return ready_;
 }
@@ -69,7 +66,7 @@ void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::ui
         job_.frame=std::move(finished);job_.privileged=privileged;job_.crt_mode=crt_mode;job_.field=field;job_.older_slot=older_slot;
         ready_=false;pending_=true;
     }
-    changed_.notify_all();
+    thread_.pushTask([this]{run();});
 }
 
 InBetweenFrames::Event& InBetweenFrames::Frame::next(bool vif1) {
@@ -121,7 +118,7 @@ bool InBetweenFrames::drawInBetween(const Frame& older,const Frame& newer,unsign
     return true;
 }
 
-// On the worker: the in-between picture, or else the real frame.
+// On the thread: the in-between picture, or else the real frame.
 bool InBetweenFrames::draw(Frame finished,const Job& job) {
     bool ready=false;
     // The second renderer only submits (its flushes leave the device's frame to the main renderer).

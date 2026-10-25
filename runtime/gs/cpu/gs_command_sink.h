@@ -58,6 +58,9 @@ public:
     unsigned transfers=0,register_writes=0;
     // Accepted GIF data in order, after validation (GPU mirror, docs/plans/graphics/GPU_RENDERING_PLAN.md).
     std::function<void(std::span<const std::uint8_t>)> on_accepted;
+    // When set, accepted GIF transfers go here instead of on_accepted (which then has the startup
+    // packets): the GS thread names textures in transfers only (gs/gpu/gpu_gs_mirror.h).
+    std::function<void(std::span<const std::uint8_t>)> on_accepted_transfer;
     // Every GIF transfer and startup packet as it arrives, before it is checked (the 60 fps in-between
     // pictures record a frame's GS input; never changes what the sink does).
     std::function<void(std::span<const std::uint8_t>)> on_input;
