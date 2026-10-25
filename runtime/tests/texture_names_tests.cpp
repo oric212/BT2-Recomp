@@ -155,5 +155,38 @@ int main() {
         }
         require(same);
     }
+    {
+        // Shared hashes: an object that gets the same writes as another finds the hashes it took; one whose
+        // memory differs hashes itself and names as an object without sharing does.
+        GsTextureNames main,second,alone;
+        second.shareHashesWith(main);
+        std::vector<std::uint8_t> a(64*32/2),b(a.size());
+        for(std::size_t i=0;i<a.size();++i) {a[i]=std::uint8_t(i*5+1);b[i]=std::uint8_t(i*3+7);}
+        const auto t4=tex0(0x100,2,0x14,6,5);
+        upload(main,0x100,2,0x14,64,32,a);
+        const auto first=main.name(t4,0);
+        upload(second,0x100,2,0x14,64,32,a);
+        const auto taken=second.name(t4,0);
+        require(first && taken && taken->texture==first->texture && second.shared_hits==1 && main.shared_misses==1);
+        // The same in two pieces gives other identities (the place each piece starts), so it is hashed again,
+        // with the same result.
+        GsTextureNames pieces;pieces.shareHashesWith(main);
+        pieces.reg(0x50,(std::uint64_t(0x100)<<32)|(std::uint64_t(2)<<48)|(std::uint64_t(0x14)<<56));
+        pieces.reg(0x51,0);pieces.reg(0x52,64ull|(32ull<<32));pieces.reg(0x53,0);
+        pieces.image(std::span<const std::uint8_t>(a.data(),400));
+        (void)pieces.name(t4,0); // Asked in between: the first piece is written at once.
+        pieces.image(std::span<const std::uint8_t>(a.data()+400,a.size()-400));
+        const auto split=pieces.name(t4,0);
+        require(split && split->texture==first->texture);
+        // Other data in the second object: not found, named from its own memory.
+        upload(second,0x100,2,0x14,64,32,b);
+        upload(alone,0x100,2,0x14,64,32,a);upload(alone,0x100,2,0x14,64,32,b);
+        const auto other=second.name(t4,0),expected=alone.name(t4,0);
+        require(other && expected && other->texture==expected->texture && other->texture!=first->texture && second.shared_hits==1);
+        // The main object meeting that state later finds the second's hash.
+        upload(main,0x100,2,0x14,64,32,b);
+        const auto later=main.name(t4,0);
+        require(later && later->texture==expected->texture && main.shared_hits==1);
+    }
     std::cout<<"Texture name checks passed."<<std::endl;
 }

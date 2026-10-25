@@ -1,6 +1,7 @@
 #include "gs/gpu/in_between_frames.h"
 #include "vu/vif1_blend.h"
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <iostream>
 
@@ -9,6 +10,7 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
                                []{GpuGsBackend::registerRenderThread(1);}) {
     sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
     mirror_.attachShared(sink_,primary,super_sampling);
+    names_.count_drawn=false; // Only the main renderer's names keep the naming log.
     if(hd_textures)mirror_.shareHdTextures(primary,names_); // The renderer's GS thread names its textures.
     recording_.start=std::make_unique<Vif1>(vif1);
 }
@@ -16,8 +18,10 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
 InBetweenFrames::~InBetweenFrames() {
     try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them; "
-        <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)"<<std::endl;
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended ("<<realigned_pairs<<" shifted unpacks realigned), "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them; "
+        <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
+    if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
+    std::cerr<<std::endl;
 }
 
 void InBetweenFrames::run() {
@@ -48,6 +52,11 @@ bool InBetweenFrames::wait() {
 bool InBetweenFrames::busy() {
     std::lock_guard<std::mutex> hold(lock_);
     return pending_;
+}
+
+bool InBetweenFrames::keepsUp(bool ready) {
+    recent_=(recent_<<1)|(ready?1u:0u);
+    return ready && std::popcount(recent_)>=29;
 }
 
 bool InBetweenFrames::ready() {
@@ -100,7 +109,10 @@ bool InBetweenFrames::drawInBetween(const Frame& older,const Frame& newer,unsign
     for(std::size_t i=0;i<b.size();++i)if(cameraTurn(a[i]->words,b[i]->words)<0.906f) {++camera_cuts;return false;}
     std::vector<std::vector<std::uint32_t>> blended;blended.reserve(b.size());
     for(std::size_t i=0;i<b.size();++i) {
-        auto mid=blendVif1(a[i]->words,b[i]->words,scan_replay?1.0f:0.5f);
+        std::size_t refused=0;
+        std::size_t words=0,realigned=0;
+        auto mid=blendVif1(a[i]->words,b[i]->words,scan_replay?1.0f:0.5f,&words,nullptr,1024,&refused,&realigned);
+        refused_pairs+=refused;blended_words+=words;realigned_pairs+=realigned;
         if(!mid)return false;
         blended.push_back(std::move(*mid));
     }

@@ -46,7 +46,7 @@ Done since: GS threads for the GS work (2026-10-25: the game's thread checks and
 
 Next, in order (the user, 2026-10-20 and 2026-10-25):
 
-1. **HD textures with 60 fps** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 7; [60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): the second renderer takes the main renderer's texture names, so an in-between picture fits in its field with HD; then the camera-cut threshold and the newer frame's own things (hit flashes).
+1. **60 fps battles in play** ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): the user's look at the fixed in-between pictures (flicker, the up-and-down glitch); HD in-between pictures in time at 16x (now about a third; texture names shared since 2026-10-25); transforms cut at chunk edges; the newer frame's own things (hit flashes).
 2. **Native texture streaming** (HD textures plan, step 8): the pack's files read ahead into RAM on a background thread and kept in VRAM, so no replacement appears late and a stage's start does not hitch.
 3. **The fighters' HD bodies** (HD textures plan, step 9): colour-matched variants of the pack for the palettes the game relights; the game's lighting unchanged.
 4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).

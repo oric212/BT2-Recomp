@@ -29,6 +29,9 @@ struct GpuGsBackend::State {
     struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
     std::array<PaletteCopy,3> palette_copies;unsigned next_palette_copy=0;
     GsTextureNames* names=nullptr;std::vector<GsTextureNames*> palette_targets;
+    // The pages a second renderer's names get one flip late: it replays the frame before, which the main
+    // renderer drew with the copies it had then (gs/gpu/in_between_frames.h).
+    std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages;
     ~State() {presenter.reset();picture.reset();}
 };
 
@@ -136,12 +139,18 @@ void GpuGsBackend::copyDrawnPalettes() {
     auto& s=*state_;
     if(!s.names)return;
     auto& device=*s.device;
+    for(const auto& [page,words]:s.late_pages)for(auto* names:s.palette_targets)if(names!=s.names)names->takeDrawnPage(page,words.data());
+    s.late_pages.clear();
     // Finished copies, oldest first, so the newest is what the names keep.
     for(unsigned k=1;k<=s.palette_copies.size();++k) {
         auto& copy=s.palette_copies[(s.next_palette_copy+k)%s.palette_copies.size()];
         if(!copy.pending || !copy.fence->wait_timeout(0))continue;
         const auto* words=static_cast<const std::uint32_t*>(device.map_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT));
-        for(const auto page:copy.pages)for(auto* names:s.palette_targets)names->takeDrawnPage(page,words+std::size_t(page)*2048);
+        for(const auto page:copy.pages) {
+            const auto* page_words=words+std::size_t(page)*2048;
+            s.names->takeDrawnPage(page,page_words);
+            if(s.palette_targets.size()>1)s.late_pages.emplace_back(page,std::vector<std::uint32_t>(page_words,page_words+2048));
+        }
         device.unmap_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
         copy.pending=false;copy.fence.reset();
     }
@@ -240,6 +249,7 @@ void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& n
     if(!primary.state_->pack)return;
     state_->pack=primary.state_->pack;
     primary.state_->palette_targets.push_back(&names); // Drawn palettes from the primary's copies.
+    if(primary.state_->names)names.shareHashesWith(*primary.state_->names); // It names the same textures a frame later.
     replaceTextures(names);
 }
 
@@ -249,8 +259,9 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
         // As older PCSX2 versions named it (the used palette entries), then as newer ones do (the whole palette).
-        const auto* image=name->has_palette?state_->pack->find(name->textUsed()):nullptr;
-        if(!image)image=state_->pack->find(name->text());
+        const auto key=[&](std::uint64_t palette){return HdTexturePack::Key{name->texture,palette,name->format,name->has_palette};};
+        const auto* image=name->has_palette?state_->pack->find(key(name->palette_used)):nullptr;
+        if(!image)image=state_->pack->find(key(name->palette));
         return image?image->handle:Vulkan::ImageHandle{};
     };
 }

@@ -389,15 +389,20 @@ int main(int argc, char** argv) {
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {
                     if (!in_between || !in_between_started) return;
-                    if (runtime.vblank_deliveries != in_between_vblank + 1) {
-                        if (runtime.vblank_deliveries > in_between_vblank + 1) in_between_started = false; // A flip came first.
+                    // The flip's own picture is shown at the end of the field it happens in (its deadline); the next
+                    // field's end is halfway to the next flip's picture: the in-between picture goes there.
+                    if (runtime.vblank_deliveries != in_between_vblank + 2) {
+                        if (runtime.vblank_deliveries > in_between_vblank + 2) in_between_started = false; // A flip came first.
                         return;
                     }
                     in_between_started = false;
                     if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only || in_between->scan_replay) return;
-                    // Never waited for: a picture not ready at its field is left out, so the game keeps its pace.
-                    if (!in_between->ready()) {if (in_between->busy()) ++in_between->late;return;}
+                    // The field's deadline first (the field waits for it here anyway): the picture has until then.
+                    // Never waited for beyond it: a picture not ready is left out, so the game keeps its pace.
                     if (pacer) pacer->wait();
+                    const bool ready = in_between->ready();
+                    if (!ready && in_between->busy()) ++in_between->late;
+                    if (!in_between->keepsUp(ready)) return; // Not ready, or they have not been keeping up: a steady 30.
                     gpu_mirror.submit(); // Between flips: the main renderer's open frame, before the presenter's frame context.
                     gpu_mirror.showPictureOf(&in_between->renderer());
                     const auto size = in_between->pictureSize();

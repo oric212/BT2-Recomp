@@ -1,0 +1,49 @@
+diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -932,7 +932,7 @@
+ 	if (scratch.gpu_buffer != scratch.buffer)
+ 	{
+ 		bool first_command = !async_transfer_cmd;
+-		ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::AsyncTransfer);
++		ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
+ 		if (first_command)
+ 			async_transfer_cmd->begin_region("AsyncTransfer");
+ 
+@@ -1025,7 +1025,7 @@
+ 			// Fallback when sufficient ReBAR is not available.
+ 			// This also happens when capturing with RenderDoc since persistently mapped ReBAR is horrible for capture perf.
+ 			bool first_command = !async_transfer_cmd;
+-			ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::AsyncTransfer);
++			ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
+ 			if (first_command)
+ 				async_transfer_cmd->begin_region("AsyncTransfer");
+ 			memcpy(async_transfer_cmd->update_buffer(*scratch.buffer, offset, size), data, size);
+@@ -1153,11 +1153,14 @@
+ 
+ 	if (async_transfer_cmd)
+ 	{
+-		Vulkan::Semaphore sem;
++		// On the graphics queue, with a barrier that orders the copies before all later work on it. A wait added
++		// for the queue's next submission belongs to whichever thread submits next: with two GS interfaces on one
++		// device (BT2-Recomp's in-between pictures) the other one's submission could take it, and this one's work
++		// then read attributes and VRAM before the copies were done.
+ 		async_transfer_cmd->end_region();
+-		device->submit(async_transfer_cmd, nullptr, 1, &sem);
+-		device->add_wait_semaphore(Vulkan::CommandBuffer::Type::Generic, std::move(sem),
+-		                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, true);
++		async_transfer_cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
++		                            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
++		device->submit(async_transfer_cmd);
+ 	}
+ 
+ 	if (clear_cmd)
+@@ -1556,7 +1559,7 @@
+ 		return;
+ 
+ 	bool first_command = !async_transfer_cmd;
+-	ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::AsyncTransfer);
++	ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
+ 	auto &cmd = *async_transfer_cmd;
+ 
+ 	if (first_command)

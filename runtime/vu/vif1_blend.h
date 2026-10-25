@@ -1,18 +1,23 @@
 // In-between frames for 60 fps battles (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md, way 4): the VIF1
-// list of a frame with the values that move between two frames set in between. Two successive fight
-// frames send mostly the same codes in the same order; what differs is data: the camera's and the bones'
-// matrices in V4-32 unpacks (and DIRECT data, taken from the newer frame). A few pieces of geometry
-// change size or come and go from frame to frame (7,000 to 8,000 unpacks a frame, a fight's lists paired
-// whole in fewer than half the frames), so the unpacks of the two lists are aligned like lines in a diff
-// (Myers' algorithm), each unpack known by its code (address, count, format). Floats that differ in an
-// aligned pair are blended; an unpack only the newer list has, and words that are not normal floats
-// (tags, integers), are taken from the newer frame as they are.
-// BT2's matrices (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md, step 1): a 34-quadword unpack holds two
-// bone matrices (quadwords 22 to 25 and 26 to 29: three axes, then a position), a 12-quadword unpack the
-// camera (0 to 3 view-projection, 4 to 7 view). Their axes are blended as turning, not shrinking: each
-// blended axis keeps the blended length of its two originals (as Tenkaichi3Decomp's in-between pictures
-// do); positions are blended linearly. A camera whose view axes turn by more than 25 degrees between the
-// two frames is a cut: the lists are not blended (no in-between picture across it).
+// list of a frame with the transforms that move between two frames set in between. Two successive fight
+// frames send mostly the same codes in the same order (7,000 to 8,000 unpacks a frame); a few pieces of
+// geometry change size or come and go, so the unpacks of the two lists are aligned like lines in a diff
+// (Myers' algorithm), each unpack known by its code (address, count, format).
+// What is blended (read from the lists on 2026-10-25; as Tenkaichi3Decomp blends only the model and screen
+// matrices and never what would jump):
+// - Cameras: a camera block (12 quadwords whose last four, the viewport, are the same in both frames) has
+//   its screen matrices (the first eight quadwords, projective) blended linearly, and every copy of them in
+//   the newer list (each object carries the camera's matrices with its own data) becomes the blended one,
+//   so the fighters and the stage share the in-between camera.
+// - Bones: rigid transforms (three axes of sensible length at nearly right angles with w 0, then a position
+//   with w 1) are blended where the older frame has one at the same place, the axes turning (their lengths
+//   blended) and the position moving, unless an axis turned by more than 45 degrees or the position jumped.
+//   The game streams its data in fixed-size V4-32 chunks, so a chunk's data can shift between frames when
+//   something before it changed size: the older data around the pair (the unpacks before, at and after it)
+//   is searched for the shift that lines the transforms up, when no shift does not.
+// Everything else is the newer frame's; at t = 1 the result is the newer list exactly. A camera whose view
+// axes turn by more than 25 degrees between the two frames is a cut: the lists are not blended (no
+// in-between picture across it).
 #pragma once
 #include <cstdint>
 #include <optional>
@@ -26,15 +31,16 @@ struct Vif1Unpack {std::size_t start=0,words=0;unsigned format=0;std::uint32_t c
 // not size, or data past the end).
 std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words);
 
-// `newer` with each float that differs from `older` in an aligned pair of V4-32 unpacks set to
-// older + t (newer - older); nullopt when a list cannot be walked or the two differ by more than
-// `max_edits` unpacks (not the same scene). `blended` counts the words changed, `unmatched` the newer
-// list's unpacks without a partner.
+// `newer` with its transforms blended at t (above); nullopt when a list cannot be walked or the two differ
+// by more than `max_edits` unpacks (not the same scene). `blended` counts the words changed, `unmatched`
+// the newer list's unpacks without a partner, `refused` the changed pairs with transforms none of which was
+// blended, `realigned` the pairs whose older data was found shifted.
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                                    std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t max_edits=1024);
+                                                    std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t max_edits=1024,
+                                                    std::size_t* refused=nullptr,std::size_t* realigned=nullptr);
 
 // The smallest cosine between a camera view axis of `older` and the same axis of `newer` over their
-// aligned 12-quadword unpacks (1 when there is none): below cos 25 degrees the camera cut.
+// aligned camera blocks (1 when there is none): below cos 25 degrees the camera cut.
 float cameraTurn(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,std::size_t max_edits=1024);
 
 // The aligned pairs of two sequences: index pairs (i, j) with a[i] == b[j], in order, of a shortest

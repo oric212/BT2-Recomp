@@ -1,5 +1,6 @@
 #include "vu/vif1_blend.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -93,51 +94,136 @@ std::optional<std::vector<std::pair<std::size_t,std::size_t>>> alignUnpacks(cons
     };
     return alignSequences(keys(a),keys(b),max_edits);
 }
-// A blended axis (x, y, z of a quadword at `at`) given the blended length of the two originals'.
-void keepAxisLength(std::span<const std::uint32_t> older,std::size_t older_at,std::span<const std::uint32_t> newer,std::size_t newer_at,
-                    std::vector<std::uint32_t>& out,float t) {
-    auto length=[](auto get){float s=0;for(int k=0;k<3;++k){const float v=get(k);s+=v*v;}return std::sqrt(s);};
-    const float la=length([&](int k){return wordFloat(older[older_at+k]);}),lb=length([&](int k){return wordFloat(newer[newer_at+k]);});
-    const float lm=length([&](int k){return wordFloat(out[newer_at+k]);});
-    if(!(lm>1e-12f) || !std::isfinite(la) || !std::isfinite(lb))return;
-    const float scale=(la+t*(lb-la))/lm;
-    for(int k=0;k<3;++k)out[newer_at+k]=floatWord(wordFloat(out[newer_at+k])*scale);
+// A rigid transform at word `at`: three axes (w 0) of sensible length at nearly right angles, then a
+// position (w 1). BT2's bone matrices look like this wherever they stand in a block; shifted data,
+// constants and the screen matrices do not.
+bool rigid(std::span<const std::uint32_t> d,std::size_t at) {
+    const auto v=[&](unsigned q,unsigned k){return wordFloat(d[at+q*4+k]);};
+    if(std::abs(v(0,3))>1e-6f || std::abs(v(1,3))>1e-6f || std::abs(v(2,3))>1e-6f || v(3,3)!=1.0f)return false;
+    float length[3];
+    for(unsigned q=0;q<3;++q) {
+        float s=0;for(unsigned k=0;k<3;++k)s+=v(q,k)*v(q,k);
+        length[q]=std::sqrt(s);
+        if(!(length[q]>0.05f && length[q]<20.0f))return false;
+    }
+    for(unsigned a=0;a<3;++a)for(unsigned b=a+1;b<3;++b) {
+        float dot=0;for(unsigned k=0;k<3;++k)dot+=v(a,k)*v(b,k);
+        if(std::abs(dot)>0.2f*length[a]*length[b])return false;
+    }
+    for(unsigned k=0;k<3;++k)if(!std::isfinite(v(3,k)))return false;
+    return true;
+}
+// The same transform in both frames, blended at t: each axis turns (its length blended), the position
+// moves; false (nothing written) when it turned by more than 45 degrees or jumped (another bone, a cut).
+bool blendRigid(std::span<const std::uint32_t> older,std::size_t a,std::span<const std::uint32_t> newer,std::size_t b,std::vector<std::uint32_t>& out,float t) {
+    float axes[3][3];
+    for(unsigned q=0;q<3;++q) {
+        float p[3],r[3],lp=0,lr=0,dot=0;
+        for(unsigned k=0;k<3;++k) {p[k]=wordFloat(older[a+q*4+k]);r[k]=wordFloat(newer[b+q*4+k]);lp+=p[k]*p[k];lr+=r[k]*r[k];dot+=p[k]*r[k];}
+        lp=std::sqrt(lp);lr=std::sqrt(lr);
+        if(dot<0.7071f*lp*lr)return false;
+        float m[3],lm=0;
+        for(unsigned k=0;k<3;++k) {m[k]=p[k]+t*(r[k]-p[k]);lm+=m[k]*m[k];}
+        lm=std::sqrt(lm);
+        const float scale=(lp+t*(lr-lp))/lm;
+        for(unsigned k=0;k<3;++k)axes[q][k]=m[k]*scale;
+    }
+    float moved=0;
+    for(unsigned k=0;k<3;++k) {const float d=wordFloat(newer[b+12+k])-wordFloat(older[a+12+k]);moved+=d*d;}
+    if(!(moved<=200.0f*200.0f))return false;
+    for(unsigned q=0;q<3;++q)for(unsigned k=0;k<3;++k)out[b+q*4+k]=floatWord(axes[q][k]);
+    for(unsigned k=0;k<3;++k) {const float p=wordFloat(older[a+12+k]),r=wordFloat(newer[b+12+k]);out[b+12+k]=floatWord(r-(1-t)*(r-p));}
+    return true;
+}
+// A camera block (12 quadwords): its last four (the viewport's scale and offset) are the same in both.
+bool sameCamera(std::span<const std::uint32_t> older,std::size_t a,std::span<const std::uint32_t> newer,std::size_t b) {
+    return std::equal(older.begin()+std::ptrdiff_t(a+32),older.begin()+std::ptrdiff_t(a+48),newer.begin()+std::ptrdiff_t(b+32));
 }
 }
 
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits) {
+                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits,std::size_t* refused,std::size_t* realigned) {
     const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
     if(!a || !b)return std::nullopt;
     const auto pairs=alignUnpacks(*a,*b,max_edits);
     if(!pairs)return std::nullopt;
     std::vector<std::uint32_t> out(newer.begin(),newer.end());
-    std::size_t changed=0;
+    if(t>=1)return out; // The newer list as it is.
+    std::size_t changed=0,others=0,shifted=0;
+    // Each camera's screen matrices (its first eight quadwords, as the newer frame has them) and their blend.
+    struct Camera {std::array<std::uint32_t,32> newer,blend;};
+    std::vector<Camera> cameras;
     for(const auto& [i,j]:*pairs) {
         const auto& x=(*a)[i];const auto& y=(*b)[j];
         if(y.format!=0xC)continue; // V4-32
-        for(std::size_t w=0;w<y.words;++w) {
-            const std::uint32_t p=older[x.start+w],q=newer[y.start+w];
-            if(p==q || !normal(p) || !normal(q))continue;
-            float fp,fq;std::memcpy(&fp,&p,4);std::memcpy(&fq,&q,4);
-            const float mid=fp+t*(fq-fp);
-            std::memcpy(&out[y.start+w],&mid,4);++changed;
+        const std::size_t quadwords=y.words/4;
+        if(std::equal(older.begin()+std::ptrdiff_t(x.start),older.begin()+std::ptrdiff_t(x.start+x.words),newer.begin()+std::ptrdiff_t(y.start)))continue;
+        // A camera block: its screen matrices (projective, not rigid) blended linearly, and noted, so that every
+        // copy of them in the list (objects carry the camera's matrices with their own data) moves with it.
+        if(quadwords==12 && sameCamera(older,x.start,newer,y.start)) {
+            Camera c;
+            for(std::size_t w=0;w<32;++w) {
+                const std::uint32_t p=older[x.start+w],q=newer[y.start+w];
+                c.newer[w]=q;c.blend[w]=q;
+                if(p==q || !normal(p) || !normal(q))continue;
+                const float fp=wordFloat(p),fq=wordFloat(q);
+                c.blend[w]=floatWord(fq-(1-t)*(fq-fp));
+            }
+            cameras.push_back(c);
+            continue;
         }
+        // Rigid transforms (bones). The older side's data around the pair (the V4-32 unpacks before, at and after
+        // it, as one run): data streamed in fixed-size chunks shifts between frames when something before it
+        // changes size, so the shift is chosen that lines up every transform of the newer chunk with one in
+        // the older data (no shift first; else the one that lines up most, with the quadwords that stayed).
+        const auto v4=[&](std::size_t k){return k<a->size() && (*a)[k].format==0xC;};
+        const std::size_t before=i>0 && v4(i-1)?(*a)[i-1].words:0;
+        std::vector<std::uint32_t> run;
+        for(std::size_t k=i-(before?1:0);k<=i+1 && k<a->size();++k)
+            if(k==i || v4(k))run.insert(run.end(),older.begin()+std::ptrdiff_t((*a)[k].start),older.begin()+std::ptrdiff_t((*a)[k].start+(*a)[k].words));
+        const std::ptrdiff_t base=std::ptrdiff_t(before/4),run_q=std::ptrdiff_t(run.size()/4);
+        std::vector<std::size_t> transforms;
+        for(std::size_t q=0;q+4<=quadwords;)if(rigid(newer,y.start+q*4)) {transforms.push_back(q);q+=4;} else ++q;
+        if(transforms.empty())continue;
+        const auto lined=[&](std::ptrdiff_t shift,std::size_t q){const std::ptrdiff_t at=base+std::ptrdiff_t(q)+shift;return at>=0 && at+4<=run_q && rigid(run,std::size_t(at)*4);};
+        const auto score=[&](std::ptrdiff_t shift) {
+            std::size_t n=0;
+            for(const auto q:transforms)n+=lined(shift,q)?8:0;
+            for(std::size_t q=0;q<quadwords;++q) {
+                const std::ptrdiff_t at=base+std::ptrdiff_t(q)+shift;
+                if(at>=0 && at<run_q && std::equal(run.begin()+at*4,run.begin()+at*4+4,newer.begin()+std::ptrdiff_t(y.start+q*4)))++n;
+            }
+            return n;
+        };
+        std::ptrdiff_t shift=0;
+        if(!std::all_of(transforms.begin(),transforms.end(),[&](std::size_t q){return lined(0,q);})) {
+            std::size_t best=score(0);
+            for(std::ptrdiff_t s=-base;s+base<run_q;++s)if(s)if(const auto n=score(s);n>best) {best=n;shift=s;}
+            if(shift)++shifted;
+        }
+        std::size_t done=0;
+        for(const auto q:transforms) {
+            if(!lined(shift,q))continue;
+            const std::size_t at=std::size_t(base+std::ptrdiff_t(q)+shift)*4;
+            if(blendRigid(run,at,newer,y.start+q*4,out,t)) {changed+=12;++done;}
+        }
+        if(!done)++others;
     }
-    // Matrix axes turn instead of shrinking (BT2's bone and camera blocks).
-    for(const auto& [i,j]:*pairs) {
-        const auto& x=(*a)[i];const auto& y=(*b)[j];
+    // Every copy of a camera's screen matrices in the newer list's V4-32 data: the blended camera.
+    for(const auto& c:cameras)for(const auto& y:*b) {
         if(y.format!=0xC)continue;
-        std::initializer_list<unsigned> axes={};
-        static constexpr unsigned bone_axes[]={22,23,24,26,27,28},camera_axes[]={0,1,2,4,5,6};
-        const unsigned* list=nullptr;std::size_t count=0;
-        if(y.words==34*4) {list=bone_axes;count=6;}
-        else if(y.words==12*4) {list=camera_axes;count=6;}
-        (void)axes;
-        for(std::size_t n=0;n<count;++n)keepAxisLength(older,x.start+list[n]*4,newer,y.start+list[n]*4,out,t);
+        for(std::size_t half=0;half<2;++half)
+            for(std::size_t q=0;q+4<=y.words/4;++q) {
+                const std::size_t at=y.start+q*4;
+                if(!std::equal(c.newer.begin()+std::ptrdiff_t(half*16),c.newer.begin()+std::ptrdiff_t(half*16+16),newer.begin()+std::ptrdiff_t(at)))continue;
+                std::copy(c.blend.begin()+std::ptrdiff_t(half*16),c.blend.begin()+std::ptrdiff_t(half*16+16),out.begin()+std::ptrdiff_t(at));
+                changed+=16;q+=3;
+            }
     }
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();
+    if(refused)*refused=others;
+    if(realigned)*realigned=shifted;
     return out;
 }
 
@@ -149,7 +235,7 @@ float cameraTurn(std::span<const std::uint32_t> older,std::span<const std::uint3
     float smallest=1;
     for(const auto& [i,j]:*pairs) {
         const auto& x=(*a)[i];const auto& y=(*b)[j];
-        if(y.format!=0xC || y.words!=12*4)continue;
+        if(y.format!=0xC || y.words!=12*4 || !sameCamera(older,x.start,newer,y.start))continue;
         for(unsigned q=4;q<7;++q) {
             float dot=0,la=0,lb=0;
             for(int k=0;k<3;++k) {

@@ -24,15 +24,6 @@ std::vector<std::filesystem::path> ddsFiles(const std::filesystem::path& root) {
 }
 }
 
-std::string HdTexturePack::normalized(const std::string& stem) {
-    const auto dash=stem.rfind('-');
-    if(dash==std::string::npos)return stem;
-    char* end=nullptr;const unsigned long bits=std::strtoul(stem.c_str()+dash+1,&end,16);
-    if(end==stem.c_str()+dash+1 || *end)return stem;
-    char word[16];std::snprintf(word,sizeof word,"%08lx",bits&~0x4000ul);
-    return stem.substr(0,dash+1)+word;
-}
-
 std::optional<HdTexturePack::Dds> HdTexturePack::readDds(const std::vector<std::uint8_t>& file) {
     if(file.size()<128 || std::memcmp(file.data(),"DDS ",4))return std::nullopt;
     Dds dds;dds.height=u32(file,12);dds.width=u32(file,16);
@@ -64,30 +55,52 @@ std::optional<HdTexturePack::Dds> HdTexturePack::readDds(const std::vector<std::
     return dds;
 }
 
+std::optional<HdTexturePack::Key> HdTexturePack::key(const std::string& stem) {
+    // Hexadecimal parts separated by '-': two (texture, format) or three (texture, palette, format).
+    std::uint64_t parts[3]{};unsigned count=0;
+    for(std::size_t at=0;;) {
+        const auto end=std::min(stem.find('-',at),stem.size());
+        if(count==3 || end==at || end-at>16)return std::nullopt; // More than three parts, or an empty or long one.
+        std::uint64_t value=0;
+        for(std::size_t i=at;i<end;++i) {
+            const char c=stem[i];
+            const int digit=c>='0' && c<='9'?c-'0':c>='a' && c<='f'?c-'a'+10:c>='A' && c<='F'?c-'A'+10:-1;
+            if(digit<0)return std::nullopt;
+            value=value<<4|std::uint64_t(digit);
+        }
+        parts[count++]=value;
+        if(end==stem.size())break;
+        at=end+1;
+    }
+    if(count<2 || parts[count-1]>0xFFFFFFFFull)return std::nullopt;
+    Key k;k.texture=parts[0];k.format=std::uint32_t(parts[count-1])&~0x4000u;
+    if(count==3) {k.palette=parts[1];k.has_palette=true;}
+    return k;
+}
+
 HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons)
     :device_(device),budget_(budget_bytes) {
     const auto replacements=std::filesystem::is_directory(folder/"replacements")?folder/"replacements":folder;
     if(!std::filesystem::is_directory(replacements))throw std::runtime_error("HD textures: no pack folder at "+folder.string());
     for(const auto& file:ddsFiles(replacements))
-        if(!index_.emplace(normalized(file.stem().string()),file).second)++duplicates;
-    if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))index_[normalized(file.stem().string())]=file;
+        if(const auto k=key(file.stem().string()))if(!index_.emplace(*k,file).second)++duplicates;
+    if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))if(const auto k=key(file.stem().string()))index_[*k]=file;
 }
 
 HdTexturePack::~HdTexturePack() {for(auto& [name,entry]:cache_)delete entry;}
 
-const HdTexturePack::Image* HdTexturePack::find(const std::string& name) {
+const HdTexturePack::Image* HdTexturePack::find(const Key& name) {
     std::lock_guard<std::mutex> hold(lock_);
     const std::filesystem::path* file=nullptr;
     if(const auto same=index_.find(name);same!=index_.end())file=&same->second;
-    else if(const auto first=name.find('-'),last=name.rfind('-');first!=last)
-        if(const auto every=index_.find(name.substr(0,first)+name.substr(last));every!=index_.end())file=&every->second;
+    else if(name.has_palette)
+        if(const auto every=index_.find(Key{name.texture,0,name.format,false});every!=index_.end())file=&every->second;
     if(!file) {++missing;return nullptr;}
-    const auto key=file->generic_string();
-    auto cached=cache_.find(key);
+    auto cached=cache_.find(file);
     if(cached==cache_.end()) {
         auto* entry=new Entry;entry->path=*file;
-        cached=cache_.emplace(key,entry).first;
-        pending_.push_back(key); // Loaded at the next frame boundary.
+        cached=cache_.emplace(file,entry).first;
+        pending_.push_back(file); // Loaded at the next frame boundary.
     }
     auto* entry=cached->second;
     if(entry->none) {++missing;return nullptr;}
@@ -98,8 +111,8 @@ const HdTexturePack::Image* HdTexturePack::find(const std::string& name) {
 
 void HdTexturePack::loadPending() {
     std::lock_guard<std::mutex> hold(lock_);
-    for(const auto& name:pending_) {
-        const auto it=cache_.find(name);
+    for(const auto* indexed:pending_) {
+        const auto it=cache_.find(indexed);
         if(it==cache_.end())continue;
         auto* entry=it->second;
         std::ifstream in(entry->path,std::ios::binary);
@@ -121,12 +134,12 @@ void HdTexturePack::loadPending() {
 
 void HdTexturePack::evict() {
     // Least recently used first; one dropped is loaded again when it is drawn again.
-    std::vector<std::pair<std::uint64_t,std::string>> order;
-    for(const auto& [name,entry]:cache_)if(entry->image.handle)order.push_back({entry->used,name});
+    std::vector<std::pair<std::uint64_t,const std::filesystem::path*>> order;
+    for(const auto& [file,entry]:cache_)if(entry->image.handle)order.push_back({entry->used,file});
     std::sort(order.begin(),order.end());
-    for(const auto& [used,name]:order) {
+    for(const auto& [used,file]:order) {
         if(resident_bytes<=budget_)break;
-        auto it=cache_.find(name);
+        auto it=cache_.find(file);
         resident_bytes-=it->second->bytes;++evicted;
         delete it->second;cache_.erase(it);
     }

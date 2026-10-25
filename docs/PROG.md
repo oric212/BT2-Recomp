@@ -15,7 +15,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
 | Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
 | Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; with HD and 60 fps the fight holds 30 flips, but the in-between pictures are not ready in time yet |
+| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); with HD about a third of the in-between pictures in time |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -53,8 +53,8 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
-1. **HD textures with 60 fps:** the second renderer takes the main one's texture names, so an in-between picture fits in its field ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 7).
-2. **Native texture streaming:** replacements read ahead into RAM and kept in VRAM, no pop-in (step 8); then **the fighters' HD bodies** by colour-matched variants (step 9).
+1. **60 fps in play:** the user's look at the fixed in-between pictures; HD in-between pictures in time at 16x ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+2. **Native texture streaming:** replacements read ahead into RAM and kept in VRAM, no pop-in ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 8); then **the fighters' HD bodies** by colour-matched variants (step 9).
 3. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 4. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
 5. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.

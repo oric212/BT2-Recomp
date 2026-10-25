@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 namespace {
 constexpr unsigned psm_ct32=0x00,psm_ct24=0x01,psm_t8=0x13,psm_t4=0x14,psm_t8h=0x1B,psm_t4hl=0x24,psm_t4hh=0x2C;
@@ -54,6 +55,29 @@ std::size_t GsTextureNames::t8Byte(unsigned bp,unsigned bw,unsigned x,unsigned y
 }
 std::size_t GsTextureNames::t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned y) {
     return (std::size_t(bp)*512+(std::size_t(y/128)*(bw/2)+x/128)*16384+layouts().t4[(y%128)*128+x%128])%(memory_words*8);
+}
+
+namespace {
+std::uint64_t mix(std::uint64_t h,std::uint64_t v) {h=(h^v)*0x9E3779B97F4A7C15ull;return h^(h>>29);}
+}
+
+// The shared table: a texture's hash and used palette range by its TEX0 fields, TEXA's part and its
+// pages' content identities. Bounded: emptied when it grows past its limit (it fills again as it is used).
+struct GsTextureNames::SharedHashes {
+    struct Key {
+        std::uint64_t tex0,texa,content;
+        bool operator==(const Key&) const=default;
+    };
+    struct KeyHash {std::size_t operator()(const Key& k) const {return std::size_t(mix(mix(k.tex0,k.texa),k.content));}};
+    struct Value {std::uint64_t hash;unsigned lowest,highest;};
+    static constexpr std::size_t limit=1u<<17;
+    std::mutex lock;
+    std::unordered_map<Key,Value,KeyHash> table;
+};
+
+void GsTextureNames::shareHashesWith(GsTextureNames& other) {
+    if(!other.shared_)other.shared_=std::make_shared<SharedHashes>();
+    shared_=other.shared_;
 }
 
 std::string GsTextureNames::Name::textUsed() const {
@@ -117,7 +141,7 @@ void GsTextureNames::finishUpload() {
         return;
     }
     written_pages_.clear();
-    writeBytes(pending_);
+    writeBytes(pending_,hash);
     pending_.clear();
     std::sort(written_pages_.begin(),written_pages_.end());
     written_pages_.erase(std::unique(written_pages_.begin(),written_pages_.end()),written_pages_.end());
@@ -139,8 +163,15 @@ void GsTextureNames::image(std::span<const std::uint8_t> data) {
     if(pending_.size()==transfer_bytes_)finishUpload();
 }
 
-void GsTextureNames::writeBytes(std::span<const std::uint8_t> data) {
+void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t data_hash) {
     ++generation_; // A hash taken between two pieces of a transfer is not kept past the next one.
+    // The write's identity: its data and where it goes, from where the transfer has got to.
+    std::uint64_t token=0;
+    if(shared_) {
+        if(!data_hash)data_hash=XXH3_64bits(data.data(),data.size());
+        const std::uint64_t place[]{data_hash,psm_,bp_,bw_,x0_,y0_,w_,h_,x_,y_,partial_,partial_bytes_};
+        token=XXH3_64bits(place,sizeof place);
+    }
     const auto& tables=layouts();
     auto* const bytes=reinterpret_cast<std::uint8_t*>(memory_.data()); // GS memory is little-endian words.
     std::size_t at=0,last_page=~std::size_t(0);
@@ -148,7 +179,10 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data) {
         const std::size_t page=word/2048;
         if(page==last_page)return;
         last_page=page;
-        if(page_written_[page]!=generation_) {page_written_[page]=generation_;written_pages_.push_back(std::uint16_t(page));}
+        if(page_written_[page]!=generation_) {
+            page_written_[page]=generation_;written_pages_.push_back(std::uint16_t(page));
+            if(shared_)page_content_[page]=mix(page_content_[page],token);
+        }
     };
     // The next pixel of the stream; a pixel split between two pieces waits in partial_ (for 4-bit
     // formats partial_ holds the second pixel of a byte).
@@ -358,6 +392,21 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,
             return found->second.hash;
         }
     }
+    // Hashed by the other object at these pages' contents.
+    std::uint64_t content=0;
+    if(shared_) {
+        pages([&](unsigned page){content=mix(content,mix(page,page_content_[page]));});
+        std::lock_guard<std::mutex> hold(shared_->lock);
+        if(const auto found=shared_->table.find({key.first,key.second,content});found!=shared_->table.end()) {
+            ++shared_hits;
+            const auto& v=found->second;
+            if(lowest)*lowest=v.lowest;
+            if(highest)*highest=v.highest;
+            hashed_[key]={v.hash,generation_,v.lowest,v.highest};
+            return v.hash;
+        }
+        ++shared_misses;
+    }
     // The palette indices the texture uses (for the used entries' palette hash): a texture hashed by whole
     // blocks holds exactly its pixels' indices in them (taken while hashing); others are read pixel by pixel.
     unsigned low=0,high=255;
@@ -444,5 +493,10 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,
     }
     const auto hash=XXH3_64bits_digest(&state);
     hashed_[key]={hash,generation_,low,high};
+    if(shared_) {
+        std::lock_guard<std::mutex> hold(shared_->lock);
+        if(shared_->table.size()>=SharedHashes::limit)shared_->table.clear();
+        shared_->table[{key.first,key.second,content}]={hash,low,high};
+    }
     return hash;
 }

@@ -24,8 +24,11 @@ std::uint32_t pixel(std::span<const std::uint32_t> vram,unsigned x,unsigned y) {
 // HD texture packs (hd_texture_pack.h): names as PCSX2 reads them and the DDS files the pack loads.
 void hdTexturePackFiles() {
     auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("HD texture pack: ")+what);};
-    require(HdTexturePack::normalized("1a-2b-00005a53")=="1a-2b-00001a53","bit 14 cleared");
-    require(HdTexturePack::normalized("3c-00001a54")=="3c-00001a54","a name without a palette part");
+    const auto with=HdTexturePack::key("1a-2B-00005a53"),without=HdTexturePack::key("3c-00001a54");
+    require(with && with->texture==0x1a && with->palette==0x2b && with->has_palette && with->format==0x1a53,"three parts, bit 14 cleared");
+    require(without && without->texture==0x3c && !without->has_palette && without->palette==0 && without->format==0x1a54,"a name without a palette part");
+    require(!HdTexturePack::key("1a") && !HdTexturePack::key("1a-2b-3c-4d") && !HdTexturePack::key("1a--2b") && !HdTexturePack::key("1a-zz")
+            && !HdTexturePack::key("1a-100000000") && !HdTexturePack::key("11112222333344445-1a"),"not a name: refused");
     auto dds=[](const char* fourcc,std::uint32_t dxgi,std::uint32_t width,std::uint32_t height,std::uint32_t mips,std::size_t data) {
         std::vector<std::uint8_t> file(std::strcmp(fourcc,"DX10")?128:148);
         std::memcpy(file.data(),"DDS ",4);

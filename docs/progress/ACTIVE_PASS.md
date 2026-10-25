@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-25. **Pass in progress** (the user's "continue"). Committed checkpoint: GS threads and the 60 fps crash fix. Next: item 1 below.
+Updated: 2026-10-25. **No pass in progress** (ended at the user's request after two committed checkpoints: GS threads with the 60 fps crash fix, then 60 fps flicker and glitch fixes with shared HD texture names). Next: what the user sees in play, then item 1 below.
 
 ## Where the work stands
 
@@ -10,15 +10,17 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 **The 60 fps crash (fixed 2026-10-25):** unpaced runs with 60 fps crashed with heap corruption within seconds (also before this pass; the user may have met it in play). Cause found with AddressSanitizer: Granite dropped used staging blocks larger than its pool's size, so paraLLEl-GS freed them without the device lock while the other renderer's thread used the same lists. Fix: `tools/graphics/gpu/granite_retired_blocks.patch` (listed in `config/parallel_gs.lock.json`; `fetch_parallel_gs.py` applies it).
 
-**Performance (this PC, Release):** scripted fight headless: plain 30.4 s (33.1 before), HD 33.4 s (50.0 before). In the window, CPU vs CPU at 16x: HD with 60 fps holds 30 flips per second (22 to 27 before), the game's thread working 12 to 24 ms of 33. 60 fps without HD shows 2,067 of 2,181 in-between pictures (7.6 ms each). **With HD the in-between pictures are not ready in time:** 15 to 18 ms each in that battle (7.5 ms in the gate's fight) against about 10 to 14 ms available after a flip's picture; the second renderer's texture naming (hashes, palette ranges, upload copies, name strings) is most of it.
+**Performance (this PC, Release):** scripted fight headless: plain 30.4 s (33.1 before the GS threads), HD 33.4 s (50.0). In the window, CPU vs CPU at 16x: HD with 60 fps holds 30 flips per second (22 to 27 before). 60 fps without HD: 2,116 of 2,330 in-between pictures shown (6.7 ms each). With HD an in-between picture takes about 10 ms in the window (8.5 headless, 14.7 before the shared names) with a long tail, and only about a third are shown: the rule shows them only while 29 of the last 32 were in time, so the rate stays steady instead of switching.
 
-**Not seen by the user yet** (built, gate passed): the GS threads and the 60 fps fix; HD textures as a drop-in and the 60 fps rework of 2026-10-21; the play test fixes of 2026-10-21; the sound fix; fast forward; saving; special moves; the films with and without a skip; the launcher's screens; the camera in fights.
+**60 fps fixes of 2026-10-25 (the user saw flicker, and glitches when a fighter moves up or down):** the blend mixed unrelated data (V4-32 data streamed in chunks that shift between frames; every object carries a copy of the camera's screen matrices, which stayed the newer frame's while the stage got the blended camera); the in-between picture was shown 9.7 ms after the main one instead of a field later; the fighters' HD variant could differ between the two renderers. Now: rigid transforms and cameras only, every camera copy blended alike (`vu/vif1_blend.*`); shown at the next field's deadline; drawn palettes reach the second renderer one flip late. Check mode exact with and without HD.
+
+**Not seen by the user yet** (built, gate passed): the 60 fps fixes above (flicker, the up-and-down glitch, the cadence); the GS threads; HD textures as a drop-in and the 60 fps rework of 2026-10-21; the play test fixes of 2026-10-21; the sound fix; fast forward; saving; special moves; the films with and without a skip; the launcher's screens; the camera in fights.
 
 ## Next (the user, 2026-10-25: use the cores, RAM and VRAM; native code where it pays)
 
-1. **HD textures with 60 fps** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 7): the second renderer takes the main renderer's names for the same frame instead of naming again (fallback to naming when the state differs). Measure with the 60 fps summary line's time per in-between picture, in the window (`window_fight`-style run: `BT2_START_BATTLE=3,8,1`, `BT2_VIEWER_STATS`, `BT2_VIEWER_CLOSE`, 2,400 flips). Then the camera-cut threshold (165 cuts in that battle) and the newer frame's own things (hit flashes).
-2. **Native texture streaming** (step 8): an index at start, files read ahead into RAM on a background thread, GPU images made off the GS threads, a larger VRAM budget; no replacement drawn late.
-3. **Colour-matched variants for the fighters' relit bodies** (step 9); the lighting stays the game's. The user agreed to this order and that the lighting is not replaced.
+1. **The user's look at 60 fps** (with and without HD textures). Then: HD in-between pictures in time at 16x (profile the second renderer's GS thread: `vertex`, `loadClut`, `writeBytes` of the texture names and the renderer's intake lead); transforms cut in two at a chunk's edges stay the newer frame's (blend across the chunk boundary); the newer frame's own things (hit flashes).
+2. **Native texture streaming** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 8): an index at start, files read ahead into RAM on a background thread, GPU images made off the GS threads, a larger VRAM budget; no replacement drawn late.
+3. **Colour-matched variants for the fighters' relit bodies** (step 9); the lighting stays the game's.
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); the button art choice; the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end.
 
@@ -45,6 +47,7 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 - **Build the player programs before handing a build over;** a build fails to link while a game window is open.
 - **Runs with a window appear on the user's screen** (`BT2_VIEWER_CLOSE=1`); runs with `--sound` play on the user's speakers.
 - **Every VU1 or VIF1 change keeps the gate's baseline** (`tools/gate/battle_run.py`).
+- **60 fps pictures are checked as pictures:** `BT2_SIXTY_FPS_SNAPSHOT` at flip F is the picture between main F and main F + 1 (`BT2_GPU_GS_SNAPSHOT`); `BT2_SIXTY_FPS=check` must equal main F + 1 exactly. The lists of two frames: `BT2_VIF1_DUMP` (without 60 fps), read with a small script (the study of 2026-10-25 is in the October history).
 - **Threading changes are checked unpaced (headless) too:** the 60 fps crash never showed in the window. Tools that found it: an AddressSanitizer build (configured on demand in `build/asan`, RelWithDebInfo with `/fsanitize=address`, configured from PowerShell; run through `tools/build/msvc.py` so the runtime DLL is found), the Vulkan SDK's validation layer (its thread checks hid the race), the Debug probe (library assertions now go to the error output).
 - **After a change to `prepare_runtime.py`:** run it (and `generate_interpreter.py --reuse`), then build.
 - **Shell heredocs corrupt backslashes:** write such files with the file tools.

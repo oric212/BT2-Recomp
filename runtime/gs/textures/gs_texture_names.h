@@ -3,6 +3,7 @@
 #include <bitset>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -75,6 +76,15 @@ public:
     static std::size_t t8Byte(unsigned bp,unsigned bw,unsigned x,unsigned y);
     static std::size_t t4Nibble(unsigned bp,unsigned bw,unsigned x,unsigned y);
     std::array<std::uint16_t,512>& clut() {return clut_;}
+    // Texture hashes shared with another object that follows the same GS input (the in-between pictures'
+    // renderer replays each frame the main renderer took, with the same uploads in the same order). Each
+    // 8 KB page of the copy of GS memory has a content identity, chained from every write into it (the
+    // data's hash and where the transfer put it); both objects start from zeroed memory, so equal
+    // identities mean equal memory, and a texture whose pages have the identities another object hashed
+    // it at has that hash. Call on both before the first GS data; the table is thread-safe. A texture not
+    // in the table is hashed as before, so names never differ.
+    void shareHashesWith(GsTextureNames& other);
+    std::uint64_t shared_hits=0,shared_misses=0;
 
 private:
     std::vector<std::uint32_t> memory_; // GS memory, 4 MB, by word address.
@@ -106,11 +116,15 @@ private:
     struct KeyHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first*0x9E3779B97F4A7C15ull^k.second);}};
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,Hashed,KeyHash> hashed_;
     std::uint64_t textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest=nullptr,unsigned* highest=nullptr);
+    struct SharedHashes;
+    std::shared_ptr<SharedHashes> shared_;
+    std::array<std::uint64_t,512> page_content_{}; // Each page's content identity (with shared_ only).
 
     void startTransfer(std::uint64_t dir);
     void finishUpload();
     void writePending(); // Writes the data kept so far; the rest of the transfer is written as it comes.
-    void writeBytes(std::span<const std::uint8_t> data);
+    // `data_hash`: the data's XXH3 when the caller has it (0: computed here when the identities are kept).
+    void writeBytes(std::span<const std::uint8_t> data,std::uint64_t data_hash=0);
     void loadClut(std::uint64_t tex0);
     void kick();
     // Drawn palettes: the pages CLUT loads read and those the renderer's copies hold, the generation of the

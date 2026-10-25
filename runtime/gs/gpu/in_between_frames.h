@@ -52,6 +52,10 @@ public:
     // Whether the frame is done (without waiting) and its in-between picture is ready.
     bool ready();
     bool busy(); // Whether the frame is still to be drawn (without waiting).
+    // Whether to show a picture that is `ready` at its field: only while the in-between pictures keep up
+    // (at least 29 of the last 32 were ready). Shown now and then they would make an uneven cadence that
+    // looks worse than a steady 30 (Tenkaichi3Decomp likewise shows only as many as fit).
+    bool keepsUp(bool ready);
     std::pair<unsigned,unsigned> pictureSize() const {return picture_;}
     GpuGsMirror& renderer() {return mirror_;}
     // For checks: when set, the frames are only replayed (no in-between pictures) and each replay is
@@ -61,6 +65,7 @@ public:
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
     unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
+    std::uint64_t refused_pairs=0,blended_words=0,realigned_pairs=0; // Changed unpack pairs left as they are, words blended, shifted pairs realigned (vu/vif1_blend.h).
     double waited_seconds=0; // The game's thread waiting for the frame.
     double drawing_seconds=0,slowest_seconds=0; // The thread's time on the in-between pictures drawn, and the longest.
 
@@ -88,6 +93,7 @@ private:
     GsRenderThread thread_; // Tasks only (thread index 1, as the renderer's GS thread); destroyed after the renderer.
     GpuGsMirror mirror_;
     std::pair<unsigned,unsigned> picture_{0,0};
+    std::uint32_t recent_=~0u; // Whether each of the last 32 pictures was ready at its field (newest in bit 0).
     void send(std::span<const std::uint8_t> data);
     bool drawInBetween(const Frame& older,const Frame& newer,unsigned older_slot);
 };
