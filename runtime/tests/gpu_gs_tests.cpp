@@ -2,7 +2,10 @@
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/cpu/gs_command_sink.h"
 #include "gs/gpu/hd_texture_pack.h"
+#include "gs/textures/gs_texture_names.h"
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -50,6 +53,37 @@ void hdTexturePackFiles() {
     require(!HdTexturePack::readDds(std::vector<std::uint8_t>(16)),"not a DDS file");
 }
 
+// The pack's loader (hd_texture_pack.h, streaming): a file asked for is loaded on the loader's thread;
+// until then a lookup says it is loading; a file that is not a DDS ends refused; a name not in the pack is none.
+void hdTexturePackLoading(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("HD texture loading: ")+what);};
+    const auto folder=std::filesystem::temp_directory_path()/"bt2-hd-pack-test";
+    std::filesystem::remove_all(folder);std::filesystem::create_directories(folder/"replacements");
+    std::vector<std::uint8_t> file(148);
+    std::memcpy(file.data(),"DDS ",4);
+    const std::uint32_t size=8,levels=1,dxgi=77;
+    std::memcpy(file.data()+12,&size,4);std::memcpy(file.data()+16,&size,4);std::memcpy(file.data()+28,&levels,4);
+    std::memcpy(file.data()+84,"DX10",4);std::memcpy(file.data()+128,&dxgi,4);
+    file.resize(file.size()+4*16);
+    std::ofstream(folder/"replacements"/"1a-2b-00005a53.dds",std::ios::binary).write(reinterpret_cast<const char*>(file.data()),std::streamsize(file.size()));
+    std::ofstream(folder/"replacements"/"3c-00001a54.dds")<<"not a DDS file";
+    GsTextureNames names;
+    gpu.enableHdTextures(folder,64<<20,names);
+    auto& pack=*gpu.hdTexturePack();
+    const HdTexturePack::Key good{0x1a,0x2b,0x1a53,true},bad{0x3c,0,0x1a54,false},absent{0x99,0,0x1a54,false};
+    const auto first=pack.find(good);
+    require(first.image || first.loading,"a file asked for is loading or loaded");
+    pack.find(bad);
+    pack.waitLoaded();
+    const auto later=pack.find(good);
+    require(later.image && !later.loading && pack.loaded==1,"loaded by the loader");
+    const auto refused=pack.find(bad);
+    require(!refused.image && !refused.loading && pack.refused==1,"not a DDS file: refused");
+    const auto none=pack.find(absent);
+    require(!none.image && !none.loading,"a name not in the pack");
+    std::error_code error;std::filesystem::remove_all(folder,error);
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -91,6 +125,7 @@ int main() try {
     // The sink checks the packet's framing and passes it on; it draws nothing.
     GsCommandSink validator;validator.transfer(sprite);
     if(validator.transfers!=1)throw std::runtime_error("The sink lost the transfer");
-    std::cout<<"GPU GS draws the sprite and the strip as expected\n";
+    hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
+    std::cout<<"GPU GS draws the sprite and the strip as expected; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

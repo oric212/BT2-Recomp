@@ -14,6 +14,8 @@ struct DisplayFrame;
 class GsTextureNames;
 class WindowPresenter;
 
+class HdTexturePack;
+
 class GpuGsBackend {
 public:
     GpuGsBackend();
@@ -69,6 +71,7 @@ public:
     // it has one. The summary line says what was found, loaded and dropped.
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
     std::string hdTextureSummary() const;
+    HdTexturePack* hdTexturePack(); // The pack (null without one), for tests.
     // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`;
     // `late_palettes`: it draws each frame after the primary's flip, so the palettes the primary drew reach
     // it one flip late (else at once, for a renderer that draws a frame while the primary does).

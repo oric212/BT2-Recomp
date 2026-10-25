@@ -54,8 +54,8 @@ void GpuGsBackend::init(unsigned super_sampling) {
     if(!Vulkan::Context::init_loader(nullptr))throw std::runtime_error("GPU GS: Vulkan loader unavailable");
     auto state=std::make_unique<State>();
     // 0: the game's thread and the GS thread, one at a time; 1: the second renderer's (gpu_gs_mirror.h); 2: the
-    // window presenter's thread (gpu_window_presenter.h).
-    state->context->set_num_thread_indices(3);
+    // window presenter's thread (gpu_window_presenter.h); 3: the HD textures' loader (hd_texture_pack.h).
+    state->context->set_num_thread_indices(4);
     // The surface extensions let the window presenter make a swapchain on this device.
     const char* instance_extensions[]{"VK_KHR_surface","VK_KHR_win32_surface"};
     const char* device_extensions[]{"VK_KHR_swapchain"};
@@ -145,7 +145,6 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 void GpuGsBackend::flush() {
     state_->gs.flush();++state_->scanouts;
     if(state_->pack) {
-        state_->pack->loadPending(); // Between frames, after the renderer's work is submitted.
         copyDrawnPalettes();
     }
     state_->device->next_frame_context();
@@ -288,8 +287,11 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
         if(!name)return {};
         // As older PCSX2 versions named it (the used palette entries), then as newer ones do (the whole palette).
         const auto key=[&](std::uint64_t palette){return HdTexturePack::Key{name->texture,palette,name->format,name->has_palette};};
-        const auto* image=name->has_palette?state_->pack->find(key(name->palette_used)):nullptr;
-        if(!image)image=state_->pack->find(key(name->palette));
+        bool loading=false;
+        const auto look=[&](std::uint64_t palette){const auto found=state_->pack->find(key(palette));loading=loading || found.loading;return found.image;};
+        const auto* image=name->has_palette?look(name->palette_used):nullptr;
+        if(!image)image=look(name->palette);
+        if(!image && loading)state_->gs.texture_replacement_pending=true; // The original is not kept meanwhile.
         return image?image->handle:Vulkan::ImageHandle{};
     };
 }
@@ -311,10 +313,12 @@ std::string GpuGsBackend::timestampSummary() const {
     return head+parts;
 }
 
+HdTexturePack* GpuGsBackend::hdTexturePack() {return state_?state_->pack.get():nullptr;}
+
 std::string GpuGsBackend::hdTextureSummary() const {
     if(!state_ || !state_->pack)return {};
     const auto& p=*state_->pack;
     return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
         +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.loaded)+" loaded, "
-        +std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB";
+        +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB";
 }

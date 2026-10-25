@@ -1,12 +1,15 @@
 #include "gs/gpu/hd_texture_pack.h"
 #include "gs/gpu/hd_texture_image.h"
 #include "device.hpp"
+#include "thread_id.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
 
-struct HdTexturePack::Entry {Image image;std::filesystem::path path;std::uint64_t bytes=0,used=0;bool none=false;};
+// `done`: loaded, or refused (`none`).
+struct HdTexturePack::Entry {Image image;std::filesystem::path path;std::uint64_t bytes=0,used=0;bool none=false,done=false;};
 
 namespace {
 std::uint32_t u32(const std::vector<std::uint8_t>& d,std::size_t at) {std::uint32_t v;std::memcpy(&v,d.data()+at,4);return v;}
@@ -85,51 +88,97 @@ HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path&
     for(const auto& file:ddsFiles(replacements))
         if(const auto k=key(file.stem().string()))if(!index_.emplace(*k,file).second)++duplicates;
     if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))if(const auto k=key(file.stem().string()))index_[*k]=file;
+    loader_=std::thread([this]{run();});
 }
 
-HdTexturePack::~HdTexturePack() {for(auto& [name,entry]:cache_)delete entry;}
+HdTexturePack::~HdTexturePack() {
+    {std::lock_guard<std::mutex> hold(lock_);stop_=true;}
+    changed_.notify_all();
+    loader_.join();
+    for(auto& [name,entry]:cache_)delete entry;
+}
 
-const HdTexturePack::Image* HdTexturePack::find(const Key& name) {
-    std::lock_guard<std::mutex> hold(lock_);
+HdTexturePack::Entry* HdTexturePack::entry(const std::filesystem::path* file) {
+    if(const auto cached=cache_.find(file);cached!=cache_.end())return cached->second;
+    auto* made=new Entry;made->path=*file;
+    cache_.emplace(file,made);
+    wanted_.push_back(file);
+    changed_.notify_all();
+    return made;
+}
+
+HdTexturePack::Found HdTexturePack::find(const Key& name) {
+    std::unique_lock<std::mutex> hold(lock_);
     const std::filesystem::path* file=nullptr;
     if(const auto same=index_.find(name);same!=index_.end())file=&same->second;
     else if(name.has_palette)
         if(const auto every=index_.find(Key{name.texture,0,name.format,false});every!=index_.end())file=&every->second;
-    if(!file) {++missing;return nullptr;}
-    auto cached=cache_.find(file);
-    if(cached==cache_.end()) {
-        auto* entry=new Entry;entry->path=*file;
-        cached=cache_.emplace(file,entry).first;
-        pending_.push_back(file); // Loaded at the next frame boundary.
-    }
-    auto* entry=cached->second;
-    if(entry->none) {++missing;return nullptr;}
-    if(!entry->image.handle) {++waiting;return nullptr;} // Drawn as the original until loaded.
-    entry->used=++tick_;++found;
-    return &entry->image;
+    if(!file) {++missing;return {};}
+    const bool first=!cache_.contains(file);
+    entry(file);
+    // The first time, a little time for the loader (the file is small; most are ready for their first draw).
+    if(first)changed_.wait_for(hold,std::chrono::duration<double>(first_wait_seconds),[&]{
+        const auto it=cache_.find(file);return it==cache_.end() || it->second->done;
+    });
+    const auto it=cache_.find(file);
+    if(it==cache_.end()) {++waiting;return {nullptr,true};} // Dropped for the budget meanwhile: asked for again next time.
+    auto* e=it->second;
+    if(e->none) {++missing;return {};}
+    if(!e->image.handle) {++waiting;if(first)++late;return {nullptr,true};} // Drawn as the original until loaded.
+    e->used=++tick_;++found;
+    return {&e->image,false};
 }
 
-void HdTexturePack::loadPending() {
-    std::lock_guard<std::mutex> hold(lock_);
-    for(const auto* indexed:pending_) {
-        const auto it=cache_.find(indexed);
-        if(it==cache_.end())continue;
-        auto* entry=it->second;
-        std::ifstream in(entry->path,std::ios::binary);
-        const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
-        const auto dds=readDds(file);
-        if(!dds) {entry->none=true;++refused;continue;}
-        auto info=Vulkan::ImageCreateInfo::immutable_2d_image(dds->width,dds->height,VkFormat(dds->format));
-        info.levels=unsigned(dds->levels.size());
-        std::vector<Vulkan::ImageInitialData> initial;
-        std::uint64_t bytes=0;
-        for(const auto& level:dds->levels) {initial.push_back({level.data(),0,0});bytes+=level.size();}
-        entry->image.handle=device_.create_image(info,initial.data());
-        if(!entry->image.handle) {entry->none=true;++refused;continue;}
-        entry->bytes=bytes;entry->used=++tick_;++loaded;resident_bytes+=bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
+void HdTexturePack::waitLoaded() {
+    std::unique_lock<std::mutex> hold(lock_);
+    changed_.wait(hold,[this]{return wanted_.empty() && !busy_;});
+}
+
+void HdTexturePack::load(Entry& entry) {
+    std::ifstream in(entry.path,std::ios::binary);
+    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
+    const auto dds=readDds(file);
+    if(!dds)return;
+    auto info=Vulkan::ImageCreateInfo::immutable_2d_image(dds->width,dds->height,VkFormat(dds->format));
+    info.levels=unsigned(dds->levels.size());
+    std::vector<Vulkan::ImageInitialData> initial;
+    std::uint64_t bytes=0;
+    for(const auto& level:dds->levels) {initial.push_back({level.data(),0,0});bytes+=level.size();}
+    entry.image.handle=device_.create_image(info,initial.data());
+    entry.bytes=bytes;
+}
+
+void HdTexturePack::run() {
+    Util::register_thread_index(loader_thread_index);
+    for(;;) {
+        Entry* e=nullptr;
+        {
+            std::unique_lock<std::mutex> hold(lock_);
+            changed_.wait(hold,[this]{return stop_ || !wanted_.empty();});
+            if(stop_)return;
+            const auto it=cache_.find(wanted_.front());wanted_.pop_front();
+            if(it==cache_.end() || it->second->done)continue;
+            e=it->second;busy_=true;
+        }
+        // Not under the lock: only this thread writes an entry that is not done, and nothing drops it.
+        Image image;std::uint64_t bytes=0;bool none=false;
+        {
+            Entry loading;loading.path=e->path;
+            try {load(loading);} catch(...) {}
+            none=!loading.image.handle;image=std::move(loading.image);bytes=loading.bytes;
+        }
+        {
+            std::lock_guard<std::mutex> hold(lock_);
+            e->done=true;e->none=none;busy_=false;
+            if(none)++refused;
+            else {
+                e->image=std::move(image);e->bytes=bytes;e->used=++tick_;++loaded;
+                resident_bytes+=bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
+                if(resident_bytes>budget_)evict();
+            }
+        }
+        changed_.notify_all();
     }
-    pending_.clear();
-    if(resident_bytes>budget_)evict();
 }
 
 void HdTexturePack::evict() {

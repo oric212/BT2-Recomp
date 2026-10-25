@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-20 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-10-26 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -37,15 +37,15 @@
 <text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title &amp; menus</text>
 <text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">All modes run</text>
 </g>
-<g><title>Versus battle: Operational. 130 characters</title>
+<g><title>Versus battle: Operational. 130 fighters</title>
 <rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="612.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
-<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">130 characters</text>
+<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">130 fighters</text>
 </g>
-<g><title>Story mode: Operational. Parts, towns, shop</title>
+<g><title>Story mode: Operational. 200 parts, towns</title>
 <rect x="684.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="744.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Story mode</text>
-<text x="744.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Parts, towns, shop</text>
+<text x="744.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">200 parts, towns</text>
 </g>
 <g><title>Saves: Incomplete. Loading confirmed</title>
 <rect x="816.0" y="106" width="120.0" height="44" rx="22" fill="#fff7e6" stroke="#b77912" stroke-width="2"/>
@@ -84,12 +84,12 @@
 <text x="52.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="37.0" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
 <text x="256.5" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and sound</text>
-<g><title>GS and display: Operational. GPU renderer, shown on GPU</title>
+<g><title>GS and display: Operational. GPU renderer, own threads</title>
 <rect x="256.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="256.5" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="273.5" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="284.5" y="234" font-size="13" font-weight="600" fill="#1e293b">GS and display</text>
-<text x="269.5" y="252" font-size="11.5" fill="#64748b">GPU renderer, shown on GPU</text></g>
+<text x="269.5" y="252" font-size="11.5" fill="#64748b">GPU renderer, own threads</text></g>
 <g><title>GIF / VIF / VU: Operational. Native VU1, checked in gate</title>
 <rect x="256.5" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="256.5" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
@@ -115,12 +115,12 @@
 <text x="284.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
 <text x="269.5" y="500" font-size="11.5" fill="#64748b">Settings, in-game menu</text></g>
 <text x="489.0" y="196" font-size="15" font-weight="600" fill="#334155">Enhancements</text>
-<g><title>HD textures: Operational. PCSX2 names, pack 2</title>
+<g><title>HD textures: Operational. PCSX2 packs, streamed</title>
 <rect x="489.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="506.0" cy="230" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="234" font-size="13" font-weight="600" fill="#1e293b">HD textures</text>
-<text x="502.0" y="252" font-size="11.5" fill="#64748b">PCSX2 names, pack 2</text></g>
+<text x="502.0" y="252" font-size="11.5" fill="#64748b">PCSX2 packs, streamed</text></g>
 <g><title>Super-sampling: Operational. 2x to 16x at full speed</title>
 <rect x="489.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
@@ -139,12 +139,12 @@
 <circle cx="506.0" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="420" font-size="13" font-weight="600" fill="#1e293b">60 fps battles</text>
 <text x="502.0" y="438" font-size="11.5" fill="#64748b">With HD at 16x since 10-26</text></g>
-<g><title>Performance: Operational. GS threads; GPU 6 to 10 ms</title>
+<g><title>Performance: Operational. 30 fps with every option</title>
 <rect x="489.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="506.0" cy="478" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Performance</text>
-<text x="502.0" y="500" font-size="11.5" fill="#64748b">GS threads; GPU 6 to 10 ms</text></g>
+<text x="502.0" y="500" font-size="11.5" fill="#64748b">30 fps with every option</text></g>
 <text x="721.5" y="196" font-size="15" font-weight="600" fill="#334155">Pipeline and checks</text>
 <g><title>Native Windows host: Verified. MSVC x64, Debug and Release</title>
 <rect x="721.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>

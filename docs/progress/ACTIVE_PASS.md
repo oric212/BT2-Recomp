@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-10-26. **Pass in progress** (goal-driven, item 1 below). Committed checkpoint 2026-10-26: HD textures and 60 fps together at 16x. Next: the user's look at 60 fps with and without HD, then item 2 (native texture streaming).
+Updated: 2026-10-26. **Pass in progress** (goal-driven, item 1 below). Committed checkpoints 2026-10-26: HD textures and 60 fps together at 16x; native texture streaming (item 2). Next: the user's look at 60 fps and HD textures in play, then item 3.
 
 ## Where the work stands
 
@@ -20,8 +20,8 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 ## Next (the user, 2026-10-25: use the cores, RAM and VRAM; native code where it pays)
 
-1. **The user's look at 60 fps** (with and without HD textures). Then: the in-between thread's HD cost (about 18 ms a picture: the second renderer's texture names `writeBytes`, `vertex`, `loadClut` and paraLLEl-GS; the game's thread should not wait for it at flips on a slower PC); transforms cut in two at a chunk's edges stay the newer frame's (blend across the chunk boundary); the newer frame's own things (hit flashes). Known: replay mode with HD differs by under 100 bytes at the fight's flips 400 and 401 (before this pass too).
-2. **Native texture streaming** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 8): an index at start, files read ahead into RAM on a background thread, GPU images made off the GS threads, a larger VRAM budget; no replacement drawn late.
+1. **The user's look at 60 fps** (with and without HD textures). Then: the game's thread waits for the in-between drawing at a third of the flips (891 of 2,400 over 2 ms, about 11 ms each, measured 2026-10-26): the second renderer stalls on the device's lock while a present holds it (Granite holds it during the driver's present) and computes half of its texture hashes itself now that both renderers draw at once; and the in-between thread's HD cost (about 18 ms a picture: the second renderer's texture names `writeBytes`, `vertex`, `loadClut` and paraLLEl-GS; the game's thread should not wait for it at flips on a slower PC); transforms cut in two at a chunk's edges stay the newer frame's (blend across the chunk boundary); the newer frame's own things (hit flashes). Known: replay mode with HD differs by under 100 bytes at the fight's flips 400 and 401 (before this pass too).
+2. **Native texture streaming — built 2026-10-26** ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), step 8): a loader thread makes the images; a first use waits up to 5 ms; one still loading is drawn without its original being kept, so it shows from the next draw. No record of used textures is kept between runs (the user's decision). Left: budget from the card's free memory; read-ahead by stage if pop-in is still seen.
 3. **Colour-matched variants for the fighters' relit bodies** (step 9); the lighting stays the game's.
 
 **After this:** FSR 1 scaling with sharpening and an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); the button art choice; the final battle sweep; the runtime generalization plan's groups 4 to 6 at the very end.

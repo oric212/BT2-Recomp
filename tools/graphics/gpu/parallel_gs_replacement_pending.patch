@@ -1,0 +1,28 @@
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -1709,7 +1709,11 @@
+ 			// BT2 Recomp patch: a replacement is cached like a texture from VRAM (and dropped when its
+ 			// pages are overwritten), but nothing is uploaded into it and it is never recycled.
+ 			desc.hash = hasher.get();
++			texture_replacement_pending = false;
+ 			image = texture_replacement(desc);
++			// BT2 Recomp patch: the original of a replacement that is still loading is not kept.
++			if (!image && texture_replacement_pending)
++				long_term_cache_texture = false;
+ 			if (image)
+ 			{
+ 				if (long_term_cache_texture)
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -321,6 +321,9 @@
+ 	// block-compressed format (which marks it as a replacement), and is sampled with the texture's own
+ 	// coordinates. Textures with super-samples are never replaced.
+ 	std::function<Vulkan::ImageHandle (const TextureDescriptor &)> texture_replacement;
++	// BT2 Recomp patch: set by texture_replacement when it returned no image only because the replacement is
++	// still loading; the original is then cached only for the render pass, so it is asked for again.
++	bool texture_replacement_pending = false;
+ 
+ private:
+ 	friend class PageTracker;

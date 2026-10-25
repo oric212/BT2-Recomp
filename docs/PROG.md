@@ -54,7 +54,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
 1. **60 fps in play:** the user's look at the in-between pictures, with and without HD ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
-2. **Native texture streaming:** replacements read ahead into RAM and kept in VRAM, no pop-in ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 8); then **the fighters' HD bodies** by colour-matched variants (step 9).
+2. **The fighters' HD bodies** by colour-matched variants ([HD textures](plans/graphics/HD_TEXTURES_PLAN.md), step 9; native texture streaming, step 8, built 2026-10-26).
 3. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 4. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
 5. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
