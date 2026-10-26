@@ -1,7 +1,18 @@
 diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
 --- a/gs/gs_interface.hpp
 +++ b/gs/gs_interface.hpp
-@@ -332,6 +332,32 @@
+@@ -320,6 +320,10 @@
+ 
+ 	FlushStats consume_flush_stats();
+ 	double get_accumulated_timestamps(TimestampType type) const;
++	// BT2 Recomp patch: each render pass's GPU time as it is known (GSRenderer::on_pass_timestamp), and the frame
++	// number the following passes are recorded under.
++	void set_pass_timestamps(std::function<void (uint32_t frame, const std::string &kind, double seconds)> callback);
++	void set_timestamp_frame(uint32_t frame);
+ 
+ 	void read_transfer_fifo(void *data, uint32_t num_128b_words);
+ 
+@@ -332,6 +336,32 @@
  	// still loading; the original is then cached only for the render pass, so it is asked for again.
  	bool texture_replacement_pending = false;
  
@@ -34,7 +45,7 @@ diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
  private:
  	friend class PageTracker;
  	void flush(PageTrackerFlushFlags flags, FlushReason reason);
-@@ -391,6 +417,8 @@
+@@ -391,6 +421,8 @@
  		std::vector<TEX0Bits> tex0_infos;
  		// BT2 Recomp patch: the last sprite's piece of a replacement (its own texture entry, region-clamped).
  		uint32_t piece_source = UINT32_MAX, piece_index = 0;
@@ -106,6 +117,23 @@ diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
  void GSInterface::set_frame_boundaries(bool enable)
  {
  	renderer.set_frame_boundaries(enable);
+@@ -4888,6 +4918,16 @@
+ 	return renderer.consume_flush_stats();
+ }
+ 
++void GSInterface::set_pass_timestamps(std::function<void (uint32_t, const std::string &, double)> callback)
++{
++	renderer.on_pass_timestamp = std::move(callback);
++}
++
++void GSInterface::set_timestamp_frame(uint32_t frame)
++{
++	renderer.timestamp_frame = frame;
++}
++
+ double GSInterface::get_accumulated_timestamps(TimestampType type) const
+ {
+ 	return renderer.get_accumulated_timestamps(type);
 diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
 --- a/gs/gs_renderer.hpp
 +++ b/gs/gs_renderer.hpp
@@ -128,7 +156,28 @@ diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
  
  	// Readback stage.
  	void flush_readback(const uint32_t *page_indices, uint32_t num_indices);
-@@ -583,8 +588,6 @@
+@@ -317,6 +322,10 @@
+ 
+ 	double get_accumulated_timestamps(TimestampType type) const;
+ 	void set_enable_timestamps(bool enable);
++	// BT2 Recomp patch: each render pass's shading and each native pass's work as its time is known, with the
++	// frame number set when it was recorded and its kind (timestamps on).
++	std::function<void (uint32_t frame, const std::string &kind, double seconds)> on_pass_timestamp;
++	uint32_t timestamp_frame = 0;
+ 
+ 	void invalidate_super_sampling_state(uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2);
+ 
+@@ -541,6 +550,9 @@
+ 		TimestampType type;
+ 		Vulkan::QueryPoolHandle ts_start;
+ 		Vulkan::QueryPoolHandle ts_end;
++		// BT2 Recomp patch: for on_pass_timestamp.
++		uint32_t frame = 0;
++		std::string kind;
+ 	};
+ 	std::vector<Timestamp> timestamps;
+ 	void log_timestamps();
+@@ -583,8 +595,6 @@
  	std::vector<uint32_t> vram_copy_write_pages;
  	std::vector<uint32_t> sync_vram_shadow_pages;
  
@@ -140,7 +189,16 @@ diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
 diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 --- a/gs/gs_renderer.cpp
 +++ b/gs/gs_renderer.cpp
-@@ -3221,6 +3221,37 @@
+@@ -1269,6 +1269,8 @@
+ 		double t = device->convert_device_timestamp_delta(
+ 				itr->ts_start->get_timestamp_ticks(), itr->ts_end->get_timestamp_ticks());
+ 		timestamp_total_time[int(itr->type)] += t;
++		if (on_pass_timestamp && !itr->kind.empty())
++			on_pass_timestamp(itr->frame, itr->kind, t);
+ 	}
+ 	timestamps.erase(timestamps.begin(), itr);
+ }
+@@ -3221,6 +3223,37 @@
  		clear_cmd->begin_region("clear-memory");
  }
  
@@ -162,7 +220,7 @@ diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 +	if (enable_timestamps)
 +	{
 +		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-+		timestamps.push_back({ TimestampType::NativePasses, std::move(start_ts), std::move(end_ts) });
++		timestamps.push_back({ TimestampType::NativePasses, std::move(start_ts), std::move(end_ts), timestamp_frame, "native" });
 +	}
 +	cmd.restore_state(saved);
 +	// As after a render pass's shading.
@@ -178,3 +236,27 @@ diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
  void GSRenderer::flush_rendering(const RenderPass &rp)
  {
  	if (rp.num_primitives == 0)
+@@ -3372,8 +3405,21 @@
+ 		if (enable_timestamps)
+ 		{
+ 			end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+-			device->register_time_interval("GPU", start_ts, end_ts, "shading");
+-			timestamps.push_back({TimestampType::Shading, std::move(start_ts), std::move(end_ts)});
++			// BT2 Recomp patch: the tag names the render pass's kind (its first frame buffer and format, samples, whether
++			// textured and blended, primitives rounded down to a power of two), so the tag report divides the shading.
++			bool blended = false;
++			for (uint32_t i = 0; i < rp.num_states; i++)
++				blended = blended || (rp.states[i].blend_mode & BLEND_MODE_ABE_BIT) != 0;
++			uint32_t bucket = 1;
++			while (bucket * 2 <= rp.num_primitives)
++				bucket *= 2;
++			const auto &frame = rp.instances[0].fb.frame.desc;
++			char tag[96];
++			snprintf(tag, sizeof(tag), "shading fb %x psm %x x%u%s%s prims %u+", uint32_t(frame.FBP), uint32_t(frame.PSM),
++			         1u << (rp.instances[0].sampling_rate_x_log2 + rp.instances[0].sampling_rate_y_log2),
++			         rp.num_textures ? " textured" : "", blended ? " blended" : "", bucket);
++			device->register_time_interval("GPU", start_ts, end_ts, tag);
++			timestamps.push_back({TimestampType::Shading, std::move(start_ts), std::move(end_ts), timestamp_frame, tag});
+ 		}
+ 
+ 		stats.num_primitives += rp.num_primitives;

@@ -73,6 +73,7 @@ struct GpuGsBackend::State {
     // tools/graphics/gpu/gif_dump_draws.py lists the draws.
     std::ofstream gif_dump;unsigned gif_dump_from=0,gif_dump_to=0,gif_dump_transfers=0;
     std::ofstream memory_hashes; // BT2_GS_MEMORY_HASHES (init).
+    std::ofstream pass_times; // BT2_GPU_PASS_TIMES (init).
     // BT2_GS_PEEK=<transfer>[,<transfer>...]:<path prefix> with BT2_GS_PEEK_BUFFERS=<block>,<width>,<psm>[;...] (hex
     // block address, width in 64 pixels, psm number): before those transfers of the dump, each buffer is scanned
     // out as the display shows a picture and written to <prefix>-<transfer>-<block>.ppm, its alpha to
@@ -126,6 +127,17 @@ void GpuGsBackend::init(unsigned super_sampling) {
     if(const char* hashes=std::getenv("BT2_GS_MEMORY_HASHES")) {
         state->memory_hashes.open(hashes);
         if(!state->memory_hashes)throw std::runtime_error("BT2_GS_MEMORY_HASHES: cannot write the file");
+    }
+    // BT2_GPU_PASS_TIMES=<file>: the main renderer's GPU time of each render pass's shading and each native pass, one
+    // line each: the flips before it, milliseconds, its kind (GSRenderer::on_pass_timestamp). Turns timestamps on.
+    if(const char* times=std::getenv("BT2_GPU_PASS_TIMES")) {
+        state->pass_times.open(times);
+        if(!state->pass_times)throw std::runtime_error("BT2_GPU_PASS_TIMES: cannot write the file");
+        ParallelGS::DebugMode mode;mode.timestamps=true;
+        state->gs.set_debug_mode(mode);state->timestamps=true;
+        state->gs.set_pass_timestamps([out=&state->pass_times](std::uint32_t frame,const std::string& kind,double seconds) {
+            char line[48];std::snprintf(line,sizeof line,"%u %.4f ",frame,seconds*1000);*out<<line<<kind<<'\n';
+        });
     }
     if(const char* dump=std::getenv("BT2_GIF_DUMP")) {
         unsigned from=0,count=0;int used=0;
@@ -281,6 +293,7 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 void GpuGsBackend::flush() {
     if(state_->dumpingGif())state_->dumpRecord('F',std::uint32_t(state_->scanouts));
     state_->gs.flush();++state_->scanouts;
+    if(state_->pass_times.is_open())state_->gs.set_timestamp_frame(state_->scanouts);
     if(state_->memory_hashes.is_open()) {
         std::uint64_t hash=0xCBF29CE484222325ull; // FNV-1a over the words.
         for(const std::uint32_t word:readVram())hash=(hash^word)*0x100000001B3ull;

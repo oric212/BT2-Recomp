@@ -53,7 +53,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
-1. **Super attacks at 16x:** find what costs the GPU time there (the blended dust is not it: a super attack frame covers about the area of an ordinary one), then a native pass or a change to paraLLEl-GS where the evidence points ([hybrid rendering plan](plans/graphics/HYBRID_RENDERING_PLAN.md) step 3).
+1. **Super attacks at 16x:** the cost is the beam's additive glow (one render pass up to 10 ms at 16x); a native pass with the GPU's rasterizer is designed and waits for the user's decision on exactness at 1x ([hybrid rendering plan](plans/graphics/HYBRID_RENDERING_PLAN.md) step 3).
 2. **60 fps in play:** the user's look at the in-between pictures, with and without HD ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
 3. **Blur** the user sees in some text and screens and on the fighters' edges, then **the randomizer** (the random fight music checked correct and varying with timing; the user's path needed, [handoff](progress/ACTIVE_PASS.md)); then the user's look at the HD textures (finished 2026-10-26, [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) step 10) and the fighters' lit variants.
 4. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
