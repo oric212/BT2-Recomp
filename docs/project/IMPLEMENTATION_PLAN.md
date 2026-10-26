@@ -49,7 +49,7 @@ Next, in order (the user, 2026-10-20 and 2026-10-25):
 1. **60 fps battles in play** ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)): the user's look at the fixed in-between pictures (flicker, the up-and-down glitch); HD in-between pictures in time at 16x (now about a third; texture names shared since 2026-10-25); transforms cut at chunk edges; the newer frame's own things (hit flashes).
 2. **Native texture streaming** (HD textures plan, step 8) — built 2026-10-26: a loader thread makes the images; a replacement still loading is drawn without its original being kept.
 3. **The fighters' HD bodies** (HD textures plan, step 9) — built 2026-10-26: the pack's lit variant nearest in colour for the palettes the game relights; the user's look in play left.
-4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
+4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md); native passes inside paraLLEl-GS for the HD outline and heavy effects: [hybrid rendering plan](../plans/graphics/HYBRID_RENDERING_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
 5. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
 6. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
 7. **At the very end:** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)), once the game boots and everything works.

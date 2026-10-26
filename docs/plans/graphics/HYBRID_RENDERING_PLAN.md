@@ -1,0 +1,35 @@
+# Hybrid rendering: native passes inside paraLLEl-GS
+
+Decided by the user on 2026-10-26, after the measurements of [performance plan](../ee/PERFORMANCE_PLAN.md) item 4d: of three hybrid forms (native fights with paraLLEl-GS for everything else; native passes inside paraLLEl-GS; native 3D with paraLLEl-GS for the HUD and post-processing), the second, with whole native fights as a possible later step. paraLLEl-GS stays the renderer of every frame and the reference; chosen sequences of the game's GS drawing are run instead by GPU passes written for them, which read and write paraLLEl-GS's own GS memory, its super-samples included. Every other draw is emulated as before.
+
+## Why
+
+- **Speed:** at 16x with 60 fps the super attack of the CPU fight (an Angry Kamehameha, about 70 screens of blended dust and smoke a frame) is GPU-bound: 27.6 flips per second. paraLLEl-GS's time is mostly fixed per frame (16x costs twice 1x, not sixteen times) and it shades each layer as the GS would, one primitive after another per tile; a GPU's own rasterizer and blending draw such layers at a small part of that.
+- **Quality:** some of the game's effects work in whole game pixels, and no rule of sampling makes them sharper at a higher resolution: the ink outline (an edge filter over material ids, widened by copies one game pixel apart) is either the game's own band or broken into thin lines ([image quality plan](IMAGE_QUALITY_PLAN.md) steps 4 and 5). A pass written for the effect can compute it per sample at the original's thickness.
+- **Safety:** the game keeps running on the emulated GS; a native pass covers one known sequence, is switched off by a setting, and is checked against the emulated result.
+
+## How a native pass works
+
+- **Recognition:** by what the GS receives, never by guest PCs or call counts: a sequence of draws with its frame and texture buffers, formats, offsets and blend modes, found as the GIF dump tools showed it (`BT2_GIF_DUMP`, `tools/graphics/gpu/gif_dump_draws.py`). The recognizer sits where paraLLEl-GS takes the GIF data (`gs_interface.cpp`); it holds back the sequence's draws and, when the sequence is complete and matches, runs the native pass in their place at that point of the stream. A sequence that does not match in full is emulated as it came. Before drawing, it checks what the effect depends on (the buffers' addresses and formats, the palettes' contents where they carry the effect's parameters) and takes the parameters from the GS state, not from constants.
+- **Data:** the pass reads and writes paraLLEl-GS's VRAM buffer in GS layout, the base copy and each super-sample plane (the shaders use paraLLEl-GS's swizzle helpers), so everything after it, emulated or native, sees the same memory the emulated draws would have left. It is recorded into paraLLEl-GS's command stream in order, between its render passes.
+- **Exactness:** at 1x (no super-sampling) a native pass must leave GS memory exactly as the emulated draws do (a comparison of `readVram` after the sequence, emulated against native, on the fights of the gate and the battle sweep); at higher resolutions it is checked by pictures, and where it changes the look on purpose (the outline) by the user.
+- **Switches:** each pass has a setting for players (on by default once checked) and `BT2_NATIVE_PASSES=<list>` for runs; with all off the renderer is today's.
+- **Both renderers:** the in-between pictures (60 fps) run the same passes, so check mode stays exact.
+
+## Order of work
+
+1. **Groundwork:** the recognizer's hook in paraLLEl-GS (a patch like the others in `tools/graphics/gpu/`, listed in `config/parallel_gs.lock.json`); a native pass's access to the VRAM buffer and its sample planes; the comparison run (emulated against native GS memory at 1x, flip by flip); the switches. Checked with a pass that reproduces a simple sequence exactly (the frame's alpha clear of the ink chain).
+2. **HD outline** (the user's request). The ink chain of a fight's frame (traced 2026-10-26): material ids into the depth buffer's top byte; the ids through a palette into a 16-bit buffer, minus their neighbour one game pixel to the right (the edge, in green); the edge read back into the frame's alpha by copies 0, 1 and 2 game pixels up; the frame darkened by that alpha. Native: per sample, a sample is ink where the palette's value of the material id changes within one game pixel to the right, and the band is widened by two game pixels upward, measured in samples: the original's thickness with edges at the super-sampled resolution. At 1x it must equal the emulated chain exactly. Then close-ups at 4x for the user beside the game's own band.
+3. **Heavy blended layers** (super attacks' dust, smoke and explosions). First measured: which draws of the Kamehameha frames take the GPU time (paraLLEl-GS's timestamps per render pass, the GIF dump of those flips) and whether a run of blended textured primitives drawn with the GPU's rasterizer (the frame's samples copied into a render target and back, or drawn in place with a compute pass over the run) is cheaper than the emulated draws, counting the copies. Only if it is: the native pass for such runs, exact at 1x within the GS's blending rules (the same arithmetic, in the same order per sample). The goal: a flat 60 at 16x through the super attack with headroom (the user, 2026-10-26).
+4. **Depth of field and the pause's blur at full resolution** (quality; optional): the blur chain's downscales are at the game's resolution by design; a native pass could blur the super-sampled frame instead. Only if the user wants that look.
+5. **Whole native fights** (later, the user's decision): if the passes above cover most of a fight's cost, a native renderer for fights with paraLLEl-GS kept as reference and fallback.
+
+The async compute step of the [performance plan](../ee/PERFORMANCE_PLAN.md) (item 4d: the in-between renderer beside the main one on the GPU) is independent of this plan and comes first: it is measured, nearly built, and helps every frame.
+
+## Checks for every pass
+
+The comparison of GS memory at 1x; pictures at 2x and 4x beside the emulated result; 60 fps check mode exact; the gate; the window measurement on the CPU fight's super attack (`BT2_FLIP_TIMES`, [TOOLS.md](../../guides/TOOLS.md)); the user's look.
+
+## References
+
+The BT3 port's native post-process steps (`work/references/bt3r/docs/NATIVE-RENDER-SEAM.md`, its depth-mask and outline passes, run in place of the game's kicks and compared with paraLLEl-GS), read for their approach only, never copied ([AGENTS.md](../../../AGENTS.md), references).
