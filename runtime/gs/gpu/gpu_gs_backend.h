@@ -96,6 +96,7 @@ private:
     void copyDrawnPalettes(); // After a flush: the drawn palettes back to the texture names.
     void replaceTextures(GsTextureNames& names);
     void dumpTexture(GsTextureNames& names,std::uint64_t tex0,const std::string& name); // BT2_TEXTURE_DUMP.
+    void peek(); // BT2_GS_PEEK.
     struct State;
     std::unique_ptr<State> state_;
 };

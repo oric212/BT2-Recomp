@@ -23,6 +23,14 @@
 
 namespace {
 constexpr std::size_t frame_contexts=8; // The device's: how far the GPU may be behind before a frame change waits.
+// With super-sampling, the game's buffers are read as textures with their samples (paraLLEl-GS's super-sampled
+// textures): its depth of field, the pause's blurred scene and other effects that draw the picture again keep
+// the resolution instead of falling back to game pixels (docs/plans/graphics/IMAGE_QUALITY_PLAN.md, step 4).
+// BT2_SUPER_SAMPLED_TEXTURES=0 turns it off (for comparisons).
+bool superSampledTextures(unsigned super_sampling) {
+    const char* setting=std::getenv("BT2_SUPER_SAMPLED_TEXTURES");
+    return super_sampling>1 && !(setting && std::string(setting)=="0");
+}
 }
 
 struct GpuGsBackend::State {
@@ -55,6 +63,21 @@ struct GpuGsBackend::State {
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;
     Vulkan::ImageHandle missing_marker; // BT2_HD_SHOW_MISSING: drawn for a texture without a replacement.
     std::filesystem::path dump_folder;std::unordered_set<std::string> dumped; // BT2_TEXTURE_DUMP.
+    // BT2_GIF_DUMP=<first flip>:<flips>:<file>: the main renderer's input over those flips, as records
+    // 'T' size data (a GIF transfer), 'P' index value (a privileged register), 'F' flip (a flip's end);
+    // tools/graphics/gpu/gif_dump_draws.py lists the draws.
+    std::ofstream gif_dump;unsigned gif_dump_from=0,gif_dump_to=0,gif_dump_transfers=0;
+    // BT2_GS_PEEK=<transfer>[,<transfer>...]:<path prefix> with BT2_GS_PEEK_BUFFERS=<block>,<width>,<psm>[;...] (hex
+    // block address, width in 64 pixels, psm number): before those transfers of the dump, each buffer is scanned
+    // out as the display shows a picture and written to <prefix>-<transfer>-<block>.ppm, its alpha to
+    // <prefix>-<transfer>-<block>-alpha.ppm (a diagnostic of passes).
+    std::vector<unsigned> peek_transfers;std::string peek_prefix;
+    struct PeekBuffer {unsigned block,width,psm;};std::vector<PeekBuffer> peek_buffers;
+    bool dumpingGif() const {return gif_dump.is_open() && scanouts>=gif_dump_from && scanouts<gif_dump_to;}
+    template<class T> void dumpRecord(char kind,const T& value,std::span<const std::uint8_t> data={}) {
+        gif_dump.put(kind);gif_dump.write(reinterpret_cast<const char*>(&value),sizeof value);
+        gif_dump.write(reinterpret_cast<const char*>(data.data()),std::streamsize(data.size()));
+    }
     // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
@@ -83,12 +106,33 @@ void GpuGsBackend::init(unsigned super_sampling) {
     state->device->set_context(*state->context);
     state->device->init_frame_contexts(frame_contexts);
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
+    options.super_sampled_textures=superSampledTextures(super_sampling);
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed");
     // Its flushes only submit: the device changes its frame at a flip, a readback or a picture shown
     // (flush, readback, the window presenter), never in the middle of a frame on the GS thread, where it
     // would wait for the second renderer's open work and for the GPU while holding the device.
     state->gs.set_frame_boundaries(false);
+    if(const char* dump=std::getenv("BT2_GIF_DUMP")) {
+        unsigned from=0,count=0;int used=0;
+        if(std::sscanf(dump,"%u:%u:%n",&from,&count,&used)!=2 || !used)throw std::runtime_error("BT2_GIF_DUMP: expected <first flip>:<flips>:<file>");
+        state->gif_dump.open(dump+used,std::ios::binary);
+        if(!state->gif_dump)throw std::runtime_error("BT2_GIF_DUMP: cannot write the file");
+        state->gif_dump_from=from;state->gif_dump_to=from+count;
+        if(const char* peek=std::getenv("BT2_GS_PEEK")) {
+            std::string text(peek);const auto colon=text.find(':');
+            if(colon==std::string::npos)throw std::runtime_error("BT2_GS_PEEK: expected <transfer>[,...]:<path prefix>");
+            for(std::size_t at=0;at<colon;) {state->peek_transfers.push_back(unsigned(std::strtoul(text.c_str()+at,nullptr,10)));at=text.find(',',at);if(at==std::string::npos || at>colon)break;++at;}
+            state->peek_prefix=text.substr(colon+1);
+            std::string buffers=std::getenv("BT2_GS_PEEK_BUFFERS")?std::getenv("BT2_GS_PEEK_BUFFERS"):"";
+            for(std::size_t at=0;at<buffers.size();) {
+                unsigned block=0,width=0,psm=0;
+                if(std::sscanf(buffers.c_str()+at,"%x,%u,%u",&block,&width,&psm)!=3)throw std::runtime_error("BT2_GS_PEEK_BUFFERS: expected <block>,<width>,<psm>[;...]");
+                state->peek_buffers.push_back({block,width,psm});
+                at=buffers.find(';',at);if(at==std::string::npos)break;++at;
+            }
+        }
+    }
     state_=std::move(state);
 }
 
@@ -96,6 +140,7 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     auto state=std::make_unique<State>();
     state->context=primary.state_->context;state->device=primary.state_->device;
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
+    options.super_sampled_textures=superSampledTextures(super_sampling);
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");
     // Its flushes only submit: the primary moves the shared device to its next frame context, so this
@@ -111,7 +156,40 @@ void GpuGsBackend::showHeld(const GpuGsBackend* source,int slot) {state_->shown_
 
 void GpuGsBackend::transfer(std::span<const std::uint8_t> data) {
     if(data.size()%16)throw std::runtime_error("GPU GS: GIF transfer size is not a multiple of 16");
+    if(state_->dumpingGif()) {
+        if(std::find(state_->peek_transfers.begin(),state_->peek_transfers.end(),state_->gif_dump_transfers)!=state_->peek_transfers.end())peek();
+        ++state_->gif_dump_transfers;
+        state_->dumpRecord('T',std::uint32_t(data.size()),data);
+    }
     state_->gs.gif_transfer(3,data.data(),data.size());
+}
+
+void GpuGsBackend::peek() {
+    auto& s=*state_;
+    auto& priv=s.gs.get_priv_register_state();
+    const auto saved=priv;
+    const auto pmode=priv.qwords_lo[0];
+    const auto display=priv.qwords_lo[(pmode&2)?20:16];
+    for(const auto& b:s.peek_buffers) {
+        priv.qwords_lo[14]=std::uint64_t(b.block/32)|(std::uint64_t(b.width)<<9)|(std::uint64_t(b.psm)<<15);
+        priv.qwords_lo[16]=display;
+        char name[64];std::snprintf(name,sizeof name,"-%u-%x.ppm",s.gif_dump_transfers,b.block);
+        priv.qwords_lo[0]=1u|(1u<<5)|(0xFFu<<8); // Circuit 1 alone, opaque.
+        vsync(0);
+        writePpm(s.peek_prefix+name,readback());
+        // The alpha: circuit 1 over a black and a white background, weighted by its own alpha.
+        priv.qwords_lo[0]=1u|(1u<<7);
+        priv.qwords_lo[28]=0;vsync(0);auto black=readback();
+        priv.qwords_lo[28]=0xFFFFFF;vsync(0);auto white=readback();
+        for(std::size_t i=0;i<black.bgra.size() && i<white.bgra.size();++i) {
+            const unsigned transparent=((white.bgra[i]>>8)&255)-((black.bgra[i]>>8)&255); // (1 - A) * 255, green.
+            const unsigned a=255-std::min(255u,transparent);
+            black.bgra[i]=0xFF000000u|(a<<16)|(a<<8)|a;
+        }
+        std::snprintf(name,sizeof name,"-%u-%x-alpha.ppm",s.gif_dump_transfers,b.block);
+        writePpm(s.peek_prefix+name,black);
+    }
+    priv=saved;
 }
 
 std::span<const std::uint32_t> GpuGsBackend::readVram() {
@@ -165,6 +243,7 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 }
 
 void GpuGsBackend::flush() {
+    if(state_->dumpingGif())state_->dumpRecord('F',std::uint32_t(state_->scanouts));
     state_->gs.flush();++state_->scanouts;
     if(state_->pack) {
         copyDrawnPalettes();
@@ -216,6 +295,7 @@ void GpuGsBackend::copyDrawnPalettes() {
 
 void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
     if(index>14)throw std::runtime_error("GPU GS: privileged register index out of range");
+    if(state_->dumpingGif()) {state_->dumpRecord('P',std::uint32_t(index));state_->gif_dump.write(reinterpret_cast<const char*>(&value),8);}
     state_->gs.get_priv_register_state().qwords_lo[index*2]=value; // Same order as the PS2 register block.
 }
 
