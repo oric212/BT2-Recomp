@@ -14,8 +14,8 @@ constexpr std::array passes{
     // starts with one): off by default.
     NativePass{"alpha-fill",false,alphaFillDraw,alphaFill},
     // The ink outline's edges per sample: the game's at 1x, its thickness with smooth edges with super-sampling
-    // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 2).
-    NativePass{"ink-edges",false,inkEdgesDraw,inkEdges},
+    // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 2); on, the look the user chose on 2026-10-27.
+    NativePass{"ink-edges",true,inkEdgesDraw,inkEdges},
 };
 
 // BT2_NATIVE_PASSES: the passes named (comma-separated), "none", or without it those on by default.

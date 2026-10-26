@@ -5,7 +5,7 @@ count, screen rectangle (after XYOFFSET, in pixels), texture coordinates, where 
 <transfer>:<quadword>": the GIF tag that ended it, counted from the dump's start; BT2_GS_PEEK stops there)
 and the state that matters for picture passes (frame, Z buffer, texture, scissor, alpha, test, clamp).
 
-    python tools/graphics/gpu/gif_dump_draws.py <dump> [--flip N] [--touching-y Y] [--registers]
+    python tools/graphics/gpu/gif_dump_draws.py <dump> [--flip N] [--touching-y Y] [--registers] [--area]
 """
 import argparse
 import struct
@@ -23,6 +23,42 @@ REG = {0x00: 'PRIM', 0x01: 'RGBAQ', 0x02: 'ST', 0x03: 'UV', 0x04: 'XYZF2', 0x05:
 PRIV = ['PMODE', 'SMODE1', 'SMODE2', 'SRFSH', 'SYNCH1', 'SYNCH2', 'SYNCV', 'DISPFB1', 'DISPLAY1', 'DISPFB2',
         'DISPLAY2', 'EXTBUF', 'EXTDATA', 'EXTWRITE', 'BGCOLOR']
 PRIM_NAMES = ['point', 'line', 'linestrip', 'tri', 'tristrip', 'trifan', 'sprite', 'prim7']
+def clipped_area(points, box):
+    """The area of a convex polygon inside box (x0, y0, x1, y1), by clipping it to each edge."""
+    for axis, limit, keep_below in ((0, box[0], False), (0, box[2], True), (1, box[1], False), (1, box[3], True)):
+        inside = (lambda p: p[axis] <= limit) if keep_below else (lambda p: p[axis] >= limit)
+        out = []
+        for n, p in enumerate(points):
+            q = points[n - 1]
+            if inside(p) != inside(q):
+                f = (limit - q[axis]) / (p[axis] - q[axis])
+                out.append((q[0] + f * (p[0] - q[0]), q[1] + f * (p[1] - q[1])))
+            if inside(p):
+                out.append(p)
+        points = out
+        if not points:
+            return 0.0
+    return abs(sum(points[n - 1][0] * p[1] - p[0] * points[n - 1][1] for n, p in enumerate(points))) / 2
+
+
+def covered_area(kind, xs, ys, box):
+    """The pixels a draw's primitives cover inside the scissor box (x0, y0, x1, y1), overlaps counted (the shading
+    work): triangles, fans and strips by their triangles, sprites by their rectangles; points and lines count nothing."""
+    def polygon(*corners):
+        return clipped_area([(xs[c], ys[c]) for c in corners], box)
+    n = len(xs)
+    if kind == 'tri':
+        return sum(polygon(i, i + 1, i + 2) for i in range(0, n - 2, 3))
+    if kind == 'tristrip':
+        return sum(polygon(i, i + 1, i + 2) for i in range(n - 2))
+    if kind == 'trifan':
+        return sum(polygon(0, i, i + 1) for i in range(1, n - 1))
+    if kind == 'sprite':
+        return sum(clipped_area([(xs[i], ys[i]), (xs[i + 1], ys[i]), (xs[i + 1], ys[i + 1]), (xs[i], ys[i + 1])], box)
+                   for i in range(0, n - 1, 2))
+    return 0.0
+
+
 PSM = {0x00: 'CT32', 0x01: 'CT24', 0x02: 'CT16', 0x0A: 'CT16S', 0x13: 'T8', 0x14: 'T4', 0x1B: 'T8H',
        0x24: 'T4HL', 0x2C: 'T4HH', 0x30: 'Z32', 0x31: 'Z24', 0x32: 'Z16', 0x3A: 'Z16S'}
 # The registers a draw's state is made of (per context: index 0 or 1 added).
@@ -68,8 +104,9 @@ def describe_state(regs, prim, ctx, registers=False):
 
 
 class Draws:
-    def __init__(self, touching_y=None, registers=False):
+    def __init__(self, touching_y=None, registers=False, area=False):
         self.registers = registers
+        self.area = area
         self.image = None  # With registers: the words of the host->local upload in progress (small ones listed).
         self.regs = {}
         self.vertices = []
@@ -104,9 +141,14 @@ class Draws:
             tex = ''
             if t:
                 tex = f" uv {min(a for a, _ in t):.2f},{min(b for _, b in t):.2f}..{max(a for a, _ in t):.2f},{max(b for _, b in t):.2f}"
+            area = ''
+            if self.area:
+                sc = self.regs.get(f'SCISSOR_{ctx + 1}', 0)
+                box = (bits(sc, 0, 11), bits(sc, 32, 11), bits(sc, 16, 11) + 1, bits(sc, 48, 11) + 1)
+                area = f" area {covered_area(PRIM_NAMES[prim & 7], xs, ys, box):.0f}"
             self.lines.append(f"  draw {PRIM_NAMES[prim & 7]} x{len(self.vertices)} ctx{ctx}"
                               f" rect {min(xs):.2f},{min(ys):.2f}..{max(xs):.2f},{max(ys):.2f}{tex}"
-                              f" {'fst' if bits(prim, 8, 1) else 'stq'} until {self.place[0]}:{self.place[1]}"
+                              f" {'fst' if bits(prim, 8, 1) else 'stq'} until {self.place[0]}:{self.place[1]}{area}"
                               f"\n      {self.state_text}")
         self.vertices = []
         self.key = None
@@ -206,11 +248,13 @@ def main():
     parser.add_argument('dump')
     parser.add_argument('--flip', type=int, help='only this flip')
     parser.add_argument('--touching-y', type=float, help='only draws whose rectangle reaches this screen line')
+    parser.add_argument('--area', action='store_true',
+                        help='also the pixels each draw covers, overlaps counted (the shading work)')
     parser.add_argument('--registers', action='store_true',
                         help="also each draw's PRIM, colour, TEXA, COLCLAMP, DTHE, PABE, FBA and TEST, and small uploads' words")
     args = parser.parse_args()
     data = open(args.dump, 'rb').read()
-    draws = Draws(args.touching_y, args.registers)
+    draws = Draws(args.touching_y, args.registers, args.area)
     privileged = {}
     at = 0
     record = 0

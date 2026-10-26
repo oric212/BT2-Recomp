@@ -165,6 +165,9 @@ inline MenuScreen enhancements(Settings& s,std::function<void()> changed) {
     };
     samples.note="Smoother edges, finer textures. 4x and 8x: twice the resolution; 16x: up to four times, as large as the window.";
     screen.entries.push_back(samples);
+    MenuEntry outline=toggle("HD outline",s.hd_outline,changed,"With super-sampling: the fighters' ink outline drawn at the full resolution, smooth instead of in the game's pixel steps.");
+    outline.available=[&s]{return s.super_sampling>1;};
+    screen.entries.push_back(outline);
     screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched."));
     screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. Turned off by itself if the processor cannot keep up."));
     return screen;

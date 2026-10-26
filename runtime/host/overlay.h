@@ -23,7 +23,7 @@ inline OverlayResult runOverlay(Settings& settings,const std::string& settings_p
     main.entries.push_back(menuAction("Resume",[&]{host.finished=true;}));
     main.entries.push_back(menuAction("Sound",[&]{host.menu.open(menu_screens::sound(settings,changed));}));
     main.entries.push_back(menuAction("Display",[&]{host.menu.open(menu_screens::display(host,settings,changed));}));
-    main.entries.push_back(menuAction("Enhancements",[&]{host.menu.open(menu_screens::enhancements(settings,changed));},"From the next start: HD textures, super-sampling, widescreen, 60 fps battles."));
+    main.entries.push_back(menuAction("Enhancements",[&]{host.menu.open(menu_screens::enhancements(settings,changed));},"From the next start: HD textures, super-sampling, the HD outline, widescreen, 60 fps battles."));
     main.entries.push_back(menuAction("Fast forward",[&]{host.menu.open(menu_screens::fastForward(host,settings,changed));},"Which key and button run the game as fast as the machine allows."));
     main.entries.push_back(menuAction("Controls",[&]{host.menu.open(menu_screens::controls(host,settings,changed));}));
     main.entries.push_back(menuAction("Quit to the launcher",[&]{confirmed("Quit to the launcher?",OverlayResult::Launcher);}));

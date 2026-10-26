@@ -60,6 +60,21 @@ class GifDumpDrawsTest(unittest.TestCase):
         self.assertIn('draw sprite', self.run_tool(dump))
         self.assertNotIn('draw sprite', self.run_tool(dump, '--touching-y', '447'))
 
+    def test_area_counts_triangles_and_sprites(self):
+        # A sprite of 10 x 10 pixels, then a strip of two triangles over a 4 x 2 rectangle, then a triangle half outside
+        # the scissor (x 0..63): 32 x 32 of its 64 x 32 counted.
+        def xy(x, y):
+            return ad(0x05, (x << 4) | ((y << 4) << 16))
+        writes = [ad(0x40, 63 << 16 | (63 << 48)), ad(0x4C, 0xE00 // 32), ad(0x00, 6), xy(10, 10), xy(20, 20),
+                  ad(0x00, 4), xy(0, 0), xy(4, 0), xy(0, 2), xy(4, 2),
+                  ad(0x00, 3), xy(32, 0), xy(96, 0), xy(32, 64)]
+        dump = transfer(giftag(len(writes), 1, [0xE]) + b''.join(writes)) + b'F' + struct.pack('<I', 1)
+        out = self.run_tool(dump, '--area')
+        self.assertRegex(out, r'draw sprite x2 .* area 100\n')
+        self.assertRegex(out, r'draw tristrip x4 .* area 8\n')
+        self.assertRegex(out, r'draw tri x3 .* area 1536')
+        self.assertNotIn('area', self.run_tool(dump))
+
     def test_registers_and_upload_words(self):
         # A host->local upload of two qwords (a palette's first eight words), then a sprite with its registers.
         upload = [ad(0x50, (0x3E8C << 32)), ad(0x51, 0), ad(0x52, 8 | (1 << 32)), ad(0x53, 0)]

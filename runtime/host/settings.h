@@ -20,6 +20,7 @@ struct Settings {
     bool hd_textures=false;         // The texture pack in data/textures (host/game_folders.h), from the next start.
     unsigned super_sampling=1;      // Samples per pixel (1, 2, 4, 8, 16); 4 and more draw at twice the resolution. From the next start.
     bool widescreen=false;          // The game's 16:9 patch (ee/game_patches.h), from the next start.
+    bool hd_outline=true;           // Super-sampled: the ink outline per sample (the native pass ink-edges, gs/gpu/native/), from the next start.
     bool sixty_fps=false;           // 60 fps battles: pictures between the fight's frames (gs/gpu/in_between_frames.h), from the next start.
     bool playstation_buttons=true;  // HD textures: the pack's PlayStation button art (pack 2's "Original Buttons"), else its Xbox art. From the next start.
     InputMapping mapping;           // Keys and gamepad buttons of the PS2 buttons.
@@ -40,7 +41,7 @@ struct Settings {
         std::ostringstream out;
         out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
-           <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
+           <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
@@ -81,6 +82,7 @@ struct Settings {
             else if(key=="effects_volume")s.effects_volume=number(0,100);
             else if(key=="hd_textures")s.hd_textures=number(0,1);
             else if(key=="widescreen")s.widescreen=number(0,1);
+            else if(key=="hd_outline")s.hd_outline=number(0,1);
             else if(key=="sixty_fps")s.sixty_fps=number(0,1);
             else if(key=="playstation_buttons")s.playstation_buttons=number(0,1);
             else if(key=="super_sampling") {

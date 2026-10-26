@@ -455,7 +455,13 @@ int main(int argc, char** argv) {
                     const auto end = std::min(list.find(';', at), list.size());
                     const auto entry = list.substr(at, end - at);
                     const auto colon = entry.find(':');
-                    if (colon != std::string::npos) snapshots[static_cast<unsigned>(std::stoul(entry))] = entry.substr(colon + 1);
+                    if (colon != std::string::npos) {
+                        const auto path = entry.substr(colon + 1);
+                        // The file is a PPM whatever its name: another extension makes a file that viewers refuse.
+                        if (path.size() < 4 || path.compare(path.size() - 4, 4, ".ppm") != 0)
+                            throw std::runtime_error("BT2_GPU_GS_SNAPSHOT: the pictures are PPM files; name them .ppm: " + path);
+                        snapshots[static_cast<unsigned>(std::stoul(entry))] = path;
+                    }
                     at = end + 1;
                 }
             }

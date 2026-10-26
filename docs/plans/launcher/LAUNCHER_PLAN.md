@@ -85,7 +85,7 @@ New code in `runtime/host/`, one purpose per file:
 | Memory card | The console's browser: grey, the chosen card's icon, name and save count at the top left, the title at the top right, the cards of `saves` as a row of memory card icons (the chosen one lit), card image files of other programs dimmed with a question mark, and a dashed card with a plus for a new empty card; "in use" under the card in slot 1. |
 | Controls | Each PS2 button with its keyboard key and its pad button. Selecting an entry waits for the next press and assigns it. The fast forward buttons and the overlay combination. Reset to defaults. |
 | Display | Integer scaling on or off (off stretches to the window). Fullscreen or windowed. Window size. Frame rate display on or off. |
-| Enhancements | From the next start: HD textures on or off, the button art (PlayStation or Xbox), super-sampling, widescreen (the game's 16:9 patch), 60 fps battles. |
+| Enhancements | From the next start: HD textures on or off, the button art (PlayStation or Xbox), super-sampling, the HD outline (with super-sampling; on by default), widescreen (the game's 16:9 patch), 60 fps battles. |
 | Sound | Master, music and effects volume. |
 | Game disc | The same browser with the `.iso` files of `data` as discs (the chosen one turning); a dashed empty disc while there is none. |
 

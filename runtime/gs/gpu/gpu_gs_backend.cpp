@@ -509,7 +509,7 @@ void GpuGsBackend::enableTimestamps() {
 
 std::string GpuGsBackend::timestampSummary() const {
     if(!state_ || !state_->timestamps || !state_->scanouts)return {};
-    static constexpr const char* names[]{"host to VRAM","VRAM copies","palettes","texture uploads","triangle setup","binning","shading","readback","scanout"};
+    static constexpr const char* names[]{"host to VRAM","VRAM copies","palettes","texture uploads","triangle setup","binning","shading","readback","scanout","native passes"};
     double total=0;std::string parts;
     for(int n=0;n<int(ParallelGS::TimestampType::Count);++n) {
         const double ms=state_->gs.get_accumulated_timestamps(ParallelGS::TimestampType(n))*1000/state_->scanouts;total+=ms;

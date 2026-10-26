@@ -109,7 +109,16 @@ diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
 diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
 --- a/gs/gs_renderer.hpp
 +++ b/gs/gs_renderer.hpp
-@@ -290,6 +290,9 @@
+@@ -77,6 +77,8 @@
+ 	Shading,
+ 	Readback,
+ 	VSync,
++	// BT2 Recomp patch: the work of native passes (record_native_work).
++	NativePasses,
+ 	Count
+ };
+ 
+@@ -290,6 +292,9 @@
  
  	// FB stage.
  	void flush_rendering(const RenderPass &rp);
@@ -119,7 +128,7 @@ diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
  
  	// Readback stage.
  	void flush_readback(const uint32_t *page_indices, uint32_t num_indices);
-@@ -583,8 +586,6 @@
+@@ -583,8 +588,6 @@
  	std::vector<uint32_t> vram_copy_write_pages;
  	std::vector<uint32_t> sync_vram_shadow_pages;
  
@@ -131,7 +140,7 @@ diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
 diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 --- a/gs/gs_renderer.cpp
 +++ b/gs/gs_renderer.cpp
-@@ -3221,6 +3221,29 @@
+@@ -3221,6 +3221,37 @@
  		clear_cmd->begin_region("clear-memory");
  }
  
@@ -146,7 +155,15 @@ diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 +	cmd.save_state(Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_0_BIT | Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_1_BIT |
 +	               Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_2_BIT | Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_3_BIT |
 +	               Vulkan::COMMAND_BUFFER_SAVED_PUSH_CONSTANT_BIT, saved);
++	Vulkan::QueryPoolHandle start_ts, end_ts;
++	if (enable_timestamps)
++		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 +	record(cmd);
++	if (enable_timestamps)
++	{
++		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++		timestamps.push_back({ TimestampType::NativePasses, std::move(start_ts), std::move(end_ts) });
++	}
 +	cmd.restore_state(saved);
 +	// As after a render pass's shading.
 +	cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
