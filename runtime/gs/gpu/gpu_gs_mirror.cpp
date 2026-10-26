@@ -84,5 +84,6 @@ GpuGsMirror::~GpuGsMirror() {
     gpu_.closeWindowPresenter(); // Its thread pauses the GS thread.
     thread_.reset();
     if(const auto hd=gpu_.hdTextureSummary();!hd.empty())std::cerr<<hd<<std::endl;
+    if(const auto native=gpu_.nativePassSummary();!native.empty())std::cerr<<native<<std::endl;
     if(const auto times=gpu_.timestampSummary();!times.empty())std::cerr<<times<<std::endl;
 }

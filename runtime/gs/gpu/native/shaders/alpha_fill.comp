@@ -1,0 +1,80 @@
+#version 450
+// Native pass: a flat colour written into the alpha byte of a PSMCT32 frame over a rectangle, with the rest of
+// each pixel masked (runtime/gs/gpu/native/alpha_fill.cpp). GS memory as paraLLEl-GS holds it: per 32-bit word the
+// resolved value, the super-sample reference one plane later and sample s at plane s + 2. Each pixel ends as the
+// renderer's shading leaves it: samples are kept only while they differ, and resolved as the renderer averages them.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint words[]; };
+
+layout(push_constant) uniform Pass
+{
+	uvec2 origin;      // The rectangle's first pixel.
+	uvec2 size;        // Its size in pixels.
+	uint block;        // The frame's base pointer in 64-word blocks.
+	uint width;        // Its width in 64-pixel units.
+	uint plane;        // Words per plane of GS memory.
+	uint alpha;        // The alpha byte written.
+	uint samples;      // The pass's samples per pixel.
+	uint reference;    // Non-zero: GS memory has super-sample planes.
+} pass;
+
+// The PSMCT32 word of pixel (x, y): 64 x 32 pixel pages of 32 blocks, 8 x 8 pixel blocks.
+uint ct32_word(uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint block = (bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u);
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (pass.block * 64u + ((p.y >> 5u) * pass.width + (p.x >> 6u)) * 2048u + block * 64u + pixel) & 0xFFFFFu;
+}
+
+void main()
+{
+	if (any(greaterThanEqual(gl_GlobalInvocationID.xy, pass.size)))
+		return;
+	uint i = ct32_word(pass.origin + gl_GlobalInvocationID.xy);
+	uint a = pass.alpha << 24u;
+	if (pass.reference == 0u)
+	{
+		words[i] = (words[i] & 0xFFFFFFu) | a;
+		return;
+	}
+	if (pass.samples == 1u || words[i + pass.plane] != ~0u)
+	{
+		// Single-sampled: the samples are no longer valid.
+		words[i] = (words[i] & 0xFFFFFFu) | a;
+		words[i + pass.plane] = 0u;
+		return;
+	}
+	uint v[16];
+	bool differ = false;
+	for (uint s = 0u; s < pass.samples; s++)
+	{
+		v[s] = (words[i + (s + 2u) * pass.plane] & 0xFFFFFFu) | a;
+		differ = differ || v[s] != v[0];
+	}
+	if (!differ)
+	{
+		words[i] = v[0];
+		words[i + pass.plane] = 0u;
+		return;
+	}
+	vec4 sum[16];
+	for (uint s = 0u; s < pass.samples; s++)
+	{
+		words[i + (s + 2u) * pass.plane] = v[s];
+		sum[s] = unpackUnorm4x8(v[s]);
+	}
+	// The renderer's resolve: sums of samples a half, a quarter ... of the samples apart, as sample 0 sees them.
+	for (uint stride = pass.samples >> 1u; stride >= 1u; stride >>= 1u)
+	{
+		vec4 next[16];
+		for (uint s = 0u; s < pass.samples; s++)
+			next[s] = sum[s] + sum[s ^ stride];
+		for (uint s = 0u; s < pass.samples; s++)
+			sum[s] = next[s];
+	}
+	words[i] = packUnorm4x8(sum[0] / float(pass.samples));
+	words[i + pass.plane] = ~0u;
+}

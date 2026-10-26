@@ -83,6 +83,7 @@ public:
     // PlayStation button art (else its Xbox art).
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true);
     std::string hdTextureSummary() const;
+    std::string nativePassSummary() const; // gs/gpu/native/native_passes.h
     HdTexturePack* hdTexturePack(); // The pack (null without one), for tests.
     // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`;
     // `late_palettes`: it draws each frame after the primary's flip, so the palettes the primary drew reach

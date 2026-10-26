@@ -1,6 +1,7 @@
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/gpu/hd_texture_image.h"
 #include "gs/gpu/gpu_window_presenter.h"
+#include "gs/gpu/native/native_passes.h"
 #include "gs/textures/gs_texture_names.h"
 #include "host/display_frame.h"
 #include "context.hpp"
@@ -37,6 +38,7 @@ struct GpuGsBackend::State {
     Vulkan::ContextHandle context=Util::make_handle<Vulkan::Context>();
     Vulkan::DeviceHandle device=Util::make_handle<Vulkan::Device>();
     ParallelGS::GSInterface gs;
+    std::unique_ptr<NativePasses> native; // After the GS: unhooked first.
     std::shared_ptr<HdTexturePack> pack; // After the GS: destroyed first. Shared with a second renderer on the device.
     bool high_resolution=false,timestamps=false;unsigned scanouts=0;
     std::atomic<bool> quad_resolution{false};
@@ -70,6 +72,7 @@ struct GpuGsBackend::State {
     // 'T' size data (a GIF transfer), 'P' index value (a privileged register), 'F' flip (a flip's end);
     // tools/graphics/gpu/gif_dump_draws.py lists the draws.
     std::ofstream gif_dump;unsigned gif_dump_from=0,gif_dump_to=0,gif_dump_transfers=0;
+    std::ofstream memory_hashes; // BT2_GS_MEMORY_HASHES (init).
     // BT2_GS_PEEK=<transfer>[,<transfer>...]:<path prefix> with BT2_GS_PEEK_BUFFERS=<block>,<width>,<psm>[;...] (hex
     // block address, width in 64 pixels, psm number): before those transfers of the dump, each buffer is scanned
     // out as the display shows a picture and written to <prefix>-<transfer>-<block>.ppm, its alpha to
@@ -116,6 +119,13 @@ void GpuGsBackend::init(unsigned super_sampling) {
     // (flush, readback, the window presenter), never in the middle of a frame on the GS thread, where it
     // would wait for the second renderer's open work and for the GPU while holding the device.
     state->gs.set_frame_boundaries(false);
+    state->native=std::make_unique<NativePasses>(state->gs,*state->device);
+    // BT2_GS_MEMORY_HASHES=<file>: after each flip, the flip and a hash of GS memory (its first plane), to compare
+    // runs with and without native passes at 1x (docs/plans/graphics/HYBRID_RENDERING_PLAN.md).
+    if(const char* hashes=std::getenv("BT2_GS_MEMORY_HASHES")) {
+        state->memory_hashes.open(hashes);
+        if(!state->memory_hashes)throw std::runtime_error("BT2_GS_MEMORY_HASHES: cannot write the file");
+    }
     if(const char* dump=std::getenv("BT2_GIF_DUMP")) {
         unsigned from=0,count=0;int used=0;
         if(std::sscanf(dump,"%u:%u:%n",&from,&count,&used)!=2 || !used)throw std::runtime_error("BT2_GIF_DUMP: expected <first flip>:<flips>:<file>");
@@ -154,6 +164,7 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     // Its flushes only submit: the primary moves the shared device to its next frame context, so this
     // renderer can flush while the primary's frame is open.
     state->gs.set_frame_boundaries(false);
+    state->native=std::make_unique<NativePasses>(state->gs,*state->device);
     state_=std::move(state);
 }
 
@@ -263,6 +274,11 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
 void GpuGsBackend::flush() {
     if(state_->dumpingGif())state_->dumpRecord('F',std::uint32_t(state_->scanouts));
     state_->gs.flush();++state_->scanouts;
+    if(state_->memory_hashes.is_open()) {
+        std::uint64_t hash=0xCBF29CE484222325ull; // FNV-1a over the words.
+        for(const std::uint32_t word:readVram())hash=(hash^word)*0x100000001B3ull;
+        state_->memory_hashes<<state_->scanouts<<' '<<std::hex<<hash<<std::dec<<'\n';
+    }
     if(state_->pack) {
         copyDrawnPalettes();
         if(!state_->shared_from)state_->pack->startFrame(); // The main renderer's flip starts the pack's frame.
@@ -495,6 +511,8 @@ std::string GpuGsBackend::timestampSummary() const {
     char head[96];std::snprintf(head,sizeof head,"GPU time per frame (%u frames): %.3f ms: ",state_->scanouts,total);
     return head+parts;
 }
+
+std::string GpuGsBackend::nativePassSummary() const {return state_ && state_->native?state_->native->summary():std::string();}
 
 HdTexturePack* GpuGsBackend::hdTexturePack() {return state_?state_->pack.get():nullptr;}
 

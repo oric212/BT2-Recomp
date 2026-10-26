@@ -135,6 +135,39 @@ void secondRenderer(GpuGsBackend& gpu) {
     require(std::count(main_picture.bgra.begin(),main_picture.bgra.end(),0xFF000000u)<std::ptrdiff_t(main_picture.bgra.size()),"a picture with the drawing");
 }
 
+// Native passes (gs/gpu/native/native_passes.h): the alpha fill leaves GS memory as the renderer's drawing does. Two
+// renderers take the same kept state, one drawing everything and one with the pass, and draw the same sprites: two
+// blended flat strips that write only the alpha byte of x 0..31, y 0..31.
+void nativeAlphaFill(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Native alpha fill: ")+what);};
+    const auto passes=[](const char* value) {
+#ifdef _WIN32
+        _putenv_s("BT2_NATIVE_PASSES",value);
+#else
+        setenv("BT2_NATIVE_PASSES",value,1);
+#endif
+    };
+    gpu.flush();gpu.keepState(1);
+    passes("none");GpuGsBackend emulated;emulated.initShared(gpu);
+    passes("alpha-fill");GpuGsBackend native;native.initShared(gpu);
+    passes("");
+    const auto fill=packet({{0x4C,0x00FFFFFF00010000ULL},{0x4E,0x0000000101000020ULL},{0x18,0},
+        {0x40,0x001F0000003F0000ULL},{0x47,0x30000},{0x42,0x44},{0x00,6|(1u<<6)},{0x01,0x0000000040FFFFFFULL},
+        {0x05,0},{0x05,0x0000000002000100ULL},{0x05,0x0000000000000100ULL},{0x05,0x0000000002000200ULL}});
+    std::vector<std::uint32_t> before;
+    for(auto* r:{&emulated,&native}) {
+        r->takeState(gpu,1);
+        if(before.empty()) {const auto v=r->readVram();before.assign(v.begin(),v.end());}
+        r->transfer(fill);
+    }
+    const auto e=emulated.readVram();
+    const std::vector<std::uint32_t> expected(e.begin(),e.end());
+    const auto n=native.readVram();
+    require(native.nativePassSummary()=="Native passes: alpha-fill 1" && emulated.nativePassSummary().empty(),"the pass ran on its renderer only");
+    require(pixel(expected,8,8)==((pixel(before,8,8)&0xFFFFFFu)|0x40000000u) && pixel(expected,40,8)==pixel(before,40,8),"the emulated fill");
+    require(std::equal(expected.begin(),expected.end(),n.begin()),"the same GS memory");
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -177,7 +210,8 @@ int main() try {
     GsCommandSink validator;validator.transfer(sprite);
     if(validator.transfers!=1)throw std::runtime_error("The sink lost the transfer");
     secondRenderer(gpu);
+    nativeAlphaFill(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill leaves the same GS memory; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

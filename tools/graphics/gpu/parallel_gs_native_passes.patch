@@ -1,0 +1,158 @@
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -332,6 +332,28 @@
+ 	// still loading; the original is then cached only for the render pass, so it is asked for again.
+ 	bool texture_replacement_pending = false;
+ 
++	// BT2 Recomp patch: native passes. Called with each render pass before it is drawn, with its primitives as the
++	// renderer takes them; when it returns true it has recorded the pass's work itself (record_native_work) and the
++	// renderer does not draw it. GS state, page tracking and texture caching are as for a drawn pass.
++	struct NativeRenderPass
++	{
++		const RenderPass &rp;
++		const VertexPosition *positions;
++		const VertexAttribute *attributes;
++		const PrimitiveAttribute *primitives;
++		// GS memory has super-sample planes: a pass's writes keep the reference word, as the renderer's do.
++		bool super_sample_reference;
++	};
++	std::function<bool (const NativeRenderPass &)> native_render_pass;
++	// The kind of native pass a draw may belong to (0: none), asked at a draw after the GS state changed; a render
++	// pass holds draws of one kind only, so native_render_pass sees each sequence whole.
++	std::function<uint32_t (const RegisterState &)> native_draw_kind;
++	// Records work on GS memory at this point of the renderer's stream: after all earlier work, before all later; the
++	// command buffer's bindings and push constants are restored afterwards. In get_vram_buffer, per 32-bit word of GS
++	// memory: the resolved value, its super-sample reference at + get_vram_size() bytes, sample s at + (s + 2) times.
++	void record_native_work(const std::function<void (Vulkan::CommandBuffer &)> &record);
++	uint32_t get_vram_size() const;
++
+ private:
+ 	friend class PageTracker;
+ 	void flush(PageTrackerFlushFlags flags, FlushReason reason);
+@@ -391,6 +413,8 @@
+ 		std::vector<TEX0Bits> tex0_infos;
+ 		// BT2 Recomp patch: the last sprite's piece of a replacement (its own texture entry, region-clamped).
+ 		uint32_t piece_source = UINT32_MAX, piece_index = 0;
++		// BT2 Recomp patch: native_draw_kind of the pass's draws.
++		uint32_t native_kind = 0;
+ 		ivec4 piece_region = {};
+ 
+ 		bool tex_infos_has_super_samples = false;
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -309,11 +309,17 @@
+ 		rp.flush_reason = reason;
+ 		//////
+ 
+-		renderer.flush_rendering(rp);
+-
+-		// Need to call this after flush rendering to ensure that the images
+-		// have been cached properly.
+-		promote_render_pass_to_backbuffer(rp);
++		const bool drawn_natively = native_render_pass &&
++		                            native_render_pass({ rp, render_pass.positions, render_pass.attributes,
++		                                                 render_pass.prim, renderer.can_potentially_super_sample() });
++		if (!drawn_natively)
++		{
++			renderer.flush_rendering(rp);
++
++			// Need to call this after flush rendering to ensure that the images
++			// have been cached properly.
++			promote_render_pass_to_backbuffer(rp);
++		}
+ 
+ 		TRACE_HEADER("FLUSH RENDER", rp);
+ 	}
+@@ -2609,6 +2615,18 @@
+ template <bool list_primitive, bool fan_primitive, bool quad, unsigned num_vertices>
+ void GSInterface::drawing_kick_append()
+ {
++	// BT2 Recomp patch: a draw of another native kind than the render pass's starts a new render pass.
++	if (native_draw_kind && state_tracker.dirty_flags != 0)
++	{
++		uint32_t kind = native_draw_kind(registers);
++		if (kind != render_pass.native_kind)
++		{
++			if (render_pass.primitive_count)
++				tracker.flush_render_pass(FlushReason::FBPointer);
++			render_pass.native_kind = kind;
++		}
++	}
++
+ 	auto &prim = registers.prim;
+ 	auto &ctx = registers.ctx[prim.desc.CTXT];
+ 
+@@ -4614,6 +4632,16 @@
+ 	tracker.mark_external_write(page_rect);
+ }
+ 
++void GSInterface::record_native_work(const std::function<void (Vulkan::CommandBuffer &)> &record)
++{
++	renderer.record_native_work(record);
++}
++
++uint32_t GSInterface::get_vram_size() const
++{
++	return vram_size;
++}
++
+ void GSInterface::set_frame_boundaries(bool enable)
+ {
+ 	renderer.set_frame_boundaries(enable);
+diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
+--- a/gs/gs_renderer.hpp
++++ b/gs/gs_renderer.hpp
+@@ -290,6 +290,9 @@
+ 
+ 	// FB stage.
+ 	void flush_rendering(const RenderPass &rp);
++	// BT2 Recomp patch: a native pass's work in place of a render pass (GSInterface::record_native_work).
++	void record_native_work(const std::function<void (Vulkan::CommandBuffer &)> &record);
++	bool can_potentially_super_sample() const;
+ 
+ 	// Readback stage.
+ 	void flush_readback(const uint32_t *page_indices, uint32_t num_indices);
+@@ -583,8 +586,6 @@
+ 	std::vector<uint32_t> vram_copy_write_pages;
+ 	std::vector<uint32_t> sync_vram_shadow_pages;
+ 
+-	bool can_potentially_super_sample() const;
+-
+ 	void check_bug_feedback();
+ 
+ 	bool scanout_is_interlaced(const PrivRegisterState &priv, const VSyncInfo &info) const;
+diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -3219,6 +3219,29 @@
+ 	ensure_command_buffer(clear_cmd, work_queue);
+ 	if (first_clear_cmd)
+ 		clear_cmd->begin_region("clear-memory");
++}
++
++void GSRenderer::record_native_work(const std::function<void (Vulkan::CommandBuffer &)> &record)
++{
++	ensure_command_buffer(direct_cmd, work_queue);
++	auto &cmd = *direct_cmd;
++	cmd.barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
++	            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
++	            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
++	Vulkan::CommandBufferSavedState saved = {};
++	cmd.save_state(Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_0_BIT | Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_1_BIT |
++	               Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_2_BIT | Vulkan::COMMAND_BUFFER_SAVED_BINDINGS_3_BIT |
++	               Vulkan::COMMAND_BUFFER_SAVED_PUSH_CONSTANT_BIT, saved);
++	record(cmd);
++	cmd.restore_state(saved);
++	// As after a render pass's shading.
++	cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
++	            work_stages(VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
++	                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT),
++	            VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
++	            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
++	stats.num_render_passes++;
++	check_flush_stats();
+ }
+ 
+ void GSRenderer::flush_rendering(const RenderPass &rp)
