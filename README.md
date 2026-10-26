@@ -84,7 +84,7 @@ Estimated from measurements on one PC (Core i9-10900K, Radeon RX 6800 XT); not y
 | | Minimum (original picture) | With every enhancement (16x super-sampling, HD textures, widescreen) |
 | --- | --- | --- |
 | **System** | Windows 10 or 11, 64-bit | Windows 10 or 11, 64-bit |
-| **Processor** | 4 cores, Intel Core i5-8400 or AMD Ryzen 5 3600 | 6 cores, Intel Core i5-10400 or AMD Ryzen 5 5600 |
+| **Processor** | 4 cores, Intel Core i5-8400 or AMD Ryzen 5 3600 | 4 cores with 8 threads, Intel Core i7-7700 or AMD Ryzen 5 3600 (also with 60 fps battles; measured on 4 of this PC's cores; 60 fps turns itself off if the processor cannot keep up) |
 | **Memory** | 4 GB | 8 GB |
 | **Graphics** | Vulkan graphics card: GeForce GTX 1050 Ti, Radeon RX 570, Intel Arc A380 or similar (older integrated graphics such as Intel UHD 620 are too slow) | GeForce RTX 3060 or Radeon RX 6600 XT (4x super-sampling: GeForce GTX 1660 or Radeon RX 5500 XT) |
 | **Video memory** | 2 GB | 4 GB |

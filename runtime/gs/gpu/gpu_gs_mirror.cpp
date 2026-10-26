@@ -1,4 +1,5 @@
 #include "gs/gpu/gpu_gs_mirror.h"
+#include "host/thread_priority.h"
 #include <iostream>
 
 void GpuGsMirror::attach(GsCommandSink& cpu,unsigned super_sampling) {
@@ -36,7 +37,10 @@ void GpuGsMirror::startThread(GsCommandSink& cpu,unsigned thread_index) {
     // With texture names, transfers run again through the GS thread's sink, which hands them on in step.
     thread_=std::make_unique<GsRenderThread>([this](std::span<const std::uint8_t> data,bool transfer) {
         if(transfer && named_.texture_names)named_.transfer(data);else gpu_.transfer(data);
-    },[thread_index]{GpuGsBackend::registerRenderThread(thread_index);});
+    },[thread_index]{
+        GpuGsBackend::registerRenderThread(thread_index);
+        if(thread_index!=0)giveWayToTheGame(); // A second renderer's (the in-between pictures): optional work.
+    });
     cpu.on_accepted=[this](std::span<const std::uint8_t> data){thread_->push(data,false);};
     cpu.on_accepted_transfer=[this](std::span<const std::uint8_t> data){thread_->push(data,true);};
 }
@@ -46,9 +50,9 @@ void GpuGsMirror::nameTextures(GsTextureNames& names) {
     named_.texture_names=&names;
 }
 
-void GpuGsMirror::enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names) {
+void GpuGsMirror::enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons) {
     drain();
-    gpu_.enableHdTextures(pack,budget_bytes,names);
+    gpu_.enableHdTextures(pack,budget_bytes,names,playstation_buttons);
     named_.texture_names=&names;
 }
 

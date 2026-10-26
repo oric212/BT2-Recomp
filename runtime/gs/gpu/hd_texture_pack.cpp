@@ -1,4 +1,5 @@
 #include "gs/gpu/hd_texture_pack.h"
+#include "host/thread_priority.h"
 #include "gs/gpu/hd_texture_image.h"
 #include "device.hpp"
 #include "thread_id.hpp"
@@ -159,13 +160,15 @@ void HdTexturePack::waitLoaded() {
 void HdTexturePack::load(Entry& entry) {
     std::ifstream in(entry.path,std::ios::binary);
     const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
-    const auto dds=readDds(file);
-    if(!dds)return;
-    auto info=Vulkan::ImageCreateInfo::immutable_2d_image(dds->width,dds->height,VkFormat(dds->format));
-    info.levels=unsigned(dds->levels.size());
+    if(const auto dds=readDds(file))makeImage(*dds,entry);
+}
+
+void HdTexturePack::makeImage(const Dds& dds,Entry& entry) {
+    auto info=Vulkan::ImageCreateInfo::immutable_2d_image(dds.width,dds.height,VkFormat(dds.format));
+    info.levels=unsigned(dds.levels.size());
     std::vector<Vulkan::ImageInitialData> initial;
     std::uint64_t bytes=0;
-    for(const auto& level:dds->levels) {initial.push_back({level.data(),0,0});bytes+=level.size();}
+    for(const auto& level:dds.levels) {initial.push_back({level.data(),0,0});bytes+=level.size();}
     entry.image.handle=device_.create_image(info,initial.data());
     entry.bytes=bytes;
 }
@@ -185,6 +188,7 @@ std::optional<TextureColours> variantColours(const HdTexturePack::Dds& dds) {
 
 void HdTexturePack::run() {
     Util::register_thread_index(loader_thread_index);
+    giveWayToTheGame();
     for(;;) {
         Entry* e=nullptr;
         {
@@ -194,14 +198,23 @@ void HdTexturePack::run() {
             const auto job=wanted_.front();wanted_.pop_front();
             if(job.colours) {
                 busy_=true;hold.unlock();
-                std::optional<TextureColours> colours;
+                // The variant's image is made from the same bytes too (read ahead): the game relights a fighter
+                // gradually, so the variants of a texture it draws are soon drawn too.
+                std::optional<TextureColours> colours;Entry ahead;ahead.path=*job.file;
                 try {
                     std::ifstream in(*job.file,std::ios::binary);
                     const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
-                    if(const auto dds=readDds(file))colours=variantColours(*dds);
+                    if(const auto dds=readDds(file)) {colours=variantColours(*dds);makeImage(*dds,ahead);}
                 } catch(...) {}
                 hold.lock();
                 auto& c=colours_[job.file];c.done=true;c.colours=colours;busy_=false;
+                if(ahead.image.handle && !cache_.contains(job.file)) {
+                    auto* made=new Entry;made->path=ahead.path;made->image=std::move(ahead.image);made->bytes=ahead.bytes;
+                    made->done=true;made->used=++tick_;++loaded;++read_ahead;
+                    cache_.emplace(job.file,made);
+                    resident_bytes+=made->bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
+                    if(resident_bytes>budget_)evict();
+                }
                 hold.unlock();changed_.notify_all();
                 continue;
             }

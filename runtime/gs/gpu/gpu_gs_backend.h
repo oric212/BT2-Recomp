@@ -33,11 +33,12 @@ public:
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.
     std::span<const std::uint32_t> readVram();
-    // The renderer's state on the GPU (GS memory with its super-samples, and the CLUT) kept in one of two
-    // slots after a flush (keepState), and a second renderer on the same device set to a kept state
+    // The renderer's state on the GPU (GS memory with its super-samples, and the CLUT) kept in one of
+    // kept_slots slots after a flush (keepState; three, as the in-between pictures may run a frame behind), and a second renderer on the same device set to a kept state
     // (takeState; its cached textures are dropped): the in-between pictures of 60 fps battles start from
     // the main renderer's state. Copies on the GPU in submission order; neither waits for the GPU
     // (tools/graphics/gpu/parallel_gs_vram_backup.patch).
+    static constexpr unsigned kept_slots=3;
     void keepState(unsigned slot);
     void takeState(const GpuGsBackend& primary,unsigned slot);
     // The next quadwords of the local->host transfer the last TRXDIR started (zero past its end).
@@ -68,8 +69,10 @@ public:
     void closeWindowPresenter(); // Stops its thread (before what around_frame uses goes).
     // HD textures (docs/plans/graphics/HD_TEXTURES_PLAN.md): each texture the renderer caches is named by
     // `names` (kept in step with the renderer by the GS sink) and drawn with the pack's replacement when
-    // it has one. The summary line says what was found, loaded and dropped.
-    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
+    // it has one. The summary line says what was found, loaded and dropped. `budget_bytes` 0: half of the video
+    // memory the card has free now (at least 256 MB, at most 8 GB). `playstation_buttons`: the pack's
+    // PlayStation button art (else its Xbox art).
+    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true);
     std::string hdTextureSummary() const;
     HdTexturePack* hdTexturePack(); // The pack (null without one), for tests.
     // The second renderer draws with `primary`'s pack (one copy in video memory), named by its own `names`;

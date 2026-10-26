@@ -92,6 +92,7 @@ private:
         const std::function<void()> apply=[this]{changed();};
         main.entries.push_back(menuAction("Controls",[this,apply]{host_.menu.open(menu_screens::controls(host_,settings_,apply));},"Keys and gamepad buttons, fast forward, the in-game menu."));
         main.entries.push_back(menuAction("Display",[this,apply]{host_.menu.open(menu_screens::display(host_,settings_,apply));},"Window size, fullscreen, scaling, frame rate."));
+        main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply));},"HD textures, super-sampling, widescreen, 60 fps battles."));
         main.entries.push_back(menuAction("Sound",[this,apply]{host_.menu.open(menu_screens::sound(settings_,apply));},"Master, music and effects volume."));
         main.entries.push_back(menuAction("Quit",[this]{result=LauncherResult::Quit;host_.finished=true;}));
         return main;

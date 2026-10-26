@@ -47,7 +47,7 @@ public:
     void submit() {const auto hold=use();gpu_.submit();} // The work so far, without ending the frame (gpu_gs_backend.h).
     void readFifo(std::span<std::uint8_t> out) {const auto hold=use();gpu_.readFifo(out);} // Local->host data, GPU-only mode.
     void enableTimestamps() {const auto hold=use();gpu_.enableTimestamps();}
-    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names);
+    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true);
     // The GPU image of the displayed circuits, from the privileged registers the game last wrote and
     // the video mode of its SetGsCrt request (2 NTSC, 3 PAL), which sets SMODE1 on hardware.
     DisplayFrame scanout(const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field);

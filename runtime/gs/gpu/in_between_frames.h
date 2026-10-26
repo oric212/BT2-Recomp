@@ -17,8 +17,10 @@
 // its own that blends and runs it while the game goes on, and the second renderer's GS thread names and
 // draws the result meanwhile (gs/gpu/gpu_gs_mirror.h); the second renderer submits after each, so the
 // device's frame changes never wait for it. At the flip only the check that the lists paired and the
-// scanout are left. The game's thread waits for the thread only where it needs the result or the
-// device (wait).
+// scanout are left. The game's thread waits for the thread only where it needs the result (wait, for
+// checks and snapshots); otherwise the thread may run up to a frame behind (keepPace): a picture it
+// finishes after its field is left out, and the game's thread waits only when the thread is more than a
+// frame behind, so a slower processor costs in-between pictures, not the game's pace.
 #pragma once
 #include "gs/cpu/gs_command_sink.h"
 #include "gs/gpu/gpu_gs_mirror.h"
@@ -26,6 +28,7 @@
 #include "vu/vif1.h"
 #include "vu/vif1_blend.h"
 #include <array>
+#include <condition_variable>
 #include <deque>
 #include <exception>
 #include <mutex>
@@ -59,6 +62,10 @@ public:
     // ready. Called before the main renderer's flip, before showing or reading the second renderer's
     // picture, and harmless when nothing is running.
     bool wait();
+    // At a flip, instead of wait: returns when the thread is at most one frame behind (rethrowing a failure).
+    // A thread that keeps falling behind (more than a quarter of the last 64 flips waited for) means a
+    // processor too slow for the in-between pictures: it throws, and the caller turns them off.
+    void keepPace();
     // Whether the frame is done (without waiting) and its in-between picture is ready.
     bool ready();
     bool busy(); // Whether the frame is still to be drawn (without waiting).
@@ -75,6 +82,7 @@ public:
     unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
     std::uint64_t refused_pairs=0,blended_words=0,realigned_pairs=0; // Changed unpack pairs left as they are, words blended, shifted pairs realigned (vu/vif1_blend.h).
     double waited_seconds=0; // The game's thread waiting for the frame.
+    unsigned paced_waits=0; // Flips at which keepPace waited (more than 2 ms).
     double drawing_seconds=0,slowest_seconds=0; // The thread's time on the in-between pictures drawn, and the longest.
 
 private:
@@ -94,12 +102,15 @@ private:
     // `handed`: the events already handed to the thread (drawn as they came); `slot`: the keepState slot
     // holding the main renderer's state as the frame started.
     struct Frame {std::deque<Event> events;std::size_t used=0,handed=0;std::unique_ptr<Vif1> start;bool fight=false,streamed=false;unsigned slot=0;Event& next(bool vif1);};
-    Frame recording_,previous_,spare_; // recording_ is the game's thread's; previous_ (the older frame) the thread's.
+    Frame recording_,previous_; // recording_ is the game's thread's; previous_ (the older frame) the thread's.
+    std::vector<Frame> free_; // Frames the thread is done with, to record into again (under lock_).
     bool previous_fight_=false; // The game's thread's copy of the last finished frame's `fight`.
     // The thread's job at a flip: the finished frame and how to scan it out.
     struct Job {Frame frame;std::array<std::uint64_t,15> privileged{};unsigned crt_mode=0,field=0;};
-    Job job_;bool pending_=false,ready_=false;std::exception_ptr failure_;
-    std::mutex lock_;
+    // Jobs in order (the thread takes the front one with its task); `started` and `finished` count them.
+    std::deque<Job> jobs_;std::uint64_t started_=0,finished_=0;bool ready_=false;std::exception_ptr failure_;
+    std::uint64_t recent_waits_=0; // keepPace: whether each of the last 64 flips waited (newest in bit 0).
+    std::mutex lock_;std::condition_variable done_;
     void run(); // The task: finishes job_.
     bool draw(Frame finished,const Job& job);
     // The frame being drawn as it comes (the thread's): the VIF1/VU1 copy it runs on, the older frame's VIF1

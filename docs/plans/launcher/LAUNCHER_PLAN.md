@@ -84,7 +84,8 @@ New code in `runtime/host/`, one purpose per file:
 | Main | Start game, Game disc, Memory card, Controls, Display, Sound, Quit; the game's logo above them; when a disc image is chosen, a small disc blinks in the top right corner for four seconds and then goes away. |
 | Memory card | The console's browser: grey, the chosen card's icon, name and save count at the top left, the title at the top right, the cards of `saves` as a row of memory card icons (the chosen one lit), card image files of other programs dimmed with a question mark, and a dashed card with a plus for a new empty card; "in use" under the card in slot 1. |
 | Controls | Each PS2 button with its keyboard key and its pad button. Selecting an entry waits for the next press and assigns it. The fast forward buttons and the overlay combination. Reset to defaults. |
-| Display | Integer scaling on or off (off stretches to the window). Fullscreen or windowed. Window size. Frame rate display on or off. HD textures on or off. Super-sampling. Widescreen on or off (the game's 16:9 patch, from the next start). |
+| Display | Integer scaling on or off (off stretches to the window). Fullscreen or windowed. Window size. Frame rate display on or off. |
+| Enhancements | From the next start: HD textures on or off, the button art (PlayStation or Xbox), super-sampling, widescreen (the game's 16:9 patch), 60 fps battles. |
 | Sound | Master, music and effects volume. |
 | Game disc | The same browser with the `.iso` files of `data` as discs (the chosen one turning); a dashed empty disc while there is none. |
 
@@ -114,7 +115,7 @@ The mixer already has separate sources for streams (music, movies, voices in str
 
 ### HD textures
 
-The overlay and the launcher hold the "HD textures" entry (Display) since 2026-10-20, with "Super-sampling" (Off, 2x, 4x, 8x, 16x) next to it; both take effect from the next start, because the renderer takes them when it starts. The pack is the first folder in `data/textures` that holds a `replacements` folder, as PCSX2's packs do (the game program makes `data/textures` on its first start). How the textures are found and drawn is the [HD textures plan](../graphics/HD_TEXTURES_PLAN.md) (pack 2, made for the retail disc). The packs are never committed; their threads are credited in the README when the feature ships.
+The overlay and the launcher hold the "HD textures" entry since 2026-10-20, with "Super-sampling" (Off, 2x, 4x, 8x, 16x) next to it; both take effect from the next start, because the renderer takes them when it starts. Since 2026-10-26 (the user: the settings that apply after a restart in a sub-menu of their own) they are on the "Enhancements (from the next start)" screen, opened from the launcher's first screen and the in-game menu, with "Button art" (the pack's PlayStation or Xbox buttons), "Widescreen" and "60 fps battles"; Display keeps what applies at once. The pack is the first folder in `data/textures` that holds a `replacements` folder, as PCSX2's packs do (the game program makes `data/textures` on its first start). How the textures are found and drawn is the [HD textures plan](../graphics/HD_TEXTURES_PLAN.md) (pack 2, made for the retail disc). The packs are never committed; their threads are credited in the README when the feature ships.
 
 ### 60 fps battles
 

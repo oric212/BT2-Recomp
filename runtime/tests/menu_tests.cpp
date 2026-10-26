@@ -180,7 +180,7 @@ int main() {
         host.setLogo(fs::path(BT2_SOURCE_DIR)/"assets"/"launcher"/"logo.png");
         Launcher launcher(settings,settings_path,folders,host);
         launcher.open();
-        check(labels(host.menu.screen())==std::vector<std::string>{"Start game","Game disc","Memory card","Controls","Display","Sound","Quit"},"the first screen");
+        check(labels(host.menu.screen())==std::vector<std::string>{"Start game","Game disc","Memory card","Controls","Display","Enhancements","Sound","Quit"},"the first screen");
         check(host.menu.screen().entries[0].value()=="No game disc in the data folder","Start says what is missing");
         picture(host,"1-first-start");
         check(discArea(host)<60,"no disc: no disc mark");

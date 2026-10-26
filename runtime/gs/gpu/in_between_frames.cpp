@@ -1,13 +1,16 @@
 #include "gs/gpu/in_between_frames.h"
+#include "host/thread_priority.h"
 #include <algorithm>
 #include <bit>
 #include <chrono>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 
 InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures,bool replay_only)
     :replay_only(replay_only),primary_(primary),
      thread_([](std::span<const std::uint8_t>,bool){throw std::logic_error("60 fps battles: the thread takes tasks only");},
-             []{GpuGsBackend::registerRenderThread(1);}) {
+             []{GpuGsBackend::registerRenderThread(1);giveWayToTheGame();}) {
     sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
     mirror_.attachShared(sink_,primary,super_sampling);
     names_.count_drawn=false; // Only the main renderer's names keep the naming log.
@@ -19,7 +22,7 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
 InBetweenFrames::~InBetweenFrames() {
     try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended ("<<realigned_pairs<<" shifted unpacks realigned), "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them; "
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended ("<<realigned_pairs<<" shifted unpacks realigned), "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
         <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
     if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
     std::cerr<<std::endl;
@@ -27,11 +30,12 @@ InBetweenFrames::~InBetweenFrames() {
 
 void InBetweenFrames::run() {
     Job job;
-    {std::lock_guard<std::mutex> hold(lock_);job=std::move(job_);}
+    {std::lock_guard<std::mutex> hold(lock_);job=std::move(jobs_.front());jobs_.pop_front();}
     bool ready=false;std::exception_ptr failure;
     try {ready=draw(std::move(job.frame),job);}
     catch(...) {failure=std::current_exception();}
-    std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;pending_=false;
+    {std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;++finished_;}
+    done_.notify_all();
 }
 
 bool InBetweenFrames::wait() {
@@ -44,9 +48,24 @@ bool InBetweenFrames::wait() {
     return ready_;
 }
 
+void InBetweenFrames::keepPace() {
+    const auto begin=std::chrono::steady_clock::now();
+    std::unique_lock<std::mutex> hold(lock_);
+    done_.wait(hold,[this]{return finished_+1>=started_ || failure_;});
+    if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
+    const double waited=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+    waited_seconds+=waited;
+    const bool long_wait=waited>0.002;
+    paced_waits+=long_wait;
+    recent_waits_=(recent_waits_<<1)|(long_wait?1u:0u);
+    if(std::popcount(recent_waits_)>16)
+        throw std::runtime_error("the processor does not keep up with the in-between pictures (the game waited at "
+                                 +std::to_string(std::popcount(recent_waits_))+" of the last 64 flips); turned off to keep the game's pace");
+}
+
 bool InBetweenFrames::busy() {
     std::lock_guard<std::mutex> hold(lock_);
-    return pending_;
+    return finished_<started_;
 }
 
 bool InBetweenFrames::keepsUp(bool ready) {
@@ -56,22 +75,30 @@ bool InBetweenFrames::keepsUp(bool ready) {
 
 bool InBetweenFrames::ready() {
     std::lock_guard<std::mutex> hold(lock_);
-    return !pending_ && !failure_ && ready_;
+    return finished_==started_ && !failure_ && ready_;
 }
 
 void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::uint64_t,15>& privileged,unsigned crt_mode,unsigned field,unsigned next_slot) {
-    wait();
-    // The recording becomes the job's frame; the oldest frame's buffers record the next one.
+    {
+        // Done at the flip already (wait or keepPace); kept for callers that start without it.
+        std::unique_lock<std::mutex> hold(lock_);
+        done_.wait(hold,[this]{return finished_+1>=started_ || failure_;});
+    }
+    // The recording becomes the job's frame; a frame the thread is done with records the next one.
     Frame finished=std::move(recording_);
     finished.fight=fight;
-    recording_=std::move(spare_);
+    {
+        std::lock_guard<std::mutex> hold(lock_);
+        if(free_.empty())recording_=Frame{};
+        else {recording_=std::move(free_.back());free_.pop_back();}
+    }
     recording_.used=0;recording_.handed=0;recording_.fight=false;recording_.streamed=false;
     recording_.start=std::make_unique<Vif1>(vif1);recording_.slot=next_slot;
     previous_fight_=fight && !replay_only; // The next frame is drawn as it comes.
     {
         std::lock_guard<std::mutex> hold(lock_);
-        job_.frame=std::move(finished);job_.privileged=privileged;job_.crt_mode=crt_mode;job_.field=field;
-        ready_=false;pending_=true;
+        jobs_.push_back(Job{std::move(finished),privileged,crt_mode,field});
+        ready_=false;++started_;
     }
     thread_.pushTask([this]{run();});
 }
@@ -171,7 +198,7 @@ bool InBetweenFrames::draw(Frame finished,const Job& job) {
         mirror_.submit();
         if(replay_only) {picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);ready=picture_.first!=0;}
     }
-    spare_=std::move(previous_);
+    {std::lock_guard<std::mutex> hold(lock_);free_.push_back(std::move(previous_));}
     previous_=std::move(finished);
     previous_.start.reset(); // Only the newer frame's start is used.
     return ready;

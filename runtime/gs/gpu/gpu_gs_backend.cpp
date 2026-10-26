@@ -7,11 +7,13 @@
 #include "device.hpp"
 #include "gs_interface.hpp"
 #include "thread_id.hpp"
+#include <algorithm>
 #include <array>
 #include <mutex>
 #include <unordered_map>
 #include <span>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -29,7 +31,7 @@ struct GpuGsBackend::State {
     const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
     struct Kept {Vulkan::BufferHandle vram,clut;};
-    std::array<Kept,2> kept; // keepState's slots.
+    std::array<Kept,kept_slots> kept; // keepState's slots.
     // Drawn palettes (gs/textures/gs_texture_names.h): the pages the names watch, copied back after each
     // frame into host memory in turn; a copy the GPU finished goes to every names object of the pack.
     struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
@@ -39,10 +41,12 @@ struct GpuGsBackend::State {
     // this renderer had when it drew it; gs/gpu/in_between_frames.h).
     struct PaletteTarget {GsTextureNames* names;bool late;};
     GsTextureNames* names=nullptr;std::vector<PaletteTarget> palette_targets;
+    GpuGsBackend* shared_from=nullptr; // shareHdTextures' primary: its palette target for these names goes with this renderer.
     std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages; // For the late ones.
     // The lit variant chosen for each drawn palette (texture and format mixed, palette); none: drawn as the original.
     struct PairHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first^(k.second*0xC2B2AE3D27D4EB4Full));}};
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;
+    Vulkan::ImageHandle missing_marker; // BT2_HD_SHOW_MISSING: drawn for a texture without a replacement.
     // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
@@ -50,7 +54,10 @@ struct GpuGsBackend::State {
 };
 
 GpuGsBackend::GpuGsBackend()=default;
-GpuGsBackend::~GpuGsBackend()=default;
+GpuGsBackend::~GpuGsBackend() {
+    if(state_ && state_->shared_from && state_->names)
+        std::erase_if(state_->shared_from->state_->palette_targets,[this](const State::PaletteTarget& t){return t.names==state_->names;});
+}
 
 void GpuGsBackend::init(unsigned super_sampling) {
     if(super_sampling!=1 && super_sampling!=2 && super_sampling!=4 && super_sampling!=8 && super_sampling!=16)
@@ -271,8 +278,19 @@ WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::fun
 
 void GpuGsBackend::closeWindowPresenter() {state_->presenter.reset();}
 
-void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names) {
-    state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes);
+void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons) {
+    if(!budget_bytes) {
+        // The largest device-local heap's room left (VK_EXT_memory_budget), halved: the rest for the renderer and others.
+        auto& device=*state_->device;
+        Vulkan::HeapBudget heaps[VK_MAX_MEMORY_HEAPS]{};device.get_memory_budget(heaps);
+        const auto& properties=device.get_memory_properties();
+        std::uint64_t room=0;
+        for(std::uint32_t h=0;h<properties.memoryHeapCount;++h)
+            if((properties.memoryHeaps[h].flags&VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && heaps[h].budget_size>heaps[h].device_usage)
+                room=std::max<std::uint64_t>(room,heaps[h].budget_size-heaps[h].device_usage);
+        budget_bytes=std::clamp<std::uint64_t>(room/2,256ull<<20,8ull<<30);
+    }
+    state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes,playstation_buttons);
     replaceTextures(names);
 }
 
@@ -280,6 +298,7 @@ void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& n
     if(!primary.state_->pack)return;
     state_->pack=primary.state_->pack;
     primary.state_->palette_targets.push_back({&names,late_palettes}); // Drawn palettes from the primary's copies.
+    state_->shared_from=const_cast<GpuGsBackend*>(&primary);
     if(primary.state_->names)names.shareHashesWith(*primary.state_->names); // It names the same textures.
     replaceTextures(names);
 }
@@ -313,8 +332,16 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
             if(chosen!=state_->variants.end() && chosen->second)image=look(chosen->second->palette);
         }
         if(!image && loading)state_->gs.texture_replacement_pending=true; // The original is not kept meanwhile.
+        if(!image && !loading && state_->missing_marker)return state_->missing_marker;
         return image?image->handle:Vulkan::ImageHandle{};
     };
+    // BT2_HD_SHOW_MISSING=1 (a diagnostic): a texture the pack has no replacement for is drawn magenta, so a
+    // picture shows which areas are still the original's.
+    if(std::getenv("BT2_HD_SHOW_MISSING") && !state_->missing_marker) {
+        const std::uint8_t magenta[8]{0x1F,0xF8,0x1F,0xF8,0,0,0,0}; // One BC1 block, both colours 0xF81F.
+        const Vulkan::ImageInitialData initial{magenta,0,0};
+        state_->missing_marker=state_->device->create_image(Vulkan::ImageCreateInfo::immutable_2d_image(4,4,VK_FORMAT_BC1_RGBA_UNORM_BLOCK),&initial);
+    }
 }
 
 void GpuGsBackend::enableTimestamps() {
@@ -341,6 +368,6 @@ std::string GpuGsBackend::hdTextureSummary() const {
     const auto& p=*state_->pack;
     return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
         +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.variants_chosen)+" drawn palettes by a lit variant, "
-        +std::to_string(p.variants_too_far)+" with none near enough; "+std::to_string(p.loaded)+" loaded, "
-        +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB";
+        +std::to_string(p.variants_too_far)+" with none near enough, "+std::to_string(p.read_ahead)+" variants read ahead; "+std::to_string(p.loaded)+" loaded, "
+        +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB of a budget of "+std::to_string(p.budget()>>20)+" MB";
 }

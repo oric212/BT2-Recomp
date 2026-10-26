@@ -359,13 +359,17 @@ int main(int argc, char** argv) {
             // The names follow the renderer on the GS thread (gs/gpu/gpu_gs_mirror.h), not the game's sink.
             if (runtime.gif_dma.gs.texture_names) {gpu_mirror.nameTextures(*runtime.gif_dma.gs.texture_names);runtime.gif_dma.gs.texture_names = nullptr;}
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
-            // BT2_HD_TEXTURES=<pack folder>[:<budget in MB, default 2048>]: draw with a PCSX2 texture pack's
-            // replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md).
+            // BT2_HD_TEXTURES=<pack folder>[:<budget in MB; default: half the card's free video memory>]: draw with a
+            // PCSX2 texture pack's replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md). BT2_HD_BUTTONS=xbox: the
+            // pack's Xbox button art instead of its PlayStation art.
             if (const char* hd = std::getenv("BT2_HD_TEXTURES")) {
-                std::string folder = hd;std::uint64_t budget_mb = 2048;
+                std::string folder = hd;std::uint64_t budget_mb = 0;
                 if (const auto colon = folder.rfind(':'); colon != std::string::npos && colon > 1) {budget_mb = std::stoull(folder.substr(colon + 1));folder.resize(colon);}
                 texture_name_log.names.count_drawn = !texture_name_log.path.empty(); // Only the naming log counts draws.
-                gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names);
+                const char* buttons = std::getenv("BT2_HD_BUTTONS");
+                if (buttons && std::string_view(buttons) != "xbox" && std::string_view(buttons) != "playstation")
+                    throw std::runtime_error("BT2_HD_BUTTONS must be xbox or playstation");
+                gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names, !buttons || std::string_view(buttons) == "playstation");
             }
             // BT2_SIXTY_FPS=1 (the setting "60 fps battles"): a picture between each two fight frames, drawn
             // from the game's commands by a second renderer (gs/gpu/in_between_frames.h); the game is unchanged.
@@ -446,9 +450,11 @@ int main(int argc, char** argv) {
                 if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
                 // The worker's last frame ends before the main renderer's flip (they share the device and the HD pack).
                 bool in_between_ready = false;
-                if (in_between) try {in_between_ready = in_between->wait();} catch (const std::exception& e) {stop_in_between(e);}
+                // Checks and snapshots wait for the frame; play only keeps the in-between thread within a frame of the game.
+                static const bool exact_in_between = in_between && (in_between->replay_only || in_between->scan_replay || std::getenv("BT2_SIXTY_FPS_SNAPSHOT"));
+                if (in_between) try {if (exact_in_between) in_between_ready = in_between->wait();else in_between->keepPace();} catch (const std::exception& e) {stop_in_between(e);}
                 gpu_mirror.flip();
-                if (in_between) gpu_mirror.keepState(flip % 2); // The state the next frame starts from, for its in-between picture.
+                if (in_between) gpu_mirror.keepState(flip % GpuGsBackend::kept_slots); // The state the next frame starts from, for its in-between picture.
                 // The next frame goes to the worker when this flip's own work is done (its picture shown):
                 // the presenter's frame context would otherwise wait for the worker.
                 struct StartInBetween {
@@ -460,7 +466,7 @@ int main(int argc, char** argv) {
                         static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
                         const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
                         try {
-                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % 2);
+                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % GpuGsBackend::kept_slots);
                             in_between_started = true;in_between_vblank = runtime.vblank_deliveries;in_between_flip = flip;
                         } catch (const std::exception& e) {stop_in_between(e);}
                         sixty_fps::fight_waits = 0;

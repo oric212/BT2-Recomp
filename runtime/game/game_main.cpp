@@ -58,6 +58,7 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     // The picture settings the renderer takes at its start: HD textures (when a pack is there) and super-sampling.
     const fs::path pack=settings.hd_textures?folders.texturePack():fs::path{};
     SetEnvironmentVariableW(L"BT2_HD_TEXTURES",pack.empty()?nullptr:pack.wstring().c_str());
+    SetEnvironmentVariableA("BT2_HD_BUTTONS",settings.playstation_buttons?nullptr:"xbox");
     SetEnvironmentVariableA("BT2_SUPER_SAMPLING",std::to_string(settings.super_sampling).c_str());
     SetEnvironmentVariableA("BT2_GAME_PATCHES",settings.widescreen?"widescreen":nullptr); // ee/game_patches.h
     SetEnvironmentVariableA("BT2_SIXTY_FPS",settings.sixty_fps?"1":nullptr); // gs/gpu/in_between_frames.h

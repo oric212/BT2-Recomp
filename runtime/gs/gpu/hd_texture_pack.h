@@ -54,15 +54,18 @@ public:
     // the pack); `loading`: the loader is still reading the variants' colours.
     struct Choice {std::optional<Key> key;bool loading=false;};
     Choice closest(std::uint64_t texture,std::uint32_t format,const TextureColours& wanted);
-    // The root mean square colour difference (0 to 255) beyond which a variant is not drawn: measured
-    // in a fight, half the palettes are within 9 of a variant and four in five within 24; past about 40
-    // a variant's colours are plainly another lighting or another texture's.
-    static constexpr float variant_limit=24.0f;
+    // The root mean square colour difference (0 to 255) beyond which a variant is not drawn. An approximate
+    // lighting is accepted (the user, 2026-10-26): measured in a fight, half the palettes are within 9 of a
+    // variant, 95 % within 40; the few far beyond (up to about 240) are flashes and fades whose nearest
+    // variant is another look altogether, and stay original.
+    static constexpr float variant_limit=48.0f;
     unsigned variants_chosen=0,variants_too_far=0; // Palettes given a variant, and left original.
+    unsigned read_ahead=0; // Variants' images made when their colours were read, before their first draw.
     // Waits until the loader has nothing left to do (tests, measurements).
     void waitLoaded();
 
     std::size_t names() const {return index_.size();}
+    std::uint64_t budget() const {return budget_;}
     unsigned duplicates=0,refused=0,loaded=0,evicted=0,found=0,missing=0,waiting=0,late=0; // late: files not ready by first_wait.
     std::uint64_t resident_bytes=0,peak_bytes=0;
 
@@ -90,6 +93,7 @@ private:
     std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;
     Entry* entry(const std::filesystem::path* file); // Under lock_: made when missing.
     void load(Entry& entry); // On the loader thread, without lock_.
+    void makeImage(const Dds& dds,Entry& entry); // The same, from a file already read.
     void run();
     void evict(); // Under lock_.
     std::thread loader_; // Last: it starts in the constructor.

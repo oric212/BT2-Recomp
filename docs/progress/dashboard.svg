@@ -133,12 +133,12 @@
 <circle cx="506.0" cy="354" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="358" font-size="13" font-weight="600" fill="#1e293b">Widescreen</text>
 <text x="502.0" y="376" font-size="11.5" fill="#64748b">16:9, gameplay unchanged</text></g>
-<g><title>60 fps battles: Operational. With HD at 16x since 10-26</title>
+<g><title>60 fps battles: Operational. With HD, 4-core CPUs</title>
 <rect x="489.0" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
 <circle cx="506.0" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="517.0" y="420" font-size="13" font-weight="600" fill="#1e293b">60 fps battles</text>
-<text x="502.0" y="438" font-size="11.5" fill="#64748b">With HD at 16x since 10-26</text></g>
+<text x="502.0" y="438" font-size="11.5" fill="#64748b">With HD, 4-core CPUs</text></g>
 <g><title>Performance: Operational. 30 fps with every option</title>
 <rect x="489.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="489.0" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
