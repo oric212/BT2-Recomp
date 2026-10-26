@@ -1,0 +1,136 @@
+#version 450
+// Native pass "ink-edges", step 1 (runtime/gs/gpu/native/ink_edges.cpp): the render pass that makes the ink outline's
+// edge buffer, applied per pixel and sample in the order the GS draws it. Its draws ("layers") are sprites into a
+// PSMCT16 buffer, flat or textured with the material ids (a T8H texture) through a PSMCT32 palette at a whole-texel
+// offset (DECAL), with the GS's blending, colour clamp and frame mask; each draw's result is stored as 16 bits before the
+// next one reads it. Each sample reads the ids of the same sample position, so an edge is found one game pixel
+// away in samples. The result per sample goes to the scratch buffer (step 2 writes GS memory).
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer GSMemory { uint words[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer Scratch { uint results[]; };
+
+struct Layer
+{
+	uvec4 rect;   // First and last pixel, x and y.
+	uvec4 state;  // Frame mask, colour (or the vertex colour), blend, flags.
+	ivec4 offset; // Texel offset of the pixel, x and y.
+};
+
+layout(set = 0, binding = 2, std140) uniform Pass
+{
+	uvec4 area;    // Origin x, y and size of the pixels written.
+	uvec4 buffers; // The 16-bit buffer's block and width; the ids' block and width (64-word blocks, 64-pixel units).
+	uvec4 texture; // Texture width - 1, height - 1, palette block, number of layers.
+	uvec4 memory;  // Words per plane of GS memory, samples per pixel, reference planes (non-zero: present).
+	Layer layers[8];
+} pass;
+
+const uint FLAG_TEXTURED = 1u, FLAG_TCC = 2u, FLAG_BLEND = 4u, FLAG_COLCLAMP = 8u;
+
+uint ct32_word(uint block, uint width, uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint b = (bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u);
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (block * 64u + ((p.y >> 5u) * width + (p.x >> 6u)) * 2048u + b * 64u + pixel) & 0xFFFFFu;
+}
+
+// The PSMCT16 halfword of pixel (x, y): 64 x 64 pixel pages of 32 blocks, 16 x 8 pixel blocks of four 16 x 2 columns.
+uint ct16_half(uint block, uint width, uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 4u, by = (p.y & 63u) >> 3u;
+	uint b = (by & 1u) | ((bx & 1u) << 1u) | ((by & 2u) << 1u) | ((bx & 2u) << 2u) | ((by & 4u) << 2u);
+	uint px = p.x & 15u, py = p.y & 7u;
+	uint pixel = ((px & 8u) >> 3u) | ((px & 1u) << 1u) | ((py & 1u) << 2u) | ((px & 2u) << 2u) | ((px & 4u) << 2u);
+	return ((block + ((p.y >> 6u) * width + (p.x >> 6u)) * 32u + b) * 128u + (py >> 1u) * 32u + pixel) & 0x1FFFFFu;
+}
+
+uint half_at(uint h)
+{
+	uint w = words[h >> 1u];
+	return (h & 1u) != 0u ? w >> 16u : w & 0xFFFFu;
+}
+
+uint expand16(uint c)
+{
+	return ((c & 31u) << 3u) | (((c >> 5u) & 31u) << 11u) | (((c >> 10u) & 31u) << 19u) | ((c & 0x8000u) != 0u ? 0x80000000u : 0u);
+}
+
+uint pack16(uint c)
+{
+	return ((c >> 3u) & 31u) | (((c >> 11u) & 31u) << 5u) | (((c >> 19u) & 31u) << 10u) | ((c >> 31u) << 15u);
+}
+
+// The material id of sample s at texel p (the T8H texture: the top byte of each PSMCT32 word). As the renderer's
+// texture upload reads it: the sample's byte where the reference word's top byte is 0xFF, else the resolved one.
+uint id_at(uvec2 p, uint s)
+{
+	uint i = ct32_word(pass.buffers.z, pass.buffers.w, p);
+	bool samples = pass.memory.y > 1u && pass.memory.z != 0u && (words[i + pass.memory.x] >> 24u) == 0xFFu;
+	return (samples ? words[i + (s + 2u) * pass.memory.x] : words[i]) >> 24u;
+}
+
+// A PSMCT32 palette in CSM1 order: index bits 3 and 4 swapped, 16 entries a row.
+uint palette(uint id)
+{
+	uint at = (id & 0xE7u) | ((id & 8u) << 1u) | ((id & 0x10u) >> 1u);
+	return words[ct32_word(pass.texture.z, 1u, uvec2(at & 15u, at >> 4u))];
+}
+
+int blend_input(uint mode, int source, int destination)
+{
+	return mode == 0u ? source : (mode == 1u ? destination : 0);
+}
+
+void main()
+{
+	uvec2 local = gl_GlobalInvocationID.xy;
+	uint s = gl_GlobalInvocationID.z;
+	if (any(greaterThanEqual(local, pass.area.zw)))
+		return;
+	uvec2 p = pass.area.xy + local;
+	uint plane16 = pass.memory.x * 2u;
+	uint h = ct16_half(pass.buffers.x, pass.buffers.y, p);
+	uint value = half_at(h);
+	if (pass.memory.y > 1u && pass.memory.z != 0u && half_at(h + plane16) == 0xFFFFu)
+		value = half_at(h + (s + 2u) * plane16);
+	uint destination = expand16(value);
+
+	for (uint n = 0u; n < pass.texture.w; n++)
+	{
+		Layer layer = pass.layers[n];
+		if (any(lessThan(p, layer.rect.xy)) || any(greaterThan(p, layer.rect.zw)))
+			continue;
+		uint flags = layer.state.w;
+		uint vertex = layer.state.y;
+		uint source = vertex;
+		if ((flags & FLAG_TEXTURED) != 0u)
+		{
+			uvec2 texel = uvec2(ivec2(p) + layer.offset.xy) & pass.texture.xy;
+			uint t = palette(id_at(texel, s));
+			source = (t & 0xFFFFFFu) | (((flags & FLAG_TCC) != 0u ? t : vertex) & 0xFF000000u); // DECAL
+		}
+		uint result = source;
+		if ((flags & FLAG_BLEND) != 0u)
+		{
+			uint blend = layer.state.z;
+			int as = int(source >> 24u), ad = int(destination >> 24u);
+			uint c_mode = (blend >> 4u) & 3u;
+			int c = c_mode == 0u ? as : (c_mode == 1u ? ad : int((blend >> 8u) & 255u));
+			result = source & 0xFF000000u;
+			for (uint channel = 0u; channel < 3u; channel++)
+			{
+				int cs = int((source >> (8u * channel)) & 255u), cd = int((destination >> (8u * channel)) & 255u);
+				int r = (((blend_input(blend & 3u, cs, cd) - blend_input((blend >> 2u) & 3u, cs, cd)) * c) >> 7) +
+				        blend_input((blend >> 6u) & 3u, cs, cd);
+				r = (flags & FLAG_COLCLAMP) != 0u ? clamp(r, 0, 255) : (r & 255);
+				result |= uint(r) << (8u * channel);
+			}
+		}
+		uint mask = layer.state.x;
+		destination = expand16(pack16((result & ~mask) | (destination & mask)));
+	}
+	results[(local.y * pass.area.z + local.x) * pass.memory.y + s] = pack16(destination);
+}

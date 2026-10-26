@@ -32,7 +32,8 @@ bool alphaFillDraw(const RegisterState& registers) {
         && ctx.frame.desc.PSM==PSMCT32 && ctx.frame.desc.FBMSK==0x00FFFFFFu && !ctx.test.desc.ATE && !ctx.test.desc.DATE;
 }
 
-bool alphaFill(const NativeRenderPass& pass,GSInterface& gs,Vulkan::Device& device) {
+bool alphaFill(const NativeRenderPass& pass,NativeContext& context) {
+    auto& gs=context.gs;
     const auto& rp=pass.rp;
     if(rp.num_instances!=1 || rp.num_textures || rp.has_aa1 || rp.has_scanmsk || rp.feedback_mode!=RenderPass::None || !rp.num_primitives)return false;
     const auto& inst=rp.instances[0];
@@ -65,7 +66,7 @@ bool alphaFill(const NativeRenderPass& pass,GSInterface& gs,Vulkan::Device& devi
     Push push{{std::uint32_t(lo_x),std::uint32_t(lo_y)},{std::uint32_t(hi_x-lo_x+1),std::uint32_t(hi_y-lo_y+1)},
               inst.fb.frame.desc.FBP*32u,inst.fb.frame.desc.FBW,gs.get_vram_size()/4u,(alpha|fba)&0xFFu,
               1u<<(inst.sampling_rate_x_log2+inst.sampling_rate_y_log2),pass.super_sample_reference?1u:0u};
-    auto* program=nativeComputeProgram(device,alpha_fill_spv,1,sizeof push);
+    auto* program=nativeComputeProgram(context.device,alpha_fill_spv,1,sizeof push);
     gs.record_native_work([&](Vulkan::CommandBuffer& cmd) {
         cmd.set_program(program);
         cmd.set_storage_buffer(0,0,gs.get_vram_buffer());

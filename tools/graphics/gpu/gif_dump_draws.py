@@ -5,7 +5,7 @@ count, screen rectangle (after XYOFFSET, in pixels), texture coordinates, where 
 <transfer>:<quadword>": the GIF tag that ended it, counted from the dump's start; BT2_GS_PEEK stops there)
 and the state that matters for picture passes (frame, Z buffer, texture, scissor, alpha, test, clamp).
 
-    python tools/graphics/gpu/gif_dump_draws.py <dump> [--flip N] [--touching-y Y]
+    python tools/graphics/gpu/gif_dump_draws.py <dump> [--flip N] [--touching-y Y] [--registers]
 """
 import argparse
 import struct
@@ -38,7 +38,7 @@ def psm(value):
     return PSM.get(value, hex(value))
 
 
-def describe_state(regs, prim, ctx):
+def describe_state(regs, prim, ctx, registers=False):
     def r(name):
         return regs.get(f'{name}_{ctx + 1}', 0)
     frame, zbuf, tex0, sc = r('FRAME'), r('ZBUF'), r('TEX0'), r('SCISSOR')
@@ -60,11 +60,17 @@ def describe_state(regs, prim, ctx):
         out.append(f"ALPHA {bits(a, 0, 2)}{bits(a, 2, 2)}{bits(a, 4, 2)}{bits(a, 6, 2)} fix {bits(a, 32, 8):#x}")
     if test & 0xFFFF:
         out.append(f"TEST {test & 0xFFFF:#x}")
+    if registers:
+        out.append(f"PRIM {prim:#x} RGBAQ {regs.get('RGBAQ', 0) & 0xFFFFFFFF:#010x} TEXA {regs.get('TEXA', 0):#x}"
+                   f" COLCLAMP {regs.get('COLCLAMP', 0):#x} DTHE {regs.get('DTHE', 0):#x} PABE {regs.get('PABE', 0):#x}"
+                   f" FBA {r('FBA'):#x} TEST {test:#x}")
     return ' | '.join(out)
 
 
 class Draws:
-    def __init__(self, touching_y=None):
+    def __init__(self, touching_y=None, registers=False):
+        self.registers = registers
+        self.image = None  # With registers: the words of the host->local upload in progress (small ones listed).
         self.regs = {}
         self.vertices = []
         self.key = None
@@ -112,7 +118,7 @@ class Draws:
             self.key = key
             prim, ctx = self.context()
             self.regs_at_key = self.regs.get(f'XYOFFSET_{ctx + 1}', 0)
-            self.state_text = describe_state(self.regs, prim, ctx)
+            self.state_text = describe_state(self.regs, prim, ctx, self.registers)
         prim, _ = self.context()
         texcoord = None
         if bits(prim, 4, 1):
@@ -143,6 +149,8 @@ class Draws:
             self.lines.append(f"  copy {direction} src {bits(b, 0, 14):#x} w{bits(b, 16, 6)} {psm(bits(b, 24, 6))}"
                               f" at {bits(p, 0, 11)},{bits(p, 16, 11)} -> dst {bits(b, 32, 14):#x} w{bits(b, 48, 6)}"
                               f" {psm(bits(b, 56, 6))} at {bits(p, 32, 11)},{bits(p, 48, 11)} size {bits(r, 0, 12)}x{bits(r, 32, 12)}")
+            if self.registers and bits(value, 0, 2) == 0:
+                self.image = []
         if name == 'PRIM':
             self.end()
         self.regs[name] = value
@@ -186,6 +194,10 @@ class Draws:
                     self.write(bits(hi, (n % nreg) * 4, 4), struct.unpack_from('<Q', data, at + n * 8)[0])
                 at += (count * 8 + 15) // 16 * 16
             else:
+                if self.image is not None and flg == 2:
+                    self.image += struct.unpack_from(f'<{nloop * 4}I', data, at)
+                    if len(self.image) <= 256:
+                        self.lines.append('    data ' + ' '.join(f'{w:08x}' for w in self.image[-nloop * 4:]))
                 at += nloop * 16
 
 
@@ -194,9 +206,11 @@ def main():
     parser.add_argument('dump')
     parser.add_argument('--flip', type=int, help='only this flip')
     parser.add_argument('--touching-y', type=float, help='only draws whose rectangle reaches this screen line')
+    parser.add_argument('--registers', action='store_true',
+                        help="also each draw's PRIM, colour, TEXA, COLCLAMP, DTHE, PABE, FBA and TEST, and small uploads' words")
     args = parser.parse_args()
     data = open(args.dump, 'rb').read()
-    draws = Draws(args.touching_y)
+    draws = Draws(args.touching_y, args.registers)
     privileged = {}
     at = 0
     record = 0

@@ -9,17 +9,28 @@
 
 using NativeRenderPass=ParallelGS::GSInterface::NativeRenderPass;
 
+// What a pass's work may use besides GS memory: the renderer's device and a scratch buffer of its own (one per
+// renderer, reused: the renderer's work is ordered on its queue).
+struct NativeContext {
+    ParallelGS::GSInterface& gs;
+    Vulkan::Device& device;
+    Vulkan::BufferHandle scratch_buffer;
+    const Vulkan::Buffer& scratch(VkDeviceSize bytes);
+};
+
 struct NativePass {
     const char* name;
     bool on_by_default;
     bool (*draws)(const ParallelGS::RegisterState& registers);
-    bool (*run)(const NativeRenderPass& pass,ParallelGS::GSInterface& gs,Vulkan::Device& device);
+    bool (*run)(const NativeRenderPass& pass,NativeContext& context);
 };
 
-// A compute program of one of the passes' shaders: `buffers` storage buffers at set 0, bindings 0 on, and
-// `push_bytes` of push constants (the build has no shader reflection).
-Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes);
+// A compute program of one of the passes' shaders: `buffers` storage buffers at set 0, bindings 0 on, then
+// `uniforms` uniform buffers, and `push_bytes` of push constants (the build has no shader reflection).
+Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms=0);
 
 // The passes (one file each).
 bool alphaFillDraw(const ParallelGS::RegisterState& registers); // alpha_fill.cpp
-bool alphaFill(const NativeRenderPass& pass,ParallelGS::GSInterface& gs,Vulkan::Device& device);
+bool alphaFill(const NativeRenderPass& pass,NativeContext& context);
+bool inkEdgesDraw(const ParallelGS::RegisterState& registers); // ink_edges.cpp
+bool inkEdges(const NativeRenderPass& pass,NativeContext& context);

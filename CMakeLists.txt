@@ -191,7 +191,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         set(PARALLEL_GS_STANDALONE ON CACHE BOOL "" FORCE)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL") # Match our targets.
         add_subdirectory("${BT2_PARALLEL_GS_DIR}" parallel-gs EXCLUDE_FROM_ALL)
-        add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp runtime/gs/gpu/gs_render_thread.cpp runtime/gs/gpu/hd_texture_pack.cpp runtime/gs/gpu/gpu_window_presenter.cpp runtime/gs/gpu/native/native_passes.cpp runtime/gs/gpu/native/alpha_fill.cpp)
+        add_library(bt2-gpu-gs STATIC runtime/gs/gpu/gpu_gs_backend.cpp runtime/gs/gpu/gpu_gs_mirror.cpp runtime/gs/gpu/gs_render_thread.cpp runtime/gs/gpu/hd_texture_pack.cpp runtime/gs/gpu/gpu_window_presenter.cpp runtime/gs/gpu/native/native_passes.cpp runtime/gs/gpu/native/alpha_fill.cpp runtime/gs/gpu/native/ink_edges.cpp)
         bt2_target_defaults(bt2-gpu-gs)
         target_link_libraries(bt2-gpu-gs PRIVATE parallel-gs)
         target_link_libraries(bt2-gpu-gs PUBLIC winmm) # The GS threads' diagnostic sampler (host/sample_profiler.h).

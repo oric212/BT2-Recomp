@@ -1,7 +1,7 @@
 diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
 --- a/gs/gs_interface.hpp
 +++ b/gs/gs_interface.hpp
-@@ -332,6 +332,28 @@
+@@ -332,6 +332,32 @@
  	// still loading; the original is then cached only for the render pass, so it is asked for again.
  	bool texture_replacement_pending = false;
  
@@ -14,8 +14,12 @@ diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
 +		const VertexPosition *positions;
 +		const VertexAttribute *attributes;
 +		const PrimitiveAttribute *primitives;
++		// TEX0 of each of rp.textures (a primitive's texture index into both).
++		const TEX0Bits *tex0;
 +		// GS memory has super-sample planes: a pass's writes keep the reference word, as the renderer's do.
 +		bool super_sample_reference;
++		// The renderer's sampling rates (an instance's own may be lowered for the pass, as for 16-bit effects).
++		uint32_t sampling_rate_x_log2, sampling_rate_y_log2;
 +	};
 +	std::function<bool (const NativeRenderPass &)> native_render_pass;
 +	// The kind of native pass a draw may belong to (0: none), asked at a draw after the GS state changed; a render
@@ -30,7 +34,7 @@ diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
  private:
  	friend class PageTracker;
  	void flush(PageTrackerFlushFlags flags, FlushReason reason);
-@@ -391,6 +413,8 @@
+@@ -391,6 +417,8 @@
  		std::vector<TEX0Bits> tex0_infos;
  		// BT2 Recomp patch: the last sprite's piece of a replacement (its own texture entry, region-clamped).
  		uint32_t piece_source = UINT32_MAX, piece_index = 0;
@@ -42,22 +46,23 @@ diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
 diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
 --- a/gs/gs_interface.cpp
 +++ b/gs/gs_interface.cpp
-@@ -309,11 +309,17 @@
+@@ -309,11 +309,19 @@
  		rp.flush_reason = reason;
  		//////
  
 -		renderer.flush_rendering(rp);
--
--		// Need to call this after flush rendering to ensure that the images
--		// have been cached properly.
--		promote_render_pass_to_backbuffer(rp);
 +		const bool drawn_natively = native_render_pass &&
 +		                            native_render_pass({ rp, render_pass.positions, render_pass.attributes,
-+		                                                 render_pass.prim, renderer.can_potentially_super_sample() });
++		                                                 render_pass.prim, render_pass.tex0_infos.data(),
++		                                                 renderer.can_potentially_super_sample(),
++		                                                 sampling_rate_x_log2, sampling_rate_y_log2 });
 +		if (!drawn_natively)
 +		{
 +			renderer.flush_rendering(rp);
-+
+ 
+-		// Need to call this after flush rendering to ensure that the images
+-		// have been cached properly.
+-		promote_render_pass_to_backbuffer(rp);
 +			// Need to call this after flush rendering to ensure that the images
 +			// have been cached properly.
 +			promote_render_pass_to_backbuffer(rp);
@@ -65,7 +70,7 @@ diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
  
  		TRACE_HEADER("FLUSH RENDER", rp);
  	}
-@@ -2609,6 +2615,18 @@
+@@ -2609,6 +2617,18 @@
  template <bool list_primitive, bool fan_primitive, bool quad, unsigned num_vertices>
  void GSInterface::drawing_kick_append()
  {
@@ -84,7 +89,7 @@ diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
  	auto &prim = registers.prim;
  	auto &ctx = registers.ctx[prim.desc.CTXT];
  
-@@ -4614,6 +4632,16 @@
+@@ -4614,6 +4634,16 @@
  	tracker.mark_external_write(page_rect);
  }
  
@@ -126,12 +131,10 @@ diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
 diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 --- a/gs/gs_renderer.cpp
 +++ b/gs/gs_renderer.cpp
-@@ -3219,6 +3219,29 @@
- 	ensure_command_buffer(clear_cmd, work_queue);
- 	if (first_clear_cmd)
+@@ -3221,6 +3221,29 @@
  		clear_cmd->begin_region("clear-memory");
-+}
-+
+ }
+ 
 +void GSRenderer::record_native_work(const std::function<void (Vulkan::CommandBuffer &)> &record)
 +{
 +	ensure_command_buffer(direct_cmd, work_queue);
@@ -153,6 +156,8 @@ diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
 +	            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 +	stats.num_render_passes++;
 +	check_flush_stats();
- }
- 
++}
++
  void GSRenderer::flush_rendering(const RenderPass &rp)
+ {
+ 	if (rp.num_primitives == 0)

@@ -76,8 +76,9 @@ struct GpuGsBackend::State {
     // BT2_GS_PEEK=<transfer>[,<transfer>...]:<path prefix> with BT2_GS_PEEK_BUFFERS=<block>,<width>,<psm>[;...] (hex
     // block address, width in 64 pixels, psm number): before those transfers of the dump, each buffer is scanned
     // out as the display shows a picture and written to <prefix>-<transfer>-<block>.ppm, its alpha to
-    // <prefix>-<transfer>-<block>-alpha.ppm (a diagnostic of passes).
-    std::vector<unsigned> peek_transfers;std::string peek_prefix;
+    // <prefix>-<transfer>-<block>-alpha.ppm (a diagnostic of passes). With BT2_GS_PEEK_MEMORY=1 also GS memory itself
+    // (4 MB, the resolved plane) to <prefix>-<transfer>.gsmem.
+    std::vector<unsigned> peek_transfers;std::string peek_prefix;bool peek_memory=false;
     struct PeekBuffer {unsigned block,width,psm;};std::vector<PeekBuffer> peek_buffers;
     bool dumpingGif() const {return gif_dump.is_open() && scanouts>=gif_dump_from && scanouts<gif_dump_to;}
     template<class T> void dumpRecord(char kind,const T& value,std::span<const std::uint8_t> data={}) {
@@ -137,6 +138,7 @@ void GpuGsBackend::init(unsigned super_sampling) {
             if(colon==std::string::npos)throw std::runtime_error("BT2_GS_PEEK: expected <transfer>[,...]:<path prefix>");
             for(std::size_t at=0;at<colon;) {state->peek_transfers.push_back(unsigned(std::strtoul(text.c_str()+at,nullptr,10)));at=text.find(',',at);if(at==std::string::npos || at>colon)break;++at;}
             state->peek_prefix=text.substr(colon+1);
+            state->peek_memory=std::getenv("BT2_GS_PEEK_MEMORY") && std::string(std::getenv("BT2_GS_PEEK_MEMORY"))=="1";
             std::string buffers=std::getenv("BT2_GS_PEEK_BUFFERS")?std::getenv("BT2_GS_PEEK_BUFFERS"):"";
             for(std::size_t at=0;at<buffers.size();) {
                 unsigned block=0,width=0,psm=0;
@@ -185,6 +187,11 @@ void GpuGsBackend::transfer(std::span<const std::uint8_t> data) {
 
 void GpuGsBackend::peek() {
     auto& s=*state_;
+    if(s.peek_memory) {
+        const auto words=readVram();
+        std::ofstream(s.peek_prefix+"-"+std::to_string(s.gif_dump_transfers)+".gsmem",std::ios::binary)
+            .write(reinterpret_cast<const char*>(words.data()),std::streamsize(words.size_bytes()));
+    }
     auto& priv=s.gs.get_priv_register_state();
     const auto saved=priv;
     const auto pmode=priv.qwords_lo[0];

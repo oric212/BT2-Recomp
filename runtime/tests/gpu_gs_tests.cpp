@@ -168,6 +168,56 @@ void nativeAlphaFill(GpuGsBackend& gpu) {
     require(std::equal(expected.begin(),expected.end(),n.begin()),"the same GS memory");
 }
 
+// Native pass "ink-edges" (gs/gpu/native/ink_edges.cpp): at 1x it leaves GS memory as the renderer's drawing does.
+// Material ids in the alpha byte of a PSMCT32 buffer (page 8: sprites and a slanted triangle), a palette with two
+// colours (page 10), then the edge pass as BT2 draws it into a PSMCT16 buffer (page 12): a clear, the ids through the
+// palette, red minus the same texel half a pixel up, green minus the texel to the right.
+void nativeInkEdges(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Native ink edges: ")+what);};
+    const auto passes=[](const char* value) {
+#ifdef _WIN32
+        _putenv_s("BT2_NATIVE_PASSES",value);
+#else
+        setenv("BT2_NATIVE_PASSES",value,1);
+#endif
+    };
+    passes("none");GpuGsBackend emulated;emulated.initShared(gpu);
+    passes("ink-edges");GpuGsBackend native;native.initShared(gpu);
+    passes("");
+    // Vertex (x, y) in pixels with the offset of 16 pixels; u, v in texels.
+    const auto xy=[](double x,double y){return std::uint64_t((x+16)*16)|(std::uint64_t((y+16)*16)<<16);};
+    const auto uv=[](unsigned u,unsigned v){return std::uint64_t(u*16)|(std::uint64_t(v*16)<<16);};
+    const std::uint64_t common_frame=1ull<<16,ids_frame=8|common_frame|(0x00FFFFFFull<<32),palette_frame=10|common_frame;
+    const auto edge_frame=[](std::uint64_t mask){return 12|(1ull<<16)|(2ull<<24)|(mask<<32);};
+    const std::uint64_t tex0=256|(1ull<<14)|(0x1Bull<<20)|(6ull<<26)|(5ull<<30)|(1ull<<34)|(1ull<<35)|(320ull<<37)|(1ull<<61);
+    const std::uint64_t subtract=2|(2u<<4)|(1u<<6)|(0x80ull<<32); // (0 - Cs) * FIX / 128 + Cd.
+    // PRMODECONT AC: PRIM's attributes apply.
+    const auto draw=packet({{0x1A,1},{0x4E,0x0000000101000020ULL},{0x18,0x100|(0x100ull<<32)},{0x40,0x001F0000003F0000ULL},{0x47,0x30000},
+        // Ids 0x10 everywhere, 0x90 in a slanted triangle and a sprite.
+        {0x4C,ids_frame},{0x00,6},{0x01,0x10000000},{0x05,xy(0,0)},{0x05,xy(64,32)},
+        {0x00,3},{0x01,0x90000000},{0x05,xy(10,2)},{0x05,xy(50,6)},{0x05,xy(20,30)},
+        {0x00,6},{0x05,xy(40,20)},{0x05,xy(48,32)},
+        // The palette in CSM1 order: ids below 0x80 in rows 0 to 7, the others in rows 8 to 15.
+        {0x4C,palette_frame},{0x01,0x80002828},{0x05,xy(0,0)},{0x05,xy(16,8)},{0x01,0x80006060},{0x05,xy(0,8)},{0x05,xy(16,16)},
+        // The edge pass.
+        {0x4C,edge_frame(0)},{0x00,6},{0x01,0},{0x05,xy(0,0)},{0x05,xy(64,32)},
+        {0x06,tex0},{0x42,0x44},{0x4C,edge_frame(0xFF000000)},{0x00,0x156},{0x01,0x80808080},
+        {0x03,uv(0,0)},{0x05,xy(0,0)},{0x03,uv(64,32)},{0x05,xy(64,32)},
+        {0x42,subtract},{0x4C,edge_frame(0xFFFFFF00)},{0x03,uv(0,0)},{0x05,xy(0,-0.5)},{0x03,uv(64,32)},{0x05,xy(64,31.5)},
+        {0x4C,edge_frame(0xFFFF00FF)},{0x03,uv(0,0)},{0x05,xy(-1,0)},{0x03,uv(64,32)},{0x05,xy(63,32)},
+        {0x00,6},{0x4C,common_frame},{0x01,0},{0x05,xy(0,0)},{0x05,xy(1,1)}}); // Another kind of draw ends the pass.
+    for(auto* r:{&emulated,&native})r->transfer(draw);
+    const auto e=emulated.readVram();
+    const std::vector<std::uint32_t> expected(e.begin(),e.end());
+    const auto n=native.readVram();
+    require(native.nativePassSummary()=="Native passes: ink-edges 1" && emulated.nativePassSummary().empty(),"the pass ran on its renderer only");
+    // The edge buffer: green where the right-hand neighbour's id differs, red nowhere.
+    bool green=false,red=false;
+    for(std::size_t w=12*2048;w<13*2048;++w)for(const std::uint32_t h:{expected[w]&0xFFFFu,expected[w]>>16}) {green=green || ((h>>5)&31);red=red || (h&31);}
+    require(green && !red,"the emulated edges");
+    require(std::equal(expected.begin(),expected.end(),n.begin()),"the same GS memory");
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -211,7 +261,8 @@ int main() try {
     if(validator.transfers!=1)throw std::runtime_error("The sink lost the transfer");
     secondRenderer(gpu);
     nativeAlphaFill(gpu);
+    nativeInkEdges(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill leaves the same GS memory; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

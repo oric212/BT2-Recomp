@@ -60,6 +60,20 @@ class GifDumpDrawsTest(unittest.TestCase):
         self.assertIn('draw sprite', self.run_tool(dump))
         self.assertNotIn('draw sprite', self.run_tool(dump, '--touching-y', '447'))
 
+    def test_registers_and_upload_words(self):
+        # A host->local upload of two qwords (a palette's first eight words), then a sprite with its registers.
+        upload = [ad(0x50, (0x3E8C << 32)), ad(0x51, 0), ad(0x52, 8 | (1 << 32)), ad(0x53, 0)]
+        words = struct.pack('<8I', *range(0x80000000, 0x80000008))
+        state = [ad(0x4C, 0xE00 // 32), ad(0x46, 1), ad(0x01, 0x80505050), ad(0x00, 6 | (1 << 6))]
+        vertices = [ad(0x05, (10 << 4) | ((10 << 4) << 16)), ad(0x05, (20 << 4) | ((20 << 4) << 16))]
+        dump = transfer(giftag(len(upload), 1, [0xE]) + b''.join(upload) + giftag(2, 0, [], flg=2) + words
+                        + giftag(len(state + vertices), 1, [0xE]) + b''.join(state + vertices)) + b'F' + struct.pack('<I', 1)
+        out = self.run_tool(dump, '--registers')
+        self.assertIn('data 80000000 80000001 80000002 80000003 80000004 80000005 80000006 80000007', out)
+        self.assertIn('PRIM 0x46 RGBAQ 0x80505050', out)
+        self.assertIn('COLCLAMP 0x1', out)
+        self.assertNotIn('RGBAQ', self.run_tool(dump))
+
 
 if __name__ == '__main__':
     unittest.main()

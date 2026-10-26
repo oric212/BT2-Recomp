@@ -1,0 +1,114 @@
+#version 450
+// Native pass "ink-edges", step 2 (runtime/gs/gpu/native/ink_edges.cpp): the edge buffer from step 1 into GS memory.
+// With super-sampling, a sample without an edge takes the first edge below it within one game pixel, at the same
+// sample column: the game's copies one and two pixels apart then join into its band, as at 1x, instead of thin
+// lines a sample row apart (docs/plans/graphics/IMAGE_QUALITY_PLAN.md step 5). At 1x nothing changes. Samples are
+// kept only where they differ and resolved as the renderer resolves a 16-bit buffer.
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint16_t halves[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Scratch { uint results[]; };
+
+layout(push_constant) uniform Pass
+{
+	uvec2 origin;   // First pixel.
+	uvec2 size;     // Pixels.
+	uint block;     // The 16-bit buffer's block and width.
+	uint width;
+	uint plane;     // Halfwords per plane of GS memory.
+	uint samples;   // Per pixel: 1, 4 or 16 (a square grid).
+	uint reference; // Non-zero: GS memory has super-sample planes.
+} pass;
+
+uint ct16_half(uint block, uint width, uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 4u, by = (p.y & 63u) >> 3u;
+	uint b = (by & 1u) | ((bx & 1u) << 1u) | ((by & 2u) << 1u) | ((bx & 2u) << 2u) | ((by & 4u) << 2u);
+	uint px = p.x & 15u, py = p.y & 7u;
+	uint pixel = ((px & 8u) >> 3u) | ((px & 1u) << 1u) | ((py & 1u) << 2u) | ((px & 2u) << 2u) | ((px & 4u) << 2u);
+	return ((block + ((p.y >> 6u) * width + (p.x >> 6u)) * 32u + b) * 128u + (py >> 1u) * 32u + pixel) & 0x1FFFFFu;
+}
+
+// Sample s's position in the pixel's grid as the renderer places it: s's bits 0 and 2 are y, bits 1 and 3 are x.
+uvec2 position(uint s) { return uvec2(((s >> 1u) & 1u) | ((s >> 2u) & 2u), (s & 1u) | ((s >> 1u) & 2u)); }
+uint sample_at(uvec2 q) { return (q.y & 1u) | ((q.x & 1u) << 1u) | ((q.y & 2u) << 1u) | ((q.x & 2u) << 2u); }
+
+uint result(uvec2 local, uint s) { return results[(local.y * pass.size.x + local.x) * pass.samples + s]; }
+
+uint expand16(uint c)
+{
+	return ((c & 31u) << 3u) | (((c >> 5u) & 31u) << 11u) | (((c >> 10u) & 31u) << 19u) | ((c & 0x8000u) != 0u ? 0x80000000u : 0u);
+}
+
+uint pack16(uint c)
+{
+	return ((c >> 3u) & 31u) | (((c >> 11u) & 31u) << 5u) | (((c >> 19u) & 31u) << 10u) | ((c >> 31u) << 15u);
+}
+
+void main()
+{
+	uvec2 local = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(local, pass.size)))
+		return;
+	uint h = ct16_half(pass.block, pass.width, pass.origin + local);
+	if (pass.samples == 1u)
+	{
+		halves[h] = uint16_t(result(local, 0u));
+		if (pass.reference != 0u)
+			halves[h + pass.plane] = uint16_t(0u);
+		return;
+	}
+	uint side = pass.samples == 4u ? 2u : 4u;
+	uint v[16];
+	bool differ = false;
+	for (uint s = 0u; s < pass.samples; s++)
+	{
+		uint value = result(local, s);
+		if ((value & 0x7FFFu) == 0u)
+		{
+			uvec2 q = position(s);
+			for (uint k = 1u; k < side; k++)
+			{
+				uint row = q.y + k, below;
+				if (row < side)
+					below = result(local, sample_at(uvec2(q.x, row)));
+				else if (local.y + 1u < pass.size.y)
+					below = result(local + uvec2(0u, 1u), sample_at(uvec2(q.x, row - side)));
+				else
+					break;
+				if ((below & 0x7FFFu) != 0u)
+				{
+					value = below;
+					break;
+				}
+			}
+		}
+		v[s] = value;
+		differ = differ || value != v[0];
+	}
+	if (!differ)
+	{
+		halves[h] = uint16_t(v[0]);
+		halves[h + pass.plane] = uint16_t(0u);
+		return;
+	}
+	vec4 sum[16];
+	for (uint s = 0u; s < pass.samples; s++)
+	{
+		halves[h + (s + 2u) * pass.plane] = uint16_t(v[s]);
+		sum[s] = unpackUnorm4x8(expand16(v[s]));
+	}
+	// The renderer's resolve: sums of samples a half, a quarter ... of the samples apart, as sample 0 sees them.
+	for (uint stride = pass.samples >> 1u; stride >= 1u; stride >>= 1u)
+	{
+		vec4 next[16];
+		for (uint s = 0u; s < pass.samples; s++)
+			next[s] = sum[s] + sum[s ^ stride];
+		for (uint s = 0u; s < pass.samples; s++)
+			sum[s] = next[s];
+	}
+	halves[h] = uint16_t(pack16(packUnorm4x8(sum[0] / float(pass.samples))));
+	halves[h + pass.plane] = uint16_t(0xFFFFu);
+}
