@@ -118,10 +118,15 @@ HdTexturePack::Found HdTexturePack::find(const Key& name) {
     if(!file) {++missing;return {};}
     const bool first=!cache_.contains(file);
     entry(file);
-    // The first time, a little time for the loader (the file is small; most are ready for their first draw).
-    if(first)changed_.wait_for(hold,std::chrono::duration<double>(first_wait_seconds),[&]{
-        const auto it=cache_.find(file);return it==cache_.end() || it->second->done;
-    });
+    // The first time, a little time for the loader (the file is small; most are ready for their first draw),
+    // within what is left of the frame's wait.
+    if(first && wait_left_>0) {
+        const auto began=std::chrono::steady_clock::now();
+        changed_.wait_for(hold,std::chrono::duration<double>(wait_left_),[&]{
+            const auto it=cache_.find(file);return it==cache_.end() || it->second->done;
+        });
+        wait_left_-=std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();
+    }
     const auto it=cache_.find(file);
     if(it==cache_.end()) {++waiting;return {nullptr,true};} // Dropped for the budget meanwhile: asked for again next time.
     auto* e=it->second;
@@ -130,6 +135,8 @@ HdTexturePack::Found HdTexturePack::find(const Key& name) {
     e->used=++tick_;++found;
     return {&e->image,false};
 }
+
+void HdTexturePack::startFrame() {std::lock_guard<std::mutex> hold(lock_);wait_left_=frame_wait_seconds;}
 
 HdTexturePack::Choice HdTexturePack::closest(std::uint64_t texture,std::uint32_t format,const TextureColours& wanted) {
     std::lock_guard<std::mutex> hold(lock_);

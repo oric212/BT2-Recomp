@@ -55,12 +55,11 @@ bool IpuInput::available(unsigned bits) {
 }
 
 std::uint32_t IpuInput::peek(unsigned bits) {
-    std::uint64_t value=0;unsigned at=bit_;std::size_t q=0;
-    for(unsigned n=0;n<bits;++n) {
-        const auto byte=queue_[q][at/8];value=(value<<1)|((byte>>(7-at%8))&1);
-        if(++at==128){at=0;++q;}
-    }
-    return std::uint32_t(value);
+    // The bytes that hold the bits (at most five) gathered MSB first, then the bits cut out of them.
+    const unsigned first=bit_/8,offset=bit_%8,bytes=(offset+bits+7)/8;
+    std::uint64_t window=0;
+    for(unsigned n=0;n<bytes;++n) {const unsigned at=first+n;window=(window<<8)|queue_[at/16][at%16];}
+    return std::uint32_t((window>>(bytes*8-offset-bits))&((std::uint64_t(1)<<bits)-1));
 }
 
 void IpuInput::skip(unsigned bits) {

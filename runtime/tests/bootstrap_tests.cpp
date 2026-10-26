@@ -235,6 +235,13 @@ int main() {
         require(t.wraps==1 && !t.interruptPending());t.advanceField();
         require(t.wraps==2 && (t.mode()&0xC00)==0xC00); // COMP 0 matches at the wrap itself.
         reject([&]{t.writeComp(0x10000);});
+        // Reads within a field move one tick each (two random picks in one frame differ); the field's step does not change.
+        LogicalTimer2 r;r.start(0x382,0,0xFFFF);r.advanceField();
+        const auto first=r.read(),second=r.read();
+        require(first==9610 && second==9611 && r.count()==9611);
+        r.advanceField();require(r.count()==19219); // 2 x 9,609.6 ticks, whatever was read.
+        for(unsigned n=0;n<20000;++n)r.read();
+        require(r.count()==19219+9608); // Held inside the field.
     }
     {
         EeRuntime cache; cache.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size)); R5900Context ctx;

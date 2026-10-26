@@ -2,8 +2,11 @@
 #include <cstdint>
 #include <stdexcept>
 
-// EE Timer 2 in logical time. Ticks advance only at explicit scheduling points (one NTSC
-// field per logical VBlank); there is no host clock. MODE bits 10 (EQUF) and 11 (OVFF) are
+// EE Timer 2 in logical time. Ticks advance at explicit scheduling points (one NTSC field per
+// logical VBlank); there is no host clock. Within a field each COUNT read moves one tick on (read):
+// on hardware two reads are at least that far apart, and the game seeds its random numbers from
+// COUNT, twice in one frame when a fight loads (both random fighters), so equal reads gave equal picks.
+// The reads stay inside the field's ticks and short of a wrap; the fields' own steps are unchanged. MODE bits 10 (EQUF) and 11 (OVFF) are
 // write-one-to-clear; CMPE (bit 8) and OVFE (bit 9) gate the interrupt request.
 class LogicalTimer2 {
 public:
@@ -23,9 +26,14 @@ public:
         const auto hits=[&](std::uint64_t value){return value>from && value<=to;};
         if(hits(comp_) || hits(comp_+0x10000))mode_|=0x400;
         if(to>0xFFFF) {mode_|=0x800;++wraps;}
-        count_=static_cast<std::uint32_t>(to&0xFFFF);++fields;
+        count_=static_cast<std::uint32_t>(to&0xFFFF);++fields;read_ticks_=0;
     }
-    std::uint32_t count() const {return count_;}
+    std::uint32_t count() const {return count_+read_ticks_;}
+    // COUNT as the game reads it: one tick later than the previous read in this field.
+    std::uint32_t read() {
+        if(read_ticks_+1<tenths_per_field/10 && count_+read_ticks_<0xFFFF)++read_ticks_;
+        return count();
+    }
     std::uint32_t mode() const {return mode_;}
     std::uint32_t comp() const {return comp_;}
     void writeMode(std::uint32_t value) {
@@ -42,4 +50,5 @@ private:
     bool started_=false;
     std::uint32_t mode_=0,count_=0,comp_=0;
     std::uint64_t remainder_=0;
+    std::uint32_t read_ticks_=0; // Ticks the reads moved on since the field began.
 };

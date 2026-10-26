@@ -29,6 +29,9 @@ public:
     void initShared(GpuGsBackend& primary,unsigned super_sampling=1);
     // The window shows `source`'s last scanout (null or this: its own).
     void showPictureOf(const GpuGsBackend* source);
+    // With 16 samples, scanouts at four times the resolution (one sample per pixel) instead of twice
+    // (tools/graphics/gpu/parallel_gs_quad_scanout.patch); from the next scanout, any thread.
+    void setQuadResolution(bool on);
     // GIF data in 128-bit units, as the GIF receives it on PATH3.
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.
@@ -86,6 +89,7 @@ public:
 private:
     void copyDrawnPalettes(); // After a flush: the drawn palettes back to the texture names.
     void replaceTextures(GsTextureNames& names);
+    void dumpTexture(GsTextureNames& names,std::uint64_t tex0,const std::string& name); // BT2_TEXTURE_DUMP.
     struct State;
     std::unique_ptr<State> state_;
 };

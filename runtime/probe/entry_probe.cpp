@@ -505,6 +505,14 @@ int main(int argc, char** argv) {
                 const auto t0 = Clock::now();
                 // On the GPU path the picture stays in the renderer; it is read back only for a snapshot.
                 const bool on_gpu = viewer.gpuPresented();
+                // The scanout's resolution follows the window: with 16 samples, four times the game's once the
+                // picture is shown taller than twice it (BT2_SCANOUT_QUAD=1 also without a window, for pictures).
+                static const bool quad_always = std::getenv("BT2_SCANOUT_QUAD") && std::string_view(std::getenv("BT2_SCANOUT_QUAD")) == "1";
+                if (on_gpu || quad_always) {
+                    const bool quad = quad_always || viewer.fittedHeight() > 2 * 448;
+                    gpu_mirror.setQuadResolution(quad);
+                    if (in_between) in_between->renderer().setQuadResolution(quad);
+                }
                 DisplayFrame frame;unsigned width = 0, height = 0;
                 if (on_gpu) std::tie(width, height) = gpu_mirror.vsync(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
                 else {frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);width = frame.width;height = frame.height;}

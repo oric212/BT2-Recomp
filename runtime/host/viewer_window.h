@@ -18,8 +18,8 @@
 #include "window_presenter.h"
 
 // Minimal Win32 presentation window: shows the latest decoded frame in the client area, either at the
-// largest integer scale that fits (pixel-exact) or at the largest size of the picture's proportions
-// that fits; centred, with black borders. In widescreen (the game's widescreen patch, ee/game_patches.h)
+// largest integer scale that fits (pixel-exact; windows only) or at the largest size of the picture's
+// proportions that fits (the whole screen always); centred, with black borders. In widescreen (the game's widescreen patch, ee/game_patches.h)
 // the picture is shown 16:9: as wide as its height times 16/9, whole multiples counted vertically.
 // Messages are pumped by the caller at each presentation; closing the window sets closed(). The
 // window does not pace the run (host/frame_pacer.h does). The window's size is a multiple of the game's
@@ -77,6 +77,12 @@ public:
         scale_=scale;fullscreen_=fullscreen;
         if(hwnd_)applyLayout();
     }
+    // The height the picture takes in the window when it fills it at its proportions (the renderer picks
+    // its scanout's resolution by it).
+    unsigned fittedHeight() const {
+        const auto [width,height]=clientSize();
+        return std::min<unsigned>(height,unsigned(std::uint64_t(width)*448/pictureWidth(640,448)));
+    }
     // The client area in pixels (640 x 448 times the scale before the window exists).
     std::pair<unsigned,unsigned> clientSize() const {
         RECT client{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};
@@ -101,19 +107,19 @@ private:
     WindowPresenter* presenter_=nullptr;
     std::string status_drawn_;DisplayFrame status_image_; // The status text as a picture, for the presenter.
     void setTitle(const std::string& title) {if(title!=title_) {title_=title;SetWindowTextA(hwnd_,title.c_str());}}
-    // Where a picture of width x height goes in a client area: whole multiples of its shown size, or
-    // the largest size of its shown proportions that fits; centred.
+    // Where a picture of width x height goes in a client area: in a window with integer scaling, whole
+    // multiples of its shown size; otherwise (the whole screen, scaling off, or a picture larger than the
+    // window) the largest size of its shown proportions that fits; centred.
     WindowPresenter::Rect placement(LONG client_width,LONG client_height,unsigned width,unsigned height) const {
         const LONG shown_width=LONG(pictureWidth(width,height)),shown_height=LONG(height);
+        // In widescreen the width of a multiple is 16:9 of its height, so a super-sampled picture
+        // (1280 x 896) fills the same window as the game's (640 x 448) at half the multiple.
+        const int scale=int(client_height/shown_height);
         int w,h;
-        if(scaling_==Scaling::Integer) {
-            // A window holds whole pictures; the whole screen takes the nearest multiple. In widescreen the
-            // width of a multiple is 16:9 of its height, so a super-sampled picture (1280 x 896) fills the
-            // same window as the game's (640 x 448) at half the multiple.
-            int scale=std::max(1,int(client_height/shown_height));
-            while(scale>1 && LONG(pictureWidth(width*scale,height*scale))>client_width)--scale;
-            if(fullscreen_)scale=int(nearestScale(client_width,client_height,shown_width,shown_height));
-            w=int(pictureWidth(width*scale,height*scale));h=int(shown_height)*scale;
+        if(scaling_==Scaling::Integer && !fullscreen_ && scale>=1 && LONG(pictureWidth(width,height))<=client_width) {
+            int fitting=scale;
+            while(fitting>1 && LONG(pictureWidth(width*fitting,height*fitting))>client_width)--fitting;
+            w=int(pictureWidth(width*fitting,height*fitting));h=int(shown_height)*fitting;
         } else if(std::int64_t(client_width)*shown_height<=std::int64_t(client_height)*shown_width) {
             w=std::max(1,int(client_width));h=std::max(1,int(std::int64_t(client_width)*shown_height/shown_width));
         } else {

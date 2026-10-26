@@ -40,6 +40,7 @@ public:
     // The window shows `source`'s pictures (null: this renderer's).
     // Which picture the window presenter shows; only the presenter reads it, so the GS thread is not waited for.
     void showPictureOf(const GpuGsMirror* source) {gpu_.showPictureOf(source?&source->gpu_:nullptr);}
+    void setQuadResolution(bool on) {gpu_.setQuadResolution(on);} // gpu_gs_backend.h
     void flip() {const auto hold=use();FrameProfile::Scope timed(frame_profile.flush);gpu_.awaitFrameChange();whileFollowersPaused([this]{gpu_.flush();});}
     void keepState(unsigned slot) {const auto hold=use();gpu_.keepState(slot);}
     // `primary`'s kept state must be complete (made at its last flip).

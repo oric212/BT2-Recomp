@@ -35,7 +35,6 @@
 
 class MenuRenderer {
 public:
-    static constexpr unsigned visible_entries=7;
     ~MenuRenderer() {release();}
     MenuRenderer()=default;
     MenuRenderer(const MenuRenderer&)=delete;
@@ -65,34 +64,34 @@ public:
         const int w=int(width),h=int(height),unit=h/24;
         if(!first)clock(unit);
 
-        // The entries: a column beside the ring, the chosen one followed by its value on a line of its own.
+        // The entries, all of them: a column beside the ring, the chosen one followed by its value on a line of
+        // its own. A list longer than the room between the title and the note has closer rows in smaller type.
         const unsigned count=unsigned(screen.entries.size());
-        const unsigned shown=std::min(count,visible_entries);
-        const unsigned top_entry=count<=visible_entries?0:std::min(screen.highlighted>visible_entries/2?screen.highlighted-visible_entries/2:0u,count-visible_entries);
         const auto& chosen=screen.entries[screen.highlighted];
         const std::string chosen_value=chosen.value?chosen.value():std::string();
-        const int row=first?unit*4/3:unit*3/2,left=w*46/100,right=w*94/100;
-        const int lines=int(shown)+(chosen_value.empty()?0:1);
+        const int lines=int(count)+(chosen_value.empty()?0:1),room=h-unit*11,left=w*46/100,right=w*94/100;
+        const int row=std::min(first?unit*4/3:unit*3/2,room/std::max(lines,1));
+        HFONT entry_font=entry_;
+        if(row<unit*3/2 && !first)entry_font=listFont(row*2/3);
         int y=(first?h*55/100:h*52/100)-lines*row/2;
         if(first) {
             logo(w*25/100,h*4/100,w*50/100,h*24/100);
-        } else text(screen.title,left,y-row*3/2,title_,RGB(240,222,70));
+        } else text(screen.title,left,y-unit*3/2-(row<unit*3/2?unit/2:0),title_,RGB(240,222,70));
         const double pulse=0.5+0.5*std::sin(seconds*3.0);
-        for(unsigned n=top_entry;n<top_entry+shown;++n,y+=row) {
+        for(unsigned n=0;n<count;++n,y+=row) {
             const auto& entry=screen.entries[n];
             const bool on=n==screen.highlighted;
-            const COLORREF colour=!entry.enabled?RGB(78,78,86):on?RGB(BYTE(96+30*pulse),BYTE(200+20*pulse),255):RGB(172,172,178);
+            const bool usable=entry.usable();
+            const COLORREF colour=!usable?RGB(78,78,86):on?RGB(BYTE(96+30*pulse),BYTE(200+20*pulse),255):RGB(172,172,178);
             const int mark=on && entry.adjust && !entry.confirm?unit*3/2:0;
-            const std::string label=fit(entry.label,entry_,right-left-mark);
-            if(entry.enabled)text(label,left,y,entry_,colour);else plainText(label,left,y,entry_,colour);
-            if(mark)arrowsMark(left+extent(label,entry_)+unit*2/3,y+row/2-unit/8,unit);
+            const std::string label=fit(entry.label,entry_font,right-left-mark);
+            if(usable)text(label,left,y,entry_font,colour);else plainText(label,left,y,entry_font,colour);
+            if(mark)arrowsMark(left+extent(label,entry_font)+unit*2/3,y+row/2-unit/8,unit);
             if(on && !chosen_value.empty()) {
                 y+=row;
-                text(fit(chosen_value,entry_,right-left-unit),left+unit,y,entry_,RGB(236,236,240));
+                text(fit(chosen_value,entry_font,right-left-unit),left+unit,y,entry_font,RGB(236,236,240));
             }
         }
-        if(top_entry>0)triangle(left-unit,y-int(shown)*row-row/2,unit/3,true,RGB(90,150,255));
-        if(top_entry+shown<count)triangle(left-unit,y-row/2,unit/3,false,RGB(90,150,255));
         const std::string& note=!prompt.empty()?prompt:chosen.note;
         if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
         // The buttons, as on the console: the cross at the left of the middle, the circle to its right.
@@ -129,7 +128,7 @@ private:
             const int x=w/2-int(in_row)*cell/2+int(n%per_row)*cell+cell/2,y=top+int(n/per_row-first_row)*row_height;
             const bool on=n==screen.highlighted;
             const double bob=on?std::sin(seconds*2.4)*h*0.006:0.0;
-            icon(entry.icon,x,int(y+bob),on?size*12/10:size,on?seconds:0.0,!entry.enabled?0.35:on?1.0:0.55,on);
+            icon(entry.icon,x,int(y+bob),on?size*12/10:size,on?seconds:0.0,!entry.usable()?0.35:on?1.0:0.55,on);
             const std::string value=entry.value?entry.value():std::string();
             if(!value.empty())textCentred(fit(value,note_,cell-unit/2),x,y+size*14/10,note_,on?RGB(120,210,255):RGB(170,190,205));
             if(on)textCentred(fit(entry.label,note_,cell*2),x,y+size*14/10+(value.empty()?0:unit),note_,RGB(244,244,248));
@@ -201,13 +200,15 @@ private:
     }
     HDC dc_=nullptr;HBITMAP bitmap_=nullptr;HGDIOBJ old_=nullptr;std::uint32_t* bits_=nullptr;unsigned width_=0,height_=0;
     HFONT title_=nullptr,entry_=nullptr,note_=nullptr,hint_=nullptr;
+    HFONT list_=nullptr;int list_size_=0; // The smaller type of a long list (listFont).
     std::vector<std::uint32_t> haze_[3]; // The still part of the backgrounds: first screen, other screens, browser.
     double disc_since_=-1; // When the disc mark began to show; negative while no disc is in.
     std::filesystem::path logo_path_;LogoImage logo_;unsigned logo_box_w_=0,logo_box_h_=0;
     std::function<bool()> disc_present_;
 
     void release() {
-        for(HFONT font:{title_,entry_,note_,hint_})if(font)DeleteObject(font);
+        for(HFONT font:{title_,entry_,note_,hint_,list_})if(font)DeleteObject(font);
+        list_=nullptr;list_size_=0;
         if(dc_) {SelectObject(dc_,old_);DeleteDC(dc_);}
         if(bitmap_)DeleteObject(bitmap_);
         dc_=nullptr;bitmap_=nullptr;title_=entry_=note_=hint_=nullptr;bits_=nullptr;
@@ -245,6 +246,14 @@ private:
                 haze_[kind][std::size_t(y)*width+x]=(std::uint32_t(r)<<16)|(std::uint32_t(g)<<8)|std::uint32_t(b);
             }
         }
+    }
+    // The entries' type at `size` pixels, kept while the size stays.
+    HFONT listFont(int size) {
+        size=std::max(size,11);
+        if(list_ && size==list_size_)return list_;
+        if(list_)DeleteObject(list_);
+        list_=CreateFontA(-size,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,"Segoe UI");
+        list_size_=size;return list_;
     }
     // Text with a soft dark edge below and to the right.
     void text(const std::string& s,int x,int y,HFONT font,COLORREF colour) {

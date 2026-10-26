@@ -130,6 +130,8 @@ An optional entry under Display, off by default ([60 fps plan](../graphics/HIGH_
 5. **Saves — next:** a memory card image behind the native card service ([memory card plan](../memory-card/MEMORY_CARD_PLAN.md)), then the Saves screen, then bringing in a save-exchange file (the user's is a `.cbs`). The launcher shows Saves as not available until then.
 6. **HD textures:** the investigation above, then the feature, then the checkbox (shown as not available).
 
+**Display and menus (2026-10-26, the user: fullscreen did not fill the screen, settings should work together or be greyed out, no scroll arrow):** the whole screen is always filled at the picture's shape (no whole multiple of 448 lines fills 2,160); integer scaling and the window size apply to a window and are greyed out in fullscreen, the button art without HD textures (a dependent entry is skipped and drawn grey, `MenuEntry::available`); a list shows every entry, in smaller type when it is long (the button mapping's 17), without the scroll arrow. Not yet seen by the user.
+
 **Checked so far:** unit tests (settings read back and refused, the menu model under presses, repeats, the combination, fast forward, the mixer's volumes); the launcher's screens and the in-game menu seen drawn in a window (`work/frames/launcher/`); the game started through `bt2-game.exe` to its first dialogue. **Not checked:** the in-game menu opened inside a running game, fast forward, any gamepad, fullscreen. These are the user's to try first.
 
 ## Verification

@@ -9,8 +9,12 @@
 #include "thread_id.hpp"
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <span>
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +31,7 @@ struct GpuGsBackend::State {
     ParallelGS::GSInterface gs;
     std::shared_ptr<HdTexturePack> pack; // After the GS: destroyed first. Shared with a second renderer on the device.
     bool high_resolution=false,timestamps=false;unsigned scanouts=0;
+    std::atomic<bool> quad_resolution{false};
     Vulkan::ImageHandle picture; // The last scanout.
     const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
@@ -47,6 +52,7 @@ struct GpuGsBackend::State {
     struct PairHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first^(k.second*0xC2B2AE3D27D4EB4Full));}};
     std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;
     Vulkan::ImageHandle missing_marker; // BT2_HD_SHOW_MISSING: drawn for a texture without a replacement.
+    std::filesystem::path dump_folder;std::unordered_set<std::string> dumped; // BT2_TEXTURE_DUMP.
     // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
@@ -97,6 +103,7 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
 }
 
 void GpuGsBackend::showPictureOf(const GpuGsBackend* source) {state_->shown_from=source==this?nullptr:source;}
+void GpuGsBackend::setQuadResolution(bool on) {state_->quad_resolution=on;}
 
 void GpuGsBackend::transfer(std::span<const std::uint8_t> data) {
     if(data.size()%16)throw std::runtime_error("GPU GS: GIF transfer size is not a multiple of 16");
@@ -157,6 +164,7 @@ void GpuGsBackend::flush() {
     state_->gs.flush();++state_->scanouts;
     if(state_->pack) {
         copyDrawnPalettes();
+        if(!state_->shared_from)state_->pack->startFrame(); // The main renderer's flip starts the pack's frame.
     }
     state_->device->next_frame_context();
 }
@@ -233,6 +241,7 @@ std::pair<unsigned,unsigned> GpuGsBackend::vsync(unsigned field) {
     info.dst_stage=VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
     info.dst_access=VK_ACCESS_2_TRANSFER_READ_BIT;
     info.force_progressive=true;info.anti_blur=true;info.high_resolution_scanout=state_->high_resolution;
+    info.quad_resolution_scanout=state_->quad_resolution;
     const auto result=state_->gs.vsync(info);
     state_->picture=result.image;
     if(!result.image)return {0,0};
@@ -303,6 +312,23 @@ void GpuGsBackend::shareHdTextures(const GpuGsBackend& primary,GsTextureNames& n
     replaceTextures(names);
 }
 
+void GpuGsBackend::dumpTexture(GsTextureNames& names,std::uint64_t tex0,const std::string& name) {
+    if(!state_->dumped.insert(name).second)return;
+    const auto pixels=names.pixels(tex0);
+    if(pixels.empty())return;
+    const unsigned width=1u<<((tex0>>26)&15),height=1u<<((tex0>>30)&15);
+    // Uncompressed 32-bit TGA, rows from the top.
+    std::uint8_t header[18]{};
+    header[2]=2;header[12]=std::uint8_t(width);header[13]=std::uint8_t(width>>8);
+    header[14]=std::uint8_t(height);header[15]=std::uint8_t(height>>8);header[16]=32;header[17]=0x28;
+    std::ofstream out(state_->dump_folder/(name+".tga"),std::ios::binary);
+    out.write(reinterpret_cast<const char*>(header),sizeof header);
+    for(const std::uint32_t p:pixels) {
+        const char bgra[4]{char((p>>16)&0xFF),char((p>>8)&0xFF),char(p&0xFF),char(p>>24)};
+        out.write(bgra,4);
+    }
+}
+
 void GpuGsBackend::replaceTextures(GsTextureNames& names) {
     if(!state_->names) {state_->names=&names;state_->palette_targets.push_back({&names,false});}
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
@@ -332,9 +358,15 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
             if(chosen!=state_->variants.end() && chosen->second)image=look(chosen->second->palette);
         }
         if(!image && loading)state_->gs.texture_replacement_pending=true; // The original is not kept meanwhile.
+        if(!image && !loading && !state_->dump_folder.empty())dumpTexture(names,desc.tex0.bits,name->has_palette?name->textUsed():name->text());
         if(!image && !loading && state_->missing_marker)return state_->missing_marker;
         return image?image->handle:Vulkan::ImageHandle{};
     };
+    // BT2_TEXTURE_DUMP=<folder> (a diagnostic): each texture the pack has no replacement for is written once, by its
+    // name, as a TGA (the main renderer's only), to see which pieces of a screen are still the original's.
+    if(const char* folder=std::getenv("BT2_TEXTURE_DUMP"); folder && !state_->shared_from) {
+        state_->dump_folder=folder;std::filesystem::create_directories(state_->dump_folder);
+    }
     // BT2_HD_SHOW_MISSING=1 (a diagnostic): a texture the pack has no replacement for is drawn magenta, so a
     // picture shows which areas are still the original's.
     if(std::getenv("BT2_HD_SHOW_MISSING") && !state_->missing_marker) {

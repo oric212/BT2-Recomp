@@ -51,6 +51,9 @@ public:
     // pixels of each index lie in each cell is kept by the texture's hash, so a new palette costs only
     // the sum over those counts.
     std::optional<TextureColours> colours(std::uint64_t tex0,std::uint64_t texa);
+    // The texture's pixels as RGBA (red in the low byte, alpha 0x80 shown as 255) with the current CLUT, for
+    // the texture dump (BT2_TEXTURE_DUMP); empty for a format this does not name.
+    std::vector<std::uint32_t> pixels(std::uint64_t tex0);
 
     // Names drawn with ("<used entries' name>/<whole palette's name>" for palette textures), and how many
     // times each was named (a texture is named again after a change).

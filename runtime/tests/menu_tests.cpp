@@ -100,6 +100,19 @@ int main() {
         check(refused([&]{menu.open(dead);}),"a screen without an enabled entry is refused");
     }
     {
+        // An entry that depends on another setting: skipped while that one is off, reachable once it is on.
+        bool full=true,integer=true;
+        Menu menu;MenuScreen display;display.title="Display";
+        display.entries.push_back(menuToggle("Fullscreen",full));
+        display.entries.push_back(menuToggle("Integer scaling",integer));
+        display.entries.back().available=[&full]{return !full;};
+        menu.open(std::move(display));
+        check(!menu.screen().entries[1].usable(),"a dependent entry is unusable while its setting rules it out");
+        menu.press(MenuKey::Down);check(menu.screen().highlighted==0,"and is skipped");
+        menu.press(MenuKey::Confirm);check(!full && menu.screen().entries[1].usable(),"it becomes usable with the setting");
+        menu.press(MenuKey::Down);check(menu.screen().highlighted==1,"and can be highlighted");
+    }
+    {
         // Presses from held buttons: one when a button goes down, repeats for directions only.
         MenuInput input;
         check(input.step(bit(MenuKey::Down),0)==std::vector<MenuKey>{MenuKey::Down},"a press when the button goes down");

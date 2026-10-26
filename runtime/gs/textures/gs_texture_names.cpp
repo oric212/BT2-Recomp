@@ -213,6 +213,17 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
         const std::size_t ct32_row=std::size_t(bp_)*64+std::size_t(y/32)*bw_*2048;const auto* ct32_line=&tables.ct32[(y%32)*64];
         const std::size_t t8_row=std::size_t(bp_)*256+std::size_t(y/64)*(bw_/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
         const std::size_t t4_row=std::size_t(bp_)*512+std::size_t(y/128)*(bw_/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
+        if(psm_==psm_ct32 && !partial_bytes_) {
+            // Whole 32-bit pixels (the films' pictures): written directly, each 64-pixel page column marked once.
+            const unsigned count=unsigned(std::min<std::size_t>(w_-x_,(data.size()-at)/4));
+            for(unsigned n=0;n<count;++n,++x_,at+=4) {
+                const unsigned x=(x0_+x_)%2048;
+                const std::size_t at_word=(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words;
+                std::memcpy(&memory_[at_word],data.data()+at,4);
+                if(n==0 || x%64==0)mark(at_word);
+            }
+            uploaded_pixels+=count; // A pixel split between two pieces goes through the general path below.
+        }
         for(;x_<w_;++x_) {
             std::uint32_t value;
             if(!take(value))return;
@@ -430,6 +441,27 @@ std::optional<TextureColours> GsTextureNames::colours(std::uint64_t tex0,std::ui
     }
     colours.finish();
     return colours;
+}
+
+std::vector<std::uint32_t> GsTextureNames::pixels(std::uint64_t tex0) {
+    writePending();
+    const unsigned psm=unsigned((tex0>>20)&63),tw=unsigned((tex0>>26)&15),th=unsigned((tex0>>30)&15);
+    const unsigned tbp=unsigned(tex0&0x3FFF),tbw=unsigned((tex0>>14)&63);
+    const auto f=format(psm);
+    if(!f || tw>10 || th>10)return {};
+    const unsigned width=1u<<tw,height=1u<<th;
+    std::vector<std::uint32_t> out(std::size_t(width)*height);
+    const auto alpha=[](std::uint32_t c){return (c&0xFFFFFFu)|(std::min(255u,(c>>24)*2)<<24);}; // 0x80 is opaque.
+    if(f->palette) {
+        const auto entries=paletteEntries(tex0,f->palette);
+        forEachIndex(tex0,[&](unsigned x,unsigned y,unsigned index){out[std::size_t(y)*width+x]=alpha(entries[index]);});
+    } else if(psm==psm_ct32 || psm==psm_ct24) {
+        for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x) {
+            const std::uint32_t word=memory_[ct32Word(tbp,tbw,x,y)%memory_words];
+            out[std::size_t(y)*width+x]=psm==psm_ct24?word|0xFF000000u:alpha(word);
+        }
+    } else return {};
+    return out;
 }
 
 std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,unsigned* lowest,unsigned* highest) {

@@ -331,7 +331,7 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         checkMemory(rdram,0,0);return address==0x10000800?timer1.count():timer1.mode(); // Reads do not advance time.
     }
     if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
-        checkMemory(rdram,0,0);return address==0x10001000?timer2.count():timer2.mode();
+        checkMemory(rdram,0,0);return address==0x10001000?timer2.read():timer2.mode();
     }
     if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
         checkMemory(rdram,0,0);

@@ -13,7 +13,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools/ps2recomp'))
 FRAMES = 5100
-BASELINE = {'vu1_kick_hash': '5a4960667d4a3dff', 'vu1_instructions': 724698589, 'vu1_runs': 2140195}
+# 2026-10-26: Timer 2 moves one tick per read within a field (ee/logical_timer2.h), so the fight's second
+# random seed at its load differs from the first as on hardware; the CPU fighters' choices follow it
+# (before: 5a4960667d4a3dff, 724698589, 2140195, which the run gives again without the tick).
+BASELINE = {'vu1_kick_hash': '94b27c5bb9a49166', 'vu1_instructions': 724713805, 'vu1_runs': 2140205}
 ENTERED_AT_LEAST = 3700 # 3,731 at the baseline; the exact count moves when the map splits functions.
 
 

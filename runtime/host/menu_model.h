@@ -19,7 +19,9 @@ struct MenuEntry {
     std::function<void(int)> adjust;             // Left (-1) and right (+1).
     std::string note;                            // A line of explanation shown while highlighted.
     bool enabled=true;                           // A disabled entry is shown but cannot be highlighted.
+    std::function<bool()> available;             // Also disabled while this returns false (it depends on another setting).
     MenuIcon icon=MenuIcon::None;                // Its picture on a browser screen.
+    bool usable() const {return enabled && (!available || available());}
 };
 
 struct MenuScreen {
@@ -38,7 +40,7 @@ public:
     void open(MenuScreen screen) {
         if(screen.entries.empty())throw std::runtime_error("Menu screen without entries: "+screen.title);
         screen.highlighted=0;
-        while(screen.highlighted<screen.entries.size() && !screen.entries[screen.highlighted].enabled)++screen.highlighted;
+        while(screen.highlighted<screen.entries.size() && !screen.entries[screen.highlighted].usable())++screen.highlighted;
         if(screen.highlighted==screen.entries.size())throw std::runtime_error("Menu screen without an enabled entry: "+screen.title);
         stack_.push_back(std::move(screen));
     }
@@ -54,7 +56,7 @@ public:
         case MenuKey::Up: case MenuKey::Down: {
             // To the next enabled entry, around the ends.
             const auto count=unsigned(s.entries.size());
-            do s.highlighted=(s.highlighted+(key==MenuKey::Down?1:count-1))%count; while(!s.entries[s.highlighted].enabled);
+            do s.highlighted=(s.highlighted+(key==MenuKey::Down?1:count-1))%count; while(!s.entries[s.highlighted].usable());
             break;
         }
         case MenuKey::Left: case MenuKey::Right:

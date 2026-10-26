@@ -23,8 +23,10 @@ namespace Vulkan {class Device;}
 //   game's colours are not sRGB-encoded). Other files are refused by name (counted, drawn as originals).
 // - Streaming (step 8): a loader thread of its own reads the files and makes the GPU images (Granite
 //   thread index 3), so nothing is loaded on the game's thread. A renderer that first needs one waits for
-//   it a little (first_wait); one not ready by then is drawn as the original without the original being
-//   kept (texture_replacement_pending), so the replacement shows from the first draw after it is loaded.
+//   it a little, from a budget per frame (frame_wait: a new screen's many new files once held the GS thread
+//   5 ms each, about 90 ms at a stage's preview, which the music heard); one not ready by then is drawn as the
+//   original without the original being kept (texture_replacement_pending), so the replacement shows from
+//   the first draw after it is loaded.
 // - Lit variants (step 9): the game relights the fighters' palettes all the time and the pack holds a
 //   few lit variants of each body texture (files of one texture and format under different palettes).
 //   For a palette it has no file for, closest gives the variant whose colours are nearest; each variant's
@@ -45,10 +47,12 @@ public:
     };
     // The replacement for a texture name, as PCSX2 finds it: the pack's name itself, or for a name with a
     // palette part the pack's name without one (made for every palette). The first time a file is asked
-    // for, waits up to first_wait for the loader. `image` null and `loading`: the pack has it and the loader
+    // for, waits for the loader while the frame's budget lasts (startFrame). `image` null and `loading`: the pack has it and the loader
     // is still on it. Images are kept by file, so the names that find one file share its image.
     struct Found {const Image* image=nullptr;bool loading=false;};
     Found find(const Key& name);
+    // A new frame (each flip): the time first uses may wait for the loader starts again.
+    void startFrame();
     // The lit variant closest in colour (texture_colours.h) to a texture of the pack's texture hash and
     // format under a palette it has no file for. `key` none: no variant within variant_limit (or none in
     // the pack); `loading`: the loader is still reading the variants' colours.
@@ -66,7 +70,7 @@ public:
 
     std::size_t names() const {return index_.size();}
     std::uint64_t budget() const {return budget_;}
-    unsigned duplicates=0,refused=0,loaded=0,evicted=0,found=0,missing=0,waiting=0,late=0; // late: files not ready by first_wait.
+    unsigned duplicates=0,refused=0,loaded=0,evicted=0,found=0,missing=0,waiting=0,late=0; // late: files not ready within the frame's wait.
     std::uint64_t resident_bytes=0,peak_bytes=0;
 
     // A pack's file name as PCSX2 reads it (the format word's bit 14 cleared), as a key; none for a name
@@ -76,7 +80,7 @@ public:
     // A DDS file's block-compressed levels; none for a file this does not read (exposed for tests).
     static std::optional<Dds> readDds(const std::vector<std::uint8_t>& file);
     static constexpr unsigned loader_thread_index=3;
-    static constexpr double first_wait_seconds=0.005;
+    static constexpr double frame_wait_seconds=0.004;
 
 private:
     Vulkan::Device& device_;std::uint64_t budget_;std::uint64_t tick_=0;
@@ -91,6 +95,7 @@ private:
     struct Job {const std::filesystem::path* file;bool colours;}; // Make the image, or read the colours only.
     std::deque<Job> wanted_; // In the order the renderers asked.
     std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;
+    double wait_left_=frame_wait_seconds; // Of this frame's wait for first uses.
     Entry* entry(const std::filesystem::path* file); // Under lock_: made when missing.
     void load(Entry& entry); // On the loader thread, without lock_.
     void makeImage(const Dds& dds,Entry& entry); // The same, from a file already read.

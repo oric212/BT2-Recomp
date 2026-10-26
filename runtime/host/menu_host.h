@@ -137,9 +137,13 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
     MenuScreen screen;screen.title="Display";
     const unsigned largest=std::min(host.window().largestScale(),Settings::max_window_scale);
     if(s.window_scale>largest)s.window_scale=largest;
-    screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"On: whole multiples of the picture, sharp. Off: stretched to the window."));
-    screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed));
+    // Integer scaling and the window's size apply to a window; the whole screen is always filled.
+    const auto windowed=[&s]{return !s.fullscreen;};
+    screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed,"Fills the screen at the picture's shape. Integer scaling and the window size apply to a window."));
+    screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"In a window. On: whole multiples of the picture, sharp. Off: stretched to the window."));
+    screen.entries.back().available=windowed;
     screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
+    screen.entries.back().available=windowed;
     screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
     return screen;
 }
@@ -147,18 +151,19 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
 // clear that they apply from the next start.
 inline MenuScreen enhancements(Settings& s,std::function<void()> changed) {
     MenuScreen screen;screen.title="Enhancements (from the next start)";
-    screen.entries.push_back(toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\")."));
+    screen.entries.push_back(toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). Sharpest with 16x super-sampling."));
     MenuEntry buttons;buttons.label="Button art";
     buttons.value=[&s]{return std::string(s.playstation_buttons?"PlayStation":"Xbox");};
     buttons.adjust=[&s,changed](int){s.playstation_buttons=!s.playstation_buttons;changed();};
     buttons.note="With HD textures: the pack's PlayStation buttons, or its Xbox ones.";
+    buttons.available=[&s]{return s.hd_textures;};
     screen.entries.push_back(buttons);
     MenuEntry samples;samples.label="Super-sampling";
     samples.value=[&s]{return s.super_sampling==1?std::string("Off"):std::to_string(s.super_sampling)+"x";};
     samples.adjust=[&s,changed](int direction) { // 1, 2, 4, 8, 16, round.
         s.super_sampling=direction<0?(s.super_sampling==1?16:s.super_sampling/2):(s.super_sampling==16?1:s.super_sampling*2);changed();
     };
-    samples.note="Smoother edges and finer textures; 4x and more draw at twice the resolution (1280 x 896).";
+    samples.note="Smoother edges, finer textures. 4x and 8x: twice the resolution; 16x: up to four times, as large as the window.";
     screen.entries.push_back(samples);
     screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched."));
     screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. Turned off by itself if the processor cannot keep up."));
