@@ -85,7 +85,7 @@ public:
     // For checks: the "in-between" picture is drawn all the way to the newer frame (blend 1), so it must
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
-    unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
+    unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,scene_changes=0,late=0; // shown and late: counted by the caller.
     std::uint64_t refused_pairs=0,blended_words=0; // Changed unpack pairs left as they are, words blended (vu/vif1_blend.h).
     double waited_seconds=0; // The game's thread waiting for the frame.
     unsigned paced_waits=0; // Flips at which keepPace waited (more than 2 ms).

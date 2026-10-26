@@ -46,6 +46,12 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
                                                     std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t max_edits=1024,
                                                     std::size_t* refused=nullptr);
 
+// Whether a blend's two lists are the same scene drawn twice: `refused` (blendVif1's count of changed pairs
+// without a transform it blended) at most 5% of the aligned pairs. In a fight it stays under 1%; it reaches 10%
+// when a fighter is drawn another way between the frames (the afterimage of a teleport), and a blend would then
+// pair parts of different drawings (stretched fighters): no in-between picture.
+inline bool sameScene(std::size_t refused,std::size_t pairs) {return refused*20<=pairs;}
+
 // The smallest cosine between a camera view axis of `older` and the same axis of `newer` over their
 // aligned camera blocks (1 when there is none, or when the lists do not pair): below cos 25 degrees the
 // camera cut.

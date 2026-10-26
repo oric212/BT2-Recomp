@@ -22,7 +22,7 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
 InBetweenFrames::~InBetweenFrames() {
     try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<scene_changes<<" scene changes, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
         <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
     if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
     std::cerr<<std::endl;
@@ -180,6 +180,7 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
                 std::size_t refused=0,words=0;
                 mid=blendVif1(*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused);
                 refused_pairs+=refused;blended_words+=words;
+                if(!sameScene(refused,pairing->pairs.size())) {++scene_changes;stream_.paired=false;mid.reset();} // vu/vif1_blend.h
             }
         } else stream_.paired=false;
         stream_.vif1->run(mid?std::span<const std::uint32_t>(*mid):std::span<const std::uint32_t>(e->words),to_gs,to_gs);

@@ -1,0 +1,55 @@
+diff --git a/Granite/vulkan/wsi.cpp b/Granite/vulkan/wsi.cpp
+--- a/Granite/vulkan/wsi.cpp
++++ b/Granite/vulkan/wsi.cpp
+@@ -215,8 +215,8 @@
+ 	if (!dxgi)
+ 		return false;
+ 
+-	// Anything fancy like compute present cannot use DXGI.
+-	if (current_extra_usage)
++	// Anything fancy like compute present cannot use DXGI. Copies into the backbuffer can (BT2 Recomp patch).
++	if (current_extra_usage & ~VkImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+ 		return false;
+ 
+ 	HWND hwnd = reinterpret_cast<HWND>(platform->get_native_window());
+@@ -267,7 +267,7 @@
+ 	device->init_swapchain(swapchain_images, swapchain_width, swapchain_height,
+ 	                       swapchain_surface_format.format,
+ 	                       swapchain_current_prerotate,
+-	                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
++	                       current_extra_usage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+ 
+ 	platform->event_swapchain_destroyed();
+ 	platform->event_swapchain_created(device.get(), swapchain, swapchain_width, swapchain_height,
+diff --git a/Granite/vulkan/wsi.hpp b/Granite/vulkan/wsi.hpp
+--- a/Granite/vulkan/wsi.hpp
++++ b/Granite/vulkan/wsi.hpp
+@@ -199,6 +199,15 @@
+ 	WSI();
+ 	void set_platform(WSIPlatform *platform);
+ 	void set_present_mode(PresentMode mode);
++	// BT2 Recomp patch: whether pictures go out through a DXGI swapchain (presented off the Vulkan queue).
++	bool uses_dxgi() const
++	{
++#ifdef HAVE_WSI_DXGI_INTEROP
++		return bool(dxgi);
++#else
++		return false;
++#endif
++	}
+ 	void set_backbuffer_format(BackbufferFormat format);
+ 	// This is mostly for debug/development, ignores exposed formats and forces it.
+ 	void set_custom_backbuffer_format(VkSurfaceFormatKHR format);
+diff --git a/Granite/vulkan/wsi_dxgi.cpp b/Granite/vulkan/wsi_dxgi.cpp
+--- a/Granite/vulkan/wsi_dxgi.cpp
++++ b/Granite/vulkan/wsi_dxgi.cpp
+@@ -399,7 +399,8 @@
+ 
+ 	auto image_info = ImageCreateInfo::render_target(width, height, format.format);
+ 	image_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+-	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++	// BT2 Recomp patch: copies into the backbuffer too (a D3D12 default-heap resource allows them).
++	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+ 	image_info.misc = IMAGE_MISC_EXTERNAL_MEMORY_BIT;
+ 	image_info.external = imported_image;
+ 

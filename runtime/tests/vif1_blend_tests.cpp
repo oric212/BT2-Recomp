@@ -80,6 +80,8 @@ int main() {
     check(spun && blended==0 && *spun==block(20,5,160,10),"a turn past 150 degrees stays the newer frame's");
     const auto jumped=blendVif1(block(20,5,0,10),block(20,5,0,900),0.5f,&blended);
     check(jumped && blended==0 && *jumped==block(20,5,0,900),"a jump stays the newer frame's");
+    check(sameScene(0,13000) && sameScene(130,13000) && sameScene(650,13000),"a fight's changed pairs keep the scene");
+    check(!sameScene(651,13000) && !sameScene(1400,13000),"a fighter drawn another way is another scene");
     // Data shifted in its chunk (here by 3 quadwords) is not searched for: it stays the newer frame's (a pairing
     // found by a shift could take another bone).
     const auto shifted=blendVif1(block(20,5,0,10),block(20,5,10,12,3),0.5f,&blended,nullptr,1024,&refused);

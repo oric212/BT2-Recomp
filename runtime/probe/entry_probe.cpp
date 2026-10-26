@@ -577,6 +577,13 @@ int main(int argc, char** argv) {
                     // The slowest single flip of the window, and how many took more than 1.25 fields (20.9 ms):
                     // at 60 flips per second each of those is a visible dip.
                     const double this_flip = std::chrono::duration<double>(t2 - last_flip).count();last_flip = t2;
+                    // BT2_FLIP_TIMES=<file> (with the stats): each flip's time, the game's wait for the GS threads
+                    // in it and their work, in milliseconds.
+                    static std::ofstream flip_times = [] {const char* p = std::getenv("BT2_FLIP_TIMES");return p ? std::ofstream(p) : std::ofstream();}();
+                    static double last_wait = 0, last_work = 0;
+                    if (flip_times.is_open()) flip_times << flip << ' ' << this_flip * 1000 << ' ' << (frame_profile.gs_wait - last_wait) * 1000 << ' ' << (frame_profile.renderer - last_work) * 1000 << '\n';
+                    last_wait = frame_profile.gs_wait;last_work = frame_profile.renderer;
+                    if (flip % 120 == 0) last_wait = last_work = 0;
                     slowest_s = std::max(slowest_s, this_flip);if (this_flip > 0.0209) ++late;
                     if (flip % 120 == 0) {
                         const double wall = std::chrono::duration<double>(t2 - window_start).count();

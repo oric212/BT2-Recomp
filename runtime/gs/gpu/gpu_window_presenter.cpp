@@ -112,13 +112,18 @@ bool GpuWindowPresenter::present(const Request& request) {
         s.platform->size(client_width,client_height);
         s.wsi=std::make_unique<Vulkan::WSI>();
         s.wsi->set_platform(s.platform.get());
-        // Our pacer decides when a picture appears: no waiting for the display's refresh here.
+        // Our pacer decides when a picture appears. A Vulkan swapchain must not wait for the display's refresh:
+        // its present holds the device, so every renderer would wait with it.
         s.wsi->set_present_mode(Vulkan::PresentMode::UnlockedMaybeTear);
         s.wsi->set_backbuffer_format(Vulkan::BackbufferFormat::UNORM); // The picture's values as they are.
         s.wsi->set_extra_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT);   // Pictures are copied in.
         s.wsi->set_end_frame_context_by_caller(true); // Ended in around_frame, presented after it (run).
         if(!s.wsi->init_from_existing_context(context_) || !s.wsi->init_device(device_) || !s.wsi->init_surface_swapchain())
             throw std::runtime_error("GPU presenter: no swapchain for the window");
+        // On Windows the picture goes out through a DXGI flip-model swapchain (granite_dxgi_copy_target.patch),
+        // presented on D3D12's queue without holding the Vulkan device: it is shown at the display's refresh,
+        // without tearing.
+        if(s.wsi->uses_dxgi())s.wsi->set_present_mode(Vulkan::PresentMode::SyncToVBlank);
     }
     s.platform->size(client_width,client_height);
     auto& device=*device_;
