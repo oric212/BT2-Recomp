@@ -32,6 +32,12 @@ public:
     // With 16 samples, scanouts at four times the resolution (one sample per pixel) instead of twice
     // (tools/graphics/gpu/parallel_gs_quad_scanout.patch); from the next scanout, any thread.
     void setQuadResolution(bool on);
+    // Pictures kept for showing later (the delayed pictures of 60 fps battles): the last scanout into one of
+    // held_slots slots, and the window shows `source`'s held picture in `slot` (showHeld with slot -1: its
+    // last scanout again, as showPictureOf).
+    static constexpr unsigned held_slots=4;
+    void holdPicture(unsigned slot);
+    void showHeld(const GpuGsBackend* source,int slot);
     // GIF data in 128-bit units, as the GIF receives it on PATH3.
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.

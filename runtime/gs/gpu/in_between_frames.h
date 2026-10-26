@@ -74,13 +74,19 @@ public:
     // looks worse than a steady 30 (Tenkaichi3Decomp likewise shows only as many as fit).
     bool keepsUp(bool ready);
     std::pair<unsigned,unsigned> pictureSize() const {return picture_;}
+    // The jobs by number (the n-th start is job n - 1). For pictures shown a field later than drawn (the
+    // delayed fights): whether job `job` is done with its in-between picture, held in the renderer's slot
+    // job % held_slots (GpuGsMirror::showHeld), and its size; the last job started.
+    bool readyFor(std::uint64_t job);
+    std::pair<unsigned,unsigned> pictureSizeFor(std::uint64_t job);
+    std::uint64_t lastJob() const {return started_-1;} // The game's thread's, after a start.
     GpuGsMirror& renderer() {return mirror_;}
     const bool replay_only;
     // For checks: the "in-between" picture is drawn all the way to the newer frame (blend 1), so it must
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
     unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,late=0; // shown and late: counted by the caller.
-    std::uint64_t refused_pairs=0,blended_words=0,realigned_pairs=0; // Changed unpack pairs left as they are, words blended, shifted pairs realigned (vu/vif1_blend.h).
+    std::uint64_t refused_pairs=0,blended_words=0; // Changed unpack pairs left as they are, words blended (vu/vif1_blend.h).
     double waited_seconds=0; // The game's thread waiting for the frame.
     unsigned paced_waits=0; // Flips at which keepPace waited (more than 2 ms).
     double drawing_seconds=0,slowest_seconds=0; // The thread's time on the in-between pictures drawn, and the longest.
@@ -106,7 +112,9 @@ private:
     std::vector<Frame> free_; // Frames the thread is done with, to record into again (under lock_).
     bool previous_fight_=false; // The game's thread's copy of the last finished frame's `fight`.
     // The thread's job at a flip: the finished frame and how to scan it out.
-    struct Job {Frame frame;std::array<std::uint64_t,15> privileged{};unsigned crt_mode=0,field=0;};
+    struct Job {Frame frame;std::array<std::uint64_t,15> privileged{};unsigned crt_mode=0,field=0;std::uint64_t id=0;};
+    struct Held {std::uint64_t job=~0ull;bool ready=false;std::pair<unsigned,unsigned> size{};};
+    std::array<Held,GpuGsBackend::held_slots> held_; // By job % held_slots (under lock_).
     // Jobs in order (the thread takes the front one with its task); `started` and `finished` count them.
     std::deque<Job> jobs_;std::uint64_t started_=0,finished_=0;bool ready_=false;std::exception_ptr failure_;
     std::uint64_t recent_waits_=0; // keepPace: whether each of the last 64 flips waited (newest in bit 0).

@@ -22,7 +22,7 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
 InBetweenFrames::~InBetweenFrames() {
     try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended ("<<realigned_pairs<<" shifted unpacks realigned), "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
         <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
     if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
     std::cerr<<std::endl;
@@ -34,8 +34,21 @@ void InBetweenFrames::run() {
     bool ready=false;std::exception_ptr failure;
     try {ready=draw(std::move(job.frame),job);}
     catch(...) {failure=std::current_exception();}
-    {std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;++finished_;}
+    {
+        std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;++finished_;
+        held_[job.id%held_.size()]=Held{job.id,ready && !failure,picture_};
+    }
     done_.notify_all();
+}
+
+bool InBetweenFrames::readyFor(std::uint64_t job) {
+    std::lock_guard<std::mutex> hold(lock_);
+    const auto& h=held_[job%held_.size()];return h.job==job && h.ready && !failure_;
+}
+
+std::pair<unsigned,unsigned> InBetweenFrames::pictureSizeFor(std::uint64_t job) {
+    std::lock_guard<std::mutex> hold(lock_);
+    const auto& h=held_[job%held_.size()];return h.job==job?h.size:std::pair<unsigned,unsigned>{0,0};
 }
 
 bool InBetweenFrames::wait() {
@@ -97,7 +110,7 @@ void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::ui
     previous_fight_=fight && !replay_only; // The next frame is drawn as it comes.
     {
         std::lock_guard<std::mutex> hold(lock_);
-        jobs_.push_back(Job{std::move(finished),privileged,crt_mode,field});
+        jobs_.push_back(Job{std::move(finished),privileged,crt_mode,field,started_});
         ready_=false;++started_;
     }
     thread_.pushTask([this]{run();});
@@ -164,9 +177,9 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
             if(!pairing)stream_.paired=false;
             else if(cameraTurn(*pairing,older->words,e->words)<0.906f) {++camera_cuts;stream_.paired=false;}
             else {
-                std::size_t refused=0,words=0,realigned=0;
-                mid=blendVif1(*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused,&realigned);
-                refused_pairs+=refused;blended_words+=words;realigned_pairs+=realigned;
+                std::size_t refused=0,words=0;
+                mid=blendVif1(*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused);
+                refused_pairs+=refused;blended_words+=words;
             }
         } else stream_.paired=false;
         stream_.vif1->run(mid?std::span<const std::uint32_t>(*mid):std::span<const std::uint32_t>(e->words),to_gs,to_gs);
@@ -186,6 +199,7 @@ bool InBetweenFrames::draw(Frame finished,const Job& job) {
         if(finished.fight && stream_.paired && !stream_.older.empty() && stream_.next==stream_.older.size()) {
             picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);
             ready=picture_.first!=0;
+            if(ready)mirror_.holdPicture(unsigned(job.id%GpuGsBackend::held_slots)); // Shown a field later in delayed fights.
         }
         if(ready) {
             ++drawn;

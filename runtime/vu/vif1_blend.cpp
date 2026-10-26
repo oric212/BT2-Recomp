@@ -106,15 +106,17 @@ bool rigid(std::span<const std::uint32_t> d,std::size_t at) {
     for(unsigned k=0;k<3;++k)if(!std::isfinite(v(3,k)))return false;
     return true;
 }
-// The same transform in both frames, blended at t: each axis turns (its length blended), the position
-// moves; false (nothing written) when it turned by more than 45 degrees or jumped (another bone, a cut).
-bool blendRigid(std::span<const std::uint32_t> older,std::size_t a,std::span<const std::uint32_t> newer,std::size_t b,std::vector<std::uint32_t>& out,float t) {
+// The same transform in both frames, blended at t into `to` (its 16 words): each axis turns (its length
+// blended), the position moves; false when an axis turned further than `min_cos` allows or the position moved
+// further than `max_move` (another bone, a cut).
+bool blendRigid(std::span<const std::uint32_t> older,std::size_t a,std::span<const std::uint32_t> newer,std::size_t b,float t,
+                float min_cos,float max_move,std::uint32_t* to) {
     float axes[3][3];
     for(unsigned q=0;q<3;++q) {
         float p[3],r[3],lp=0,lr=0,dot=0;
         for(unsigned k=0;k<3;++k) {p[k]=wordFloat(older[a+q*4+k]);r[k]=wordFloat(newer[b+q*4+k]);lp+=p[k]*p[k];lr+=r[k]*r[k];dot+=p[k]*r[k];}
         lp=std::sqrt(lp);lr=std::sqrt(lr);
-        if(dot<0.7071f*lp*lr)return false;
+        if(dot<min_cos*lp*lr)return false;
         float m[3],lm=0;
         for(unsigned k=0;k<3;++k) {m[k]=p[k]+t*(r[k]-p[k]);lm+=m[k]*m[k];}
         lm=std::sqrt(lm);
@@ -123,9 +125,10 @@ bool blendRigid(std::span<const std::uint32_t> older,std::size_t a,std::span<con
     }
     float moved=0;
     for(unsigned k=0;k<3;++k) {const float d=wordFloat(newer[b+12+k])-wordFloat(older[a+12+k]);moved+=d*d;}
-    if(!(moved<=200.0f*200.0f))return false;
-    for(unsigned q=0;q<3;++q)for(unsigned k=0;k<3;++k)out[b+q*4+k]=floatWord(axes[q][k]);
-    for(unsigned k=0;k<3;++k) {const float p=wordFloat(older[a+12+k]),r=wordFloat(newer[b+12+k]);out[b+12+k]=floatWord(r-(1-t)*(r-p));}
+    if(!(moved<=max_move*max_move))return false;
+    std::copy(newer.begin()+std::ptrdiff_t(b),newer.begin()+std::ptrdiff_t(b+16),to);
+    for(unsigned q=0;q<3;++q)for(unsigned k=0;k<3;++k)to[q*4+k]=floatWord(axes[q][k]);
+    for(unsigned k=0;k<3;++k) {const float p=wordFloat(older[a+12+k]),r=wordFloat(newer[b+12+k]);to[12+k]=floatWord(r-(1-t)*(r-p));}
     return true;
 }
 // A camera block (12 quadwords): its last four (the viewport's scale and offset) are the same in both.
@@ -147,20 +150,20 @@ std::optional<Vif1Pairing> pairVif1(const std::vector<Vif1Unpack>& older,const s
 }
 
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits,std::size_t* refused,std::size_t* realigned) {
+                                                    std::size_t* blended,std::size_t* unmatched,std::size_t max_edits,std::size_t* refused) {
     const auto a=vif1Unpacks(older),b=vif1Unpacks(newer);
     if(!a || !b)return std::nullopt;
     const auto pairing=pairVif1(*a,*b,max_edits);
     if(!pairing)return std::nullopt;
-    return blendVif1(*pairing,older,newer,t,blended,unmatched,refused,realigned);
+    return blendVif1(*pairing,older,newer,t,blended,unmatched,refused);
 }
 
 std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                     std::size_t* blended,std::size_t* unmatched,std::size_t* refused,std::size_t* realigned) {
+                                     std::size_t* blended,std::size_t* unmatched,std::size_t* refused) {
     const auto* a=pairing.older;const auto* b=pairing.newer;const auto* pairs=&pairing.pairs;
     std::vector<std::uint32_t> out(newer.begin(),newer.end());
     if(t>=1)return out; // The newer list as it is.
-    std::size_t changed=0,others=0,shifted=0;
+    std::size_t changed=0,others=0;
     // Each camera's screen matrices (its first eight quadwords, as the newer frame has them) and their blend.
     struct Camera {std::array<std::uint32_t,32> newer,blend;};
     std::vector<Camera> cameras;
@@ -183,40 +186,19 @@ std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const 
             cameras.push_back(c);
             continue;
         }
-        // Rigid transforms (bones). The older side's data around the pair (the V4-32 unpacks before, at and after
-        // it, as one run): data streamed in fixed-size chunks shifts between frames when something before it
-        // changes size, so the shift is chosen that lines up every transform of the newer chunk with one in
-        // the older data (no shift first; else the one that lines up most, with the quadwords that stayed).
-        const auto v4=[&](std::size_t k){return k<a->size() && (*a)[k].format==0xC;};
-        const std::size_t before=i>0 && v4(i-1)?(*a)[i-1].words:0;
-        std::vector<std::uint32_t> run;
-        for(std::size_t k=i-(before?1:0);k<=i+1 && k<a->size();++k)
-            if(k==i || v4(k))run.insert(run.end(),older.begin()+std::ptrdiff_t((*a)[k].start),older.begin()+std::ptrdiff_t((*a)[k].start+(*a)[k].words));
-        const std::ptrdiff_t base=std::ptrdiff_t(before/4),run_q=std::ptrdiff_t(run.size()/4);
-        std::vector<std::size_t> transforms;
-        for(std::size_t q=0;q+4<=quadwords;)if(rigid(newer,y.start+q*4)) {transforms.push_back(q);q+=4;} else ++q;
-        if(transforms.empty())continue;
-        const auto lined=[&](std::ptrdiff_t shift,std::size_t q){const std::ptrdiff_t at=base+std::ptrdiff_t(q)+shift;return at>=0 && at+4<=run_q && rigid(run,std::size_t(at)*4);};
-        const auto score=[&](std::ptrdiff_t shift) {
-            std::size_t n=0;
-            for(const auto q:transforms)n+=lined(shift,q)?8:0;
-            for(std::size_t q=0;q<quadwords;++q) {
-                const std::ptrdiff_t at=base+std::ptrdiff_t(q)+shift;
-                if(at>=0 && at<run_q && sameQuad(run.data()+at*4,newer.data()+y.start+q*4))++n;
-            }
-            return n;
-        };
-        std::ptrdiff_t shift=0;
-        if(!std::all_of(transforms.begin(),transforms.end(),[&](std::size_t q){return lined(0,q);})) {
-            std::size_t best=score(0);
-            for(std::ptrdiff_t s=-base;s+base<run_q;++s)if(s)if(const auto n=score(s);n>best) {best=n;shift=s;}
-            if(shift)++shifted;
-        }
+        // Rigid transforms (bones) where the older frame has one at the same place (the pair's unpacks have the
+        // same code and size). A bone may turn by up to 150 degrees in a frame (fast moves; one left at the newer
+        // pose beside blended ones tears the skin between them). Data that moved within its chunk (something
+        // before it changed size) is not searched for: a pairing found by a shift could take another bone and put
+        // a piece of a fighter elsewhere (measured on in-between pictures, 2026-10-26); it stays the newer frame's.
         std::size_t done=0;
-        for(const auto q:transforms) {
-            if(!lined(shift,q))continue;
-            const std::size_t at=std::size_t(base+std::ptrdiff_t(q)+shift)*4;
-            if(blendRigid(run,at,newer,y.start+q*4,out,t)) {changed+=12;++done;}
+        for(std::size_t q=0;q+4<=quadwords;) {
+            if(!rigid(newer,y.start+q*4)) {++q;continue;}
+            std::array<std::uint32_t,16> to;
+            if(rigid(older,x.start+q*4) && blendRigid(older,x.start+q*4,newer,y.start+q*4,t,-0.866f,200.0f,to.data())) {
+                std::copy(to.begin(),to.end(),out.begin()+std::ptrdiff_t(y.start+q*4));changed+=12;++done;
+            }
+            q+=4;
         }
         if(!done)++others;
     }
@@ -235,7 +217,6 @@ std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const 
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();
     if(refused)*refused=others;
-    if(realigned)*realigned=shifted;
     return out;
 }
 

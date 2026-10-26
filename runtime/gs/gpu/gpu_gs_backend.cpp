@@ -33,6 +33,8 @@ struct GpuGsBackend::State {
     bool high_resolution=false,timestamps=false;unsigned scanouts=0;
     std::atomic<bool> quad_resolution{false};
     Vulkan::ImageHandle picture; // The last scanout.
+    std::array<Vulkan::ImageHandle,GpuGsBackend::held_slots> held; // holdPicture.
+    int shown_slot=-1; // showHeld: the held picture the window shows (-1: the last scanout).
     const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
     struct Kept {Vulkan::BufferHandle vram,clut;};
@@ -56,7 +58,7 @@ struct GpuGsBackend::State {
     // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
-    ~State() {presenter.reset();picture.reset();}
+    ~State() {presenter.reset();picture.reset();for(auto& h:held)h.reset();}
 };
 
 GpuGsBackend::GpuGsBackend()=default;
@@ -102,8 +104,10 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     state_=std::move(state);
 }
 
-void GpuGsBackend::showPictureOf(const GpuGsBackend* source) {state_->shown_from=source==this?nullptr:source;}
+void GpuGsBackend::showPictureOf(const GpuGsBackend* source) {state_->shown_from=source==this?nullptr:source;state_->shown_slot=-1;}
 void GpuGsBackend::setQuadResolution(bool on) {state_->quad_resolution=on;}
+void GpuGsBackend::holdPicture(unsigned slot) {state_->held.at(slot)=state_->picture;}
+void GpuGsBackend::showHeld(const GpuGsBackend* source,int slot) {state_->shown_from=source==this?nullptr:source;state_->shown_slot=slot;}
 
 void GpuGsBackend::transfer(std::span<const std::uint8_t> data) {
     if(data.size()%16)throw std::runtime_error("GPU GS: GIF transfer size is not a multiple of 16");
@@ -280,7 +284,8 @@ DisplayFrame GpuGsBackend::readback() {
 WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::function<void()>&)> around_frame) {
     if(!state_->presenter)
         state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{
-            return state_->shown_from?state_->shown_from->state_->picture:state_->picture;
+            const auto& from=state_->shown_from?*state_->shown_from->state_:*state_;
+            return state_->shown_slot>=0?from.held[unsigned(state_->shown_slot)]:from.picture;
         },std::move(around_frame));
     return *state_->presenter;
 }

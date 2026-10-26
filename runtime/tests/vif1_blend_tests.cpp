@@ -71,20 +71,22 @@ int main() {
     check(turned && refused==0 && blended==12,"a rigid transform blended");
     check(near(std::hypot(value((*turned)[m0]),value((*turned)[m0+1])),1.0f) && near(std::atan2(value((*turned)[m0+1]),value((*turned)[m0]))*180/3.14159265f,20.0f),"an axis turns halfway and keeps its length");
     check(near(value((*turned)[m0+12]),15.0f) && value((*turned)[m0+15])==1.0f && value((*turned)[2])==2.0f,"the position moves halfway, the rest is the newer frame's");
-    // A turn of more than 45 degrees or a jump of the position is not blended (another bone, a cut).
-    const auto spun=blendVif1(block(20,5,0,10),block(20,5,60,10),0.5f,&blended);
-    check(spun && blended==0 && *spun==block(20,5,60,10),"a large turn stays the newer frame's");
+    // A fast turn (90 degrees in a frame) is blended halfway; a turn of more than 150 degrees or a jump of the
+    // position is not (another bone, a cut).
+    const auto fast=blendVif1(block(20,5,0,10),block(20,5,90,10),0.5f,&blended);
+    check(fast && blended==12 && near(std::atan2(value((*fast)[m0+1]),value((*fast)[m0]))*180/3.14159265f,45.0f)
+          && near(std::hypot(value((*fast)[m0]),value((*fast)[m0+1])),1.0f),"a fast turn blended halfway");
+    const auto spun=blendVif1(block(20,5,0,10),block(20,5,160,10),0.5f,&blended);
+    check(spun && blended==0 && *spun==block(20,5,160,10),"a turn past 150 degrees stays the newer frame's");
     const auto jumped=blendVif1(block(20,5,0,10),block(20,5,0,900),0.5f,&blended);
     check(jumped && blended==0 && *jumped==block(20,5,0,900),"a jump stays the newer frame's");
-    // Data shifted in its chunk (here by 3 quadwords) is found where it moved and blended there.
-    std::size_t realigned=9;
-    const auto shifted=blendVif1(block(20,5,0,10),block(20,5,10,12,3),0.5f,&blended,nullptr,1024,&refused,&realigned);
-    const std::size_t s0=2+2*4; // The shifted matrix's first word (quadword 5 - 3).
-    check(shifted && refused==0 && realigned==1 && blended==12 && near(value((*shifted)[s0+12]),11.0f)
-          && near(std::atan2(value((*shifted)[s0+1]),value((*shifted)[s0]))*180/3.14159265f,5.0f),"shifted data realigned and blended");
+    // Data shifted in its chunk (here by 3 quadwords) is not searched for: it stays the newer frame's (a pairing
+    // found by a shift could take another bone).
+    const auto shifted=blendVif1(block(20,5,0,10),block(20,5,10,12,3),0.5f,&blended,nullptr,1024,&refused);
+    check(shifted && blended==0 && *shifted==block(20,5,10,12,3),"shifted data stays the newer frame's");
     // Other data around a transform at the same place: the transform is blended, the rest is the newer frame's.
     auto unrelated=block(20,5,10,12);for(std::size_t w=2;w<unrelated.size();++w)if((w-2)/4<5 || (w-2)/4>8)unrelated[w]=bits(-7.0f-float(w));
-    const auto other=blendVif1(block(20,5,0,10),unrelated,0.5f,&blended,nullptr,1024,&refused,&realigned);
+    const auto other=blendVif1(block(20,5,0,10),unrelated,0.5f,&blended,nullptr,1024,&refused);
     check(other && blended==12 && near(value((*other)[m0+12]),11.0f) && (*other)[2]==unrelated[2],"a transform in other data blended alone");
     // A camera block (12 quadwords, the viewport in the last four the same): its first eight blended linearly.
     const auto camera=blendVif1(block(12,0,0,100),block(12,0,0,300),0.5f,&blended);

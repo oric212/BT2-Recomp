@@ -379,6 +379,11 @@ int main(int argc, char** argv) {
             static std::unique_ptr<InBetweenFrames> in_between;
             // The worker's frame started at the field `in_between_vblank` (after flip `in_between_flip`).
             static bool in_between_started = false;static std::uint64_t in_between_vblank = 0;static unsigned in_between_flip = 0;
+            // Delayed fights (BT2_SIXTY_FPS_DELAY, default on; 0 off): in a fight every picture is shown a field later,
+            // the flip's own at the next field and, at the flip's deadline, the in-between picture of the job started at
+            // the flip before; so an in-between picture has a field more to be drawn (16.7 ms later input in fights).
+            static const bool delay_fights = !(std::getenv("BT2_SIXTY_FPS_DELAY") && std::string_view(std::getenv("BT2_SIXTY_FPS_DELAY")) == "0");
+            static struct DelayedMain {bool pending = false;unsigned slot = 0, width = 0, height = 0, flip = 0;std::uint64_t vblank = 0;} delayed_main;
             // A failure ends the in-between pictures, not the game.
             static const auto stop_in_between = [&runtime](const std::exception& e) {
                 std::cerr << "60 fps battles stopped at flip " << runtime.gs_display_flips << ": " << e.what() << std::endl;
@@ -394,6 +399,20 @@ int main(int argc, char** argv) {
                 runtime.gif_dma.gs.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {
+                    if (delayed_main.pending) {
+                        // A delayed fight: the flip's own picture, held at the flip, a field after it.
+                        // The field after the flip's (the call counted vblank + 1 is the flip's own field's end, where its
+                        // deadline showed the in-between picture).
+                        if (runtime.vblank_deliveries < delayed_main.vblank + 2) return;
+                        delayed_main.pending = false;in_between_started = false;
+                        if (runtime.vblank_deliveries > delayed_main.vblank + 2) return; // Its field has passed.
+                        if (pacer) pacer->wait();
+                        gpu_mirror.showHeld(nullptr, int(delayed_main.slot));
+                        viewer.presentRenderer(delayed_main.width, delayed_main.height, delayed_main.flip);
+                        gpu_mirror.showPictureOf(nullptr);
+                        if (player) player->shown();
+                        return;
+                    }
                     if (!in_between || !in_between_started) return;
                     // The flip's own picture is shown at the end of the field it happens in (its deadline); the next
                     // field's end is halfway to the next flip's picture: the in-between picture goes there.
@@ -490,6 +509,15 @@ int main(int argc, char** argv) {
                     // The picture of the frame started at the last flip (BT2_SIXTY_FPS_SNAPSHOT counts that flip).
                     if (in_between && in_between_ready) if (const auto shot = shots.find(in_between_flip); shot != shots.end()) writePpm(shot->second, in_between->renderer().readback());
                 }
+                // The scanout's resolution follows the window: with 16 samples, four times the game's once the
+                // picture is shown taller than twice it (BT2_SCANOUT_QUAD=1 also without a window, for pictures). Set at
+                // every flip, for both renderers alike (the in-between pictures are scanned out on their own thread).
+                static const bool quad_always = std::getenv("BT2_SCANOUT_QUAD") && std::string_view(std::getenv("BT2_SCANOUT_QUAD")) == "1";
+                if ((viewer_mode && viewer.gpuPresented()) || quad_always) {
+                    const bool quad = quad_always || viewer.fittedHeight() > 2 * 448;
+                    gpu_mirror.setQuadResolution(quad);
+                    if (in_between) in_between->renderer().setQuadResolution(quad);
+                }
                 const auto snapshot = snapshots.find(flip);
                 // In fast forward a picture is read back and shown only once per field period of the clock.
                 const bool show = viewer_mode && (!pacer || pacer->pictureDue());
@@ -505,14 +533,6 @@ int main(int argc, char** argv) {
                 const auto t0 = Clock::now();
                 // On the GPU path the picture stays in the renderer; it is read back only for a snapshot.
                 const bool on_gpu = viewer.gpuPresented();
-                // The scanout's resolution follows the window: with 16 samples, four times the game's once the
-                // picture is shown taller than twice it (BT2_SCANOUT_QUAD=1 also without a window, for pictures).
-                static const bool quad_always = std::getenv("BT2_SCANOUT_QUAD") && std::string_view(std::getenv("BT2_SCANOUT_QUAD")) == "1";
-                if (on_gpu || quad_always) {
-                    const bool quad = quad_always || viewer.fittedHeight() > 2 * 448;
-                    gpu_mirror.setQuadResolution(quad);
-                    if (in_between) in_between->renderer().setQuadResolution(quad);
-                }
                 DisplayFrame frame;unsigned width = 0, height = 0;
                 if (on_gpu) std::tie(width, height) = gpu_mirror.vsync(runtime.gs_privileged, runtime.gs_crt_request[1], flip);
                 else {frame = gpu_mirror.scanout(runtime.gs_privileged, runtime.gs_crt_request[1], flip);width = frame.width;height = frame.height;}
@@ -526,8 +546,31 @@ int main(int argc, char** argv) {
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
                 if (pacer) pacer->wait(); // The picture appears at the field's deadline.
                 const auto t_shown = Clock::now();
-                if (player) player->shown(on_gpu ? nullptr : &frame);
-                if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
+                const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->free_run)
+                                     && !in_between->replay_only && !in_between->scan_replay;
+                if (delayed) {
+                    // This flip's picture is held for the next field; its deadline shows the in-between picture of the
+                    // job started at the last flip (between the picture shown a field ago and this one), when ready.
+                    gpu_mirror.holdPicture(flip % GpuGsBackend::held_slots);
+                    delayed_main = {true, flip % GpuGsBackend::held_slots, width, height, flip, runtime.vblank_deliveries};
+                    if (in_between_flip + 1 == flip) {
+                        const auto job = in_between->lastJob();
+                        const bool ready = in_between->readyFor(job);
+                        if (!ready && in_between->busy()) ++in_between->late;
+                        if (in_between->keepsUp(ready)) {
+                            const auto size = in_between->pictureSizeFor(job);
+                            gpu_mirror.showHeld(&in_between->renderer(), int(job % GpuGsBackend::held_slots));
+                            viewer.presentRenderer(size.first, size.second, flip);
+                            gpu_mirror.showPictureOf(nullptr);
+                            ++in_between->shown;
+                            if (player) player->shown();
+                        }
+                    }
+                } else {
+                    delayed_main.pending = false;
+                    if (player) player->shown(on_gpu ? nullptr : &frame);
+                    if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
+                }
                 if (stats) {
                     const auto t2 = Clock::now();
                     scanout_s += std::chrono::duration<double>(t1 - t0).count();present_s += std::chrono::duration<double>(t2 - t_shown).count();
