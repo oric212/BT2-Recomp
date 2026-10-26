@@ -1,0 +1,42 @@
+diff --git a/Granite/vulkan/device.hpp b/Granite/vulkan/device.hpp
+--- a/Granite/vulkan/device.hpp
++++ b/Granite/vulkan/device.hpp
+@@ -300,6 +300,12 @@
+ 
+ 	void submit(CommandBufferHandle &cmd, Fence *fence = nullptr,
+ 	            unsigned semaphore_count = 0, Semaphore *semaphore = nullptr);
++	// BT2 Recomp patch: cmd waits for `waits` at `stages` and is submitted at once, all under one hold of the
++	// device's lock. A wait added on its own (add_wait_semaphore) goes to whichever submission on the queue comes
++	// next, which may be another thread's; the queue's earlier submissions go first, without the waits (waits
++	// already pending on the queue join this submission).
++	void submit_waiting(CommandBufferHandle &cmd, unsigned wait_count, Semaphore *waits, VkPipelineStageFlags2 stages,
++	                    unsigned semaphore_count = 0, Semaphore *semaphore = nullptr);
+ 
+ 	void submit_empty(CommandBuffer::Type type,
+ 	                  Fence *fence = nullptr,
+diff --git a/Granite/vulkan/device.cpp b/Granite/vulkan/device.cpp
+--- a/Granite/vulkan/device.cpp
++++ b/Granite/vulkan/device.cpp
+@@ -1253,6 +1253,22 @@
+ 
+ 	LOCK();
+ 	submit_nolock(std::move(cmd), fence, semaphore_count, semaphores);
++}
++
++void Device::submit_waiting(CommandBufferHandle &cmd, unsigned wait_count, Semaphore *waits,
++                            VkPipelineStageFlags2 stages, unsigned semaphore_count, Semaphore *semaphores)
++{
++	cmd->end_debug_channel();
++
++	LOCK();
++	auto physical_type = get_physical_queue_type(cmd->get_command_buffer_type());
++	if (!frame().submissions[physical_type].empty())
++		flush_frame_nolock(physical_type);
++	for (unsigned i = 0; i < wait_count; i++)
++		if (waits[i])
++			add_wait_semaphore_nolock(physical_type, std::move(waits[i]), stages, false);
++	submit_nolock(std::move(cmd), nullptr, semaphore_count, semaphores);
++	flush_frame_nolock(physical_type);
+ }
+ 
+ void Device::submit_and_sync_to_queues(CommandBufferHandle &cmd, uint32_t sync_to_queues)

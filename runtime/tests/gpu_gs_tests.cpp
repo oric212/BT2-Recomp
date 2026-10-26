@@ -3,6 +3,8 @@
 #include "gs/cpu/gs_command_sink.h"
 #include "gs/gpu/hd_texture_pack.h"
 #include "gs/textures/gs_texture_names.h"
+#include "host/display_frame.h"
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -102,6 +104,37 @@ void hdTexturePackLoading(GpuGsBackend& gpu) {
     std::error_code error;std::filesystem::remove_all(folder,error);
 }
 
+// A second renderer on the device (the in-between pictures), its work on the async compute queue: it takes the
+// main renderer's kept state (keepState, takeState), draws on it and scans out on the graphics queue the picture
+// the main renderer scans out after the same draw; the main renderer does not see its drawing.
+void secondRenderer(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Second renderer: ")+what);};
+    const auto frame=[](GpuGsBackend& r) {
+        // The 64 x 32 frame at page 0, NTSC without interlace: DX 636, DY 25, MAGH 3 (four clocks a pixel), DW 255, DH 31.
+        r.privileged(0,1u|(1u<<5)|(0xFFu<<8));r.privileged(1,(32u<<3)|(2u<<13));r.privileged(2,0);
+        r.privileged(7,1u<<9);r.privileged(8,636u|(25u<<12)|(3u<<23)|(255ull<<32)|(31ull<<44));
+        r.submit(); // Its drawing so far, as at a flip.
+        return r.scanout(0);
+    };
+    gpu.flush();gpu.keepState(0);
+    GpuGsBackend second;second.initShared(gpu);
+    second.takeState(gpu,0);
+    // A sprite in another colour at x 4..15, y 20..27, on both.
+    const auto more=packet({{0x4C,0x0000000000010000ULL},{0x4E,0x0000000101000020ULL},{0x18,0},
+        {0x40,0x001F0000003F0000ULL},{0x47,0x30000},{0x00,6},{0x01,0x0000000020C04080ULL},
+        {0x05,0x0000000001400040ULL},{0x05,0x0000000001C00100ULL}});
+    second.transfer(more);
+    const auto drawn=second.readVram();
+    require(pixel(drawn,8,8)==0x80402010u && pixel(drawn,40,16)==0x80208040u,"the kept state taken");
+    require(pixel(drawn,8,24)==0x20C04080u,"its own drawing");
+    require(pixel(gpu.readVram(),8,24)!=0x20C04080u,"the main renderer unchanged");
+    gpu.transfer(more);
+    const auto main_picture=frame(gpu),second_picture=frame(second);
+    require(main_picture.width && main_picture.width==second_picture.width && main_picture.height==second_picture.height,"scanout sizes");
+    require(main_picture.bgra==second_picture.bgra,"the same picture");
+    require(std::count(main_picture.bgra.begin(),main_picture.bgra.end(),0xFF000000u)<std::ptrdiff_t(main_picture.bgra.size()),"a picture with the drawing");
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -143,7 +176,8 @@ int main() try {
     // The sink checks the packet's framing and passes it on; it draws nothing.
     GsCommandSink validator;validator.transfer(sprite);
     if(validator.transfers!=1)throw std::runtime_error("The sink lost the transfer");
+    secondRenderer(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

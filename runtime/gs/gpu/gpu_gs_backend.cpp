@@ -45,8 +45,11 @@ struct GpuGsBackend::State {
     int shown_slot=-1; // showHeld: the held picture the window shows (-1: the last scanout).
     const GpuGsBackend* shown_from=nullptr; // The renderer whose picture the window shows (null: this one).
     std::unique_ptr<GpuWindowPresenter> presenter; // Destroyed first: it waits for the device.
-    struct Kept {Vulkan::BufferHandle vram,clut;};
-    std::array<Kept,kept_slots> kept; // keepState's slots.
+    // keepState's slots. A second renderer on the compute queue takes one there: `written` (keepState's copy
+    // done) is waited for by its takeState, `read` (takeState's copy done) by the next keepState into the slot.
+    struct Kept {Vulkan::BufferHandle vram,clut;Vulkan::Semaphore written,read;};
+    std::array<Kept,kept_slots> kept;std::mutex kept_lock; // The game's thread and the second renderer's.
+    Vulkan::CommandBuffer::Type queue=Vulkan::CommandBuffer::Type::Generic; // The rendering work's (initShared).
     // Drawn palettes (gs/textures/gs_texture_names.h): the pages the names watch, copied back after each
     // frame into host memory in turn; a copy the GPU finished goes to every names object of the pack.
     struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
@@ -141,6 +144,11 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     state->context=primary.state_->context;state->device=primary.state_->device;
     ParallelGS::GSOptions options;options.super_sampling=ParallelGS::SuperSampling(super_sampling);
     options.super_sampled_textures=superSampledTextures(super_sampling);
+    // Its work on the async compute queue runs beside the main renderer's on the graphics queue instead of after
+    // it (docs/plans/ee/PERFORMANCE_PLAN.md, item 4d); its scanouts stay on the graphics queue.
+    // BT2_IN_BETWEEN_GRAPHICS_QUEUE=1 keeps it on the graphics queue (for comparisons).
+    options.compute_queue=!std::getenv("BT2_IN_BETWEEN_GRAPHICS_QUEUE");
+    if(options.compute_queue)state->queue=Vulkan::CommandBuffer::Type::AsyncCompute;
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");
     // Its flushes only submit: the primary moves the shared device to its next frame context, so this
@@ -200,9 +208,11 @@ std::span<const std::uint32_t> GpuGsBackend::readVram() {
 }
 
 namespace {
-// A copy between buffers of equal size, ordered after all earlier work on the queue and before all later.
-void copyBuffers(Vulkan::Device& device,std::initializer_list<std::pair<const Vulkan::Buffer*,const Vulkan::Buffer*>> copies) {
-    auto cmd=device.request_command_buffer();
+// A copy between buffers of equal size on `queue`, ordered after all earlier work on it and before all later, and
+// after `wait` (a semaphore of work on another queue; may be empty). Returns a semaphore of its end.
+Vulkan::Semaphore copyBuffers(Vulkan::Device& device,Vulkan::CommandBuffer::Type queue,Vulkan::Semaphore wait,
+                              std::initializer_list<std::pair<const Vulkan::Buffer*,const Vulkan::Buffer*>> copies) {
+    auto cmd=device.request_command_buffer(queue);
     cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_READ_BIT|VK_ACCESS_2_MEMORY_WRITE_BIT,
         VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT|VK_ACCESS_2_TRANSFER_WRITE_BIT);
     for(const auto& [to,from]:copies) {
@@ -211,13 +221,16 @@ void copyBuffers(Vulkan::Device& device,std::initializer_list<std::pair<const Vu
     }
     cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_READ_BIT|VK_ACCESS_2_MEMORY_WRITE_BIT);
-    device.submit(cmd);
+    Vulkan::Semaphore done;
+    device.submit_waiting(cmd,1,&wait,VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,1,&done);
+    return done;
 }
 }
 
 void GpuGsBackend::keepState(unsigned slot) {
     auto& s=*state_;
     const auto& vram=s.gs.get_vram_buffer();const auto& clut=s.gs.get_clut_buffer();
+    std::lock_guard guard(s.kept_lock);
     auto& k=s.kept.at(slot);
     if(!k.vram) {
         Vulkan::BufferCreateInfo info{};info.domain=Vulkan::BufferDomain::Device;
@@ -225,15 +238,20 @@ void GpuGsBackend::keepState(unsigned slot) {
         info.size=vram.get_create_info().size;k.vram=s.device->create_buffer(info);
         info.size=clut.get_create_info().size;k.clut=s.device->create_buffer(info);
     }
-    copyBuffers(*s.device,{{k.vram.get(),&vram},{k.clut.get(),&clut}});
+    k.written=copyBuffers(*s.device,s.queue,std::move(k.read),{{k.vram.get(),&vram},{k.clut.get(),&clut}});
 }
 
 void GpuGsBackend::takeState(const GpuGsBackend& primary,unsigned slot) {
     auto& s=*state_;
-    const auto& k=primary.state_->kept.at(slot);
-    if(!k.vram)throw std::runtime_error("GPU GS: no kept state in that slot");
     s.gs.flush(); // This renderer's work so far goes first.
-    copyBuffers(*s.device,{{&s.gs.get_vram_buffer(),k.vram.get()},{&s.gs.get_clut_buffer(),k.clut.get()}});
+    auto& p=*primary.state_;
+    {
+        std::lock_guard guard(p.kept_lock);
+        auto& k=p.kept.at(slot);
+        if(!k.vram)throw std::runtime_error("GPU GS: no kept state in that slot");
+        // A slot taken again waits for nothing new: the queue waited for its copy the first time.
+        k.read=copyBuffers(*s.device,s.queue,std::move(k.written),{{&s.gs.get_vram_buffer(),k.vram.get()},{&s.gs.get_clut_buffer(),k.clut.get()}});
+    }
     s.gs.invalidate_vram();
 }
 

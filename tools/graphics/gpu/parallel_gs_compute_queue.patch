@@ -1,0 +1,233 @@
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -209,6 +209,9 @@
+ 	bool dynamic_super_sampling = false; // If super sampling rate can be toggled in-flight.
+ 	bool ordered_super_sampling = true; // Prefers ordered grid. Aids debugging.
+ 	bool super_sampled_textures = false;
++	// BT2 Recomp patch: the rendering work goes to the device's async compute queue (the scanout stays on the
++	// graphics queue, after the work by a semaphore), so a second interface runs beside one on the graphics queue.
++	bool compute_queue = false;
+ };
+ 
+ // Pragmatic hacks which may or may not be useful.
+diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
+--- a/gs/gs_renderer.hpp
++++ b/gs/gs_renderer.hpp
+@@ -352,6 +352,15 @@
+ 	bool field_aware_super_sampling = false;
+ 	bool frame_boundaries = true;
+ 
++	// BT2 Recomp patch (GSOptions::compute_queue): the queue of the rendering work; the scanout is on the graphics
++	// queue. With the compute queue, the scanout waits for the work submitted before it (scanout_wait), and the
++	// work after it waits for the scanout, which reads VRAM.
++	Vulkan::CommandBuffer::Type work_queue = Vulkan::CommandBuffer::Type::Generic;
++	Vulkan::Semaphore scanout_wait;
++	// The stages of a barrier in the work's command buffers that the work queue has (no fragment shading on a
++	// compute queue: the scanout sees the work through its semaphore).
++	VkPipelineStageFlags2 work_stages(VkPipelineStageFlags2 stages) const;
++
+ 	std::vector<VkImageMemoryBarrier2> pre_image_barriers;
+ 	std::vector<VkImageMemoryBarrier2> post_image_barriers;
+ 	std::vector<PaletteUploadDescriptor> palette_uploads;
+diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -838,6 +838,7 @@
+ 	buffers = {};
+ 	device = device_;
+ 	vram_size = options.vram_size;
++	work_queue = options.compute_queue ? Vulkan::CommandBuffer::Type::AsyncCompute : Vulkan::CommandBuffer::Type::Generic;
+ 	next_clut_instance = 0;
+ 	base_clut_instance = 0;
+ 
+@@ -932,7 +933,7 @@
+ 	if (scratch.gpu_buffer != scratch.buffer)
+ 	{
+ 		bool first_command = !async_transfer_cmd;
+-		ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
++		ensure_command_buffer(async_transfer_cmd, work_queue);
+ 		if (first_command)
+ 			async_transfer_cmd->begin_region("AsyncTransfer");
+ 
+@@ -1025,7 +1026,7 @@
+ 			// Fallback when sufficient ReBAR is not available.
+ 			// This also happens when capturing with RenderDoc since persistently mapped ReBAR is horrible for capture perf.
+ 			bool first_command = !async_transfer_cmd;
+-			ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
++			ensure_command_buffer(async_transfer_cmd, work_queue);
+ 			if (first_command)
+ 				async_transfer_cmd->begin_region("AsyncTransfer");
+ 			memcpy(async_transfer_cmd->update_buffer(*scratch.buffer, offset, size), data, size);
+@@ -1200,19 +1201,30 @@
+ 	}
+ 
+ 	if (direct_cmd)
+-		device->submit(direct_cmd);
++	{
++		if (direct_cmd->get_command_buffer_type() != work_queue)
++		{
++			// BT2 Recomp patch: a scanout on the graphics queue after work on the compute queue (vsync); the work
++			// after it waits for it in turn, as it reads VRAM.
++			Vulkan::Semaphore scanned;
++			device->submit_waiting(direct_cmd, 1, &scanout_wait, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 1, &scanned);
++			device->add_wait_semaphore(work_queue, std::move(scanned), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, true);
++		}
++		else
++			device->submit(direct_cmd);
++	}
+ 
+ 	if (value)
+ 	{
+ 		auto binary = device->request_timeline_semaphore_as_binary(*timeline, value);
+-		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
++		device->submit_empty(work_queue, nullptr, binary.get());
+ 		{
+ 			std::lock_guard<std::mutex> holder{timeline_lock};
+ 			last_submitted_timeline = value;
+ 			timeline_cond.notify_all();
+ 		}
+ 		binary = device->request_timeline_semaphore_as_binary(*descriptor_timeline, next_descriptor_timeline_signal++);
+-		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
++		device->submit_empty(work_queue, nullptr, binary.get());
+ 	}
+ 
+ 	// This is a delayed sync-point between CPU and GPU, and garbage collection can happen here.
+@@ -1324,7 +1336,7 @@
+ 
+ Vulkan::ImageHandle GSRenderer::copy_cached_texture(const Vulkan::Image &img, const VkRect2D &rect)
+ {
+-	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(direct_cmd, work_queue);
+ 	auto &cmd = *direct_cmd;
+ 
+ 	auto info = img.get_create_info();
+@@ -1353,7 +1365,7 @@
+ 	                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+ 	cmd.image_barrier(*copy_img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+ 	                  VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+-	                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
++	                  work_stages(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT),
+ 	                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+ 
+ 	cmd.end_region();
+@@ -1559,7 +1571,7 @@
+ 		return;
+ 
+ 	bool first_command = !async_transfer_cmd;
+-	ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(async_transfer_cmd, work_queue);
+ 	auto &cmd = *async_transfer_cmd;
+ 
+ 	if (first_command)
+@@ -1601,7 +1613,7 @@
+ 	if (buffers.gpu == buffers.cpu)
+ 		return;
+ 
+-	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(direct_cmd, work_queue);
+ 	auto &cmd = *direct_cmd;
+ 
+ 	cmd.begin_region("flush-readback");
+@@ -1625,6 +1637,13 @@
+ 
+ 	cmd.end_region();
+ 	check_flush_stats();
++}
++
++VkPipelineStageFlags2 GSRenderer::work_stages(VkPipelineStageFlags2 stages) const
++{
++	if (work_queue == Vulkan::CommandBuffer::Type::Generic)
++		return stages;
++	return stages & ~VkPipelineStageFlags2(VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+ }
+ 
+ void GSRenderer::ensure_command_buffer(Vulkan::CommandBufferHandle &cmd, Vulkan::CommandBuffer::Type type)
+@@ -2903,7 +2922,7 @@
+ 
+ 	if (desc.trxdir.desc.XDIR == HOST_TO_LOCAL)
+ 	{
+-		ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++		ensure_command_buffer(direct_cmd, work_queue);
+ 		stats.allocated_scratch_memory += desc.host_data_size;
+ 		alloc = direct_cmd->request_scratch_buffer_memory(desc.host_data_size);
+ 		memcpy(alloc.host, desc.host_data, desc.host_data_size);
+@@ -3197,7 +3216,7 @@
+ {
+ 	// Attempted async compute here for binning, etc, but it's not very useful in practice.
+ 	bool first_clear_cmd = !clear_cmd;
+-	ensure_command_buffer(clear_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(clear_cmd, work_queue);
+ 	if (first_clear_cmd)
+ 		clear_cmd->begin_region("clear-memory");
+ }
+@@ -3214,20 +3233,20 @@
+ 
+ 	ensure_clear_cmd();
+ 
+-	ensure_command_buffer(triangle_setup_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(triangle_setup_cmd, work_queue);
+ 	bool needs_single_sample_heuristic = false;
+ 	for (uint32_t i = 0; i < rp.num_instances; i++)
+ 	{
+ 		if (rp.instances[i].sampling_rate_y_log2 != 0)
+ 		{
+-			ensure_command_buffer(heuristic_cmd, Vulkan::CommandBuffer::Type::Generic);
++			ensure_command_buffer(heuristic_cmd, work_queue);
+ 			needs_single_sample_heuristic = true;
+ 			break;
+ 		}
+ 	}
+ 
+-	ensure_command_buffer(binning_cmd, Vulkan::CommandBuffer::Type::Generic);
+-	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(binning_cmd, work_queue);
++	ensure_command_buffer(direct_cmd, work_queue);
+ 	auto &cmd = *direct_cmd;
+ 
+ 	bind_textures(cmd, rp);
+@@ -3345,8 +3364,8 @@
+ 		}
+ 
+ 		cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+-		            VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+-		            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
++		            work_stages(VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
++		                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT),
+ 		            VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+ 		            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+ 
+@@ -3909,7 +3928,7 @@
+ {
+ 	tracker.clear_cache_pages();
+ 
+-	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(direct_cmd, work_queue);
+ 	flush_palette_upload();
+ 	if (texture_uploads.empty())
+ 		return;
+@@ -3960,7 +3979,7 @@
+ 	if (pending_copies.empty())
+ 		return;
+ 
+-	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
++	ensure_command_buffer(direct_cmd, work_queue);
+ 	auto &cmd = *direct_cmd;
+ 
+ 	cmd.begin_region("vram-copy");
+@@ -4285,6 +4304,15 @@
+ {
+ 	if (!device)
+ 		return {};
++
++	// BT2 Recomp patch: with the work on the compute queue, the scanout waits for all of it (flush_submit).
++	if (work_queue != Vulkan::CommandBuffer::Type::Generic)
++	{
++		flush_submit(0);
++		scanout_wait.reset();
++		auto marker = device->request_command_buffer(work_queue);
++		device->submit(marker, nullptr, 1, &scanout_wait);
++	}
+ 
+ 	// Assume that all pending operations have been flushed.
+ 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);

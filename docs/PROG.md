@@ -28,7 +28,7 @@ One PC (Core i9-10900K, Radeon RX 6800 XT), Release build, a paced versus fight 
 
 | Item | Value |
 | --- | --- |
-| Fight | 30 pictures per second (the original's rate), also with every enhancement; the game's thread works 12 to 24 ms of 33 with HD textures, 60 fps and 16x (the GS work on GS threads since 2026-10-25) |
+| Fight | 30 pictures per second (the original's rate), also with every enhancement; the game's thread works 12 to 24 ms of 33 with HD textures, 60 fps and 16x (the GS work on GS threads since 2026-10-25); a super attack at 16x with 60 fps 29.2 per second (the in-between renderer on the async compute queue since 2026-10-26, was 28.2) |
 | Processor and memory | The game's thread, a GS thread, a present thread and with 60 fps two more; 0.7 GB (0.85 GB with every enhancement) |
 | Graphics card | 6 ms per frame plain, 10 ms with 16x super-sampling, HD textures and widescreen; 0.8 to 1.2 GB of video memory |
 | Functions entered | 3,732 in the gate's battle run (5,100 frames); 3,500 to 3,800 per CPU-vs-CPU battle |
