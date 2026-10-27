@@ -1,6 +1,8 @@
 # Resume handoff
 
-Updated: 2026-10-27 (night, later). **A field less with 60 fps: tried and left** (the user's request): undelayed fights save about 22 ms at every enhancement but break the even 60 (91.6% of pictures a field apart against 98.5%): the in-between picture's scanout waits for the flip and is ready only 12 to 16 ms into the field. A per-fight choice picked delayed everywhere; the code was reverted, the findings are in the [plan](../plans/ee/RESPONSIVENESS_PLAN.md) step 2 (what would gain the field: the in-between picture finished early in the flip's field).
+Updated: 2026-10-27 (night, last). **Open: 60 fps is not flat in the user's play at 16x** ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md) 4g). The user's last run (fullscreen, 4x scanout, 16x, HD, widescreen): 3,016 of 3,610 in-between pictures shown, 14.5 ms each to draw (longest 44.7) against about 4 ms and 99% shown in the developer's test fight; the test fight did not represent the user's settings and content. That run used a stale `bt2-entry-probe.exe` (a reverted experiment, built 14:45; rebuilt to the committed source 14:57). **Next:** reproduce in fullscreen at the user's settings on what the user played (ask which content), find the slow part of the in-between picture, fix it.
+
+Earlier the same day (night, later). **A field less with 60 fps: tried and left** (the user's request): undelayed fights save about 22 ms at every enhancement but break the even 60 (91.6% of pictures a field apart against 98.5%): the in-between picture's scanout waits for the flip and is ready only 12 to 16 ms into the field. A per-fight choice picked delayed everywhere; the code was reverted, the findings are in the [plan](../plans/ee/RESPONSIVENESS_PLAN.md) step 2 (what would gain the field: the in-between picture finished early in the flip's field).
 
 Earlier the same day (night). **Input delay with 60 fps (a small pass, the user's request):** in a 60 fps fight the in-between picture now goes out when such pictures are usually ready in the flip's field and the flip's own picture exactly a field later, scheduled on the presenter's thread (`presentRendererAt`); the deadline is still waited for. Fight flip to screen in a window at 1x: 44.8 to 35.3 ms median, the same pictures shown, pacing as even. Gate passed. Outside fights 60 fps keeps the deadline (in-between pictures there go out at deadlines).
 
@@ -55,7 +57,8 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 ## Rules learned the hard way
 
-- **Build the player programs before handing a build over;** a build fails to link while a game window is open.
+- **Build the player programs before handing a build over;** a build fails to link while a game window is open. The launcher and `bt2-game.exe` only start `bt2-entry-probe.exe`, the game itself: after a reverted experiment, rebuild Release (all) so the program the user plays matches the committed source (2026-10-27: the user played an experiment's build for 12 minutes).
+- **Measure at the user's settings and content before claiming a rate:** the user plays fullscreen at window scale 4 (the 4x scanout) with 16x, HD, widescreen and 60 fps (`user/settings`); a CPU-vs-CPU test fight in a window did not show the user's 60 fps drop (HIGH_FRAME_RATE_PLAN.md 4g).
 - **Runs with a window appear on the user's screen** (`BT2_VIEWER_CLOSE=1`); runs with `--sound` play on the user's speakers.
 - **Every VU1 or VIF1 change keeps the gate's baseline** (`tools/gate/battle_run.py`).
 - **60 fps pictures are checked as pictures:** `BT2_SIXTY_FPS_SNAPSHOT` at flip F is the picture between main F and main F + 1; `BT2_SIXTY_FPS=check` must equal main F + 1 exactly; score in-between pictures by the pixels outside both main pictures around them.
