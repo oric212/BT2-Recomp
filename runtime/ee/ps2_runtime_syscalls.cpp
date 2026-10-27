@@ -47,6 +47,8 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
     // Native SIF RPC services (runtime/services/) answer the game's requests and DMA status polls.
     if(code==0 && selector==0x77 && handleNativeSifDma(rdram,context))return;
     if(code==0 && selector==0x76 && handleNativeDmaStat(context))return;
+    // SIF registers, SIF0 chain, DMAC handlers and channels, SIF system commands (services/sif_system.cpp).
+    if(code==0 && handleSifSystemSyscall(rdram,selector,context))return;
     // Captured replies for the CD and LOADFILE requests around the IOP reset.
     if(code==0 && selector==0x77 && post_cd.supplied && post_sif.rpc_initialized && iop_epoch==1
         && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
@@ -54,29 +56,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
     if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
         && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
-    if(code==0 && post_sif.supplied && gif_channel.starts>=2 && iop_epoch==1) {
-        if(selector==0x78 && post_sif.phase==2) {
-            post_sif.chain();return; // SDK declares void, retain v0.
-        }
-        if(selector==0x7A) {context->r[2].low=post_sif.get(static_cast<std::uint32_t>(context->r[4].low));return;}
-        if(selector==0x79) {post_sif.set(static_cast<std::uint32_t>(context->r[4].low),static_cast<std::uint32_t>(context->r[5].low));context->r[2].low=context->r[5].low;return;}
-        if(selector==0x77 && (post_sif.phase==10 || post_sif.phase==12)) {
-            auto d=static_cast<std::uint32_t>(context->r[4].low);checkMemory(rdram,d,16);
-            auto source=read32(rdram,d),count=read32(rdram,d+8);
-            if(context->r[5].low!=1 || read32(rdram,d+4)!=0x1E640 || read32(rdram,d+12)!=0x44 || source!=(post_sif.phase==10?0x3A9580u:0x3A9800u))
-                throw UnsupportedSyscall(selector,context->pc);
-            checkMemory(rdram,source,count);
-            auto result=post_sif.submit(memory().subspan(source,count));
-            sif_ee_receive_address=post_sif.ee_receive_address;++sif_dma_submissions;
-            if(post_sif.sreg_responses) {
-                // Captured SET_SREG index 0/value 1 response, logical delivery.
-                constexpr std::array<std::uint32_t,6> reply={0,0,0x80000001,0,0,1};
-                for(unsigned n=0;n<reply.size();++n)write32(rdram,0x3A94C0+n*4,reply[n]);
-                write32(rdram,0x3A9740,1);
-            }
-            context->r[2].low=result;return;
-        }
-    }
     if (code == 0 && selector == 0x77 && sif_dma_submissions == 4 && scmd_mmode_supplied_) {
         receiveScmdMmode(rdram,context); return;
     }
@@ -92,81 +71,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         receiveFirstRpcBind(rdram, context);
         return;
     }
-    if (code == 0 && selector == 0x77 && reset_submission_supplied_ && sif_dma_submissions == 5) {
-        if (iop_reset_pending || reset_smflag_writes != 1 || sif_reset_subaddr_reads != 1
-                || context->r[4].low != initial_sp-224 || context->r[29].low != context->r[4].low
-                || context->r[5].low != 1) throw UnsupportedSyscall(selector,context->pc);
-        const std::array<std::uint32_t,4> descriptor{0x3ACC40,0x19600,104,0x44};
-        const std::array<std::uint32_t,6> header{104,0,0x80000003,0,36,0};
-        for(unsigned i=0;i<4;++i) if(read32(rdram,static_cast<std::uint32_t>(context->r[4].low)+i*4)!=descriptor[i])throw UnsupportedSyscall(selector,context->pc);
-        for(unsigned i=0;i<6;++i) if(read32(rdram,0x3ACC40+i*4)!=header[i])throw UnsupportedSyscall(selector,context->pc);
-        constexpr char path[]="rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1";
-        if(!std::equal(std::begin(path),std::end(path),memory_.begin()+0x3ACC58))throw UnsupportedSyscall(selector,context->pc);
-        // Submission acknowledgement only. Retain the request and invalidate
-        // old service lifetime; no receive, image execution or ready flag invented.
-        std::copy_n(memory_.data()+0x3ACC40,104,reset_request_.data());
-        iop_reset_pending=true; prior_iop_services_valid=false; ++iop_epoch;
-        ++sif_dma_submissions;context->r[2].low=0xE01;return;
-    }
-    if (code == 0 && selector == 0x77) {
-        if (sif_iop_.empty() || sif_dma_submissions || sif_command_reads != 1 || data_cache_lines != 1
-                || context->r[5].low != 1 || context->r[4].low > UINT32_MAX)
-            throw UnsupportedSyscall(selector, context->pc);
-        const auto descriptor = static_cast<std::uint32_t>(context->r[4].low);
-        if (descriptor & 15) throw UnsupportedGuestMemory(descriptor, 16);
-        checkMemory(rdram, descriptor, 16);
-        const auto source = read32(rdram, descriptor), destination = read32(rdram, descriptor + 4);
-        if (source != 0x3A9580 || destination != 0x19600 || read32(rdram, descriptor + 8) != 20
-                || read32(rdram, descriptor + 12) != 0x44)
-            throw UnsupportedSyscall(selector, context->pc);
-        checkMemory(rdram, source, 20);
-        // Observed CHANGE_SADDR command only; unknown commands fail before mutation.
-        if (read32(rdram, source) != 20 || read32(rdram, source + 4) != 0
-                || read32(rdram, source + 8) != 0x80000000 || read32(rdram, source + 12) != 0
-                || read32(rdram, source + 16) != 0x3A94C0)
-            throw UnsupportedSyscall(selector, context->pc);
-        std::copy_n(memory_.data() + source, 20, sif_iop_.data() + destination);
-        // Model only the validated logical receive effects, synchronously.
-        // The service consumes psize and stores the new EE receive address.
-        sif_iop_[destination] = 0;
-        sif_ee_receive_address = 0x3A94C0;
-        std::memcpy(sif_iop_.data() + 0x196C8, &sif_ee_receive_address, 4);
-        ++sif_dma_submissions;
-        context->r[2].low = sif_dma_result_;
-        return;
-    }
-    if (code == 0 && selector == 0x79 && iop_reset_pending) {
-        const auto reg=static_cast<std::uint32_t>(context->r[4].low);
-        const auto value=static_cast<std::uint32_t>(context->r[5].low);
-        const std::array<std::uint32_t,4> regs{4,4,0x80000002,0x80000000};
-        const std::array<std::uint32_t,4> values{0x10000,0x20000,0,0};
-        if(!reset_submission_supplied_ || reset_clear_writes>=4 || reg!=regs[reset_clear_writes] || value!=values[reset_clear_writes]
-                || context->r[29].low!=initial_sp-224)throw UnsupportedSyscall(selector,context->pc);
-        if(reset_clear_writes<2) { sif_smflag&=~value;context->r[2].low=sif_smflag; }
-        else { if(reset_clear_writes==2) reset_rpcinit=0;else reset_subaddr=0;context->r[2].low=0; }
-        ++reset_clear_writes;return;
-    }
-    if (code == 0 && selector == 0x79 && sif_stop_calls) {
-        if (!reset_smflag_supplied_ || reset_smflag_writes || sif_reset_subaddr_reads != 1
-                || context->r[4].low != 4 || context->r[5].low != 0x40000
-                || context->r[29].low != initial_sp - 224 || sif_smflag != 0x30000)
-            throw UnsupportedSyscall(selector, context->pc);
-        // Captured kernel behavior: EE SMFLAG write clears selected bits,
-        // returning the readback value (different from the pinned Play! return).
-        sif_smflag &= ~0x40000u; ++reset_smflag_writes;
-        context->r[2].low = sif_smflag;
-        return;
-    }
-    if (code == 0 && selector == 0x6B) {
-        if (!sif_stop_supplied_ || sif_stop_calls || scmd_mmode_calls != 1 || sif_dma_submissions != 5
-                || dmac_removals != 1 || dmac_mask != 0x800000 || !dmac_handlers.empty()
-                || context->r[4].low != 1 || context->r[29].low != initial_sp - 224)
-            throw UnsupportedSyscall(selector, context->pc);
-        // Local kernel handler writes zero to SIF2 CHCR/QWC and returns QWC.
-        // All supported logical submissions have finished; active DMA is unsupported.
-        sif2_chcr = 0; sif2_qwc = 0; ++sif_stop_calls; context->r[2].low = 0;
-        return;
-    }
     if(code==0 && (selector==0x70 || selector==0x71)) {
         // GsGetIMR / GsPutIMR (ee_gs_privileged.cpp): the GS interrupt mask; PutIMR returns the previous mask.
         const auto mask=selector==0x71?gsPutImr(context->r[4].low,context->pc):gs_imr;
@@ -175,36 +79,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
     if(code==0 && selector==2) {
         // SetGsCrt (ee_gs_privileged.cpp): the display mode. Void in the SDK; the captures return 0.
         gsSetCrt(context->r[4].low,context->r[5].low,context->r[6].low,context->pc);context->r[2].low=0;return;
-    }
-    if (code == 0 && selector == 0x7A && iop_reset_pending && reset_ready_supplied_) {
-        if(reset_ready_checkpoint_reads || reset_clear_writes!=4 || context->pc!=0x32F078
-                || context->r[4].low!=4 || context->r[29].low!=initial_sp-48
-                || context->r[31].low!=0x338118)throw UnsupportedSyscall(selector,context->pc);
-        // Explicit reference checkpoint replay: this caller tests only bit 0x40000.
-        // This does not model full SMFLAG or execute/complete the native IOP boot.
-        context->r[2].low=0x40000;++reset_ready_checkpoint_reads;return;
-    }
-    if (code == 0 && selector == 0x7A && sif_stop_calls) {
-        if (!sif_reset_subaddr_supplied_ || sif_reset_subaddr_reads
-                || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000 || context->r[29].low != initial_sp - 224)
-            throw UnsupportedSyscall(selector, context->pc);
-        ++sif_reset_subaddr_reads; context->r[2].low = 0x19600;
-        return;
-    }
-    if (code == 0 && selector == 0x7A && static_cast<std::uint32_t>(context->r[4].low) == 0x80000002) {
-        if (!sif_rpc_supplied_ || sif_rpc_reads || sif_dma_submissions != 1)
-            throw UnsupportedSyscall(selector, context->pc);
-        context->r[2].low = 1;
-        ++sif_rpc_reads;
-        return;
-    }
-    if (code == 0 && selector == 0x7A) {
-        if (!sif_command_supplied_ || sif_command_reads || static_cast<std::uint32_t>(context->r[4].low) != 0x80000000
-                || dmac_enable_calls != 1) throw UnsupportedSyscall(selector, context->pc);
-        context->r[2].low = static_cast<std::uint64_t>(static_cast<std::int64_t>(
-            std::bit_cast<std::int32_t>(sif_command_word_)));
-        ++sif_command_reads;
-        return;
     }
     if (code == 0 && selector == 0x4A) {
         if (!osd_readback_supplied || !((osd_config_reads == 1 && osd_config_sets == 0)
@@ -264,60 +138,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         checkMemory(rdram, address, 4);
         const auto id = addIntcHandler(cause, address, 0, static_cast<std::uint32_t>(context->r[28].low));
         context->r[2].low = id;
-        return;
-    }
-    if (code == 0 && selector == 0x12) {
-        const auto channel = static_cast<std::uint32_t>(context->r[4].low);
-        const auto address = static_cast<std::uint32_t>(context->r[5].low);
-        if (channel != 5 || !address || address % 4 || context->r[6].low != 0)
-            throw UnsupportedSyscall(selector, context->pc);
-        checkMemory(rdram, address, 4);
-        if (dmac_handlers.size() == 128) {
-            context->r[2].low = UINT64_MAX;
-            return;
-        }
-        if(post_sif.supplied && gif_channel.starts>=2) {
-            if(address!=0x331DF0 || !dmac_handlers.empty())throw UnsupportedSyscall(selector,context->pc);
-            post_sif.handler();
-        }
-        dmac_handlers.push_back({channel, address, static_cast<std::uint32_t>(context->r[7].low),
-                                 static_cast<std::uint32_t>(context->r[28].low)});
-        const auto id = static_cast<std::uint32_t>(dmac_handlers.size());
-        dmac_handler_order.insert(dmac_handler_order.begin(), id);
-        context->r[2].low = id;
-        return;
-    }
-    if (code == 0 && selector == 0x17) {
-        // Reached SIF shutdown: toggle only the recorded channel-5 mask bit.
-        if (context->r[4].low != 5 || scmd_mmode_calls != 1 || dmac_handlers.size() != 1)
-            throw UnsupportedSyscall(selector, context->pc);
-        const auto bit = 0x10000u << 5;
-        const bool changed = (dmac_mask & bit) != 0;
-        dmac_mask &= ~bit;
-        ++dmac_disable_calls;
-        context->r[2].low = changed ? 1 : 0;
-        return;
-    }
-    if (code == 0 && selector == 0x13) {
-        // Sole registered dormant handler; no dispatch or wait queue exists.
-        if (context->r[4].low != 5 || context->r[5].low != 1 || dmac_disable_calls != 1
-                || dmac_mask != 0x800000 || dmac_handlers.size() != 1
-                || dmac_handlers[0].channel != 5 || dmac_handler_order != std::vector<std::uint32_t>{1})
-            throw UnsupportedSyscall(selector, context->pc);
-        dmac_handlers.clear(); dmac_handler_order.clear(); ++dmac_removals;
-        context->r[2].low = 0; // Remaining handlers on this channel.
-        return;
-    }
-    if (code == 0 && selector == 0x16) {
-        // Captured mask bits only. No status acknowledgements, DMA or interrupt delivery.
-        if (context->r[4].low != 5 || dma_status_reads != 1 || dma5_control_reads != 1
-                || dmac_handlers.empty()) throw UnsupportedSyscall(selector, context->pc);
-        if(post_sif.supplied && gif_channel.starts>=2)post_sif.enable();
-        const auto bit = 0x10000u << 5;
-        const bool changed = !(dmac_mask & bit);
-        dmac_mask |= bit;
-        ++dmac_enable_calls;
-        context->r[2].low = changed ? 1 : 0;
         return;
     }
     if (code == 0 && selector == 0x74) {

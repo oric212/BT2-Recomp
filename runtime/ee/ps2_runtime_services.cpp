@@ -127,7 +127,7 @@ void EeRuntime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
 }
 
 void EeRuntime::receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context) {
-    if (sif_rpc_reads != 1 || sif_bind_callbacks || data_cache_lines != 2
+    if (sif_sregs[2] != 1 || sif_bind_callbacks || data_cache_lines != 2
             || context->r[4].low != initial_sp - 464 || context->r[5].low != 1
             || context->r[29].low != context->r[4].low || rpc_end_callback_active_)
         throw UnsupportedSyscall(0x77, context->pc);

@@ -728,18 +728,15 @@ int main(int argc, char** argv) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Memory address/pc: " << std::hex << stop.address << "/" << context.pc << "\n";
             std::cerr << "Memory sp-offset/ra/main/cri/graph/display: " << std::hex << (runtime.initial_sp-context.r[29].low) << "/" << context.r[31].low << "/" << runtime.main_priority_admissions << "/" << std::dec << runtime.cri_rpc_calls << "/" << runtime.graph_startup_phase << "/" << runtime.display_reset_phase << " stat/polled/mask " << std::hex << runtime.display_intc_stat << "/" << runtime.polled_vblanks << "/" << runtime.intc_mask << "\n";
-            if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
+            if (dma5_mode && argc<18) throw;
             // Frame phase (after the first display flip, main thread): a refused access to a hardware
             // register (EE registers or GS privileged registers) is the checked boundary of the next
             // subsystem, named by its address. Refused accesses elsewhere (RAM) remain failures.
             const bool hardware_register=(stop.address>=0x10000000 && stop.address<0x10010000) || (stop.address>=0x12000000 && stop.address<0x12002000);
             const bool frame_register_boundary=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || stop.size==8 || runtime.frame_budget_reached)
                 && hardware_register;
-            if(runtime.post_sif.supplied && !frame_register_boundary) throw; // Explicit subsystem boundaries only.
+            if(argc>=18 && !frame_register_boundary) throw; // Explicit subsystem boundaries only.
             if(frame_register_boundary) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
-            else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
-                runtime.gif_channel.starts>=2 && stop.address==0x1000E010 && stop.size==4 && context.pc==0x3319CC,
-                "Unexpected GS continuation memory boundary");
             else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
                     && context.pc == 0x003319EC && runtime.dma_status_reads == 1,
                     "Unexpected DMA channel control boundary");
@@ -768,15 +765,15 @@ int main(int argc, char** argv) {
             if (bind_mode) std::cerr << "Syscall selector/handler/pc: " << std::hex << stop.selector << "/" << stop.handler << "/" << context.pc << "\n";
             else if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 464
-                    && GPR_U32(&context, 5) == 1 && runtime.sif_dma_submissions == 1 && runtime.sif_rpc_reads == 1,
+                    && GPR_U32(&context, 5) == 1 && runtime.sif_dma_submissions == 1 && runtime.sif_sregs[2] == 1,
                     "Unexpected first RPC bind submission boundary");
             else if (sif_dma_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000002
-                    && runtime.sif_dma_submissions == 1 && runtime.sif_rpc_reads == 0,
+                    && runtime.sif_dma_submissions == 1,
                     "Unexpected RPCINIT query boundary");
             else if (sif_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 240
-                    && GPR_U32(&context, 5) == 1 && runtime.sif_command_reads == 1
+                    && GPR_U32(&context, 5) == 1 && runtime.sif_register_reads >= 1
                     && runtime.data_cache_lines == 1, "Unexpected first SIF DMA submission boundary");
             else if (dma5_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000000,

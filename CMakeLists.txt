@@ -31,6 +31,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/ee_sound_dispatch.cpp
     runtime/ee/ee_thread_scheduler.cpp
     runtime/services/sif_rpc.cpp
+    runtime/services/sif_system.cpp
     runtime/services/disc_service.cpp
     runtime/services/fileio_service.cpp
     runtime/services/memory_card_service.cpp

@@ -93,143 +93,30 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
             "SIF shutdown and DMA-stop boundary differs");
     }
     if (runtime.sif_stop_calls) {
-        require(runtime.sif_stop_calls == 1 && runtime.sif2_chcr == 0 && runtime.sif2_qwc == 0
-                && (runtime.iop_reset_pending || context.r[29].low == runtime.initial_sp - 224),
-                "SIF stop continuation state differs");
-        if (!runtime.sif_reset_subaddr_reads) {
-            require(!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
-                    && runtime.guest_calls == 215 && runtime.returns == 210,
-                    "Post-stop SUBADDR boundary differs");
-        } else if (!runtime.reset_smflag_writes) {
-            require(runtime.sif_reset_subaddr_reads == 1 && runtime.returns == 212
-                    && ((stop_target == 0x32F060 && stop_source == 0x338070 && stop_resume == 0x338078
-                        && runtime.guest_calls == 216)
-                    || (!stop_target && stop_selector == 0x79 && context.pc == 0x32F068
-                        && runtime.guest_calls == 217)), "First reset SMFLAG boundary differs");
-        } else if (!runtime.iop_reset_pending) {
-            require(runtime.reset_smflag_writes == 1 && runtime.sif_reset_subaddr_reads == 1
-                    && runtime.sif_smflag == 0x30000 && !stop_target && stop_selector == 0x77
-                    && context.pc == 0x32F028 && runtime.guest_calls == 218 && runtime.returns == 213
-                    && GPR_U32(&context,4) == runtime.initial_sp - 224 && GPR_U32(&context,5) == 1,
-                    "IOP reboot submission boundary differs");
-            const std::array<std::uint32_t,4> descriptor{0x3ACC40,0x19600,104,0x44};
-            for (unsigned i=0;i<4;++i) require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+i*4)==descriptor[i],
-                                            "IOP reboot descriptor differs");
-            const std::array<std::uint32_t,6> header{104,0,0x80000003,0,36,0};
-            for (unsigned i=0;i<6;++i) require(runtime.read32(runtime.memory().data(),0x3ACC40+i*4)==header[i],
-                                            "IOP reboot packet header differs");
-            constexpr char boot_argument[] = "rom0:UDNL cdrom0:\\IRX\\IOPRP300.IMG;1";
-            require(std::equal(std::begin(boot_argument),std::end(boot_argument),runtime.memory().begin()+0x3ACC58),
-                    "IOP reboot path differs");
-        } else {
-            require(!runtime.prior_iop_services_valid && runtime.iop_epoch == 1
-                    && runtime.reset_clear_writes == 4 && runtime.reset_rpcinit == 0
-                    && runtime.reset_subaddr == 0 && runtime.sif_smflag == 0
-                    && (runtime.main_priority_admissions || runtime.sif_dma_submissions == 6+runtime.post_sif.submissions+runtime.serviceOperations()+runtime.heap_transfers+runtime.ncmd_read_calls+runtime.cri_stream_transfers) && runtime.reset_smflag_writes == 1
-                    && runtime.sif_reset_subaddr_reads == 1,
-                    "Pending IOP reboot lifetime/register state differs");
-            if(runtime.reset_ready_checkpoint_reads) {
-                require(runtime.reset_ready_checkpoint_reads==1 && (runtime.post_sif.supplied || !stop_target
-                    || (stop_target==0x310548 && stop_source==0x1002B0 && stop_resume==0x1002B8
-                        && runtime.gif_channel.starts==1)),
-                        "Unexpected ready continuation target/replay");
-                if(runtime.post_sif.supplied) {
-                    const bool chain_target=stop_target==0x32F040 && stop_source==0x3319FC && stop_resume==0x331A04 && runtime.post_sif.phase==2;
-                    const bool sreg_target=stop_target==0x331840 && stop_source==0x332140 && stop_resume==0x332148 && runtime.post_sif.phase==13;
-                    const bool service_stop=!stop_target && stop_selector==0x77 && context.pc==0x32F028
-                        && runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized
-                        && runtime.guest_calls==305 && runtime.returns==298 && context.r[29].low==runtime.initial_sp-464
-                        && GPR_U32(&context,4)==runtime.initial_sp-464 && GPR_U32(&context,5)==1;
-                    const bool cd_stop=runtime.post_cd.supplied && !runtime.post_cd.scmd_supplied && !stop_target
-                        && stop_selector==0x40 && context.pc==0x32EC68 && runtime.guest_calls==359 && runtime.returns==353
-                        && context.r[29].low==runtime.initial_sp-288 && runtime.post_cd.binds==2 && runtime.post_cd.calls==1;
-                    const std::array<std::array<std::uint32_t,3>,4> loader_targets{{
-                        {0x333B48,0x1003F8,0x100400},{0x337C28,0x10040C,0x100414},
-                        {0x337A00,0x337C34,0x337C3C},{0x337228,0x337A30,0x337A38}}};
-                    const bool loader_target=runtime.post_cd.scmd_supplied && runtime.serviceOperations()==5
-                        && std::any_of(loader_targets.begin(),loader_targets.end(),[&](const auto& t){return stop_target==t[0] && stop_source==t[1] && stop_resume==t[2];});
-                    const bool loader_stop=runtime.post_cd.scmd_supplied && !stop_target && stop_selector==0x77 && context.pc==0x32F028
-                        && runtime.guest_calls==400 && runtime.returns==391 && context.r[29].low==runtime.initial_sp-528
-                        && GPR_U32(&context,4)==runtime.initial_sp-528 && GPR_U32(&context,5)==1;
-                    const std::array<std::array<std::uint32_t,3>,3> loadfile_targets{{
-                        {0x337328,0x337A40,0x337A48},{0x325098,0x33735C,0x337364},{0x326270,0x337A68,0x337A70}}};
-                    const bool loadfile_helper=std::any_of(loadfile_targets.begin(),loadfile_targets.end(),[&](const auto& t){return stop_target==t[0] && stop_source==t[1] && stop_resume==t[2];});
-                    const bool loadfile_version_sema=!stop_target && stop_selector==0x40 && context.pc==0x32EC68 && runtime.post_loadfile.binds==1 && !runtime.post_loadfile.versions
-                        && runtime.guest_calls==411 && runtime.returns==404 && context.r[29].low==runtime.initial_sp-464;
-                    const bool loadfile_version_submit=!stop_target && stop_selector==0x77 && context.pc==0x32F028 && runtime.post_loadfile.binds==1 && !runtime.post_loadfile.versions
-                        && runtime.guest_calls==415 && runtime.returns==406 && context.r[29].low==runtime.initial_sp-608;
-                    const bool loadfile_module_sema=!stop_target && stop_selector==0x40 && context.pc==0x32EC68 && runtime.post_loadfile.versions==1
-                        && runtime.guest_calls==429 && runtime.returns==423 && context.r[29].low==runtime.initial_sp-384;
-                    const bool loadfile_module_submit=!stop_target && stop_selector==0x77 && context.pc==0x32F028 && runtime.post_loadfile.versions==1
-                        && runtime.guest_calls==433 && runtime.returns==425 && context.r[29].low==runtime.initial_sp-528 && GPR_U32(&context,4)==runtime.initial_sp-528 && GPR_U32(&context,5)==2;
-                    const bool native_loader_progress=runtime.native_module_loads>0 && runtime.post_loadfile.versions==1;
-                    const bool loader_progress=runtime.post_loadfile.supplied && runtime.post_loadfile.binds==1 && runtime.post_cd.modes==1
-                        && (native_loader_progress || loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
-                    require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
-                    // The first boot's GS setup: one reset and its read, the interrupt mask, the CRT mode and the
-                    // two clear transfers.
-                    require(runtime.gif_channel.starts>=2 && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
-                        && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
-                        && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
-                        "Fresh SIF prior GS setup differs");
-                    if(loader_progress || cd_stop || loader_target || loader_stop) {
-                        require(runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized && runtime.post_cd.binds==2 && runtime.post_cd.calls==1
-                            && runtime.read32(runtime.memory().data(),0x3A87A8)==0 && runtime.read32(runtime.memory().data(),0x3A87CC)==0x43388
-                            && runtime.read32(runtime.memory().data(),0x3A87BC)==0x441B8 && runtime.dmac_mask==0xA00000
-                            && runtime.dmac_handlers.size()==1 && runtime.dmac_enable_calls==2,
-                            "Fresh CD ownership/completion differs");
-                    }
-                    // Earlier-phase snapshot; after main's admitted priority the game reuses these clients.
-                    if((loader_progress || loader_target || loader_stop) && !runtime.main_priority_admissions) require(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1
-                        && runtime.read32(runtime.memory().data(),0x369F40)==0 && runtime.read32(runtime.memory().data(),0x369F64)==0x434F0
-                        && runtime.read32(runtime.memory().data(),0x369F54)==0x439A8 && runtime.read32(runtime.memory().data(),0x3695C0)==1,
-                        "Fresh SCMD ownership/completion differs");
-                    if(loader_stop) {
-                        require(runtime.semaphores.size()==8 && runtime.semaphores[7].count==0 && runtime.semaphores[7].maximum==1
-                            && runtime.semaphores[7].option==0x3838D8,"LOADFILE bind semaphore differs");
-                        const std::array<std::uint32_t,4> d={0x203A97C0,0x1E640,64,0x44};
-                        for(unsigned n=0;n<4;++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==d[n],"LOADFILE descriptor differs");
-                        const std::array<std::uint32_t,9> p={64,0,0x80000009,0,5,0x203A97C0,7,0x3ACC00,0x80000006};
-                        for(unsigned n=0;n<9;++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==p[n],"LOADFILE request differs");
-                    }
-                    if(loadfile_module_submit) {
-                        require(runtime.semaphores.size()==8 && !runtime.semaphores[7].count && runtime.semaphores[7].maximum==1 && runtime.semaphores[7].option==0x3838E8,
-                            "LOADFILE module semaphore differs");
-                        const std::array<std::uint32_t,8> descriptor={0x3ACA00,0x225B0,512,0,0x203A97C0,0x1E640,64,0x44};
-                        for(unsigned n=0;n<8;++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==descriptor[n],"LOADFILE module descriptor differs");
-                        const std::array<std::uint32_t,14> request={0x20040,0x225B0,0x8000000A,0,5,0x203A97C0,9,0x3ACC00,0,512,0x3ACA00,8,1,0x22568};
-                        for(unsigned n=0;n<14;++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==request[n],"LOADFILE module request differs");
-                        constexpr char path[]="cdrom0:\\IRX\\SIO2MAN.IRX;1";
-                        require(runtime.read32(runtime.memory().data(),0x3ACA00)==0 && std::memcmp(runtime.memory().data()+0x3ACA08,path,sizeof(path))==0,
-                            "LOADFILE module path/arguments differ");
-                    }
-                    if(service_stop && !runtime.post_cd.supplied) {
-                        require(runtime.post_sif.submissions==2 && runtime.post_sif.sreg_responses==1
-                            && runtime.post_sif.ee_receive_address==0x3A94C0 && runtime.dmac_mask==0xA00000
-                            && runtime.dmac_handlers.size()==1 && runtime.dmac_enable_calls==2
-                            && runtime.read32(runtime.memory().data(),0x3A9740)==1
-                            && runtime.read32(runtime.memory().data(),0x3A9598+8)==0x1E640,
-                            "Fresh SIF ownership/handshake differs");
-                        const std::array<std::uint32_t,4> descriptor={0x203A97C0,0x1E640,64,0x44};
-                        for(unsigned n=0;n<descriptor.size();++n)require(runtime.read32(runtime.memory().data(),GPR_U32(&context,4)+n*4)==descriptor[n],"Fresh RPC descriptor differs");
-                        const std::array<std::uint32_t,9> packet={64,0,0x80000009,0,5,0x203A97C0,2,0x3A87A8,0x80000592};
-                        for(unsigned n=0;n<packet.size();++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==packet[n],"Fresh RPC bind request differs");
-                    }
-                }
-                // Without the post-reset SIF evidence the run stops at its first status read, after the first
-                // boot's GS setup and clear transfers.
-                if(!runtime.post_sif.supplied) require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
-                    && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1 && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1}
-                    && runtime.gif_channel.starts==2 && stop_address==0x1000E010 && stop_size==4 && context.pc==0x3319CC
-                    && context.r[29].low==runtime.initial_sp-192 && runtime.dma_status_reads==1,
-                    "Post-reset SIF DMA status boundary differs");
-            } else
-            require((stop_target == 0x338108 && stop_source == 0x1003C8 && stop_resume == 0x1003D0
-                        && runtime.guest_calls == 222 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 32)
-                    || (!stop_target && stop_selector == 0x7A && context.pc == 0x32F078
-                        && runtime.guest_calls == 224 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 48
-                        && GPR_U32(&context,4) == 4), "Post-reboot readiness boundary differs");
-        }
+        // The SIF stop and the IOP reboot (services/sif_system.cpp): SIF2 stopped; the reboot to IOPRP300
+        // requested and finished (SMFLG: SIF, SIFCMD and the boot); the first boot's GS setup before it.
+        require(runtime.sif_stop_calls == 1 && runtime.sif2_chcr == 0 && runtime.sif2_qwc == 0, "SIF stop state differs");
+        require(runtime.iop_epoch == 1 && !runtime.prior_iop_services_valid && runtime.iop_ready_epoch == 1
+                && (runtime.sif_smflag & 0x70000) == 0x70000, "IOP reboot state differs");
+        require(runtime.gif_channel.starts>=2 && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
+            && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
+            && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
+            "First boot GS setup differs");
+        // RPC set up again over IOPRP300's SIFCMD buffer: both INIT_CMD packets, the SET_SREG reply in the
+        // EE library's table, SIF0's DMAC handler and channel enabled.
+        require(runtime.post_sif.rpc_initialized && runtime.post_sif.submissions==2 && runtime.post_sif.sreg_responses==1
+            && runtime.post_sif.ee_receive_address==0x3A94C0 && runtime.sif_sregs[0]==0x1E640 && runtime.sif_sregs[2]==1
+            && runtime.read32(runtime.memory().data(),0x3A9740)==1 && (runtime.dmac_mask&0x200000)
+            && runtime.dmac_handler_order.size()==1 && (runtime.sif0_chcr&0x100),
+            "Post-reset SIF handshake differs");
+        if(runtime.post_cd.binds==2 && runtime.post_cd.calls==1)
+            require(runtime.read32(runtime.memory().data(),0x3A87A8)==0 && runtime.read32(runtime.memory().data(),0x3A87CC)==0x43388
+                && runtime.read32(runtime.memory().data(),0x3A87BC)==0x441B8,"Fresh CD ownership/completion differs");
+        // Earlier-phase snapshot; after main's admitted priority the game reuses these clients.
+        if(runtime.post_cd.scmd_binds==1 && runtime.post_cd.modes==1 && !runtime.main_priority_admissions)
+            require(runtime.read32(runtime.memory().data(),0x369F40)==0 && runtime.read32(runtime.memory().data(),0x369F64)==0x434F0
+                && runtime.read32(runtime.memory().data(),0x369F54)==0x439A8 && runtime.read32(runtime.memory().data(),0x3695C0)==1,
+                "Fresh SCMD ownership/completion differs");
     }
 }
 
@@ -248,7 +135,7 @@ void checkBindContinuation(EeRuntime& runtime,R5900Context& context,const ProbeS
             && runtime.timer2_mode_writes == 1 && runtime.intc_mask == 0x1802
             && runtime.dmac_mask == 0xA00000 && runtime.dmac_enable_calls == 1
             && runtime.dma_status_reads == 1 && runtime.dma5_control_reads == 1
-            && runtime.sif_rpc_reads == 1 && runtime.sif_command_reads == 1,
+            && runtime.sif_sregs[0] == 0x19600 && runtime.sif_sregs[2] == 1,
             "RPC bind continuation prerequisites/effects differ");
     require(runtime.read32(runtime.memory().data(), 0x3A87CC) == 0x3F570
             && runtime.read32(runtime.memory().data(), 0x3A87BC) == 0x3FB20
@@ -394,8 +281,7 @@ void checkEntryBoundary(EeRuntime& runtime,R5900Context& context,const ProbeMode
                 "Generated DMA registration/enable state differs");
     } else require(runtime.dmac_handlers.empty() && runtime.dmac_enable_calls == 0,
                    "DMA handler state advanced before checkpoint");
-    require(runtime.sif_command_reads == (sif_mode ? 1u : 0u)
-            && runtime.data_cache_lines == (sif_rpc_mode ? 2u : sif_mode ? 1u : 0u), "Unexpected SIF/cache checkpoint counts");
+    require(runtime.data_cache_lines == (sif_rpc_mode ? 2u : sif_mode ? 1u : 0u), "Unexpected SIF/cache checkpoint counts");
     if (sif_mode && !sif_dma_mode) {
         const auto frame = runtime.initial_sp - 240;
         const std::array<std::uint32_t, 4> descriptor{0x003A9580, 0x19600, 20, 0x44};
@@ -414,16 +300,10 @@ void checkEntryBoundary(EeRuntime& runtime,R5900Context& context,const ProbeMode
                 "Generated SIF packet/current stack differs");
     }
     require(runtime.sif_dma_submissions == (sif_dma_mode ? 1u : 0u)
-            && runtime.sif_rpc_reads == (sif_rpc_mode ? 1u : 0u)
             && runtime.uncached_word_accesses == (sif_rpc_mode ? 11u : 0u)
             && runtime.uncached_byte_accesses == (sif_rpc_mode ? 2u : 0u), "Unexpected receive/RPC/alias counts");
     if (sif_dma_mode) {
-        const auto iop = runtime.sifIopMemory();
-        const std::array<std::uint32_t, 5> consumed{0, 0, 0x80000000, 0, 0x3A94C0};
-        require(iop.size() == EeRuntime::sif_iop_size && runtime.sif_ee_receive_address == 0x3A94C0
-                && std::memcmp(iop.data() + 0x19600, consumed.data(), 20) == 0
-                && std::memcmp(iop.data() + 0x196C8, &consumed[4], 4) == 0,
-                "Bounded IOP receive effects differ from capture");
+        require(runtime.sif_ee_receive_address == 0x3A94C0, "CHANGE_SADDR receive address differs from capture");
         const std::array<std::uint32_t, 4> handlers{0x3322E8, 0x3326C0, 0x3328E0, 0x3323F8};
         const std::array<unsigned, 4> ids{8, 9, 10, 12};
         for (unsigned index = 0; index < ids.size(); ++index) {

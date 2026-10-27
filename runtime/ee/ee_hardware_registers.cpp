@@ -83,8 +83,7 @@ std::optional<std::uint32_t> EeRuntime::timer3Load(std::uint32_t address) {
 
 // The DMAC's control registers. D_CTRL with DMAE only (no stall control, cycle stealing or memory
 // FIFO drain); D_PCR with every channel enabled when its priority control is on (transfers here are
-// never held per channel); D_STAT's status bits are write-one-to-clear (CIS1 is the one modelled)
-// and its mask bits toggle.
+// never held per channel); D_STAT's status bits are write-one-to-clear and its mask bits toggle.
 bool EeRuntime::dmacStore(std::uint32_t address,std::uint32_t value) {
     if(address!=0x1000E000 && address!=0x1000E010 && address!=0x1000E020)return false;
     if(address==0x1000E000) {
@@ -94,7 +93,7 @@ bool EeRuntime::dmacStore(std::uint32_t address,std::uint32_t value) {
         if((value&0x80000000u) && (value&0x03FF0000u)!=0x03FF0000u)throw UnsupportedGuestMemory(address,4);
         dmac_priority=value;
     } else {
-        if(value&2)frame_vif1.cis=false;
+        dma_cis&=~(value&0xE3FFu);
         dmac_mask^=value&0x63FF0000u;
     }
     if(!gs_display_flips)++dmac_startup_writes;

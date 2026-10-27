@@ -128,9 +128,9 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
         << ",\"deletions\":" << runtime.semaphore_deletions << ",\"dma_disables\":" << runtime.dmac_disable_calls
         << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls
-        << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"reset_subaddr_reads\":" << runtime.sif_reset_subaddr_reads
-        << ",\"smflag_writes\":" << runtime.reset_smflag_writes
-        << ",\"reset_clear_writes\":" << runtime.reset_clear_writes << ",\"iop_epoch\":" << runtime.iop_epoch
+        << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"sif_register_reads\":" << runtime.sif_register_reads
+        << ",\"sif_register_writes\":" << runtime.sif_register_writes << ",\"sif_system_commands\":" << runtime.sif_system_commands
+        << ",\"sif_smflag\":" << runtime.sif_smflag << ",\"iop_epoch\":" << runtime.iop_epoch
         << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
         << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
         << ",\"native_module_loads\":" << runtime.native_module_loads
@@ -260,13 +260,12 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"heap_binds\":" << runtime.heap_binds
         << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
         << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes
-        << ",\"post_sif_phase\":" << runtime.post_sif.phase
+        << ",\"post_sif_rpc_initialized\":" << (runtime.post_sif.rpc_initialized ? 1 : 0)
         << ",\"post_sif_submissions\":" << runtime.post_sif.submissions
         << ",\"post_sif_responses\":" << runtime.post_sif.sreg_responses
         << ",\"gif_starts\":" << runtime.gif_channel.starts
         << ",\"gs_csr_reads\":" << runtime.gs_csr_reads
         << ",\"memory_address\":" << stop_address << ",\"memory_size\":" << stop_size
-        << ",\"reset_ready_checkpoint_reads\":" << runtime.reset_ready_checkpoint_reads
         << ",\"iop_reset_pending\":" << (runtime.iop_reset_pending ? "true" : "false")
         << ",\"prior_iop_services_valid\":" << (runtime.prior_iop_services_valid ? "true" : "false")
         << ",\"sp\":" << context.r[29].low << ",\"scmd_binds\":" << runtime.scmd_bind_calls << ",\"arguments\":[" << GPR_U32(&context,4) << "," << GPR_U32(&context,5) << "]"
@@ -352,9 +351,9 @@ void writeEntryReport(EeRuntime& runtime,R5900Context& context,const ProbeModes&
            << ",\"overlay_dispatch_validations\":" << runtime.overlay_dispatch_validations
            << ",\"interior_entry_dispatches\":" << runtime.interior_entry_dispatches
         << interpreterReport(runtime)
-           << ",\"sif_dma_submissions\":" << runtime.sif_dma_submissions << ",\"sif_rpc_reads\":" << runtime.sif_rpc_reads
+           << ",\"sif_dma_submissions\":" << runtime.sif_dma_submissions << ",\"sif_register_reads\":" << runtime.sif_register_reads
            << ",\"uncached_word_accesses\":" << runtime.uncached_word_accesses << ",\"uncached_byte_accesses\":" << runtime.uncached_byte_accesses
-           << ",\"sif_command_reads\":" << runtime.sif_command_reads << ",\"data_cache_lines\":" << runtime.data_cache_lines
+           << ",\"data_cache_lines\":" << runtime.data_cache_lines
            << ",\"dma_status_reads\":" << runtime.dma_status_reads << ",\"dma5_control_reads\":" << runtime.dma5_control_reads
            << ",\"dmac_handlers\":" << runtime.dmac_handlers.size() << ",\"dmac_mask\":" << runtime.dmac_mask
            << ",\"dmac_enable_calls\":" << runtime.dmac_enable_calls

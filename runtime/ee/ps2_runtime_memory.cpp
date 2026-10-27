@@ -73,7 +73,7 @@ void EeRuntime::frameGifChainStart(std::uint32_t value) {
     std::uint64_t last_tag;std::memcpy(&last_tag,memory_.data()+last.tag,8);
     g.madr=last.data.empty()?g.madr:std::uint32_t(last.data.data()+last.data.size()-memory_.data());
     g.tadr=chain.next_tadr;g.bytes+=data.size();g.chcr=(std::uint32_t(last_tag)&0xFFFF0000u)|(value&0xFEFFu);
-    ++g.starts;++g.chain_starts;
+    ++g.starts;++g.chain_starts;dma_cis|=4; // CIS2.
 }
 
 void EeRuntime::frameVif1Start(std::uint32_t value) {
@@ -112,7 +112,7 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
     }
     v.tadr=chain.next_tadr;v.tags+=unsigned(chain.segments.size());v.codes+=vif1.codes-codes;
     v.directs+=vif1.directs-directs;v.direct_qwords+=vif1.direct_qwords-direct_qwords;
-    v.chcr=value&~0x100u;v.cis=true;++v.starts;
+    v.chcr=value&~0x100u;dma_cis|=2;++v.starts; // CIS1.
 }
 
 void EeRuntime::countDisplayFlip() {
@@ -194,7 +194,7 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         if((value&0xFFFF)==0x105) {frameGifChainStart(value);return;}
         if((value&0xFFFF)!=0x101 || vif1.r.mskpath3 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
         gs_sink.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
-        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;
+        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;dma_cis|=4; // CIS2.
         if(display_reset_phase==6 && ++display_clear_transfers==2)display_reset_phase=7; // Diagnostic: both clear requests sent.
         return;
     }
@@ -227,26 +227,15 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         if(const auto value=timer3Load(address))return *value;
     }
     if(address==0x1000F000) {checkMemory(rdram,0,0);return intcStatusPoll(rdram,context);}
-    if(post_sif.supplied && gif_channel.starts>=2 && iop_epoch==1 && context->r[29].low==initial_sp-192) {
-        if(address==0x1000E010 && context->pc==0x3319CC) {checkMemory(rdram,0,0);return post_sif.status();}
-        if(address==0x1000C000 && context->pc==0x3319EC) {checkMemory(rdram,0,0);return post_sif.channel();}
-    }
     return read32(rdram, address);
 }
 
 std::uint32_t EeRuntime::read32(std::uint8_t* rdram, std::uint32_t address) {
     if(auto* spr=scratchpadAt(address,4)) {std::uint32_t value;std::memcpy(&value,spr,4);return value;}
     address = uncachedWordAddress(rdram, address);
-    if (address == 0x1000E010 && dma_status_supplied_ && !dma_status_reads) {
-        checkMemory(rdram, 0, 0);
-        ++dma_status_reads;
-        return dma_status_word_;
-    }
-    if (address == 0x1000C000 && dma5_control_supplied_ && dma_status_reads == 1 && !dma5_control_reads) {
-        checkMemory(rdram, 0, 0);
-        ++dma5_control_reads;
-        return dma5_control_word_;
-    }
+    // D_STAT: the channel status bits and masks; SIF0's CHCR (services/sif_system.cpp).
+    if (address == 0x1000E010) { checkMemory(rdram, 0, 0); ++dma_status_reads; return dma_cis | dmac_mask; }
+    if (address == 0x1000C000) { checkMemory(rdram, 0, 0); ++dma5_control_reads; return sif0_chcr; }
     // Read-only KSEG0 view of locally supplied kernel bytes; no fabricated kernel.
     if (address >= 0x80000000 && address < 0x80000000 + kernel_snapshot_size) {
         const auto offset = address - 0x80000000;

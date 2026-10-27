@@ -551,22 +551,23 @@ int main() {
             sif_context.r[3].low = 0x7A;
             sif_context.r[4].low = 0xFFFFFFFF80000000ull;
             sif_context.r[2] = {0xA5, 0xB6};
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            // SifGetReg of a software register, any number of times: 0 until the boot's SIFCMD buffer is supplied.
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            require(sif_context.r[2].low == 0 && sif_context.r[2].high == 0xB6);
             reject([&] { sif.supplySifCommand(0x19600); });
             sif.supplyDmaStatus(0x800040);
             sif.supplyDma5Control(0x184);
             reject([&] { sif.supplySifCommand(0x19601); });
             sif.supplySifCommand(0x19600);
             reject([&] { sif.supplySifCommand(0x19600); });
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-            sif.dmac_enable_calls = 1; // Synthetic prerequisite fixture.
-            sif_context.r[4].low = 0x80000001;
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-            require(sif.sif_command_reads == 0 && sif_context.r[2].low == 0xA5);
+            sif_context.r[4].low = 0x80000020;
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Past the 32 software registers.
             sif_context.r[4].low = 0xFFFFFFFF80000000ull;
-            sif.handleSyscall(sif_ram, &sif_context, 0);
-            require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6 && sif.sif_command_reads == 1);
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            for (unsigned read = 0; read < 2; ++read) {
+                sif.handleSyscall(sif_ram, &sif_context, 0);
+                require(sif_context.r[2].low == 0x19600 && sif_context.r[2].high == 0xB6);
+            }
+            require(sif.sif_register_reads == 3);
             sif.memory().back() = 0xF1;
             require(sif.read8(sif_ram, EeRuntime::ram_size - 1) == 0xF1);
             reject([&] { sif.read8(sif_ram, EeRuntime::ram_size); });
@@ -588,9 +589,9 @@ int main() {
             sif.supplySifRpcState(1);
             reject([&] { sif.supplySifRpcState(1); });
             sif_context.r[4].low = 0x80000002;
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-            reject([&] { sif.read32(sif_ram, 0x20000200); });
-            require(sif.sif_rpc_reads == 0);
+            sif.handleSyscall(sif_ram, &sif_context, 0);
+            require(sif_context.r[2].low == 1); // RPC initialized, as the BIOS's IOP left it.
+            require(sif.read32(sif_ram, 0x20000200) == sif.read32(sif_ram, 0x200)); // The uncached alias.
             reject([&] { sif.supplySifDma(iop_fixture, 0x701); });
             const std::array<std::uint32_t, 4> descriptor{0x3A9580, 0x19600, 20, 0x44};
             const std::array<std::uint32_t, 5> packet{20, 0, 0x80000000, 0, 0x3A94C0};
@@ -606,22 +607,12 @@ int main() {
             require(std::equal(iop_fixture.begin(), iop_fixture.end(), sif.sifIopMemory().begin()) && sif.sif_dma_submissions == 0);
             sif.write32(sif_ram, 0x3A9588, 0x80000000);
             const std::vector<std::uint8_t> ee_before_dma(sif.memory().begin(), sif.memory().end());
-            sif.handleSyscall(sif_ram, &sif_context, 0);
-            auto expected_iop = iop_fixture;
-            std::memcpy(expected_iop.data() + 0x19600, packet.data(), 20);
-            expected_iop[0x19600] = 0;
-            const std::uint32_t new_receive = 0x3A94C0;
-            std::memcpy(expected_iop.data() + 0x196C8, &new_receive, 4);
-            require(std::equal(expected_iop.begin(), expected_iop.end(), sif.sifIopMemory().begin())
-                    && sif.sif_dma_submissions == 1 && sif.sif_ee_receive_address == new_receive
-                    && sif_context.r[2].low == 0x701 && sif_context.r[2].high == 0xB6
+            sif.handleSyscall(sif_ram, &sif_context, 0); // CHANGE_SADDR into the BIOS's SIFCMD buffer.
+            require(sif.sif_dma_submissions == 1 && sif.sif_ee_receive_address == 0x3A94C0 && sif.sif_system_commands == 1
+                    && sif_context.r[2].low != 0 && sif_context.r[2].high == 0xB6
                     && std::equal(ee_before_dma.begin(), ee_before_dma.end(), sif.memory().begin()));
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-            sif_context.r[3].low = 0x7A;
-            sif_context.r[4].low = 0xFFFFFFFF80000002ull;
-            sif.handleSyscall(sif_ram, &sif_context, 0);
-            require(sif.sif_rpc_reads == 1 && sif_context.r[2].low == 1 && sif_context.r[2].high == 0xB6);
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
+            sif.write32(sif_ram, 0x204, 0x1E640);
+            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Not this boot's SIFCMD buffer.
             sif.write32(sif_ram, 0x20000100, 0x89ABCDEF);
             require(sif.read32(sif_ram, 0x100) == 0x89ABCDEF && sif.read32(sif_ram, 0x20000100) == 0x89ABCDEF);
             sif.write32(sif_ram, 0x104, 0x76543210);
@@ -629,7 +620,7 @@ int main() {
             reject([&] { sif.read32(sif_ram, 0x20000001); });
             reject([&] { sif.write32(sif_ram, 0x22000000, 0); });
             reject([&] { sif.read32(nullptr, 0x20000000); });
-            require(sif.uncached_word_accesses == 3);
+            require(sif.uncached_word_accesses == 4);
             sif.write8(sif_ram, 0x20000101, 0x55);
             require(sif.read8(sif_ram, 0x101) == 0x55 && sif.read8(sif_ram, 0x20000101) == 0x55);
             reject([&] { sif.read8(sif_ram, 0x22000000); });
@@ -799,7 +790,8 @@ int main() {
         EeRuntime dma_checkpoint;
         dma_checkpoint.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
         auto* dma_ram = dma_checkpoint.memory().data();
-        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
+        // D_STAT and SIF0's CHCR are registers: readable at any time, the boot's values once supplied.
+        require(dma_checkpoint.read32(dma_ram, 0x1000E010) == 0 && dma_checkpoint.read32(dma_ram, 0x1000C000) == 0);
         reject([&] { dma_checkpoint.supplyDma5Control(0x184); });
         reject([&] { dma_checkpoint.supplyDmaStatus(0); });
         dma_checkpoint.supplyDmaStatus(0x00800040);
@@ -807,21 +799,17 @@ int main() {
         reject([&] { dma_checkpoint.supplyDma5Control(0); });
         dma_checkpoint.supplyDma5Control(0x184);
         reject([&] { dma_checkpoint.supplyDma5Control(0x184); });
-        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000C000); });
         reject([&] { dma_checkpoint.Load32(nullptr, &context, 0x1000E010); });
-        require(dma_checkpoint.dma_status_reads == 0 && dma_checkpoint.dma5_control_reads == 0);
-        require(dma_checkpoint.Load32(dma_ram, &context, 0x1000E010) == 0x00800040);
-        require(dma_checkpoint.read32(dma_ram, 0x1000C000) == 0x184);
-        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
-        reject([&] { dma_checkpoint.read32(dma_ram, 0x1000C000); });
-        dma_checkpoint.Store32(dma_ram, &context, 0x1000E010, 0x20); // Clears CIS5: the mask stays.
-        require(dma_checkpoint.dmac_mask == 0x800000 && dma_checkpoint.dma_status_reads == 1 && dma_checkpoint.dma5_control_reads == 1
+        for (unsigned read = 0; read < 2; ++read)
+            require(dma_checkpoint.Load32(dma_ram, &context, 0x1000E010) == 0x00800040
+                    && dma_checkpoint.read32(dma_ram, 0x1000C000) == 0x184);
+        dma_checkpoint.Store32(dma_ram, &context, 0x1000E010, 0x20); // CIS5 is clear already: CIS6 and the mask stay.
+        require(dma_checkpoint.read32(dma_ram, 0x1000E010) == 0x00800040);
+        require(dma_checkpoint.dmac_mask == 0x800000 && dma_checkpoint.dma_status_reads == 4 && dma_checkpoint.dma5_control_reads == 3
                 && std::all_of(dma_checkpoint.memory().begin(), dma_checkpoint.memory().end(),
                                [](auto byte) { return byte == 0xA5; }));
         R5900Context dma_context{};
-        dma_context.r[3].low = 0x16;
         dma_context.r[4].low = 5;
-        reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
         dma_context.r[3].low = 0x12;
         dma_context.r[5].low = 0x1000;
         dma_context.r[6].low = 0;
@@ -836,7 +824,7 @@ int main() {
                 && dma_checkpoint.dmac_handler_order == std::vector<std::uint32_t>{1});
         for (const auto index : {4u, 5u, 6u}) {
             const auto saved = dma_context.r[index];
-            dma_context.r[index].low = index == 4 ? 6 : index == 5 ? 0x1001 : 1;
+            dma_context.r[index].low = index == 4 ? 10 : index == 5 ? 0x1001 : 1;
             reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
             dma_context.r[index] = saved;
         }
@@ -847,11 +835,29 @@ int main() {
                 && dma_checkpoint.dmac_enable_calls == 1);
         dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
         require(dma_context.r[2].low == 0 && dma_checkpoint.dmac_enable_calls == 2);
-        dma_context.r[4].low = 6;
+        dma_context.r[4].low = 6; // Any channel 0 to 9.
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 1 && dma_checkpoint.dmac_mask == 0x00E00000 && dma_checkpoint.dmac_enable_calls == 3);
+        dma_context.r[3].low = 0x17;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 1 && dma_checkpoint.dmac_mask == 0x00A00000 && dma_checkpoint.dmac_disable_calls == 1);
+        dma_context.r[4].low = 10;
         reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
-        require(dma_checkpoint.dmac_mask == 0x00A00000 && dma_checkpoint.dmac_enable_calls == 2);
-        dma_context.r[4].low = 5;
+        // A second handler takes id 2; removing the first frees id 1, which the next one takes.
         dma_context.r[3].low = 0x12;
+        dma_context.r[4].low = 6;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 2 && dma_checkpoint.dmac_handler_order == std::vector<std::uint32_t>{2, 1});
+        dma_context.r[3].low = 0x13;
+        dma_context.r[4].low = 5;
+        dma_context.r[5].low = 1;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 0 && dma_checkpoint.dmac_removals == 1);
+        reject([&] { dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0); });
+        dma_context.r[3].low = 0x12;
+        dma_context.r[5].low = 0x1000;
+        dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
+        require(dma_context.r[2].low == 1 && dma_checkpoint.dmac_handlers.size() == 2);
         dma_checkpoint.dmac_handlers.resize(128);
         dma_checkpoint.handleSyscall(dma_ram, &dma_context, 0);
         require(dma_context.r[2].low == UINT64_MAX && dma_checkpoint.dmac_handlers.size() == 128);
@@ -1461,46 +1467,41 @@ int main() {
         require(cache.cache_requests == 2 && cache.instruction_cache_invalidations == 1);
         EeRuntime shutdown;
         R5900Context shutdown_context{};
-        shutdown_context.r[3].low = 0x17; shutdown_context.r[4].low = 5;
+        // DMAC channels and handlers, the SIF stop and SMFLG from any context (services/sif_system.cpp).
+        shutdown_context.r[3].low = 0x17; shutdown_context.r[4].low = 10;
         shutdown_context.r[2].high = 0x1122334455667788ULL;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        shutdown.scmd_mmode_calls = 1;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); }); // No channel 10.
         shutdown.dmac_handlers.push_back({5, 0x331DF0, 0, 0x38BDF0});
         shutdown.dmac_handler_order.push_back(1); shutdown.dmac_mask = 0xA00000;
         shutdown_context.r[4].low = 4;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.dmac_mask == 0xA00000 && shutdown.dmac_disable_calls == 0);
+        shutdown.handleSyscall(nullptr, &shutdown_context, 0);
+        require(shutdown.dmac_mask == 0xA00000 && shutdown_context.r[2].low == 0 && shutdown.dmac_disable_calls == 1); // Already off.
         shutdown_context.r[4].low = 5;
         shutdown.handleSyscall(nullptr, &shutdown_context, 0);
         require(shutdown.dmac_mask == 0x800000 && shutdown_context.r[2].low == 1
                 && shutdown_context.r[2].high == 0x1122334455667788ULL);
         shutdown_context.r[3].low = 0x13; shutdown_context.r[5].low = 2;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.dmac_handlers.size() == 1 && shutdown.dmac_removals == 0);
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); }); // No handler 2.
+        require(shutdown.dmac_removals == 0);
         shutdown_context.r[5].low = 1;
         shutdown.handleSyscall(nullptr, &shutdown_context, 0);
-        require(shutdown.dmac_handlers.empty() && shutdown.dmac_handler_order.empty()
-                && shutdown.dmac_removals == 1 && shutdown_context.r[2].low == 0
+        require(shutdown.dmac_handler_order.empty() && shutdown.dmac_removals == 1 && shutdown_context.r[2].low == 0
                 && shutdown_context.r[2].high == 0x1122334455667788ULL);
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); }); // Already removed.
+        shutdown_context.r[3].low = 0x6B; shutdown_context.r[4].low = 2;
         reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        shutdown_context.r[3].low = 0x6B; shutdown_context.r[4].low = 1;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.sif_stop_calls == 0);
-        shutdown_context.r[3].low = 0x79; shutdown_context.r[4].low = 4;
-        shutdown_context.r[5].low = 0x40000; shutdown.sif_stop_calls = 1;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.reset_smflag_writes == 0);
-        shutdown_context.r[3].low = 0x7A; shutdown_context.r[4].low = 0x80000000;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.sif_reset_subaddr_reads == 0);
-        shutdown_context.r[3].low = 0x77;
+        shutdown_context.r[4].low = 1; shutdown.sif2_qwc = 5;
+        shutdown.handleSyscall(nullptr, &shutdown_context, 0);
+        require(shutdown.sif_stop_calls == 1 && !shutdown.sif2_qwc && shutdown_context.r[2].low == 0);
+        shutdown.sif_smflag = 0x30000; // An EE write to SMFLG clears bits and returns what remains.
+        shutdown_context.r[3].low = 0x79; shutdown_context.r[4].low = 4; shutdown_context.r[5].low = 0x10000;
+        shutdown.handleSyscall(nullptr, &shutdown_context, 0);
+        require(shutdown.sif_smflag == 0x20000 && shutdown_context.r[2].low == 0x20000);
+        shutdown_context.r[4].low = 3;
+        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); }); // MSFLG is not reached.
+        shutdown_context.r[3].low = 0x77; shutdown_context.r[5].low = 2;
         reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
         require(shutdown.iop_epoch == 0 && !shutdown.iop_reset_pending && shutdown.prior_iop_services_valid);
-        shutdown.iop_reset_pending = true;
-        shutdown_context.r[3].low = 0x79; shutdown_context.r[4].low = 4;
-        shutdown_context.r[5].low = 0x10000;
-        reject([&] { shutdown.handleSyscall(nullptr, &shutdown_context, 0); });
-        require(shutdown.reset_clear_writes == 0);
         EeRuntime zero_checkpoint;
         reject([&] { zero_checkpoint.expectStartupZeroRegion(16, 32); });
         zero_checkpoint.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
@@ -1673,8 +1674,9 @@ int main() {
         require(dmac.dmac_startup_writes==3 && dmac.dmac_control==1 && dmac.dmac_priority==0x83FF0002 && dmac.dmac_mask==0xA00000);
         dmac.write32(dmac_ram,0x1000E010,0x200000);require(dmac.dmac_mask==0x800000);
         dmac.write32(dmac_ram,0x1000E010,0x200000);require(dmac.dmac_mask==0xA00000);
-        dmac.frame_vif1.cis=true;dmac.gs_display_flips=1;dmac.write32(dmac_ram,0x1000E010,2);
-        require(!dmac.frame_vif1.cis && dmac.dmac_mask==0xA00000 && dmac.dmac_startup_writes==5);
+        dmac.dma_cis=6;dmac.gs_display_flips=1;dmac.write32(dmac_ram,0x1000E010,2);
+        require(dmac.dma_cis==4 && dmac.dmac_mask==0xA00000 && dmac.dmac_startup_writes==5); // CIS1 cleared, CIS2 kept.
+        require(dmac.read32(dmac_ram,0x1000E010)==0xA00004);
         // VIF1 and GIF setup from any pc: VIF1 reset and error masks, the VU1 reset, configuration codes
         // through the VIF1 FIFO; a GIF reset records VIF1 as the setup left it.
         EeRuntime vif;vif.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* vif_ram=vif.memory().data();
@@ -1692,9 +1694,7 @@ int main() {
             && setup.fifo_writes==2 && setup.codes==7 && setup.vif_resets==1 && setup.vu_resets==1 && vif.gif_resets==1);
         EeRuntime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
         auto* disc_ram=disc_alias.memory().data();disc_alias.write64(disc_ram,0x3A8600,0x123456789ABCDEF0);
-        // The uncached alias at every width follows the word/byte rule: only after RPCINIT; owned RAM is
-        // coherent, so the alias reads and writes the same bytes.
-        reject([&]{disc_alias.read64(disc_ram,0x203A8600);});disc_alias.sif_rpc_reads=1;
+        // The uncached alias at every width: owned RAM is coherent, so the alias reads and writes the same bytes.
         require(disc_alias.read64(disc_ram,0x203A8600)==0x123456789ABCDEF0);
         disc_alias.write64(disc_ram,0x20BC9880,0x0102030405060708);require(disc_alias.read64(disc_ram,0xBC9880)==0x0102030405060708);
         disc_alias.write16(disc_ram,0x20BC9890,0xBEEF);require(disc_alias.read16(disc_ram,0xBC9890)==0xBEEF && disc_alias.uncached_wide_accesses==3);
@@ -1941,20 +1941,20 @@ int main() {
             EeRuntime vf;vf.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=vf.memory().data();
             auto tag=[&](std::uint32_t at,std::uint64_t lo,std::uint64_t hi){std::memcpy(ram+at,&lo,8);std::memcpy(ram+at+8,&hi,8);};
             tag(0x2000,0x70000000,0);vf.frame_vif1.tadr=0x2000;vf.frameVif1Start(0x145);
-            require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && vf.frame_vif1.cis);
+            require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && (vf.dma_cis&2));
             tag(0x2100,0x10000001,0x5000000110000000ull);tag(0x2110,0x8000,0);tag(0x2120,0x70000000,0); // FLUSHE, DIRECT 1: empty GIFtag (EOP).
             vf.frame_vif1.tadr=0x2100;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==2 && vf.frame_vif1.directs==1 && vf.frame_vif1.direct_qwords==1 && vf.gs_sink.transfers==1 && vf.frame_vif1.tadr==0x2130);
             auto refuse=[&](std::uint32_t at,std::uint32_t code) {
-                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;const auto starts=vf.frame_vif1.starts,transfers=vf.gs_sink.transfers;
+                vf.dma_cis=0;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;const auto starts=vf.frame_vif1.starts,transfers=vf.gs_sink.transfers;
                 bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
-                require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gs_sink.transfers==transfers
+                require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.dma_cis && vf.gs_sink.transfers==transfers
                     && vf.frame_vif1.blocked_code==code && vf.frame_vif1.unsupported==before+1);
             };
             tag(0x3000,0x10000001,0x0800000000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x08000000); // Undefined VIF command.
             // DIRECT 2 whose second quadword is the next tag's upper half and the first half of its data.
             tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0,0);
-            vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
+            vf.dma_cis=0;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
             require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gs_sink.transfers==2 && vf.frame_vif1.tadr==0x3140);
             tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x1000000000008001ull,0xE);tag(0x3220,0x70000000,0);
             refuse(0x3200,0x50000000); // DIRECT whose PACKED GIF packet claims more data than it holds: refused by the GS.

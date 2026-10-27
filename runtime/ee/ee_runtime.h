@@ -250,11 +250,11 @@ public:
     }
     unsigned scratchpad_accesses = 0;
 
-    // PS2SDK UNCACHED_SEG: reached low 32 MiB main-RAM alias only.
-    // Enabled after the explicit RPCINIT query; no TLB/MMIO or cache state.
+    // PS2SDK UNCACHED_SEG: the low 32 MiB main-RAM alias (owned RAM is coherent: no TLB, MMIO or
+    // cache state).
     std::uint32_t uncachedWordAddress(std::uint8_t* rdram, std::uint32_t address) {
         if (address < 0x20000000 || address >= 0x22000000) return address;
-        if (sif_rpc_reads != 1 || address % 4) throw UnsupportedGuestMemory(address, 4);
+        if (address % 4) throw UnsupportedGuestMemory(address, 4);
         const auto physical = address - 0x20000000;
         checkMemory(rdram, physical, 4);
         ++uncached_word_accesses;
@@ -263,7 +263,6 @@ public:
     unsigned uncached_word_accesses = 0;
     std::uint32_t uncachedByteAddress(std::uint8_t* rdram, std::uint32_t address) {
         if (address < 0x20000000 || address >= 0x22000000) return address;
-        if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, 1);
         const auto physical = address - 0x20000000;
         checkMemory(rdram, physical, 1);
         ++uncached_byte_accesses;
@@ -273,7 +272,6 @@ public:
     // The same alias for halfword, doubleword and quadword accesses (owned RAM is coherent).
     std::uint32_t uncachedWideAddress(std::uint32_t address, unsigned size) {
         if (address < 0x20000000 || address >= 0x22000000) return address;
-        if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, size);
         ++uncached_wide_accesses;
         return address - 0x20000000;
     }
@@ -427,7 +425,6 @@ public:
     // Validate a complete aligned line; this does not perform DMA or synchronize an IOP.
     void dataCacheLine(std::uint8_t* rdram, std::uint32_t address) {
         if (address >= 0x20000000 && address < 0x22000000) {
-            if (sif_rpc_reads != 1) throw UnsupportedGuestMemory(address, 64);
             address -= 0x20000000;
         }
         if (address & 63) throw UnsupportedGuestMemory(address, 64);
@@ -453,9 +450,9 @@ public:
     void supplySifRpcState(std::uint32_t word) {
         if (sif_iop_.empty() || sif_rpc_supplied_ || word != 1)
             throw std::runtime_error("SIF RPC state checkpoint differs or was already supplied");
+        sif_sregs[2] = word; // RPC initialized, as the BIOS's IOP left it.
         sif_rpc_supplied_ = true;
     }
-    unsigned sif_rpc_reads = 0;
     void supplySifDma(std::span<const std::uint8_t> before, std::uint32_t result);
     void supplySifBind(std::span<const std::uint8_t> bundle);
     void supplyCdInit(std::span<const std::uint8_t> bundle);
@@ -506,7 +503,7 @@ public:
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes run by the VIF1 interpreter, which owns VU1 (VU1_PIPELINE_PLAN.md).
     Vif1 vif1;
-    struct FrameVif1 {std::uint32_t chcr=0,madr=0,tadr=0,qwc=0;bool cis=false;unsigned sends=0,starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
+    struct FrameVif1 {std::uint32_t chcr=0,madr=0,tadr=0,qwc=0;unsigned sends=0,starts=0,tags=0,codes=0,directs=0;std::uint64_t direct_qwords=0;
         std::uint32_t blocked_code=0,blocked_tag=0,blocked_tadr=0;unsigned unsupported=0;} frame_vif1;
     struct FrameVif1Unsupported {std::uint32_t code,tag;};
     // GS readback (ee_gs_readback.cpp): FIFO and bus direction, the FINISH events already cleared in
@@ -612,11 +609,17 @@ public:
     std::uint32_t gsPutImr(std::uint64_t mask,std::uint32_t pc);
     void gsSetCrt(std::uint64_t interlace,std::uint64_t mode,std::uint64_t field_mode,std::uint32_t pc);
     std::array<std::uint32_t,3> gs_crt_request{};
-    unsigned iop_epoch=0, reset_clear_writes=0, reset_ready_checkpoint_reads=0;
-    std::uint32_t reset_rpcinit=1, reset_subaddr=0x19600;
-    unsigned sif_stop_calls = 0, sif_reset_subaddr_reads = 0, reset_smflag_writes = 0;
+    // The SIF (services/sif_system.cpp): SMFLG as the IOP sets it and EE writes clear it, the kernel's
+    // software registers (0x80000000 + n), the SIF0 and SIF2 channels' control, the IOP boot (the BIOS's
+    // IOP is epoch 0, each reboot the next) and when the EE first saw it ready.
+    unsigned iop_epoch=0, iop_ready_epoch=0;
     std::uint32_t sif_smflag = 0;
-    std::uint32_t sif2_chcr = 0, sif2_qwc = 0;
+    std::array<std::uint32_t,32> sif_sregs{};
+    std::uint32_t sif0_chcr = 0, sif2_chcr = 0, sif2_qwc = 0;
+    unsigned sif_stop_calls = 0, sif_register_reads = 0, sif_register_writes = 0, sif_system_commands = 0;
+    std::uint32_t iopCommandBuffer() const {return iop_epoch?0x1E640u:0x19600u;} // SIFCMD's buffer: the BIOS's, then IOPRP300's.
+    bool handleSifSystemSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context);
+    bool sifSystemCommand(std::uint8_t* rdram,R5900Context* context);
     unsigned scmd_bind_calls = 0, scmd_mmode_calls = 0;
     unsigned semaphore_polls = 0;
     unsigned cd_init_calls = 0, cd_init_context_preservations = 0, cd_semaphores_created = 0;
@@ -628,27 +631,30 @@ public:
     std::span<const std::uint8_t> sifIopMemory() const { return sif_iop_; }
     unsigned sif_dma_submissions = 0;
     std::uint32_t sif_ee_receive_address = 0;
+    // The boot's state, as the BIOS left it (captures): SIFCMD's buffer in software register 0, the DMAC
+    // status (D_STAT: SIF1's channel interrupt, SIF2 masked) and SIF0's chain receive running.
     void supplySifCommand(std::uint32_t word) {
         if (!dma5_control_supplied_ || sif_command_supplied_ || word != 0x19600)
             throw std::runtime_error("SIF checkpoint differs or was already supplied");
-        sif_command_word_ = word;
+        sif_sregs[0] = word;
         sif_command_supplied_ = true;
     }
-    unsigned sif_command_reads = 0;
     void supplyDmaStatus(std::uint32_t word) {
         if (dma_status_supplied_ || word != 0x00800040)
             throw std::runtime_error("Unsupported/repeated DMA status checkpoint");
-        dma_status_word_ = word;
+        dma_cis = word & 0xFFFF;
         dmac_mask = word & 0xFFFF0000;
         dma_status_supplied_ = true;
     }
     void supplyDma5Control(std::uint32_t word) {
         if (!dma_status_supplied_ || dma5_control_supplied_ || word != 0x184)
             throw std::runtime_error("Unsupported/repeated DMA 5 control checkpoint");
-        dma5_control_word_ = word;
+        sif0_chcr = word;
         dma5_control_supplied_ = true;
     }
     unsigned dma_status_reads = 0, dma5_control_reads = 0;
+    // D_STAT's channel status bits (CIS): set when a GIF or VIF1 transfer completes, cleared by writing 1.
+    std::uint32_t dma_cis = 0;
     struct DmacHandler { std::uint32_t channel, address, arg, gp; };
     std::vector<DmacHandler> dmac_handlers;
     std::vector<std::uint32_t> dmac_handler_order;
@@ -890,9 +896,7 @@ private:
     bool sif_rpc_supplied_ = false;
     bool rpc_end_callback_active_ = false;
     bool sif_command_supplied_ = false;
-    std::uint32_t sif_command_word_ = 0;
     bool dma_status_supplied_ = false, dma5_control_supplied_ = false;
-    std::uint32_t dma_status_word_ = 0, dma5_control_word_ = 0;
     bool osd_config_supplied = false, osd_readback_supplied = false;
     std::uint32_t osd_config_word = 0;
     std::uint64_t addIntcHandler(std::uint32_t cause, std::uint32_t address, std::uint32_t arg, std::uint32_t gp) {

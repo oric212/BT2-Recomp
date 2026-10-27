@@ -33,7 +33,7 @@ void EeRuntime::frameVif1Send(std::uint32_t value) {
     auto& v=frame_vif1;
     if(!v.qwc || gs_readback.fdr || v.madr>=ram_size || std::size_t(v.qwc)*16>ram_size-v.madr)throw UnsupportedGuestMemory(0x10009000,4);
     frameVif1Codes(wordsAt(std::span<const std::uint8_t>(memory_.data(),ram_size),v.madr,v.qwc));
-    v.madr+=v.qwc*16;v.qwc=0;v.chcr=value&~0x100u;v.cis=true;++v.sends;
+    v.madr+=v.qwc*16;v.qwc=0;v.chcr=value&~0x100u;dma_cis|=2;++v.sends;
 }
 
 void EeRuntime::frameVif1Receive(std::uint32_t value) {
@@ -43,7 +43,7 @@ void EeRuntime::frameVif1Receive(std::uint32_t value) {
         || v.madr>=ram_size || std::size_t(v.qwc)*16>ram_size-v.madr)throw UnsupportedGuestMemory(0x10009000,4);
     gsDownload(std::span<std::uint8_t>(memory_.data()+v.madr,std::size_t(v.qwc)*16));
     gs_readback.dma_qwords+=v.qwc;
-    v.madr+=v.qwc*16;v.qwc=0;v.chcr=value&~0x100u;v.cis=true;
+    v.madr+=v.qwc*16;v.qwc=0;v.chcr=value&~0x100u;dma_cis|=2;
 }
 
 void EeRuntime::gsDownload(std::span<std::uint8_t> out) {

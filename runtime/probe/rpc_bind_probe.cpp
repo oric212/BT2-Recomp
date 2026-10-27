@@ -17,7 +17,6 @@ int main(int argc, char** argv) {
         runtime.loadMemory(image);
         // Explicit isolated fixture: reconstruct pending packet from the checked
         // IOP request, before the captured callback's completed EE state.
-        runtime.sif_rpc_reads = 1;
         runtime.semaphores.resize(4);
         runtime.semaphores[3] = {0, 1, 0x3838D8};
         auto* memory = runtime.memory().data();
