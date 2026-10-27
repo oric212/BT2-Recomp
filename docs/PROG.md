@@ -58,7 +58,7 @@ Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](
 3. **Blur** the user sees in some text and screens and on the fighters' edges, then **the randomizer** (the random fight music checked correct and varying with timing; the user's path needed, [handoff](progress/ACTIVE_PASS.md)); then the user's look at the HD textures (finished 2026-10-26, [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) step 10) and the fighters' lit variants.
 4. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 5. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
-6. **Final validation:** the exhaustive battle sweep, then the runtime generalization plan's groups 4 to 6.
+6. **Final validation:** the exhaustive battle sweep. The runtime generalization plan's groups 4 to 6 are done (2026-10-27; the census 108 to 35 lines, two items left with their reason in the [plan](plans/ee/RUNTIME_GENERALIZATION_PLAN.md)); the battle run's baseline is now `7f996c1524a22bea`.
 
 ## Links
 

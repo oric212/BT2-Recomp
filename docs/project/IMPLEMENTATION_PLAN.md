@@ -52,7 +52,7 @@ Next, in order (the user, 2026-10-20 and 2026-10-25):
 4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md); native passes inside paraLLEl-GS for the HD outline and heavy effects: [hybrid rendering plan](../plans/graphics/HYBRID_RENDERING_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
 5. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
 6. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
-7. **At the very end:** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)), once the game boots and everything works.
+7. **Done 2026-10-27 (the user moved it forward):** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)); two items left with their reason there.
 
 ## Working method
 

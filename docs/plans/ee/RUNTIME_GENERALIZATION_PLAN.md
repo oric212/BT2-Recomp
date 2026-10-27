@@ -21,7 +21,7 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 5. **SIF and IOP replays after the IOP reset** (the post-reset LOADFILE, SCMD and SIF register sequences): general SIF register and DMA behavior.
 6. **The rest** (dispatch, sound dispatch, services, VU0 macro): case by case.
 
-**Groups 4 to 6 paused (the user, 2026-10-20):** they are replays of the startup that run the same way on every boot; making them general rebuilds the startup's hardware model and most of the 32 startup comparisons, without changing anything the game can reach. Coverage comes first; these groups wait until after the final validation sweep. **Resumed 2026-10-27 (the user):** group 4 done, group 5 in progress (below).
+**Groups 4 to 6 paused (the user, 2026-10-20):** they are replays of the startup that run the same way on every boot; making them general rebuilds the startup's hardware model and most of the 32 startup comparisons, without changing anything the game can reach. Coverage comes first; these groups wait until after the final validation sweep. **Resumed 2026-10-27 (the user):** groups 4 and 5 done, group 6 done except the two items listed under its result.
 
 ## Group 1 result
 
@@ -72,6 +72,20 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 - One transfer id for every SIF transfer (`submitSifDma`): the kernel's numbering with the descriptor count in the low byte, which gives all three captured ids (the first CHANGE_SADDR 0x701, the first bind 0x801, the CD-init call 0x902). It replaces 23 per-service tokens, among them the memory card's and the sound services' first-call cases.
 - The captured bundles stay as evidence: the probe checks them against the answers the native services give. Deci2Call kputs (16) is accepted from any pc and parameter block (group 6).
 - The gate passed (31/31 comparisons, battle hash unchanged); samples: story episode 0, the Dragon Tournament and a CPU battle, part by part as after group 4, nothing interpreted. The census counts 35 lines, all of them diagnostic counters except the dispatch's idle points and the sound thread's start (group 6).
+
+## Group 6 result
+
+- **Staged probe modes removed:** the probe takes every startup input (the runner always passed them all); the staged stop checks, their reports and the reduced `generated-entry-probe` test are gone (about 700 lines), and `run_pipeline.py` runs the full startup probe. The supply functions keep checking each capture against what the general behavior answers.
+- **OSD configuration:** SetOsdConfigParam stores the word, GetOsdConfigParam returns the last one (the boot's until a set), from any pc, instead of a read count and a same-value write.
+- **Interrupt enable:** main runs with IE set, as the kernel enters a user thread (the captured Status at the sound thread's start is 0x70030C11); the recompiled EI and DI change EIE. This replaces the dispatch checkpoint that set IE at the sound thread's start (target, source and call count).
+- **Deci2Call kputs** and the services' **first-call return values** (group 5's transfer id) are general; the VU0 macro mode reads idle (group 4).
+- The gate passed after each change (31/31 comparisons, battle hash unchanged).
+
+**Left, with the reason:**
+
+- **The dispatch's three idle points** (main's asynchronous and synchronous load polls, the overlay's asset-status poll, keyed on the call's target and source): they decide when logical time advances (one VBlank per poll), not whether a request is accepted. Replacing them with the general busy-main field (a VBlank after a field's worth of calls) changes how many polls each load takes and the state the game samples in between: a timing-model change to make with a capture of the original's load timing, not inside this plan.
+- **The sound thread's first wait** (the SOUNDS bind completed when main waits on its semaphore, `ee_sound_dispatch.cpp`): general behavior here is a blocking semaphore wait that runs the woken thread, which group 3 left as an explicit stop (the kernel's wait-queue order has no capture). It belongs with that work.
+- **Diagnostic counters** (the census's remaining lines in the system calls, the GS privileged registers and the memory card): counters only, as the plan allows.
 
 ## Limits
 
