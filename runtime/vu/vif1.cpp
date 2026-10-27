@@ -22,6 +22,7 @@ void Vif1::process(std::span<const std::uint32_t> words,Registers& r,Vif1* self,
             const auto data=words.subspan(at+1,count);at+=1+count;return data;
         };
         if(self)++self->codes;
+        r.code=code;
         if(command>=0x60) {
             // UNPACK vn/vl: `num` vectors to VU1 data memory from address imm (plus TOPS with FLG).
             // Modelled: the forms that define all four fields (S and V4), written to consecutive

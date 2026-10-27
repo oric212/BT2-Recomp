@@ -196,29 +196,41 @@ int main() {
     }
     {
         // Logical Timer 1, H-BLANK clock: 525 half-lines per field, one count per HBLANK while CUE.
-        LogicalTimer1 t;reject([&]{t.writeMode(0x83);});reject([&]{t.configure(1);});
-        t.configure(3);t.field();require(t.halflines()==525 && t.count()==0); // Stopped: no counting.
+        LogicalTimer1 t;reject([&]{t.writeMode(1);});reject([&]{t.writeMode(0x183);});require(!t.counting() && !t.mode());
+        t.writeMode(3);t.field();require(t.halflines()==525 && t.count()==0); // Stopped: no counting.
         t.writeMode(0x83);require(t.counting());
         for(unsigned n=0;n<10;++n){const auto target=t.nextLine();require(!t.crossesField(target));t.lineTo(target);}
         require(t.count()==10 && t.halflines()==545);
         t.field();require(t.halflines()==1050 && t.count()==10+(1050/2-545/2)); // 253 more HBLANKs.
         const auto before=t.count();
         t.field();require(t.count()==before+(1575/2-1050/2));
-        reject([&]{t.writeCount(0);});reject([&]{t.writeMode(0x82);});
-        t.writeMode(3);require(!t.counting());t.writeCount(0);require(t.count()==0);
+        t.writeMode(3);require(!t.counting());t.writeCount(0x10005);require(t.count()==5);
         // A line that reaches the boundary: the field is delivered first, then the line completes.
-        LogicalTimer1 u;u.configure(3);u.writeMode(0x83);
+        LogicalTimer1 u;u.writeMode(0x83);
         while(!u.crossesField(u.nextLine()))u.lineTo(u.nextLine());
         const auto target=u.nextLine();u.field();u.lineTo(target);require(u.halflines()==target && u.count()==target/2);
         // COUNT wraps at 16 bits without a flag (MODE 3 enables no overflow interrupt).
-        LogicalTimer1 w;w.configure(3);w.writeMode(0x83);
+        LogicalTimer1 w;w.writeMode(0x83);
         for(unsigned f=0;f<250;++f)w.field();
         require(w.count()==(250*525/2)%0x10000 && w.mode()==0x83);
         // Frame-phase BUSCLK/256: 9,609.6 ticks per field, exact over five fields; H-BLANK modes unchanged.
-        LogicalTimer1 b;b.configure(3);b.reconfigure(0x82);b.setCount(0);
+        LogicalTimer1 b;b.writeMode(0x82);require(!b.hblankClock());
         b.field();require(b.count()==9609);for(unsigned f=0;f<4;++f)b.field();require(b.count()==48048);
-        reject([&]{b.reconfigure(0x182);});reject([&]{b.reconfigure(0x81);});
-        b.reconfigure(0xC83);require(b.mode()==0x83);b.reconfigure(0x82); // Flag acknowledgement bits are not mode bits.
+        reject([&]{b.writeMode(0x182);});reject([&]{b.writeMode(0x81);});
+        b.writeMode(0xC83);require(b.mode()==0x83);b.writeMode(0x82); // Flag acknowledgement bits are not mode bits.
+        // Timer 1 through the registers, from any pc outside interrupts: CUE starts and stops the count; a
+        // COUNT read of the H-BLANK clock on main's thread waits one line, other reads do not advance time.
+        EeRuntime t1;t1.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* t1_ram=t1.memory().data();
+        R5900Context t1c;t1c.pc=0x123450;t1.current_thread_id=1;
+        t1.Store32(t1_ram,&t1c,0x10000810,3);require(t1.Load32(t1_ram,&t1c,0x10000810)==3 && !t1.timer1_starts);
+        t1.Store32(t1_ram,&t1c,0x10000810,0x83);t1c.pc=0x200000;
+        for(unsigned n=0;n<3;++n)require(t1.Load32(t1_ram,&t1c,0x10000800)==n+1);
+        require(t1.timer1_starts==1 && t1.timer1_polls==3);
+        t1.current_thread_id=2;require(t1.Load32(t1_ram,&t1c,0x10000800)==3);t1.current_thread_id=1; // Another thread: no wait.
+        t1.Store32(t1_ram,&t1c,0x10000810,3);t1.Store32(t1_ram,&t1c,0x10000800,0);
+        require(t1.timer1_stops==1 && t1.Load32(t1_ram,&t1c,0x10000800)==0 && t1.timer1_polls==3);
+        t1.Store32(t1_ram,&t1c,0x10000810,0x82);require(t1.Load32(t1_ram,&t1c,0x10000800)==0 && t1.timer1_starts==2); // BUSCLK/256.
+        reject([&]{t1.Store32(t1_ram,&t1c,0x10000810,0x100);});
     }
     {
         // Logical Timer 2: one NTSC field = 9,609.6 BUSCLK/256 ticks; W1C flags; compare and wrap latch.
@@ -806,7 +818,7 @@ int main() {
         require(runtime.entered_functions.size()==4 && runtime.completed_functions.size()==3);
         runtime.Store32(memory, &context, 0x500, 0x12345678);
         require(runtime.read32(memory, 0x500) == 0x12345678);
-        reject([&] { runtime.Store32(memory, &context, 0x1000E010, 1); });
+        reject([&] { runtime.Store32(memory, &context, 0x1000E040, 1); }); // D_RBOR: no ring buffer is modelled.
         require(runtime.read32(memory, 0x500) == 0x12345678);
         EeRuntime dma_checkpoint;
         dma_checkpoint.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size, 0xA5));
@@ -826,8 +838,8 @@ int main() {
         require(dma_checkpoint.read32(dma_ram, 0x1000C000) == 0x184);
         reject([&] { dma_checkpoint.read32(dma_ram, 0x1000E010); });
         reject([&] { dma_checkpoint.read32(dma_ram, 0x1000C000); });
-        reject([&] { dma_checkpoint.Store32(dma_ram, &context, 0x1000E010, 0x20); });
-        require(dma_checkpoint.dma_status_reads == 1 && dma_checkpoint.dma5_control_reads == 1
+        dma_checkpoint.Store32(dma_ram, &context, 0x1000E010, 0x20); // Clears CIS5: the mask stays.
+        require(dma_checkpoint.dmac_mask == 0x800000 && dma_checkpoint.dma_status_reads == 1 && dma_checkpoint.dma5_control_reads == 1
                 && std::all_of(dma_checkpoint.memory().begin(), dma_checkpoint.memory().end(),
                                [](auto byte) { return byte == 0xA5; }));
         R5900Context dma_context{};
@@ -999,9 +1011,11 @@ int main() {
         try { (void)runtime.Load32(memory, &context, 0x10001810); }
         catch (const UnsupportedGuestMemory& stop) { mmio_stop = stop.address == 0x10001810 && stop.size == 4; }
         require(mmio_stop);
+        // Timers 2 and 3 before Timer 2 counts: MODE as the boot left it (the supplied captures), read any
+        // number of times; a MODE write (through either alias) acknowledges the flags and sets bits 0-9.
         runtime.supplyTimer3Mode(0x83);
-        require(runtime.Load32(memory, &context, 0x10001810) == 0x83 && runtime.timer3_mode_reads == 1);
-        reject([&] { (void)runtime.Load32(memory, &context, 0x10001810); });
+        require(runtime.Load32(memory, &context, 0x10001810) == 0x83 && runtime.Load32(memory, &context, 0xB0001810) == 0x83
+                && runtime.timer3_mode_reads == 2);
         reject([&] { runtime.supplyTimer3Mode(0x83); });
         reject([&] { runtime.write32(memory, 0x10001810, 0); });
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001800); });
@@ -1009,39 +1023,29 @@ int main() {
         reject([&] { invalid_timer.supplyTimer3Mode(0x10000); });
         reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
         reject([&] { invalid_timer.supplyTimer2Mode(0x10000); });
-        reject([&] { runtime.write32(memory, 0xB0001010, 0x382); });
-        runtime.supplyTimer2Mode(0x80);
-        reject([&] { runtime.write32(memory, 0xB0001010, 0x382); });
+        reject([&] { runtime.Store32(memory, &context, 0xB0001010, 0x382); });
+        runtime.supplyTimer2Mode(0xC80);
         reject([&] { runtime.supplyTimer2Mode(0x80); });
-        reject([&] { (void)runtime.Load32(nullptr, &context, 0x10001010); });
-        require(runtime.timer2_mode_reads == 0);
-        require(runtime.Load32(memory, &context, 0x10001010) == 0x80 && runtime.timer2_mode_reads == 1);
-        reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
-        reject([&] { runtime.write32(memory, 0x10001010, 0x382); });
-        reject([&] { runtime.write32(memory, 0xB0001020, 0x382); });
-        reject([&] { runtime.write32(memory, 0xB0001010, 0x381); });
-        reject([&] { runtime.write32(nullptr, 0xB0001010, 0x382); });
-        runtime.write32(memory, 0xB0001010, 0x382);
-        require(runtime.timer2_mode_writes == 1 && runtime.timer2_mode_after_write == 0x382);
-        reject([&] { runtime.write32(memory, 0xB0001010, 0x382); });
-        reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
+        require(runtime.Load32(memory, &context, 0x10001010) == 0xC80 && runtime.Load32(memory, &context, 0x10001010) == 0xC80
+                && runtime.timer2_mode_reads == 2);
+        reject([&] { runtime.Store32(memory, &context, 0xB0001020, 0x382); }); // COUNT and COMP are not modelled before it counts.
+        reject([&] { (void)runtime.Load32(memory, &context, 0x10001000); });
+        runtime.Store32(memory, &context, 0xB0001010, 0x482); // Acknowledges EQUF.
+        require(runtime.timer2_mode_writes == 1 && runtime.Load32(memory, &context, 0x10001010) == 0x882);
+        runtime.Store32(memory, &context, 0x10001010, 0xB82); // Acknowledges OVFF.
+        require(runtime.timer2_mode_writes == 2 && runtime.Load32(memory, &context, 0x10001010) == 0x382);
         reject([&] { runtime.supplyTimer2Readback(0x10000); });
         runtime.supplyTimer2Readback(0x382);
         reject([&] { runtime.supplyTimer2Readback(0x382); });
-        reject([&] { (void)runtime.Load32(nullptr, &context, 0x10001010); });
-        require(runtime.timer2_mode_reads == 1);
-        require(runtime.Load32(memory, &context, 0x10001010) == 0x382 && runtime.timer2_mode_reads == 2);
-        reject([&] { (void)runtime.Load32(memory, &context, 0x10001010); });
+        require(runtime.Load32(memory, &context, 0x10001010) == 0x382);
         EeRuntime mismatch;
         mismatch.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         mismatch.supplyTimer2Mode(0x80);
         mismatch.supplyTimer2Readback(0x782);
         auto* mismatch_ram = mismatch.memory().data();
         require(mismatch.Load32(mismatch_ram, &context, 0x10001010) == 0x80);
-        reject([&] { (void)mismatch.Load32(mismatch_ram, &context, 0x10001010); });
-        mismatch.write32(mismatch_ram, 0xB0001010, 0x382);
-        reject([&] { (void)mismatch.Load32(mismatch_ram, &context, 0x10001010); });
-        require(mismatch.timer2_mode_reads == 1 && mismatch.timer2_mode_after_write == 0x382);
+        mismatch.Store32(mismatch_ram, &context, 0xB0001010, 0x382);
+        reject([&] { (void)mismatch.Load32(mismatch_ram, &context, 0x10001010); }); // The captured readback differs.
         context.ll_bit = true;
         runtime.clearLLBit(&context);
         require(!context.ll_bit);
@@ -1682,26 +1686,34 @@ int main() {
         heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);
         require(heap_allocation_runtime.heap_allocation_supplied && !heap_allocation_runtime.heap_copy_supplied);
         reject([&]{heap_allocation_runtime.supplyHeapAllocation(allocation_bytes);});
-        EeRuntime dmac;dmac.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
-        R5900Context dc;dc.r[29].low=dmac.initial_sp-32;dc.pc=0x28B2B4;
-        reject([&]{dmac.Store32(dmac.memory().data(),&dc,0x1000E000,1);});
-        dmac.heap_frees=1;dmac.native_module_loads=14;
-        dmac.Store32(dmac.memory().data(),&dc,0x1000E000,1);dc.pc=0x28B2B8;
-        reject([&]{dmac.Store32(dmac.memory().data(),&dc,0x1000E020,0);});
-        dmac.Store32(dmac.memory().data(),&dc,0x1000E020,0x83FF0002);dmac.dmac_mask=0xA00000;
-        dmac.write32(dmac.memory().data(),0x1000E010,0);
+        // The DMAC's control registers from any pc: D_CTRL (DMAE only), D_PCR (all channels enabled under
+        // priority control), D_STAT (status bits write-one-to-clear, mask bits toggle).
+        EeRuntime dmac;dmac.loadMemory(std::vector<std::uint8_t>(32*1024*1024));auto* dmac_ram=dmac.memory().data();
+        R5900Context dc;dc.pc=0x123450;
+        dmac.Store32(dmac_ram,&dc,0x1000E000,1);dmac.Store32(dmac_ram,&dc,0x1000E020,0x83FF0002);
+        reject([&]{dmac.Store32(dmac_ram,&dc,0x1000E000,5);}); // Stall control.
+        reject([&]{dmac.Store32(dmac_ram,&dc,0x1000E020,0x80010000);}); // Channels held by the priority control.
+        dmac.dmac_mask=0xA00000;dmac.write32(dmac_ram,0x1000E010,0);
         require(dmac.dmac_startup_writes==3 && dmac.dmac_control==1 && dmac.dmac_priority==0x83FF0002 && dmac.dmac_mask==0xA00000);
-        reject([&]{dmac.write32(dmac.memory().data(),0x1000E010,0);});
-        VifStartup stream;stream.consume(std::array<std::uint32_t,2>{0x03000080,0x02000020});
-        require(stream.base==128 && stream.offset==32 && stream.tops==128 && !stream.double_buffer);
-        stream.consume(std::array<std::uint32_t,1>{0x20000000});require(stream.pending_mask);
-        stream.consume(std::array<std::uint32_t,2>{0xFFFFFFFF,0x01000804});
-        require(!stream.pending_mask && stream.mask==UINT32_MAX && stream.cycle==0x804 && stream.commands==4 && stream.words==5);
-        const auto before=stream;
-        reject([&]{stream.consume(std::array<std::uint32_t,2>{0x05000001,0x14000000});});
-        require(stream.mode==before.mode && stream.commands==before.commands && stream.words==before.words);
-        reject([&]{stream.consume(std::array<std::uint32_t,1>{0x81000404});});
-        reject([&]{stream.consume(std::array<std::uint32_t,1>{0x01010404});});
+        dmac.write32(dmac_ram,0x1000E010,0x200000);require(dmac.dmac_mask==0x800000);
+        dmac.write32(dmac_ram,0x1000E010,0x200000);require(dmac.dmac_mask==0xA00000);
+        dmac.frame_vif1.cis=true;dmac.gs_display_flips=1;dmac.write32(dmac_ram,0x1000E010,2);
+        require(!dmac.frame_vif1.cis && dmac.dmac_mask==0xA00000 && dmac.dmac_startup_writes==5);
+        // VIF1 and GIF setup from any pc: VIF1 reset and error masks, the VU1 reset, configuration codes
+        // through the VIF1 FIFO; a GIF reset records VIF1 as the setup left it.
+        EeRuntime vif;vif.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* vif_ram=vif.memory().data();
+        R5900Context vc;vc.pc=0x123450;
+        vif.Store32(vif_ram,&vc,0x10003C10,1);vif.Store32(vif_ram,&vc,0x10003C20,2);vif.writeVuFbrst(&vc,0x200);
+        reject([&]{vif.Store32(vif_ram,&vc,0x10003C10,2);}); // Force break.
+        reject([&]{vif.Store32(vif_ram,&vc,0x10003C20,8);});
+        reject([&]{vif.writeVuFbrst(&vc,0x1000);});
+        const auto fifo=[&](std::array<std::uint32_t,4> words) {ProbeGpr q;std::memcpy(&q,words.data(),16);vif.Store128(vif_ram,&vc,0x10005000,q);};
+        fifo({0x01000404,0x20000000,0,0x05000000});fifo({0x06000000,0x03000000,0x02000000,0x04000000});
+        vif.write32(vif_ram,0x10003000,1);
+        reject([&]{vif.write32(vif_ram,0x10003000,8);}); // Temporary stop.
+        const auto& setup=vif.vif_setup;
+        require(setup.registers.cycle==0x404 && !setup.registers.mask && setup.registers.code==0x04000000 && setup.error==2
+            && setup.fifo_writes==2 && setup.codes==7 && setup.vif_resets==1 && setup.vu_resets==1 && vif.gif_resets==1);
         EeRuntime disc_alias;disc_alias.loadMemory(std::vector<std::uint8_t>(32*1024*1024));
         auto* disc_ram=disc_alias.memory().data();disc_alias.write64(disc_ram,0x3A8600,0x123456789ABCDEF0);
         // The uncached alias at every width follows the word/byte rule: only after RPCINIT; owned RAM is
@@ -2011,5 +2023,7 @@ int main() {
         }
         std::cout << "Bootstrap register, saturation, memory bounds and unsupported FPU checks passed.\n";
         return 0;
-    } catch (const UnsupportedSyscall& s) { std::cerr << "Unsupported syscall 0x" << std::hex << s.selector << " at pc 0x" << s.resume_pc << '\n'; return 1; } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+    } catch (const UnsupportedSyscall& s) { std::cerr << "Unsupported syscall 0x" << std::hex << s.selector << " at pc 0x" << s.resume_pc << '\n'; return 1; }
+    catch (const UnsupportedGuestMemory& m) { std::cerr << "Unsupported guest memory 0x" << std::hex << m.address << " (" << std::dec << m.size << " bytes)\n"; return 1; }
+    catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

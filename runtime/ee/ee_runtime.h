@@ -26,7 +26,6 @@
 #include "logical_timer2.h"
 #include "logical_timer1.h"
 #include "post_reset_sif.h"
-#include "gs/vif_startup.h"
 #include "gs/texture_gif_startup.h"
 #include "ipu_device.h"
 #include "services/sif_rpc.h"
@@ -498,11 +497,12 @@ public:
     std::vector<std::string> ee_console_messages;
     unsigned dmac_startup_writes=0;
     std::uint32_t dmac_control=0,dmac_priority=0;
-    VifStartup vif_startup;
+    // VIF1 and GIF control (ee_hardware_registers.cpp): ERR's masks and diagnostic counters; VIF1 as the
+    // last GIF reset left it (the startup setup: the comparison with the original reads it).
+    std::uint32_t vif1_error=0;unsigned vif1_resets=0,vif1_fifo_writes=0,vif1_fifo_codes=0,vu1_resets=0,gif_resets=0;
+    struct VifSetup {Vif1::Registers registers;std::uint32_t error=0;unsigned fifo_writes=0,codes=0,vif_resets=0,vu_resets=0;} vif_setup;
     TextureGifStartup texture_gif;
     unsigned ee_heap_lock_waits=0,ee_heap_lock_signals=0,heap_end_queries=0;
-    unsigned timer1_setup_writes=0;
-    std::uint32_t timer1_mode=0;
     // GS privileged display registers (0x12000000 + 16*n) as last written; PMODE n=0 .. BGCOLOR n=14.
     std::array<std::uint64_t,15> gs_privileged{};unsigned gs_display_writes=0,gs_display_flips=0;
     // Frame-phase GIF DMA (channel 2), normal mode from main RAM; transfers complete synchronously
@@ -532,7 +532,7 @@ public:
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
     // Main running the game's own code past the replayed startup checkpoints, outside an interrupt.
     bool mainGameContext() const {return current_thread_id==1 && main_priority_admissions && !startup_scheduler_active && !in_interrupt_;}
-    LogicalTimer1 timer1;unsigned timer1_frame_writes=0,timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
+    LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
     // Diagnostic float watch (probe: BT2_EE_WATCH_FLOAT=<hex address>:<limit>): the run stops at the first
     // guest call that finds the float at the address non-finite or above the limit in magnitude.
@@ -687,15 +687,8 @@ public:
     bool ipuRead(std::uint32_t address,std::uint32_t& value);
     bool ipuWrite(std::uint32_t address,std::uint32_t value);
     // Emitted slow-path memory ABI; unsupported MMIO still fails explicitly.
-    void Store128(std::uint8_t* rdram,R5900Context* context,std::uint32_t address,const ProbeGpr& value) {
-        if(address==0x10005000 && context->r[29].low==initial_sp-32
-            && ((vif_startup.phase==3 && context->pc==0x30FFB4) || (vif_startup.phase==4 && context->pc==0x30FFBC))) {
-            const auto expected=read128(rdram,0x3680A0+(vif_startup.phase-3)*16);
-            if(value.low!=expected.low || value.high!=expected.high)throw UnsupportedGuestMemory(address,16);
-            std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
-            vif_startup.consume(words);++vif_startup.phase;return;
-        }
-        if(address==0x10005000 && frameGifContext()) {checkMemory(rdram,0,0);vif1FifoWrite(value);return;}
+    void Store128(std::uint8_t* rdram,R5900Context*,std::uint32_t address,const ProbeGpr& value) {
+        if(address==0x10005000 && !in_interrupt_) {checkMemory(rdram,0,0);vif1FifoWrite(value);return;}
         if(address==0x10007010 && ipuContext()) {
             std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
             try {ipu.writeFifo(address,words);} catch(const std::runtime_error& e) {std::cerr<<"IPU refused: "<<e.what()<<std::endl;throw UnsupportedGuestMemory(address,16);}
@@ -703,11 +696,16 @@ public:
         }
         write128(rdram,address,value); // Other FIFO/MMIO paths still reject through checked RAM bounds.
     }
-    void writeVuFbrst(R5900Context* context,std::uint32_t value) {
-        if(context->pc!=0x30FF90 || context->r[29].low!=initial_sp-32 || vif_startup.phase!=2 || value!=0x200)
-            throw std::runtime_error("Unsupported VU control write");
-        ++vif_startup.vu_resets;vif_startup.phase=3;context->vu0_fbrst=value&0xC0C;
-    }
+    void writeVuFbrst(R5900Context* context,std::uint32_t value);
+    // General register behavior (ee_hardware_registers.cpp): false or empty for other addresses.
+    bool timer1Store(std::uint32_t address,std::uint32_t value);
+    std::optional<std::uint32_t> timer1Load(std::uint8_t* rdram,R5900Context* context,std::uint32_t address);
+    bool timer2Store(const R5900Context* context,std::uint32_t address,std::uint32_t value);
+    std::optional<std::uint32_t> timer2Load(const R5900Context* context,std::uint32_t address);
+    std::uint32_t timer2Mode() const {return timer2.started()?timer2.mode():timer2_mode_;} // MODE as a read would see it.
+    std::optional<std::uint32_t> timer3Load(std::uint32_t address);
+    bool dmacStore(std::uint32_t address,std::uint32_t value);
+    bool vifGifControlStore(std::uint32_t address,std::uint32_t value);
     void handleBreak(std::uint8_t*,R5900Context*) {
         throw std::runtime_error("Unsupported guest BREAK instruction");
     }
@@ -790,7 +788,6 @@ public:
     std::uint64_t startup_quadword_writes = 0, startup_byte_writes = 0;
     std::uint64_t kernel_word_writes = 0;
     unsigned timer3_mode_reads = 0, timer2_mode_reads = 0, timer2_mode_writes = 0;
-    std::uint32_t timer2_mode_after_write = 0;
     unsigned cache_requests = 0, instruction_cache_invalidations = 0;
     unsigned kernel_dispatch_validations = 0;
     unsigned returns = 0, guest_calls = 0;

@@ -131,8 +131,8 @@ void EeRuntime::advanceLogicalField() {
     // (initial MODE already had CUE set), so the logical counter starts at COUNT 0, COMP 0.
     if(!timer2.started()) {
         if(!timer2_mode_writes)return; // Timer 2 never programmed: nothing counts.
-        if(timer2_mode_writes!=1 || timer2_mode_after_write!=0x382 || !(intc_mask&(1u<<11)))throw std::runtime_error("Timer 2 startup state differs");
-        timer2.start(timer2_mode_after_write,0,0);
+        if(timer2_mode_writes!=1 || timer2_mode_!=0x382 || !(intc_mask&(1u<<11)))throw std::runtime_error("Timer 2 startup state differs");
+        timer2.start(timer2_mode_,0,0);
     }
     timer2.advanceField();
 }

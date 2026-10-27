@@ -88,5 +88,7 @@ ProbeGpr EeRuntime::vif1FifoRead() {
 void EeRuntime::vif1FifoWrite(const ProbeGpr& value) {
     if(gs_readback.fdr)throw UnsupportedGuestMemory(0x10005000,16);
     std::array<std::uint32_t,4> words;std::memcpy(words.data(),&value,16);
+    const auto codes=vif1.codes;
     frameVif1Codes(words);
+    ++vif1_fifo_writes;vif1_fifo_codes+=vif1.codes-codes;
 }

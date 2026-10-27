@@ -8,25 +8,7 @@
 void EeRuntime::write32(std::uint8_t* rdram, std::uint32_t address, std::uint32_t value) {
     if(auto* spr=scratchpadAt(address,4)) {std::memcpy(spr,&value,4);return;}
     address = uncachedWordAddress(rdram, address);
-    if(address==0x10003000 && vif_startup.phase==5 && value==1 && !vif_startup.pending_mask) {
-        checkMemory(rdram,0,0);
-        if(gif_dma.starts!=2 || gif_dma.completions!=2 || gif_dma.qwc)throw UnsupportedGuestMemory(address,4);
-        ++vif_startup.gif_resets;vif_startup.phase=6;return; // Idle GIF reset, not GS VRAM/drawing-state reset.
-    }
-    // The generated DMAC setup writes zero to STAT in its return delay slot.
-    // STAT is W1C/toggle, so zero preserves the existing interrupt mask.
-    if(address==0x1000E010 && dmac_startup_writes==2 && value==0 && heap_frees==1) {
-        checkMemory(rdram,0,0);++dmac_startup_writes;return;
-    }
-    // Observed Timer 2 startup store only; no counter advancement or scheduling.
-    if (address == 0xB0001010 && timer2_mode_supplied_ && timer2_mode_reads == 1
-            && !timer2_mode_writes && value == 0x382) {
-        checkMemory(rdram, 0, 0);
-        timer2_mode_after_write = (timer2_mode_ & 0xC00 & ~value) | (value & 0x3FF);
-        ++timer2_mode_writes;
-        ++word_writes;
-        return;
-    }
+    if(dmacStore(address,value) || vifGifControlStore(address,value)) {checkMemory(rdram,0,0);return;} // ee_hardware_registers.cpp
     if (!startup_kernel_payload_.empty() && address >= 0x80075000 && address < 0x80075330) {
         if (memory_.empty() || rdram != memory_.data() || address % 4)
             throw UnsupportedGuestMemory(address, 4);
@@ -112,11 +94,6 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
         tags.emplace_back(words.size(),c.tag);
         append(c.tag_words,2);append(c.data.data(),c.data.size()/4);
     }
-    if(!v.starts) {
-        // The registers as the startup FIFO writes left them.
-        auto& r=vif1.r;const auto& s=vif_startup;
-        r.cycle=s.cycle;r.mode=s.mode;r.mask=s.mask;r.base=s.base;r.ofst=s.offset;r.itops=s.itops;r.tops=s.tops;
-    }
     auto blocked=[&](std::uint32_t code,std::uint32_t tag) {
         v.blocked_code=code;v.blocked_tag=tag;v.blocked_tadr=v.tadr;++v.unsupported;
         throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
@@ -193,13 +170,9 @@ std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std:
 void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint32_t value) {
     if(auto* ram=ramWord(rdram,address)) {std::memcpy(ram,&value,4);++word_writes;return;} // Main RAM first, as in Load32.
     if(ipuWrite(address,value)) {checkMemory(rdram,0,0);return;}
-    if(address==0x10000810 && context->pc==0x28C770 && context->r[29].low==initial_sp-112
-        && texture_gif.phase==8 && !timer1_setup_writes && value==3) {
-        checkMemory(rdram,0,0);timer1_mode=value;timer1.configure(value);++timer1_setup_writes;return; // Disabled Timer 1 configuration only.
-    }
-    if(frameGifContext() && (address==0x10009000 || address==0x10009010 || address==0x10009020 || address==0x10009030 || (address==0x1000E010 && value==2))) {
+    if(timer1Store(address,value) || timer2Store(context,address,value)) {checkMemory(rdram,0,0);return;} // ee_hardware_registers.cpp
+    if(frameGifContext() && (address==0x10009000 || address==0x10009010 || address==0x10009020 || address==0x10009030)) {
         checkMemory(rdram,0,0);auto& v=frame_vif1;
-        if(address==0x1000E010) {v.cis=false;return;} // W1C of CIS1 only.
         if(v.chcr&0x100)throw UnsupportedGuestMemory(address,4);
         if(address==0x10009020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);v.qwc=value;return;}
         if(address==0x10009010) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);v.madr=value&0x0FFFFFFF;return;} // No scratchpad transfers.
@@ -222,42 +195,10 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         gif_dma.gs.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
         g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;return;
     }
-    // Main's H-BLANK delay helpers (0x28C778 start, 0x28C790 wait >= 400 and stop): logical Timer 1.
-    if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
-        if(address==0x10000810 && context->pc==0x28C78C && value==(timer1.mode()|0x80)) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_starts;timer1_wait_polls=0;return;}
-        if(address==0x10000810 && context->pc==0x28C7CC && value==(timer1.mode()&~0x80u) && timer1.counting()) {checkMemory(rdram,0,0);timer1.writeMode(value);++timer1_stops;return;}
-        if(address==0x10000800 && context->pc==0x28C7D4 && !value && !timer1.counting()) {checkMemory(rdram,0,0);timer1.writeCount(0);return;}
-    }
-    // Frame phase: other Timer 1 users (the game's counter allocator 0x2D87E8 sets BUSCLK/256 0x82).
-    if(timer1_setup_writes==1 && gs_display_flips>=1 && !in_interrupt_ && (address==0x10000800 || address==0x10000810)) {
-        checkMemory(rdram,0,0);
-        try {if(address==0x10000810)timer1.reconfigure(value);else timer1.setCount(value);}
-        catch(const std::runtime_error&) {throw UnsupportedGuestMemory(address,4);}
-        ++timer1_frame_writes;return;
-    }
     if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
         if(address==0x1000A020 && context->pc==0x28B96C) {checkMemory(rdram,0,0);texture_gif.count(value);return;}
         if(address==0x1000A010 && context->pc==0x28B978) {checkMemory(rdram,0,0);texture_gif.address(value,initial_sp-112,memory());return;}
         if(address==0x1000A000 && context->pc==0x28B98C) {checkMemory(rdram,0,0);texture_gif.start(value,memory(),gif_dma.gs);return;}
-    }
-    if(dmac_startup_writes==3 && heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
-        if(address==0x10003C10 && context->pc==0x30FF70 && !vif_startup.phase && value==1) {
-            checkMemory(rdram,0,0);vif_startup.phase=1;return;
-        }
-        if(address==0x10003C20 && context->pc==0x30FF80 && vif_startup.phase==1 && value==2) {
-            checkMemory(rdram,0,0);vif_startup.error=value;vif_startup.phase=2;return;
-        }
-    }
-    if(heap_frees==1 && native_module_loads==14 && context->r[29].low==initial_sp-32) {
-        if(address==0x1000E000 && context->pc==0x28B2B4 && !dmac_startup_writes && value==1) {
-            checkMemory(rdram,0,0);dmac_control=value;++dmac_startup_writes;return;
-        }
-        if(address==0x1000E020 && context->pc==0x28B2B8 && dmac_startup_writes==1 && value==0x83FF0002) {
-            checkMemory(rdram,0,0);dmac_priority=value;++dmac_startup_writes;return;
-        }
-    }
-    if((address==0xB0001010 || address==0xB0001020) && context->pc==0x338B30 && timer2Context(context)) {
-        checkMemory(rdram,0,0);if(address==0xB0001010)timer2.writeMode(value);else timer2.writeComp(value);return;
     }
     if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
         checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
@@ -315,23 +256,11 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         if(address==0x10003C00) {checkMemory(rdram,0,0);return vif1Status();} // DBF follows the microprogram starts.
         if(address==0x10003020) {checkMemory(rdram,0,0);return 0;}
     }
-    if(timer1_setup_writes==1 && current_thread_id==1 && !in_interrupt_) {
-        if(address==0x10000810 && (context->pc==0x28C780 || context->pc==0x28C7C0)) {checkMemory(rdram,0,0);return timer1.mode();}
-        if(address==0x10000800 && context->pc==0x28C798 && timer1.counting()) {
-            // Logical time: each poll of the delay loop waits one line; a crossed field boundary
-            // delivers that VBLANK_START first (interrupt handlers and woken threads run).
-            checkMemory(rdram,0,0);
-            ++timer1_polls;if(++timer1_wait_polls>100000)throw UnsupportedGuestMemory(address,4); // One wait never ends.
-            const auto target=timer1.nextLine();
-            if(timer1.crossesField(target)) {deliverVblank(rdram,context);++timer1_vblanks;}
-            timer1.lineTo(target);return timer1.count();
-        }
-    }
-    if(timer1_setup_writes==1 && gs_display_flips>=1 && !in_interrupt_ && (address==0x10000800 || address==0x10000810)) {
-        checkMemory(rdram,0,0);return address==0x10000800?timer1.count():timer1.mode(); // Reads do not advance time.
-    }
-    if((address==0x10001000 || address==0x10001010) && timer2Context(context)) {
-        checkMemory(rdram,0,0);return address==0x10001000?timer2.read():timer2.mode();
+    if(const auto timer=(address&0xFFFF0000u)==0xB0000000u?address&0x1FFFFFFFu:address;timer>=0x10000800 && timer<0x10001820) { // Timers 1 to 3 and their KSEG1 aliases (ee_hardware_registers.cpp).
+        checkMemory(rdram,0,0);
+        if(const auto value=timer1Load(rdram,context,address))return *value;
+        if(const auto value=timer2Load(context,address))return *value;
+        if(const auto value=timer3Load(address))return *value;
     }
     if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
         checkMemory(rdram,0,0);
@@ -381,23 +310,6 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
     if(address==0x1000F000 && mainGameContext()) {
         // Logical time: main polling for VBLANK_START that finds it clear receives the next VBlank.
         checkMemory(rdram,0,0);if(!(display_intc_stat&4))deliverVblank(rdram,context);return display_intc_stat;
-    }
-    if (address == 0x10001810 && timer3_mode_supplied_ && !timer3_mode_reads) {
-        checkMemory(rdram, 0, 0);
-        ++timer3_mode_reads;
-        return timer3_mode_;
-    }
-    if (address == 0x10001010 && timer2_mode_supplied_ && !timer2_mode_reads) {
-        checkMemory(rdram, 0, 0);
-        ++timer2_mode_reads;
-        return timer2_mode_;
-    }
-    if (address == 0x10001010 && timer2_readback_supplied_ && timer2_mode_reads == 1 && timer2_mode_writes == 1) {
-        checkMemory(rdram, 0, 0);
-        if (timer2_mode_after_write != timer2_readback_expected_)
-            throw std::runtime_error("Timer 2 modeled mode differs from captured readback");
-        ++timer2_mode_reads;
-        return timer2_mode_after_write;
     }
     return read32(rdram, address);
 }

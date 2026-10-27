@@ -3,35 +3,23 @@
 #include <stdexcept>
 
 // Logical EE Timer 1 with the H-BLANK clock (MODE CLKS=3: COUNT advances once per HBLANK while CUE
-// (0x80) is set) or, in the frame phase, BUSCLK/256 (CLKS=2: 9,609.6 ticks per NTSC field, kept exact
-// with an integer remainder). Logical display time is kept in half-lines: an NTSC field is 262.5 lines (525
+// (0x80) is set) or BUSCLK/256 (CLKS=2: 9,609.6 ticks per NTSC field, kept exact with an integer
+// remainder). Logical display time is kept in half-lines: an NTSC field is 262.5 lines (525
 // half-lines) and an HBLANK falls every two half-lines. Field boundaries come from the logical
 // VBlank model (`field`); a polled COUNT read waits one line (`line`).
 class LogicalTimer1 {
 public:
     static constexpr std::uint64_t field_halflines=525;
-    void configure(std::uint32_t value) {
-        if(value!=3)throw std::runtime_error("Unsupported Timer 1 mode");
-        mode_=value;configured_=true;
-    }
+    // MODE: the H-BLANK clock (CLKS 3) or BUSCLK/256 (CLKS 2), CUE on or off; no gate, zero return
+    // or interrupts (so a COUNT wrap raises no flag). Writing 1 to the equal/overflow flags (bits 10,
+    // 11) acknowledges them; no flag is modelled. MODE is 0 (stopped) after reset.
     void writeMode(std::uint32_t value) {
-        // Only CUE may change after configuration (start/stop of the H-BLANK delay).
-        if(!configured_ || (value&~0x80u)!=(mode_&~0x80u))throw std::runtime_error("Unsupported Timer 1 mode change");
-        mode_=value;
-    }
-    // Frame-phase configuration: H-BLANK or BUSCLK/256, CUE on or off; no gate, zero return or
-    // interrupts (so a COUNT wrap raises no flag).
-    void reconfigure(std::uint32_t value) {
-        value&=~0xC00u; // Writing 1 to the equal/overflow flags (bits 10, 11) acknowledges them; no flag is modelled.
-        if(!configured_ || (value!=0x02 && value!=0x03 && value!=0x82 && value!=0x83))throw std::runtime_error("Unsupported Timer 1 mode");
+        value&=~0xC00u;
+        if(value!=0x02 && value!=0x03 && value!=0x82 && value!=0x83)throw std::runtime_error("Unsupported Timer 1 mode");
         if((value&3)!=(mode_&3))busclk_remainder_=0;
         mode_=value;
     }
-    void setCount(std::uint32_t value) {count_=value&0xFFFF;}
-    void writeCount(std::uint32_t value) {
-        if(value || counting())throw std::runtime_error("Unsupported Timer 1 count write");
-        count_=0;
-    }
+    void writeCount(std::uint32_t value) {count_=value&0xFFFF;}
     // Field boundary reached through the VBlank model: credit the remaining HBLANKs of this field.
     void field() {advanceTo((halflines_/field_halflines+1)*field_halflines);}
     // One polled line: the caller takes `nextLine()`, delivers the VBlank first when that line
@@ -41,7 +29,8 @@ public:
     void lineTo(std::uint64_t target) {advanceTo(target);}
     std::uint32_t mode() const {return mode_;}
     std::uint32_t count() const {return count_;}
-    bool counting() const {return configured_ && (mode_&0x80);}
+    bool counting() const {return (mode_&0x80)!=0;}
+    bool hblankClock() const {return (mode_&3)==3;}
     std::uint64_t halflines() const {return halflines_;}
 private:
     void advanceTo(std::uint64_t next) {
@@ -58,5 +47,5 @@ private:
         }
         halflines_=next;
     }
-    std::uint32_t mode_=0,count_=0;bool configured_=false;std::uint64_t halflines_=0,busclk_remainder_=0;
+    std::uint32_t mode_=0,count_=0;std::uint64_t halflines_=0,busclk_remainder_=0;
 };

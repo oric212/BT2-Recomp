@@ -14,7 +14,7 @@ def verify(root,native=None):
     if registers!=(0,0,2,0,0x404,0,0,0,0x04000000,0,0,0,0,0,0,0,0,0):raise ValueError('VIF/GIF/VU readback differs')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'))
-        if [r[k] for k in ['vif_phase','vif_commands','vif_words','vif_fifo_writes','vu_resets','gif_resets']]!=[6,7,8,2,1,1] or r['vif_registers']!=[2,0x404,0,0,0x04000000,0,0,0,0]:raise ValueError('Native VIF configuration differs')
+        if [r[k] for k in ['vif_resets','vif_commands','vif_words','vif_fifo_writes','vu_resets','gif_resets']]!=[1,7,8,2,1,1] or r['vif_registers']!=[2,0x404,0,0,0x04000000,0,0,0,0]:raise ValueError('Native VIF configuration differs')
         if r.get('graph_startup_phase')==4:
             for point,stub_factory in [('graph-csr-after',graph_csr_stub),('graph-startup-after',graph_startup_stub)]:
                 sub=folder.parent/point;sm=json.loads((sub/'capture.json').read_text(encoding='utf-8'));se=(sub/'ee-ram.bin').read_bytes()

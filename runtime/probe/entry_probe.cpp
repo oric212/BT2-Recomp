@@ -697,7 +697,7 @@ int main(int argc, char** argv) {
             original_wait = runtime.replaceFunction(0x28C790, [](std::uint8_t* rdram, R5900Context* context, PS2Runtime* base) {
                 auto* ee = static_cast<EeRuntime*>(base);
                 ++sixty_fps::fight_waits;
-                if (ee->gs_display_flips >= from_flip) ee->timer1.setCount(0x190);
+                if (ee->gs_display_flips >= from_flip) ee->timer1.writeCount(0x190);
                 original_wait(rdram, context, base);
             });
         }
@@ -739,9 +739,7 @@ int main(int argc, char** argv) {
             std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
             std::cerr << "Memory sp-offset/ra/main/cri/graph/display: " << std::hex << (runtime.initial_sp-context.r[29].low) << "/" << context.r[31].low << "/" << runtime.main_priority_admissions << "/" << std::dec << runtime.cri_rpc_calls << "/" << runtime.graph_startup_phase << "/" << runtime.display_reset_phase << " stat/polled/mask " << std::hex << runtime.display_intc_stat << "/" << runtime.polled_vblanks << "/" << runtime.intc_mask << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
-            const bool vif_handoff=runtime.native_module_loads==14 && runtime.heap_frees==1 && runtime.dmac_startup_writes==3
-                && stop.address==0x10003C10 && stop.size==4 && context.pc==0x30FF70 && context.r[29].low==runtime.initial_sp-32;
-            const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.vif_startup.phase==6
+            const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.gif_resets==1
                 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
                 && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
             // Frame phase (after the first display flip, main thread): a refused access to a hardware
@@ -753,8 +751,8 @@ int main(int argc, char** argv) {
             // Frame-phase GS reset (the GS library's CSR reset during the frame loop; next subsystem).
             const bool frame_gs_reset=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && runtime.display_reset_phase==13
                 && stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44;
-            if(runtime.post_sif.supplied && !vif_handoff && !texture_handoff && !frame_register_boundary && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
-            if(vif_handoff || texture_handoff || frame_register_boundary || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            if(runtime.post_sif.supplied && !texture_handoff && !frame_register_boundary && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
+            if(texture_handoff || frame_register_boundary || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
                 (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
                 || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
@@ -820,7 +818,7 @@ int main(int argc, char** argv) {
                     "Unexpected GetOsdConfigParam boundary after priority change");
             else require(!intc_mode && timer2_mode && stop.selector == 0x14 && !stop.handler && stop.resume_pc == 0x0032E9A8
                     && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 11
-                    && runtime.timer2_mode_writes == 1 && runtime.timer2_mode_after_write == 0x382
+                    && runtime.timer2_mode_writes == 1 && runtime.timer2Mode() == 0x382
                     && context.cop0_errorepc == 0x00338C90 && !context.ll_bit,
                     "Unexpected syscall after generated Timer 2 write/ERET");
             stop_selector = stop.selector;

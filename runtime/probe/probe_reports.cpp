@@ -247,21 +247,19 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"heap_end_queries\":" << runtime.heap_end_queries
         << ",\"ee_heap_lock_waits\":" << runtime.ee_heap_lock_waits
         << ",\"ee_heap_lock_signals\":" << runtime.ee_heap_lock_signals
-        << ",\"timer1_setup_writes\":" << runtime.timer1_setup_writes
-        << ",\"timer1_mode\":" << runtime.timer1_mode
         << ",\"texture_gif_phase\":" << runtime.texture_gif.phase
         << ",\"texture_gif_starts\":" << runtime.texture_gif.starts
         << ",\"texture_gif_completions\":" << runtime.texture_gif.completions
         << ",\"texture_gif_polls\":" << runtime.texture_gif.polls
         << ",\"tex0\":[" << runtime.gif_dma.gs.tex0[0] << "," << runtime.gif_dma.gs.tex0[1] << "]"
         << ",\"pabe\":" << runtime.gif_dma.gs.pabe
-        << ",\"vif_phase\":" << runtime.vif_startup.phase << ",\"vif_commands\":" << runtime.vif_startup.commands
         << ",\"graph_startup_phase\":" << runtime.graph_startup_phase
-        << ",\"vif_words\":" << runtime.vif_startup.words << ",\"vif_fifo_writes\":" << runtime.vif_startup.fifo_writes
-        << ",\"vu_resets\":" << runtime.vif_startup.vu_resets << ",\"gif_resets\":" << runtime.vif_startup.gif_resets
-        << ",\"vif_registers\":[" << runtime.vif_startup.error << ',' << runtime.vif_startup.cycle << ',' << runtime.vif_startup.mode
-        << ',' << runtime.vif_startup.mask << ',' << runtime.vif_startup.code << ',' << runtime.vif_startup.itops
-        << ',' << runtime.vif_startup.base << ',' << runtime.vif_startup.offset << ',' << runtime.vif_startup.tops << ']'
+        << ",\"vif_resets\":" << runtime.vif_setup.vif_resets << ",\"vif_commands\":" << runtime.vif_setup.codes
+        << ",\"vif_words\":" << runtime.vif_setup.fifo_writes*4 << ",\"vif_fifo_writes\":" << runtime.vif_setup.fifo_writes
+        << ",\"vu_resets\":" << runtime.vif_setup.vu_resets << ",\"gif_resets\":" << runtime.gif_resets
+        << ",\"vif_registers\":[" << runtime.vif_setup.error << ',' << runtime.vif_setup.registers.cycle << ',' << runtime.vif_setup.registers.mode
+        << ',' << runtime.vif_setup.registers.mask << ',' << runtime.vif_setup.registers.code << ',' << runtime.vif_setup.registers.itops
+        << ',' << runtime.vif_setup.registers.base << ',' << runtime.vif_setup.registers.ofst << ',' << runtime.vif_setup.registers.tops << ']'
         << ",\"heap_binds\":" << runtime.heap_binds
         << ",\"loadfile_binds\":" << runtime.post_loadfile.binds << ",\"loadfile_versions\":" << runtime.post_loadfile.versions
         << ",\"post_cd_binds\":" << runtime.post_cd.binds << ",\"post_cd_calls\":" << runtime.post_cd.calls << ",\"post_scmd_binds\":" << runtime.post_cd.scmd_binds << ",\"post_scmd_modes\":" << runtime.post_cd.modes
@@ -393,7 +391,7 @@ void writeEntryReport(EeRuntime& runtime,R5900Context& context,const ProbeModes&
             << ",\"startup_worker_suspends\":" << runtime.startup_worker_suspends << ",\"startup_worker_priority_changes\":" << runtime.startup_worker_priority_changes << ",\"priority_changes\":" << runtime.priority_changes
            << ",\"intc_mask\":" << runtime.intc_mask << ",\"intc_enable_calls\":" << runtime.intc_enable_calls
            << ",\"timer2_mode_writes\":" << runtime.timer2_mode_writes
-           << ",\"timer2_mode_after_write\":" << runtime.timer2_mode_after_write
+           << ",\"timer2_mode_after_write\":" << runtime.timer2Mode()
            << ",\"timer2_mode_reads\":" << runtime.timer2_mode_reads
            << ",\"timer3_mode_reads\":" << runtime.timer3_mode_reads << ",\"kernel_snapshot_loaded\":" << (snapshot_mode ? "true" : "false") << ",\"handler\":" << (timer_mode ? stop_handler : runtime.syscall_handlers[0x83]) << ",\"pc\":" << context.pc << ",\"arguments\":[";
     for (unsigned index = 0; index < args.size(); ++index) report << (index ? "," : "") << args[index];

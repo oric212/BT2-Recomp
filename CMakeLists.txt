@@ -56,6 +56,7 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/guest_interface.cpp
     runtime/ee/ps2_runtime_dispatch.cpp
     runtime/ee/ps2_runtime_memory.cpp
+    runtime/ee/ee_hardware_registers.cpp
     runtime/ee/ipu_device.cpp
     runtime/ee/ipu_input.cpp
     runtime/ee/ipu_vlc.cpp

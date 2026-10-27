@@ -22,7 +22,7 @@ int main() {
             runtime.callFunction(0x00338AD8, context);
             if (context.pc != 0xFFFFFFFC || context.cop0_errorepc != 0xFFFFFFFC
                     || context.cop0_status != status || context.cop0_epc != 0x1234 || context.ll_bit
-                    || runtime.timer2_mode_writes != 1 || runtime.timer2_mode_after_write != 0xF82
+                    || runtime.timer2_mode_writes != 1 || runtime.Load32(runtime.memory().data(), &context, 0x10001010) != 0xF82
                     || runtime.word_writes != 1 || context.r[4].high != UINT64_MAX
                     || !std::all_of(runtime.memory().begin(), runtime.memory().end(), [](auto b) { return b == 0xA5; }))
                 throw std::runtime_error("Generated Timer 2 store/Status/ErrorEPC/ERET state failed");
