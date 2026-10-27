@@ -9,17 +9,21 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
 namespace {
 // A+D-only PACKED packet: one GIF tag, then one register write per qword.
-std::vector<std::uint8_t> packet(std::initializer_list<std::pair<std::uint64_t,std::uint64_t>> writes) {
+std::vector<std::uint8_t> packet(std::span<const std::pair<std::uint64_t,std::uint64_t>> writes) {
     std::vector<std::uint8_t> bytes;
     auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);bytes.insert(bytes.end(),b,b+16);};
     q(writes.size()|(1ULL<<15)|(1ULL<<60),0xE); // NLOOP, EOP, PACKED, NREG 1: A+D.
     for(const auto& [reg,value]:writes)q(value,reg);
     return bytes;
+}
+std::vector<std::uint8_t> packet(std::initializer_list<std::pair<std::uint64_t,std::uint64_t>> writes) {
+    return packet(std::span<const std::pair<std::uint64_t,std::uint64_t>>(writes.begin(),writes.size()));
 }
 
 // The PSMCT32 word at (x, y) of a frame buffer at page 0, 64 pixels wide.
@@ -218,9 +222,11 @@ void nativeInkEdges(GpuGsBackend& gpu) {
     require(std::equal(expected.begin(),expected.end(),n.begin()),"the same GS memory");
 }
 
-// Native pass "glow" (gs/gpu/native/glow.cpp): with super-sampling, a textured quad added to the frame with a depth test
-// draws as the renderer draws it, within one step of the texture filter; at 1x the renderer draws it. An 8 x 8 texture (a ramp) is uploaded at block 0x100, the frame (page 0, 64 x 32) and the depth buffer (page 2)
-// are filled, then a quad of two triangles covers x 8..40, y 4..28, half of it behind the depth buffer's value.
+// Native pass "glow" (gs/gpu/native/glow.cpp): with super-sampling, textured quads blended into the frame with a depth
+// test draw as the renderer draws them, within one step of the texture filter; at 1x the renderer draws them. An 8 x 8
+// texture (a ramp) is uploaded at block 0x100, the frame (page 0, 64 x 32) and the depth buffer (page 2) are filled,
+// then a quad added to the frame and 300 layers of it alpha-blended (about a screen of area, so the pass takes them)
+// cover x 8..40, y 4..28, half of it behind the depth buffer's value.
 void nativeGlow(GpuGsBackend& gpu) {
     auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Native glow: ")+what);};
     const auto passes=[](const char* value) {
@@ -244,7 +250,7 @@ void nativeGlow(GpuGsBackend& gpu) {
     const auto xyz=[](unsigned x,unsigned y,std::uint64_t z){return std::uint64_t(x*16)|(std::uint64_t(y*16)<<16)|(z<<32);};
     const auto uv=[](unsigned u,unsigned v){return std::uint64_t(u*16)|(std::uint64_t(v*16)<<16);};
     const std::uint64_t zbuf=2|(1ull<<24); // Page 2, PSMZ24.
-    const auto draw=packet({{0x1A,1},{0x18,0},{0x40,0x001F0000003F0000ULL},{0x4C,0x0000000000010000ULL},
+    std::vector<std::pair<std::uint64_t,std::uint64_t>> writes={{0x1A,1},{0x18,0},{0x40,0x001F0000003F0000ULL},{0x4C,0x0000000000010000ULL},
         // The frame a dark grey; the depth buffer 100 on the left half, 300 on the right (the quad's 200 passes on the left).
         {0x4E,zbuf},{0x47,(1u<<16)|(1u<<17)},{0x00,6},{0x01,0x80202020},{0x05,xyz(0,0,100)},{0x05,xyz(32,32,100)},
         {0x05,xyz(32,0,300)},{0x05,xyz(64,32,300)},
@@ -253,8 +259,14 @@ void nativeGlow(GpuGsBackend& gpu) {
         {0x06,0x100|(1ull<<14)|(3ull<<26)|(3ull<<30)|(1ull<<34)},{0x14,0x60},
         {0x00,4|(1u<<4)|(1u<<6)|(1u<<8)},{0x01,0x80808080},
         {0x03,uv(0,0)},{0x05,xyz(8,4,200)},{0x03,uv(8,0)},{0x05,xyz(40,4,200)},
-        {0x03,uv(0,8)},{0x05,xyz(8,28,200)},{0x03,uv(8,8)},{0x05,xyz(40,28,200)},
-        {0x00,6},{0x4E,zbuf|(1ull<<32)},{0x47,0x30000},{0x4C,0x0000000000010000ULL|(10ull)},{0x01,0},{0x05,xyz(0,0,0)},{0x05,xyz(1,1,0)}});
+        {0x03,uv(0,8)},{0x05,xyz(8,28,200)},{0x03,uv(8,8)},{0x05,xyz(40,28,200)}};
+    // The layers: (Cs - Cd) x As / 128 + Cd, As = 0x10 (the texture's 0x80 modulated by the colour's 0x10).
+    writes.insert(writes.end(),{{0x42,0x44},{0x01,0x10808080}});
+    for(int layer=0;layer<300;++layer)
+        writes.insert(writes.end(),{{0x00,4|(1u<<4)|(1u<<6)|(1u<<8)},{0x03,uv(0,0)},{0x05,xyz(8,4,200)},{0x03,uv(8,0)},{0x05,xyz(40,4,200)},
+                                    {0x03,uv(0,8)},{0x05,xyz(8,28,200)},{0x03,uv(8,8)},{0x05,xyz(40,28,200)}});
+    writes.insert(writes.end(),{{0x00,6},{0x4E,zbuf|(1ull<<32)},{0x47,0x30000},{0x4C,0x0000000000010000ULL|(10ull)},{0x01,0},{0x05,xyz(0,0,0)},{0x05,xyz(1,1,0)}});
+    const auto draw=packet(writes);
     for(auto* r:{&emulated,&native,&single}) {r->transfer(upload);r->transfer(draw);}
     const auto e=emulated.readVram();
     const std::vector<std::uint32_t> expected(e.begin(),e.end());

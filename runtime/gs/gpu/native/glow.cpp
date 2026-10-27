@@ -126,6 +126,13 @@ bool glow(const NativeRenderPass& pass,NativeContext& context) {
         lo_x=std::min<int>(lo_x,bb.x);lo_y=std::min<int>(lo_y,bb.y);hi_x=std::max<int>(hi_x,bb.z);hi_y=std::max<int>(hi_y,bb.w);
     }
 
+    // Enough work for the pass: its fixed cost (a dispatch over the pass's area, the barriers around it) is about
+    // 0.07 ms, more than the renderer takes for a few small layers. Measured on two fights: a screen of triangle
+    // boxes (512 x 448 pixels) is where it starts to pay.
+    std::uint64_t boxes=0;
+    for(const auto& tri:triangles)
+        boxes+=std::uint64_t((tri.z[3]&0xFFFFu)-std::uint32_t(tri.x[3])+1)*std::uint64_t((tri.z[3]>>16)-std::uint32_t(tri.y[3])+1);
+    if(boxes<512u*448u)return false;
     // Runs of consecutive triangles that use at most slotCount textures: one dispatch each, in order.
     struct Run {std::uint32_t first,count;std::vector<SlotKey> slots;};
     std::vector<Run> runs;
