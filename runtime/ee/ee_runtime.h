@@ -143,6 +143,7 @@ public:
     void registerFunction(std::uint32_t address, RecompiledFunction function) {
         if (address >= 0x80000000 || !function || !functions_.emplace(address, function).second)
             throw std::runtime_error("Invalid or duplicate guest registration");
+        clearDispatchCache();
     }
 
     // Tool runs only (the game starter, runtime/probe/game_starter.cpp): a host function in place of
@@ -151,7 +152,7 @@ public:
         const auto found = functions_.find(address);
         if (found == functions_.end() || !function) throw std::runtime_error("Invalid guest replacement");
         const auto replaced = found->second;
-        found->second = function;
+        found->second = function;clearDispatchCache();
         return replaced;
     }
 
@@ -162,6 +163,9 @@ public:
                 || !functions_.emplace(address, function).second)
             throw std::runtime_error("Invalid or duplicate overlay registration");
         overlay_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected.begin(), expected.end()));
+        overlay_bindings_begin_=std::min(overlay_bindings_begin_,address);
+        overlay_bindings_end_=std::max(overlay_bindings_end_,address+static_cast<std::uint32_t>(expected.size()));
+        clearDispatchCache();
         registerFunctionExtent(address, address + static_cast<std::uint32_t>(expected.size()));
     }
 
@@ -192,6 +196,7 @@ public:
         if (address <= owner || address % 4 || found == functions_.end() || found->second != function
                 || functions_.contains(address) || !interior_entries_.emplace(address, InteriorEntry{function, owner}).second)
             throw std::runtime_error("Invalid or duplicate interior entry registration");
+        clearDispatchCache();
     }
 
     void registerKernelFunction(std::uint32_t address, RecompiledFunction function,
@@ -715,11 +720,26 @@ public:
         // loading work: battle loading copies and unpacks for tens of millions of iterations in one go.
         if (gs_display_flips != checkpoint_flips_ || vblank_deliveries != checkpoint_fields_)
             {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries; checkpoints_ = 0;}
-        if (++checkpoints_ > (checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u))
+        if (++checkpoints_ > checkpointLimit())
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
                 +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
         if (current_thread_id == 1 && ++main_checkpoints_since_field_ > main_checkpoints_per_field) busyMainField();
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
+    }
+    unsigned checkpointLimit() const {return checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u;}
+    // `count` checkpoints at once, for a native function that stands for a generated loop
+    // (native_functions.cpp): taken only when none of them would stop the run or deliver main's
+    // busy-field VBlank (false: nothing is counted and the caller runs the generated code instead).
+    bool takeCheckpoints(std::uint64_t count) {
+        if (!count) return true;
+        const bool fresh = gs_display_flips != checkpoint_flips_ || vblank_deliveries != checkpoint_fields_;
+        const std::uint64_t used = fresh ? 0 : checkpoints_;
+        if (used + count > checkpointLimit()) return false;
+        if (current_thread_id == 1 && main_checkpoints_since_field_ + count > main_checkpoints_per_field) return false;
+        if (fresh) {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries;}
+        checkpoints_ = static_cast<unsigned>(used + count);
+        if (current_thread_id == 1) main_checkpoints_since_field_ += static_cast<unsigned>(count);
+        return true;
     }
 
     std::uint32_t expected_return = 0;
@@ -786,6 +806,8 @@ public:
     std::array<std::uint32_t,4096> recently_entered_{},recently_completed_{};
     void noteEntered(std::uint32_t target) {auto& slot=recently_entered_[(target>>2)&4095];if(slot!=target){slot=target;entered_functions.insert(target);}}
     void noteCompleted(std::uint32_t target) {auto& slot=recently_completed_[(target>>2)&4095];if(slot!=target){slot=target;completed_functions.insert(target);}}
+    // Stores through the runtime's accessors (diagnostics). Generated code stores to main RAM inline
+    // (ps2_runtime_macros.h), except halfwords, so these count those only when ps2GuestRamChecked is set.
     std::uint64_t halfword_writes=0;
     std::uint64_t doubleword_writes = 0, word_writes = 0;
     std::uint64_t byte_writes = 0, quadword_writes = 0;
@@ -906,6 +928,12 @@ private:
     void verifyKernelBinding(std::uint32_t address);
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> kernel_code_bindings_;
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> overlay_code_bindings_;
+    std::uint32_t overlay_bindings_begin_=UINT32_MAX,overlay_bindings_end_=0; // The range overlay bindings cover.
+    // Dispatch's lookup in front of functions_ and interior_entries_, direct-mapped by the target (the
+    // function and the function counted as entered); every registration or replacement clears it.
+    struct DispatchSlot {std::uint32_t target=UINT32_MAX,counted=0;RecompiledFunction function=nullptr;};
+    std::array<DispatchSlot,8192> dispatch_cache_{};bool dispatch_cache_used_=false;
+    void clearDispatchCache() {if(dispatch_cache_used_){dispatch_cache_.fill({});dispatch_cache_used_=false;}}
     // An aligned word of main RAM, or null for every other address (devices, scratchpad, kernel
     // views, unaligned or out-of-range accesses), which take the checked paths.
     std::uint8_t* ramWord(std::uint8_t* rdram,std::uint32_t address) {

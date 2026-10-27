@@ -19,6 +19,7 @@
 #include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
 #include "ee/game_patches.h"
+#include "ee/native_functions.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
 #include <algorithm>
@@ -91,6 +92,28 @@ int main(int argc, char** argv) {
                 state_hash->field(static_cast<unsigned>(runtime.vblank_deliveries + 1), static_cast<unsigned>(runtime.gs_display_flips), regions);
             };
         }
+        // BT2_FIELD_LOG=<path>: one line per field (where loading time goes): the field, flips, the disc's
+        // sector reads, file and CRI stream requests, the load-wait idle points so far, and the peak of the
+        // field's mixed audio (0: silent).
+        static std::ofstream field_log;
+        static int field_audio_peak = -1;
+        if (const char* path = std::getenv("BT2_FIELD_LOG")) {
+            field_log.open(path);
+            if (!field_log) throw std::runtime_error(std::string("Cannot write the field log ") + path);
+            field_log << "field,microseconds,calls,flips,sector_reads,file_requests,stream_transfers,load_idles,audio_peak\n";
+            auto previous = std::move(runtime.on_field_end);
+            runtime.on_field_end = [&runtime, previous] {
+                if (previous) previous();
+                // The field's time on the game's thread (with the pacer's wait, when there is one).
+                static auto last = std::chrono::steady_clock::now();
+                const auto now = std::chrono::steady_clock::now();
+                const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now - last).count();last = now;
+                field_log << runtime.vblank_deliveries + 1 << ',' << microseconds << ',' << runtime.guest_calls << ',' << runtime.gs_display_flips << ',' << runtime.ncmd_read_calls << ','
+                    << runtime.fileio_calls << ',' << runtime.cri_stream_transfers << ','
+                    << runtime.load_poll_idles + runtime.file_load_idles + runtime.asset_poll_idles << ',' << field_audio_peak << '\n';
+                field_audio_peak = -1;
+            };
+        }
         // BT2_NO_INTERIOR_ENTRIES: dispatch knows function starts only (compare with the default).
         if (std::getenv("BT2_NO_INTERIOR_ENTRIES")) runtime.interior_entries_disabled = true;
         // BT2_AUDIO_WAV=<path>: the mixed audio of the run as a 48 kHz stereo WAV file.
@@ -118,8 +141,12 @@ int main(int argc, char** argv) {
         if (viewer_mode || speaker.device) pacer = std::make_unique<FramePacer>();
         // BT2_FAST_FORWARD: the whole run in fast forward, as when its key is held (to measure it).
         if (pacer && std::getenv("BT2_FAST_FORWARD")) pacer->free_run = true;
-        if (wav || pacer)
+        if (wav || pacer || field_log.is_open())
             runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
+                if (field_log.is_open()) {
+                    int peak = 0;for (const auto sample : pcm) peak = std::max(peak, std::abs(int(sample)));
+                    field_audio_peak = std::max(field_audio_peak, peak);
+                }
                 if (wav) wav->write(pcm);
                 if (pacer) {
                     if (sixty_fps::field_picture) sixty_fps::field_picture(); // An in-between picture, at this field's deadline.
@@ -194,6 +221,32 @@ int main(int argc, char** argv) {
                 auto& c = census.cost[census.key_at[start]];++c.runs;c.pairs += pairs;c.nanoseconds += nanoseconds;
             };
         }
+        // BT2_FIELD_CALLS=<file>:<field>: how often each function and call site was called in that field (the
+        // functions behind a field's work), written when the field ends: target, calls, the busiest caller.
+        if (const char* spec = std::getenv("BT2_FIELD_CALLS")) {
+            const std::string text = spec;const auto colon = text.rfind(':');
+            if (colon == std::string::npos) throw std::runtime_error("BT2_FIELD_CALLS needs <file>:<field>");
+            static const std::string path = text.substr(0, colon);
+            static const unsigned field = static_cast<unsigned>(std::stoul(text.substr(colon + 1)));
+            static std::map<std::uint32_t, std::map<std::uint32_t, unsigned>> calls; // target -> caller -> calls
+            runtime.on_guest_call = [&runtime](const R5900Context&, std::uint32_t source, std::uint32_t target) {
+                if (runtime.vblank_deliveries + 1 == field) ++calls[target][source];
+            };
+            auto previous = std::move(runtime.on_field_end);
+            runtime.on_field_end = [&runtime, previous] {
+                if (previous) previous();
+                if (runtime.vblank_deliveries + 1 != field) return;
+                std::vector<std::tuple<unsigned, std::uint32_t, std::uint32_t, unsigned>> rows;
+                for (const auto& [target, sources] : calls) {
+                    unsigned total = 0, top = 0;std::uint32_t top_source = 0;
+                    for (const auto& [source, count] : sources) {total += count;if (count > top) {top = count;top_source = source;}}
+                    rows.emplace_back(total, target, top_source, top);
+                }
+                std::sort(rows.rbegin(), rows.rend());
+                std::ofstream out(path);
+                for (const auto& [total, target, source, top] : rows) out << std::hex << target << std::dec << ' ' << total << ' ' << std::hex << source << std::dec << ' ' << top << '\n';
+            };
+        }
         // BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]: one line per call of those
         // functions from that display flip on: the flip, the calling address, the target, a0 to a3,
         // f12, f13 and f0 (the previous call's result), and the four floats at each of a0 to a2 that points into RAM. Local evidence, not committed.
@@ -233,6 +286,7 @@ int main(int argc, char** argv) {
             const std::string text = watch;
             const auto address = text.rfind(':'), from = text.rfind(':', address - 1);
             if (address == std::string::npos || from == std::string::npos) throw std::runtime_error("BT2_EE_WATCH_QUADWORD needs <file>:<from flip>:<address>");
+            ps2GuestRamChecked = true; // RAM stores through the runtime, which watches them.
             store_trace.open(text.substr(0, from));
             if (!store_trace) throw std::runtime_error("Cannot write the store trace " + text.substr(0, from));
             const unsigned first = static_cast<unsigned>(std::stoul(text.substr(from + 1, address - from - 1)));
@@ -283,6 +337,7 @@ int main(int argc, char** argv) {
             const char* patches = std::getenv("BT2_GAME_PATCHES");
             for (const GamePatch* patch : parseGamePatches(patches ? patches : "")) if (patch->name == "widescreen") viewer.setWidescreen(true);
         }
+        if (std::getenv("BT2_VIEWER_FULLSCREEN")) viewer.setLayout(2, true); // Tool runs: the player's fullscreen layout.
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode && !std::getenv("BT2_VIEWER_CLOSE")}; // BT2_VIEWER_CLOSE: the window closes with the run (automated runs with a window).
 #ifndef BT2_GPU_GS
         if (viewer_mode) throw std::runtime_error("The viewer needs a probe built with -DBT2_GPU_GS=ON (the GPU renderer draws every picture)");
@@ -464,11 +519,14 @@ int main(int argc, char** argv) {
             runtime.on_display_flip = [&runtime, viewer_mode] {
                 const auto flip = runtime.gs_display_flips;
                 // BT2_SAMPLE_PROFILE=<path>: sample where this thread executes, from flip
-                // BT2_SAMPLE_FROM (default 1) to the end of the run (host/sample_profiler.h).
+                // BT2_SAMPLE_FROM (default 1) to the end of the run or to flip BT2_SAMPLE_TO (host/sample_profiler.h).
                 static std::unique_ptr<SampleProfiler> profiler;
                 static const char* profile_path = std::getenv("BT2_SAMPLE_PROFILE");
                 static const unsigned profile_from = std::getenv("BT2_SAMPLE_FROM") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SAMPLE_FROM"))) : 1;
-                if (profile_path && !profiler && flip >= profile_from) profiler = std::make_unique<SampleProfiler>(profile_path);
+                static const unsigned profile_to = std::getenv("BT2_SAMPLE_TO") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SAMPLE_TO"))) : UINT32_MAX;
+                static bool profiled = false;
+                if (profile_path && !profiler && !profiled && flip >= profile_from) {profiler = std::make_unique<SampleProfiler>(profile_path);profiled = true;}
+                if (profiler && flip >= profile_to) profiler.reset(); // Written when it ends.
                 // The worker's last frame ends before the main renderer's flip (they share the device and the HD pack).
                 bool in_between_ready = false;
                 // Checks and snapshots wait for the frame; play only keeps the in-between thread within a frame of the game.
@@ -550,6 +608,14 @@ int main(int argc, char** argv) {
                 const auto t_shown = Clock::now();
                 const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->free_run)
                                      && !in_between->replay_only && !in_between->scan_replay;
+                // BT2_LATENCY_LOG=<path>: each shown flip: when the game flipped it and when it was handed to the
+                // window after the pacer's wait (steady clock, microseconds), and whether 60 fps holds it a field;
+                // the presenter writes <path>.presents (gpu_window_presenter.h). tools/perf/latency_report.py.
+                static std::ofstream latency_log = [] {const char* p = std::getenv("BT2_LATENCY_LOG");return p ? std::ofstream(p) : std::ofstream();}();
+                if (latency_log.is_open()) {
+                    const auto us = [](Clock::time_point t) {return std::chrono::duration_cast<std::chrono::microseconds>(t.time_since_epoch()).count();};
+                    latency_log << "flip," << flip << ',' << us(t0) << ',' << us(t_shown) << ',' << (delayed ? 1 : 0) << '\n';
+                }
                 if (delayed) {
                     // This flip's picture is held for the next field; its deadline shows the in-between picture of the
                     // job started at the last flip (between the picture shown a field ago and this one), when ready.
@@ -668,6 +734,8 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime);
+        // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
+        if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
         // BT2_START_BATTLE / BT2_START_SCREEN / BT2_START_EPISODE: a CPU-against-CPU battle, a screen or a
         // story episode without input, for tool runs (game_starter.h).
         {

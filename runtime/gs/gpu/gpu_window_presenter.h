@@ -34,7 +34,12 @@ private:
     struct Request {
         void* window=nullptr;std::optional<DisplayFrame> frame;Vulkan::ImageHandle picture;Rect at;
         unsigned client_width=0,client_height=0;bool smooth=false;DisplayFrame status;Rect status_at;
+        long long queued_us=0; // When it was handed over (the steady clock), for the latency log.
     };
+    // BT2_LATENCY_LOG=<path>: <path>.presents gets each present (its DXGI present count, when it was handed
+    // over and when presented) and each present the display has shown since (its count and the refresh's
+    // time), in microseconds of the steady clock.
+    void logPresent(long long queued_us);
     // On the thread: the picture copied into the swapchain and the device's frame context ended; whether
     // it is to be presented (WSI::end_frame, after around_frame).
     bool present(const Request& request);

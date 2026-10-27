@@ -15,7 +15,7 @@ void EeRuntime::registerKernelFunction(std::uint32_t address, RecompiledFunction
     if (!function || (!primary && !startup) || functions_.contains(address))
         throw std::runtime_error("Invalid copied kernel binding");
     kernel_code_bindings_.emplace(address, std::vector<std::uint8_t>(expected_payload.begin(), expected_payload.end()));
-    functions_.emplace(address, function);
+    functions_.emplace(address, function);clearDispatchCache();
 }
 
 // A field's worth of main-thread work without an idle point: the VBLANK arrives anyway, once main runs
@@ -73,17 +73,23 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
         main_context_=context;
         if((kind==GuestBranchKind::DirectCall || kind==GuestBranchKind::IndirectCall) && ++main_calls_since_field_>main_calls_per_field)busyMainField();
     }
-    const auto found = functions_.find(target);
     // The function to run and the function that counts as entered: an interior entry runs the function
-    // holding it, which resumes at the label the pc names.
+    // holding it, which resumes at the label the pc names. The cache in front of the maps holds both.
     RecompiledFunction function;
     std::uint32_t counted = target;
-    if (found != functions_.end()) function = found->second;
-    else if (const auto entry = interior_entries_.find(target); entry != interior_entries_.end() && !interior_entries_disabled) {
-        function = entry->second.function; counted = entry->second.owner; ++interior_entry_dispatches;
-    } else if (!interpreter_handlers_.empty() && target < ram_size && !(target & 3)) {
-        function = interpretEntry; // Code no generated function holds runs interpreted (ee_interpreter.cpp).
-    } else throw UnsupportedGuestBranch(target, source, resume);
+    auto& slot = dispatch_cache_[(target >> 2) & (dispatch_cache_.size() - 1)];
+    if (slot.target == target) {
+        function = slot.function; counted = slot.counted;
+        if (counted != target) ++interior_entry_dispatches;
+    } else {
+        if (const auto found = functions_.find(target); found != functions_.end()) function = found->second;
+        else if (const auto entry = interior_entries_.find(target); entry != interior_entries_.end() && !interior_entries_disabled) {
+            function = entry->second.function; counted = entry->second.owner; ++interior_entry_dispatches;
+        } else if (!interpreter_handlers_.empty() && target < ram_size && !(target & 3)) {
+            function = interpretEntry; // Code no generated function holds runs interpreted (ee_interpreter.cpp).
+        } else throw UnsupportedGuestBranch(target, source, resume);
+        if (function != interpretEntry) {slot = {target, counted, function};dispatch_cache_used_ = true;}
+    }
     // BT2_EE_INTERPRET=all: generated functions run interpreted as well (a diagnostic comparison).
     if (interpret_all && function != interpretEntry && function_extents_.contains(counted)) function = interpretEntry;
     verifyKernelBinding(counted);
@@ -117,6 +123,7 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
 }
 
 void EeRuntime::verifyKernelBinding(std::uint32_t address) {
+    if (address < 0x80000000 && (address < overlay_bindings_begin_ || address >= overlay_bindings_end_)) return; // Neither kind.
     if (const auto overlay = overlay_code_bindings_.find(address); overlay != overlay_code_bindings_.end()) {
         if (memory_.size() < address + overlay->second.size()
                 || !std::equal(overlay->second.begin(), overlay->second.end(), memory_.begin() + address))

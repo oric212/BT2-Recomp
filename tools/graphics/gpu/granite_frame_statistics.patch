@@ -1,0 +1,53 @@
+diff --git a/Granite/vulkan/wsi.hpp b/Granite/vulkan/wsi.hpp
+--- a/Granite/vulkan/wsi.hpp
++++ b/Granite/vulkan/wsi.hpp
+@@ -208,6 +208,16 @@
+ 		return false;
+ #endif
+ 	}
++	// BT2 Recomp patch: DXGI's frame statistics (DXGIInteropSwapchain::frame_statistics); false without DXGI.
++	bool get_dxgi_frame_statistics(uint64_t &last_present, uint64_t &shown_present, int64_t &shown_qpc)
++	{
++#ifdef HAVE_WSI_DXGI_INTEROP
++		return dxgi && dxgi->frame_statistics(last_present, shown_present, shown_qpc);
++#else
++		(void)last_present; (void)shown_present; (void)shown_qpc;
++		return false;
++#endif
++	}
+ 	void set_backbuffer_format(BackbufferFormat format);
+ 	// This is mostly for debug/development, ignores exposed formats and forces it.
+ 	void set_custom_backbuffer_format(VkSurfaceFormatKHR format);
+diff --git a/Granite/vulkan/wsi_dxgi.hpp b/Granite/vulkan/wsi_dxgi.hpp
+--- a/Granite/vulkan/wsi_dxgi.hpp
++++ b/Granite/vulkan/wsi_dxgi.hpp
+@@ -48,6 +48,9 @@
+ 	bool acquire(Semaphore &acquire_semaphore);
+ 	bool present(Semaphore release_semaphore, bool vsync);
+ 	bool wait_latency(unsigned latency_frames);
++	// BT2 Recomp patch: the count of the last present, and the last present the display showed with the
++	// QueryPerformanceCounter time of the refresh it appeared at.
++	bool frame_statistics(uint64_t &last_present, uint64_t &shown_present, int64_t &shown_qpc);
+ 
+ private:
+ 	Device *vk_device = nullptr;
+diff --git a/Granite/vulkan/wsi_dxgi.cpp b/Granite/vulkan/wsi_dxgi.cpp
+--- a/Granite/vulkan/wsi_dxgi.cpp
++++ b/Granite/vulkan/wsi_dxgi.cpp
+@@ -517,4 +517,16 @@
+ 	completed_presents++;
+ 	return true;
+ }
++
++bool DXGIInteropSwapchain::frame_statistics(uint64_t &last_present, uint64_t &shown_present, int64_t &shown_qpc)
++{
++	UINT count = 0;
++	DXGI_FRAME_STATISTICS stats = {};
++	if (!swapchain || FAILED(swapchain->GetLastPresentCount(&count)) || FAILED(swapchain->GetFrameStatistics(&stats)))
++		return false;
++	last_present = count;
++	shown_present = stats.PresentCount;
++	shown_qpc = stats.SyncQPCTime.QuadPart;
++	return true;
++}
+ }

@@ -10,7 +10,11 @@
 #include "wsi.hpp"
 #include <vulkan/vulkan_win32.h>
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
 #include <stdexcept>
+#include <string>
 
 namespace {
 // Granite's WSI asks its platform for the surface and its size; here that is the viewer's window.
@@ -71,6 +75,7 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
     Request request;
     request.window=window;request.at=at;request.client_width=client_width;request.client_height=client_height;request.smooth=smooth;
     request.status=status;request.status_at=status_at;
+    request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(frame)request.frame=*frame;else request.picture=renderer_picture_();
     {
         std::lock_guard guard(lock_);
@@ -94,8 +99,25 @@ void GpuWindowPresenter::run() {
             bool presenting=false;
             around_frame_([&]{presenting=present(request);});
             if(presenting && !state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
+            if(presenting)logPresent(request.queued_us);
         }
         catch(...) {std::lock_guard guard(lock_);if(!failure_)failure_=std::current_exception();}
+    }
+}
+
+void GpuWindowPresenter::logPresent(long long queued_us) {
+    static std::ofstream log=[] {const char* p=std::getenv("BT2_LATENCY_LOG");return p?std::ofstream(std::string(p)+".presents"):std::ofstream();}();
+    if(!log.is_open())return;
+    const auto now_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    std::uint64_t last=0,shown=0;std::int64_t shown_qpc=0;
+    if(!state_->wsi->get_dxgi_frame_statistics(last,shown,shown_qpc))return;
+    log<<"present,"<<last<<','<<queued_us<<','<<now_us<<'\n';
+    static std::uint64_t logged_shown=0;
+    if(shown!=logged_shown) {
+        // The steady clock counts QueryPerformanceCounter's ticks on Windows: the same time base.
+        static const long long frequency=[] {LARGE_INTEGER f;QueryPerformanceFrequency(&f);return f.QuadPart;}();
+        log<<"shown,"<<shown<<','<<static_cast<long long>(static_cast<double>(shown_qpc)*1e6/static_cast<double>(frequency))<<'\n';
+        logged_shown=shown;
     }
 }
 
