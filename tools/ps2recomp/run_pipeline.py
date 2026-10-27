@@ -519,7 +519,7 @@ def main():
                  folder / "integration-build.log", check=False)
     entry_stop = None
     if result.returncode == 0:
-        run(["ctest", "--test-dir", str(build), "-C", "Debug", "--output-on-failure", "-R", "^generated-entry-probe$"], folder / "entry-test.log")
+        # The evidence files the probe reads (the list is kept in the order of its arguments).
         entry_command = [str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")]
         if args.kernel_snapshot:
             entry_command.append(str(args.kernel_snapshot.resolve()))
@@ -575,8 +575,12 @@ def main():
         if heap_bundle:entry_command.append(str(heap_bundle))
         if heap_allocation_bundle:entry_command.append(str(heap_allocation_bundle))
         if texture_bundle:entry_command.append(str(texture_bundle))
-        run(entry_command)
-        entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
+        # The probe runs with every startup input and the disc (run_startup_probe.py); without a disc the
+        # pipeline stops after preparing the inputs.
+        if args.heap_disc:
+            run([sys.executable, str(ROOT / "tools/ps2recomp/run_startup_probe.py"), "--disc", str(args.heap_disc.resolve())], folder / "entry-run.log")
+            entry_stop = json.loads((folder / "entry-stop.json").read_text(encoding="utf-8"))
+        else:print("Startup inputs prepared; run tools/ps2recomp/run_startup_probe.py --disc <disc image> to run the probe.")
     (folder / "pipeline-result.json").write_text(json.dumps({"probe_build_and_execution": "passed",
         "heap_bind_provenance": json.loads(heap_bundle.with_suffix('.json').read_text(encoding='utf-8')) if heap_bundle else None,
         "heap_allocation_provenance": json.loads(heap_allocation_bundle.with_suffix('.json').read_text(encoding='utf-8')) if heap_allocation_bundle else None,

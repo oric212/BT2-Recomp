@@ -383,14 +383,15 @@ public:
     }
     std::span<const std::uint8_t> kernelBaseline() const { return kernel_snapshot_; }
 
-    // Single captured startup read, not a timer scheduler or mutable register model.
+    // The boot's OSD configuration word (a capture), and the word the original read back after the game's
+    // first SetOsdConfigParam (checked: the game sets its language field only).
     void supplyOsdConfig(std::uint32_t word) {
         if (osd_config_supplied) throw std::runtime_error("Duplicate OSD checkpoint");
         osd_config_word = word;
         osd_config_supplied = true;
     }
     void supplyOsdReadback(std::uint32_t expected) {
-        if (!osd_config_supplied || osd_readback_supplied || osd_config_reads || expected != osd_config_word
+        if (!osd_config_supplied || osd_readback_supplied || expected != osd_config_word
                 || ((expected & 0xFFFF1FFF) | 0x2000) != expected)
             throw std::runtime_error("Unsupported OSD same-value readback checkpoint");
         osd_readback_supplied = true;

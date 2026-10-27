@@ -58,27 +58,16 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         // SetGsCrt (ee_gs_privileged.cpp): the display mode. Void in the SDK; the captures return 0.
         gsSetCrt(context->r[4].low,context->r[5].low,context->r[6].low,context->pc);context->r[2].low=0;return;
     }
-    if (code == 0 && selector == 0x4A) {
-        if (!osd_readback_supplied || !((osd_config_reads == 1 && osd_config_sets == 0)
-                || (osd_config_reads == 2 && osd_config_sets == 1)) || context->r[4].low > UINT32_MAX)
-            throw UnsupportedSyscall(selector, context->pc);
-        const auto address = static_cast<std::uint32_t>(context->r[4].low);
-        if (address & 3) throw UnsupportedGuestMemory(address, 4);
-        checkMemory(rdram, address, 4);
-        // Capture established only the same-value write; mutations fail.
-        if (read32(rdram, address) != osd_config_word) throw UnsupportedSyscall(selector, context->pc);
-        ++osd_config_sets;
+    if(code==0 && (selector==0x4A || selector==0x4B)) {
+        // SetOsdConfigParam / GetOsdConfigParam: the kernel keeps the configuration word; Get returns the
+        // last one set (the boot's, a capture, until the game sets one). Void in the SDK: v0 is kept.
+        if(!osd_config_supplied)throw UnsupportedSyscall(selector,context->pc);
+        const auto address=static_cast<std::uint32_t>(context->r[4].low);
+        if(context->r[4].low>UINT32_MAX || address%4)throw UnsupportedGuestMemory(address,4);
+        checkMemory(rdram,address,4);
+        if(selector==0x4A){osd_config_word=read32(rdram,address);++osd_config_sets;}
+        else {write32(rdram,address,osd_config_word);++osd_config_reads;}
         return;
-    }
-    if (code == 0 && selector == 0x4B) {
-        if (!osd_config_supplied || (osd_config_reads && !(osd_readback_supplied && osd_config_reads == 1 && osd_config_sets == 1)) || context->r[4].low > UINT32_MAX)
-            throw UnsupportedSyscall(selector, context->pc);
-        const auto address = static_cast<std::uint32_t>(context->r[4].low);
-        if (address & 3) throw UnsupportedGuestMemory(address, 4);
-        checkMemory(rdram, address, 4);
-        write32(rdram, address, osd_config_word);
-        ++osd_config_reads;
-        return; // SDK declares void; preserve the result register.
     }
     if (code == 0 && selector == 0x32 && active_ee_stack && current_thread_id==3) {
         if(context->pc!=0x32EB88 || context->r[29].low!=0x3A6C80

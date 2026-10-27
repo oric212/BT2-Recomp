@@ -1274,76 +1274,44 @@ int main() {
         require(priority_context.r[2].low == 0 && priority_context.r[2].high == UINT64_MAX && priority.main_thread_priority == 1);
         priority.handleSyscall(nullptr, &priority_context, 0);
         require(priority_context.r[2].low == 1 && priority.priority_changes == 2);
+        // GetOsdConfigParam / SetOsdConfigParam from any pc: Get writes the kernel's word (the boot's until
+        // a Set) to an aligned RAM word, Set stores the word; v0 is kept. The readback capture is checked.
         EeRuntime osd;
         osd.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         R5900Context osd_context{};
+        osd_context.pc = 0x123450;
         osd_context.r[3].low = 0x4B;
         osd_context.r[4].low = 0x100;
         osd_context.r[2] = {0xABCD, UINT64_MAX};
-        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); }); // No boot word yet.
+        reject([&] { osd.supplyOsdReadback(0x21C12010); });
         osd.supplyOsdConfig(0x21C12010);
         reject([&] { osd.supplyOsdConfig(0); });
+        reject([&] { osd.supplyOsdReadback(0); });
+        osd.supplyOsdReadback(0x21C12010);
+        reject([&] { osd.supplyOsdReadback(0x21C12010); });
         reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 1); });
         reject([&] { osd.handleSyscall(nullptr, &osd_context, 0); });
-        osd_context.r[4].low = 0x101;
-        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
-        osd_context.r[4].low = EeRuntime::ram_size;
-        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
-        osd_context.r[4].low = UINT64_MAX;
-        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        for (const auto address : {std::uint64_t{0x101}, std::uint64_t{EeRuntime::ram_size}, UINT64_MAX}) {
+            osd_context.r[4].low = address;
+            reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
+        }
         require(osd.osd_config_reads == 0 && osd.word_writes == 0);
         osd_context.r[4].low = 0x100;
         osd.memory()[0xFF] = osd.memory()[0x104] = 0xA5;
+        for (unsigned read = 1; read <= 2; ++read) {
+            osd.handleSyscall(osd.memory().data(), &osd_context, 0);
+            require(osd.read32(osd.memory().data(), 0x100) == 0x21C12010 && osd.osd_config_reads == read
+                    && osd_context.r[2].low == 0xABCD && osd_context.r[2].high == UINT64_MAX
+                    && osd.memory()[0xFF] == 0xA5 && osd.memory()[0x104] == 0xA5);
+        }
+        osd.write32(osd.memory().data(), 0x100, 0x21C10010);
+        osd_context.r[3].low = 0x4A;
         osd.handleSyscall(osd.memory().data(), &osd_context, 0);
-        require(osd.read32(osd.memory().data(), 0x100) == 0x21C12010 && osd.osd_config_reads == 1
-                && osd.word_writes == 1 && osd_context.r[2].low == 0xABCD && osd_context.r[2].high == UINT64_MAX
-                && osd.memory()[0xFF] == 0xA5 && osd.memory()[0x104] == 0xA5);
-        reject([&] { osd.handleSyscall(osd.memory().data(), &osd_context, 0); });
-        EeRuntime osd_sequence;
-        osd_sequence.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
-        R5900Context sequence_context{};
-        sequence_context.r[3].low = 0x4B;
-        sequence_context.r[4].low = 0x100;
-        sequence_context.r[2] = {0xABCD, UINT64_MAX};
-        reject([&] { osd_sequence.supplyOsdReadback(0x21C12010); });
-        osd_sequence.supplyOsdConfig(0x21C12010);
-        reject([&] { osd_sequence.supplyOsdReadback(0); });
-        osd_sequence.supplyOsdReadback(0x21C12010);
-        reject([&] { osd_sequence.supplyOsdReadback(0x21C12010); });
-        sequence_context.r[3].low = 0x4A;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[3].low = 0x4B;
-        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[3].low = 0x4A;
-        sequence_context.r[4].low = 0x104;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[4].low = EeRuntime::ram_size;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[4].low = UINT64_MAX;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[4].low = 0x101;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[4].low = 0x100;
-        reject([&] { osd_sequence.handleSyscall(nullptr, &sequence_context, 0); });
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 1); });
-        require(osd_sequence.osd_config_sets == 0 && osd_sequence.osd_config_reads == 1);
-        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
-        require(osd_sequence.osd_config_sets == 1 && osd_sequence.word_writes == 1);
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[3].low = 0x4B;
-        sequence_context.r[4].low = 0x104;
-        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
-        require(osd_sequence.read32(osd_sequence.memory().data(), 0x104) == 0x21C12010
-                && osd_sequence.osd_config_reads == 2 && osd_sequence.word_writes == 2
-                && sequence_context.r[2].low == 0xABCD && sequence_context.r[2].high == UINT64_MAX);
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[3].low = 0x4A;
-        osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0);
-        require(osd_sequence.osd_config_sets == 2 && osd_sequence.word_writes == 2);
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
-        sequence_context.r[3].low = 0x4B;
-        reject([&] { osd_sequence.handleSyscall(osd_sequence.memory().data(), &sequence_context, 0); });
+        osd.write32(osd.memory().data(), 0x100, 0);
+        osd_context.r[3].low = 0x4B;
+        osd.handleSyscall(osd.memory().data(), &osd_context, 0);
+        require(osd.read32(osd.memory().data(), 0x100) == 0x21C10010 && osd.osd_config_sets == 1 && osd.osd_config_reads == 3);
         EeRuntime second_overlay;
         second_overlay.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         const std::vector<std::uint8_t> payload(0x330, 0xC3);

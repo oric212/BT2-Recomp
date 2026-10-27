@@ -89,9 +89,8 @@ void registerStartupFunctions(EeRuntime& runtime) {
     registerSelectedOverlays(runtime); // overlay_bindings.cpp
 }
 
-void registerKernelPayloads(EeRuntime& runtime,const ProbeModes& modes) {
-    const bool timer_mode=modes.timer,osd_readback_mode=modes.osd_readback;
-    if (timer_mode) {
+void registerKernelPayloads(EeRuntime& runtime) {
+    {
     #ifdef BT2_KERNEL_PAYLOAD
         runtime.registerKernelFunction(0x80076000, FUN_80076000_0x80076000,
             std::span<const std::uint8_t>(runtime.memory()).subspan(0x0036B328, 0x740));
@@ -99,7 +98,7 @@ void registerKernelPayloads(EeRuntime& runtime,const ProbeModes& modes) {
         throw std::runtime_error("Timer replay requires generated kernel payload integration");
     #endif
     }
-    if (osd_readback_mode) {
+    {
     #ifdef BT2_STARTUP_KERNEL_PAYLOAD
         runtime.registerKernelFunction(0x80075000, FUN_80075000_0x80075000,
             std::span<const std::uint8_t>(runtime.memory()).subspan(0x0036BAF8, 0x330));

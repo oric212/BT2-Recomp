@@ -36,10 +36,10 @@
 #include <crtdbg.h>
 #endif
 
-// Entry probe: runs the generated BT2 entry on a prepared guest image with the supplied evidence,
-// classifies the checked boundary where it stops, validates the reached checkpoint and writes the
-// private report. Stages live in probe_inputs.cpp, startup_bindings.cpp, checkpoint_checks.cpp and
-// probe_reports.cpp.
+// Entry probe: runs the generated BT2 entry on a prepared guest image with the startup evidence (every
+// input; tools/ps2recomp/run_startup_probe.py passes them), classifies the checked boundary where it
+// stops, validates the reached state and writes the private report. Stages live in probe_inputs.cpp,
+// startup_bindings.cpp, checkpoint_checks.cpp and probe_reports.cpp.
 
 // 60 fps battles (gs/gpu/in_between_frames.h): the picture shown in the field between two fight flips,
 // and the fight's 30 fps waits counted per frame (a frame that waited is a fight frame).
@@ -57,11 +57,7 @@ int main(int argc, char** argv) {
 #endif
     stopPowerThrottling();
     try {
-        if (argc < 3 || argc > 25) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT [KERNEL_SNAPSHOT [TIMER3_CAPTURE_WORD [TIMER2_CAPTURE_WORD [INTC_MASK_WORD [TIMER2_READBACK_WORD [OSD_CONFIG_WORD [OSD_READBACK_WORD [DMA_STATUS_WORD [DMA5_CONTROL_WORD [SIF_COMMAND_WORD [SIF_DMA_BUNDLE [SIF_RPC_STATE_WORD [SIF_BIND_BUNDLE]]]]]]]]]]]]]");
-        const ProbeModes modes=ProbeModes::fromArgc(argc);
-        const bool cd_mode=modes.cd,bind_mode=modes.bind,snapshot_mode=modes.snapshot,timer_mode=modes.timer,timer2_mode=modes.timer2,
-            intc_mode=modes.intc,readback_mode=modes.readback,osd_mode=modes.osd,osd_readback_mode=modes.osd_readback,
-            dma_status_mode=modes.dma_status,sif_rpc_mode=modes.sif_rpc,sif_dma_mode=modes.sif_dma,sif_mode=modes.sif,dma5_mode=modes.dma5;
+        if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT KERNEL_SNAPSHOT TIMER3_MODE TIMER2_MODE INTC_MASK TIMER2_READBACK OSD_CONFIG OSD_READBACK DMA_STATUS DMA5_CONTROL SIF_COMMAND SIF_DMA SIF_RPC_STATE SIF_BIND CD_INIT SCMD_BIND HEAP_BIND HEAP_ALLOCATION TEXTURE_STARTUP EE_THREAD_START DISC_BIND DISC_IMAGE NCMD_BIND");
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(EeRuntime::ram_size))
             throw std::runtime_error("Invalid prepared guest image size");
@@ -655,8 +651,7 @@ int main(int argc, char** argv) {
         // BT2_GAME_PATCHES=<name>[,<name>]: the player's optional patches of the executable (ee/game_patches.h).
         if (const char* list = std::getenv("BT2_GAME_PATCHES"))
             for (const GamePatch* patch : parseGamePatches(list)) {applyGamePatch(runtime.memory(), *patch);std::cerr << "Game patch: " << patch->name << std::endl;}
-        const std::uint32_t osd_word=loadStartupEvidence(runtime,modes,argv);
-        const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
+        loadStartupEvidence(runtime,argv);
         constexpr std::uint32_t zero_start=startup_zero_start,zero_end=startup_zero_end;
         runtime.expectStartupZeroRegion(zero_start, zero_end);
         // Poison only the observed startup zero region so zero stores are observable.
@@ -667,9 +662,9 @@ int main(int argc, char** argv) {
         context.hi = context.lo = context.hi1 = context.lo1 = UINT64_MAX;
         context.fcr31 = context.sa = UINT32_MAX;
         context.f_acc = 1.0f;
-        loadContinuationEvidence(runtime,modes,argv);
+        loadContinuationEvidence(runtime,argv);
         registerStartupFunctions(runtime);
-        registerKernelPayloads(runtime,modes);
+        registerKernelPayloads(runtime);
         // BT2_START_BATTLE / BT2_START_SCREEN / BT2_START_EPISODE: a CPU-against-CPU battle, a screen or a
         // story episode without input, for tool runs (game_starter.h).
         {
@@ -711,7 +706,7 @@ int main(int argc, char** argv) {
             if (mode != "off") runtime.setInterpreterHandlers({ee_interpreter_handler_parts, ee_interpreter_handler_part_count});
             runtime.interpret_all = mode == "all";
         }
-        if (argc >= 18) loadScmdEvidence(runtime,argv);
+        loadScmdEvidence(runtime,argv);
         bool stopped = false,execution_budget_exhausted=false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;
@@ -721,113 +716,38 @@ int main(int argc, char** argv) {
         catch (const UnsupportedGuestBranch& stop) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Branch target/source/resume: " << std::hex << stop.target << "/" << stop.source_pc << "/" << stop.resume_pc << "\n";
-            if (!bind_mode) throw;
             stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
         }
         catch (const UnsupportedGuestMemory& stop) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
             std::cerr << "Memory address/pc: " << std::hex << stop.address << "/" << context.pc << "\n";
             std::cerr << "Memory sp-offset/ra/main/cri/graph/display: " << std::hex << (runtime.initial_sp-context.r[29].low) << "/" << context.r[31].low << "/" << runtime.main_priority_admissions << "/" << std::dec << runtime.cri_rpc_calls << "/" << runtime.graph_startup_phase << "/" << runtime.display_reset_phase << " stat/polled/mask " << std::hex << runtime.display_intc_stat << "/" << runtime.polled_vblanks << "/" << runtime.intc_mask << "\n";
-            if (dma5_mode && argc<18) throw;
             // Frame phase (after the first display flip, main thread): a refused access to a hardware
             // register (EE registers or GS privileged registers) is the checked boundary of the next
             // subsystem, named by its address. Refused accesses elsewhere (RAM) remain failures.
             const bool hardware_register=(stop.address>=0x10000000 && stop.address<0x10010000) || (stop.address>=0x12000000 && stop.address<0x12002000);
             const bool frame_register_boundary=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || stop.size==8 || runtime.frame_budget_reached)
                 && hardware_register;
-            if(argc>=18 && !frame_register_boundary) throw; // Explicit subsystem boundaries only.
-            if(frame_register_boundary) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
-            else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
-                    && context.pc == 0x003319EC && runtime.dma_status_reads == 1,
-                    "Unexpected DMA channel control boundary");
-            else if (osd_readback_mode) require(stop.address == 0x1000E010 && stop.size == 4
-                    && context.pc == 0x003319CC && GPR_U32(&context, 4) == 0
-                    && runtime.semaphore_waits == 1 && runtime.semaphore_signals == 1,
-                    "Unexpected DMA status boundary");
-            else if (readback_mode) throw;
-            else if (intc_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338DD8
-                    && runtime.intc_mask == 0x1802 && runtime.intc_enable_calls == 1
-                    && runtime.timer2_mode_reads == 1 && runtime.timer2_mode_writes == 1,
-                    "Unexpected post-EnableIntc timer boundary");
-            else if (timer2_mode) throw;
-            else if (timer_mode) require(stop.address == 0x10001010 && stop.size == 4 && context.pc == 0x00338C58,
-                                    "Unexpected Timer 2 MMIO boundary");
-            else if (snapshot_mode) require(stop.address == 0x10001810 && stop.size == 4 && context.pc == 0x00338A1C,
-                                       "Unexpected snapshot MMIO boundary");
-            else require(stop.address == 0x80000000 && stop.size == 4 && context.pc == 0x00338388,
-                         "Unexpected entry memory boundary");
+            if(!frame_register_boundary) throw; // Explicit subsystem boundaries only; no unsupported request succeeds.
             stop_address = stop.address;
             stop_size = stop.size;
             stopped = true;
         }
         catch (const UnsupportedSyscall& stop) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
-            if (bind_mode) std::cerr << "Syscall selector/handler/pc: " << std::hex << stop.selector << "/" << stop.handler << "/" << context.pc << "\n";
-            else if (sif_rpc_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 464
-                    && GPR_U32(&context, 5) == 1 && runtime.sif_dma_submissions == 1 && runtime.sif_sregs[2] == 1,
-                    "Unexpected first RPC bind submission boundary");
-            else if (sif_dma_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000002
-                    && runtime.sif_dma_submissions == 1,
-                    "Unexpected RPCINIT query boundary");
-            else if (sif_mode) require(stop.selector == 0x77 && !stop.handler && stop.resume_pc == 0x0032F028
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 240
-                    && GPR_U32(&context, 5) == 1 && runtime.sif_register_reads >= 1
-                    && runtime.data_cache_lines == 1, "Unexpected first SIF DMA submission boundary");
-            else if (dma5_mode) require(stop.selector == 0x7A && !stop.handler && stop.resume_pc == 0x0032F078
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 0x80000000,
-                    "Unexpected first SIF register boundary");
-            else if (osd_readback_mode) throw;
-            else if (osd_mode) require(stop.selector == 0x4A && !stop.handler && stop.resume_pc == 0x0032ED08
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 124
-                    && runtime.osd_config_reads == 1 && runtime.priority_changes == 1
-                    && runtime.read32(runtime.memory().data(), runtime.initial_sp - 128) == osd_word
-                    && runtime.read32(runtime.memory().data(), runtime.initial_sp - 124) == ((osd_word & 0xFFFF1FFF) | 0x2000),
-                    "Unexpected SetOsdConfigParam boundary");
-            else if (readback_mode) require(stop.selector == 0x4B && !stop.handler && stop.resume_pc == 0x0032ED18
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == runtime.initial_sp - 128
-                    && runtime.main_thread_priority == 1 && runtime.priority_changes == 1
-                    && runtime.timer2_mode_reads == 2 && runtime.timer2_mode_writes == 1
-                    && runtime.intc_mask == 0x1802 && runtime.intc_enable_calls == 1,
-                    "Unexpected GetOsdConfigParam boundary after priority change");
-            else require(!intc_mode && timer2_mode && stop.selector == 0x14 && !stop.handler && stop.resume_pc == 0x0032E9A8
-                    && context.pc == stop.resume_pc && GPR_U32(&context, 4) == 11
-                    && runtime.timer2_mode_writes == 1 && runtime.timer2Mode() == 0x382
-                    && context.cop0_errorepc == 0x00338C90 && !context.ll_bit,
-                    "Unexpected syscall after generated Timer 2 write/ERET");
+            std::cerr << "Syscall selector/handler/pc: " << std::hex << stop.selector << "/" << stop.handler << "/" << context.pc << "\n";
             stop_selector = stop.selector;
             stop_handler = stop.handler;
             stopped = true;
         }
         catch (const std::runtime_error& error) {
-            if(!bind_mode || !std::string_view(error.what()).starts_with("Bootstrap execution budget exceeded;"))throw;
+            if(!std::string_view(error.what()).starts_with("Bootstrap execution budget exceeded;"))throw;
             std::cerr << error.what() << "\n";execution_budget_exhausted=true;stopped=true;
         }
         const ProbeStop stop{stopped,execution_budget_exhausted,stop_address,stop_size,stop_selector,stop_handler,stop_target,stop_source,stop_resume};
-        if (cd_mode && argc < 18) {
-            checkCdContinuation(runtime,context,stop);
-            writeCdReport(runtime,context,stop,argv);
-            std::cout << "CD-init continuation report written.\n";
-            return 0;
-        }
-        if (argc >= 18) {
-            checkRuntimeBoundary(runtime,context,stop);
-            writeRuntimeBoundaryReport(runtime,context,stop,argv);
-            writeEvidenceDumps(runtime,argv);
-            return 0;
-        }
-        if (bind_mode) {
-            checkBindContinuation(runtime,context,stop,kernel_before);
-            writeBindReport(runtime,context,stop,argv);
-            std::cout << "Generated RPC bind and cleanup returned; first CD-init RPC call reached a checked runtime boundary.\n";
-            return 0;
-        }
-        const std::array<std::uint32_t, 5> args{GPR_U32(&context, 4), GPR_U32(&context, 5),
-            GPR_U32(&context, 6), GPR_U32(&context, 7), GPR_U32(&context, 8)};
-        checkEntryBoundary(runtime,context,modes,stop,kernel_before,image,args);
-        writeEntryReport(runtime,context,modes,stop,args,argv);
-        printEntrySummary(context,modes,stop);
+        checkRuntimeBoundary(runtime,context,stop);
+        writeRuntimeBoundaryReport(runtime,context,stop,argv);
+        writeEvidenceDumps(runtime,argv);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Entry probe failed: " << error.what() << '\n';

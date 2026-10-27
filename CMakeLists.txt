@@ -372,9 +372,6 @@ if(BT2_BUILD_GENERATED_PROBE)
     target_precompile_headers(bt2-entry-probe PRIVATE
         <algorithm> <array> <bit> <cstdint> <cstdlib> <cstring> <functional> <iostream> <map> <memory>
         <optional> <set> <span> <stdexcept> <string> <unordered_map> <vector> <immintrin.h>)
-    add_test(NAME generated-entry-probe COMMAND bt2-entry-probe
-        "${CMAKE_CURRENT_SOURCE_DIR}/work/bt2-generation/guest-memory.bin"
-        "${CMAKE_CURRENT_BINARY_DIR}/ctest-entry-stop.json") # Its own report: the gate's runs own work/bt2-generation.
 endif()
 
 if(BT2_BUILD_GENERATED_PROBE)
