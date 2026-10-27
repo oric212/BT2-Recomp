@@ -69,10 +69,10 @@ bool EeRuntime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const Si
     } else throw UnsupportedSyscall(0x77,context->pc);
     for(unsigned n=0;n<dbc_words;++n)write32(rdram,r.receive+n*4,w[n]);
     completeNativeCall(rdram,context,r,server);
-    ++sif_dma_submissions;++native_pad_requests;
-    if(startup){++dbc_rpc_calls;context->r[2].low=0x70000+dbc_rpc_binds+dbc_rpc_calls;}
-    else if(server.id==dbc_main){++dbc_main_calls;context->r[2].low=0x7C0000+dbc_main_calls;}
-    else {++dbc_port_calls;context->r[2].low=0x7B0000+dbc_port_calls;}
+    ++native_pad_requests;context->r[2].low=submitSifDma(context);
+    if(startup)++dbc_rpc_calls;
+    else if(server.id==dbc_main)++dbc_main_calls;
+    else ++dbc_port_calls;
     return true;
 }
 

@@ -30,14 +30,13 @@ bool EeRuntime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const Si
         unsigned n=0;for(auto w:words)write32(rdram,r.receive+4*n++,w);
     };
     const auto none=[&]{if(r.recv_size)throw UnsupportedSyscall(0x77,context->pc);};
-    bool create=false;
     switch(r.rpc_number) {
     case cri_create: {
         const auto index=in(0),ee=in(1),iop=in(2),size=in(3);
         if(index>1 || size!=stream_size || native_cri_channels_.size()!=index || iop+size>native_iop_ram_.size())throw UnsupportedSyscall(0x77,context->pc);
         checkMemory(rdram,ee,size);
         native_cri_channels_.push_back({ee,iop,false});
-        reply({0x1B58C0+index*0x44});create=true;break;
+        reply({0x1B58C0+index*0x44});break;
     }
     case cri_403: none();break;
     case cri_40a: if(r.send_size!=12)throw UnsupportedSyscall(0x77,context->pc);none();break;
@@ -59,8 +58,8 @@ bool EeRuntime::nativeCriCall(std::uint8_t* rdram,R5900Context* context,const Si
     default: throw UnsupportedSyscall(0x77,context->pc);
     }
     completeNativeCall(rdram,context,r,server);
-    ++cri_rpc_calls;++sif_dma_submissions;++native_cri_requests;
-    context->r[2].low=create?0x780002:0x780002+cri_rpc_calls-1;return true;
+    ++cri_rpc_calls;++native_cri_requests;
+    context->r[2].low=submitSifDma(context);return true;
 }
 
 bool EeRuntime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,std::uint32_t source,std::uint32_t destination,std::uint32_t size) {
@@ -68,7 +67,7 @@ bool EeRuntime::nativeCriStreamUpload(std::uint8_t* rdram,R5900Context* context,
     if(channel==native_cri_channels_.end())return false;
     if(size!=stream_size)throw UnsupportedSyscall(0x77,context->pc);
     channel->pending=true;
-    ++cri_stream_transfers;++sif_dma_submissions;context->r[2].low=0x790000+cri_stream_transfers;
+    ++cri_stream_transfers;context->r[2].low=submitSifDma(context);
     return true;
 }
 

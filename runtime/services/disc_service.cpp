@@ -5,12 +5,15 @@
 #include <cstring>
 #include <string>
 
-// Native CDVD service: file search (0x80000597), N-commands (0x80000595) and S-commands
-// (0x80000593), answered from the local ISO. Results match what CDVDFSV/CDVDMAN left in EE memory.
+// Native CDVD service: initialization (0x80000592), file search (0x80000597), N-commands (0x80000595)
+// and S-commands (0x80000593), answered from the local ISO. Results match what CDVDFSV/CDVDMAN left in
+// EE memory, the BIOS's before the IOP reset and IOPRP300's after it.
 
 namespace {
-constexpr std::uint32_t search_server=0x80000597,ncmd_server=0x80000595,scmd_server=0x80000593;
-constexpr std::uint32_t ncmd_read=1,ncmd_ready=14,scmd_error=4;
+constexpr std::uint32_t init_server=0x80000592,search_server=0x80000597,ncmd_server=0x80000595,scmd_server=0x80000593;
+constexpr std::uint32_t ncmd_read=1,ncmd_ready=14,scmd_error=4,scmd_media_mode=34;
+// sceCdInit's 16-byte reply, as each boot's CDVDFSV answered mode 0 (captures).
+constexpr std::array<std::array<std::uint32_t,4>,2> init_replies={{{1,0,0,0},{1,0x225,0x225,0}}};
 constexpr std::uint32_t drive_ready=2,completion_record_size=144;
 }
 
@@ -36,13 +39,13 @@ bool EeRuntime::nativeDiscCall(std::uint8_t* rdram,R5900Context* context,const S
             for(unsigned n=32;n<36;++n)write8(rdram,result_address+n,in[n]);
         }
         reply_word(record?1u:0u);completeNativeCall(rdram,context,r,server);
-        ++disc_rpc_calls;++sif_dma_submissions;++native_disc_requests;context->r[2].low=0x740002;return true;
+        ++disc_rpc_calls;++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
     }
     if(server.id==ncmd_server && r.rpc_number==ncmd_ready) {
         // Drive readiness query: an idle, ready drive.
         if(r.send_size)throw UnsupportedSyscall(0x77,context->pc);
         reply_word(drive_ready);completeNativeCall(rdram,context,r,server);
-        ++ncmd_ready_calls;++sif_dma_submissions;++native_disc_requests;context->r[2].low=0x760001+ncmd_ready_calls;return true;
+        ++ncmd_ready_calls;++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
     }
     if(server.id==ncmd_server && r.rpc_number==ncmd_read) {
         // Sector read (no-wait): {LBN, count, EE destination, read mode, completion record, progress word}.
@@ -61,15 +64,27 @@ bool EeRuntime::nativeDiscCall(std::uint8_t* rdram,R5900Context* context,const S
         for(unsigned n=0;n<completion_record_size;n+=4)write32(rdram,record+n,0);
         write32(rdram,record+8,dest);write32(rdram,record+12,dest+bytes);
         completeNativeCall(rdram,context,r,server);
-        ++ncmd_read_calls;++sif_dma_submissions;++native_disc_requests;context->r[2].low=0x760002+ncmd_read_calls*2;return true;
+        ++ncmd_read_calls;++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
     }
     if(server.id==scmd_server && r.rpc_number==scmd_error) {
         // sceCdGetError: no error.
         if(r.send_size)throw UnsupportedSyscall(0x77,context->pc);
         reply_word(0);completeNativeCall(rdram,context,r,server);
-        ++scmd_calls;++sif_dma_submissions;++native_disc_requests;context->r[2].low=0x7A0000+scmd_calls;return true;
+        ++scmd_calls;++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
     }
-    // S-command media mode (34) is replayed with the emulated CD initialization for now.
-    if(server.id==scmd_server)return false;
+    if(server.id==init_server && r.rpc_number==0) {
+        // sceCdInit: the mode word goes to the server's buffer; mode 0 (initialize) only.
+        if(r.send_size!=4 || read32(rdram,r.send_source) || r.recv_size!=16)throw UnsupportedSyscall(0x77,context->pc);
+        for(unsigned n=0;n<4;++n)write32(rdram,r.receive+n*4,init_replies[server.boot][n]);
+        completeNativeCall(rdram,context,r,server);
+        ++(server.boot?post_cd.calls:cd_init_calls);++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
+    }
+    if(server.id==scmd_server && r.rpc_number==scmd_media_mode) {
+        // sceCdMmode (CD 1 or DVD 2): the BIOS's CDVDFSV answered 0, IOPRP300's 1 (captures).
+        const auto media=r.send_size==4?read32(rdram,r.send_source):0;
+        if(media<1 || media>2)throw UnsupportedSyscall(0x77,context->pc);
+        reply_word(server.boot);completeNativeCall(rdram,context,r,server);
+        ++(server.boot?post_cd.modes:scmd_mmode_calls);++native_disc_requests;context->r[2].low=submitSifDma(context);return true;
+    }
     throw UnsupportedSyscall(0x77,context->pc);
 }

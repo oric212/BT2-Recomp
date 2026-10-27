@@ -15,7 +15,8 @@ constexpr std::uint32_t uncached(std::uint32_t address) {return address&0x1FFFFF
 // Server handles are opaque IOP addresses the EE stores in the client and passes back. Native
 // services keep the values the original services returned, so EE memory is unchanged.
 const EeRuntime::NativeServer* EeRuntime::nativeServerById(std::uint32_t id) const {
-    for(const auto& s:native_servers_)if(s.id==id)return &s;
+    const auto boot=iop_epoch?1u:0u;
+    for(const auto& s:native_servers_)if(s.id==id && s.boot==boot)return &s;
     return nullptr;
 }
 const EeRuntime::NativeServer* EeRuntime::nativeServerByHandle(std::uint32_t handle) const {
@@ -50,18 +51,21 @@ bool EeRuntime::handleNativeSifDma(std::uint8_t* rdram,R5900Context* context) {
     if(!decodeSifRpc(rdram,context,r))return handleNativeRawDma(rdram,context);
     const auto* server=r.cid==sif_bind?nativeServerById(r.rpc_number):nativeServerByHandle(read32(rdram,r.client+36));
     if(!server)return false;
-    if(r.cid==sif_bind && !server->native_bind)return false; // Bound by an earlier, still emulated, service.
     if(r.cid==sif_bind) {
+        // A rebooted IOP's modules register their servers from their own threads, after the reboot's first
+        // bind request: that one finds no server (the original's CD-init bind after the reset binds again).
+        auto bound=*server;
+        if(iop_epoch && first_bind_epoch_!=iop_epoch)bound.server=bound.buffer=0;
+        first_bind_epoch_=iop_epoch;
         // The bind reply carries the server and buffer handles that the RPC_END handler stores.
-        const std::array<std::uint32_t,16> reply={0,0,sif_rpc_end,0,0,r.packet|0x20000000,0,r.client,sif_bind,server->server,server->buffer,0,0,0,0,0};
+        const std::array<std::uint32_t,16> reply={0,0,sif_rpc_end,0,0,r.packet|0x20000000,0,r.client,sif_bind,bound.server,bound.buffer,0,0,0,0,0};
         if(server->id==0x02000004 && ee_queued_sound_rpc) {
             // The SOUNDS bind completes when main next waits (EE sound thread dispatch): queue it.
             std::array<unsigned,16> queued;std::copy(reply.begin(),reply.end(),queued.begin());
             queueSoundsBind(context,queued);return true;
         }
-        completeNativeRpc(rdram,context,r,*server,reply);
-        ++nativeBindCounter(*server);++sif_dma_submissions;
-        context->r[2].low=server->bind_token?server->bind_token:0x70000+dbc_rpc_binds+dbc_rpc_calls;return true;
+        completeNativeRpc(rdram,context,r,bound,reply);
+        ++nativeBindCounter(*server);context->r[2].low=submitSifDma(context);return true;
     }
     return callNativeService(rdram,context,r,*server);
 }
@@ -89,6 +93,9 @@ void EeRuntime::completeNativeCall(std::uint8_t* rdram,R5900Context* context,con
 
 unsigned& EeRuntime::nativeBindCounter(const NativeServer& server) {
     switch(server.id) {
+    case 0x80000592: return server.boot?post_cd.binds:sif_bind_callbacks;
+    case 0x80000593: return server.boot?post_cd.scmd_binds:scmd_bind_calls;
+    case 0x80000006: return post_loadfile.binds;
     case 0x80000597: return disc_rpc_binds;
     case 0x80000595: return ncmd_rpc_binds;
     case 0x80000001: return fileio_binds;
@@ -107,7 +114,7 @@ bool EeRuntime::callNativeService(std::uint8_t* rdram,R5900Context* context,cons
     // A refused request names itself: server, function number, sizes and the first send words.
     try {
         switch(server.id) {
-        case 0x80000597: case 0x80000595: case 0x80000593: return nativeDiscCall(rdram,context,r,server);
+        case 0x80000597: case 0x80000595: case 0x80000593: case 0x80000592: return nativeDiscCall(rdram,context,r,server);
         case 0x80000001: return nativeFileioCall(rdram,context,r,server);
         case 0x80000400: return nativeCardCall(rdram,context,r,server);
         case 0x80001300: case 0x8000131E: case 0x8000131F: return nativePadCall(rdram,context,r,server);

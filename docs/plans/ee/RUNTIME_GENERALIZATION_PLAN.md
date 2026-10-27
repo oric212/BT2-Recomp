@@ -65,6 +65,14 @@ The runtime reached the game's frame loop by replaying its startup step by step:
 - `PostResetSif` keeps only the captured handshake as evidence; `post_reset_sif_tests.cpp` checks the general SIF against it word by word.
 - Unit tests rewritten to the general behavior (registers read any number of times, handlers and channels for any channel, ids reused); the gate passed (31/31 comparisons, battle hash unchanged). The census counts 38 lines.
 
+## Group 5 result, second part: the CD and LOADFILE requests around the reset
+
+- The seven captured replays (`receiveFirstRpcBind`, `receiveFirstCdInit`, `receiveScmdBind`, `receiveScmdMmode`, `receiveFreshCd`, `receiveFreshScmd`, `receiveFreshLoadfile`), keyed on the transfer count and stack offsets, are removed. The requests go through the native RPC path like every other service: the server table has one set of handles per IOP boot (the BIOS's CD-init and S-command servers before the reset, IOPRP300's after it); the disc service answers sceCdInit (mode 0) and the media mode with each boot's captured reply, the module service LOADFILE's version.
+- One rule replaces the post-reset CD replay's first empty bind: a rebooted IOP's modules register their servers from their own threads, so the first bind request after a reboot finds no server (the original's CD-init bind then binds again).
+- One transfer id for every SIF transfer (`submitSifDma`): the kernel's numbering with the descriptor count in the low byte, which gives all three captured ids (the first CHANGE_SADDR 0x701, the first bind 0x801, the CD-init call 0x902). It replaces 23 per-service tokens, among them the memory card's and the sound services' first-call cases.
+- The captured bundles stay as evidence: the probe checks them against the answers the native services give. Deci2Call kputs (16) is accepted from any pc and parameter block (group 6).
+- The gate passed (31/31 comparisons, battle hash unchanged); samples: story episode 0, the Dragon Tournament and a CPU battle, part by part as after group 4, nothing interpreted. The census counts 35 lines, all of them diagnostic counters except the dispatch's idle points and the sound thread's start (group 6).
+
 ## Limits
 
 - No behavior that the comparisons with the original check may change; where a general behavior would, the plan records it and the change waits for a new capture.

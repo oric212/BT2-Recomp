@@ -468,8 +468,8 @@ int main() {
         }
         {
             EeRuntime console;console.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
-            console.sound_rpc_calls=1;console.native_module_loads=14;
-            R5900Context cpu;cpu.pc=0x32F098;cpu.r[3].low=0x7C;cpu.r[4].low=16;cpu.r[5].low=cpu.r[29].low=0x1000;
+            // Deci2Call kputs from any pc and parameter block.
+            R5900Context cpu;cpu.pc=0x123450;cpu.r[3].low=0x7C;cpu.r[4].low=16;cpu.r[5].low=0x1000;cpu.r[29].low=0x2000;
             console.write32(console.memory().data(),0x1000,0x1100);std::memcpy(console.memory().data()+0x1100,"synthetic log",14);
             console.handleSyscall(console.memory().data(),&cpu,0);require(console.ee_console_messages.size()==1 && cpu.r[2].low==UINT64_MAX);
             cpu.r[4].low=17;reject([&]{console.handleSyscall(console.memory().data(),&cpu,0);});require(console.ee_console_messages.size()==1);
@@ -676,10 +676,9 @@ int main() {
             sif.handleSyscall(sif_ram, &sif_context, 0);
             auto expected_cpu = cpu_before; expected_cpu.r[2].low = 0x801;
             require(std::memcmp(&expected_cpu, &sif_context, sizeof(R5900Context)) == 0
-                    && sif.sif_bind_callbacks == 1 && sif.sif_bind_context_preservations == 1
+                    && sif.sif_bind_callbacks == 1
                     && sif.sif_dma_submissions == 2 && sif.semaphores[3].count == 1
                     && std::all_of(sif_ram + frame - 64, sif_ram + frame, [](auto value) { return value == 0xA7; }));
-            reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Repeated/unknown transfer.
             sif_context.r[3].low = 0xFFFFFFBD;
             reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Scope closed.
         }

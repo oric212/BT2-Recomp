@@ -25,7 +25,7 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
         if(r.recv_size!=12)throw UnsupportedSyscall(0x77,context->pc);
         write32(rdram,r.receive,0);write32(rdram,r.receive+4,0x210);write32(rdram,r.receive+8,0x226);
         completeNativeCall(rdram,context,r,server);
-        ++mc_rpc_calls;++sif_dma_submissions;++native_card_requests;context->r[2].low=0x720002;return true;
+        ++mc_rpc_calls;++native_card_requests;context->r[2].low=submitSifDma(context);return true;
     }
     if(r.rpc_number==mc_get_info) {
         // Port in word 1, slot in word 2; the end parameter address must match the client's end parameter.
@@ -41,9 +41,8 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
         write32(rdram,r.receive,answer->reply);
         if(folder)memory_card_reported_=true;
         completeNativeCall(rdram,context,r,server);
-        ++sif_dma_submissions;++native_card_requests;
-        if(mc_rpc_calls==1){++mc_rpc_calls;context->r[2].low=0x720003;}
-        else {++mc_frame_queries;context->r[2].low=0x750000+mc_frame_queries;}
+        ++native_card_requests;context->r[2].low=submitSifDma(context);
+        if(mc_rpc_calls==1)++mc_rpc_calls;else ++mc_frame_queries;
         return true;
     }
     if(!memory_card_folder.empty()) {
@@ -117,8 +116,8 @@ bool EeRuntime::nativeCardCall(std::uint8_t* rdram,R5900Context* context,const S
             if(r.recv_size!=4)throw std::runtime_error("Memory card request with an unexpected reply size");
             write32(rdram,r.receive,std::uint32_t(result));
             completeNativeCall(rdram,context,r,server);
-            ++sif_dma_submissions;++native_card_requests;++mc_frame_queries;++memory_card_file_requests;
-            context->r[2].low=0x750000+mc_frame_queries;
+            ++native_card_requests;++mc_frame_queries;++memory_card_file_requests;
+            context->r[2].low=submitSifDma(context);
             return true;
         }
         char text[200];std::snprintf(text,sizeof text,"Memory card request %u is not implemented (send %u bytes, receive %u; words %X %X %X %X %X %X %X %X)",

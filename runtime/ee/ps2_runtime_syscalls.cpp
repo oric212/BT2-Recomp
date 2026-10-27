@@ -49,28 +49,6 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
     if(code==0 && selector==0x76 && handleNativeDmaStat(context))return;
     // SIF registers, SIF0 chain, DMAC handlers and channels, SIF system commands (services/sif_system.cpp).
     if(code==0 && handleSifSystemSyscall(rdram,selector,context))return;
-    // Captured replies for the CD and LOADFILE requests around the IOP reset.
-    if(code==0 && selector==0x77 && post_cd.supplied && post_sif.rpc_initialized && iop_epoch==1
-        && (post_cd.binds<2 || !post_cd.calls)) {receiveFreshCd(rdram,context);return;}
-    if(code==0 && selector==0x77 && post_loadfile.supplied && post_cd.modes==1 && post_sif.rpc_initialized && iop_epoch==1
-        && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
-    if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
-        && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
-    if (code == 0 && selector == 0x77 && sif_dma_submissions == 4 && scmd_mmode_supplied_) {
-        receiveScmdMmode(rdram,context); return;
-    }
-    if (code == 0 && selector == 0x77 && sif_dma_submissions == 3 && scmd_bind_supplied_) {
-        receiveScmdBind(rdram, context);
-        return;
-    }
-    if (code == 0 && selector == 0x77 && sif_dma_submissions == 2 && cd_init_supplied_) {
-        receiveFirstCdInit(rdram, context);
-        return;
-    }
-    if (code == 0 && selector == 0x77 && sif_dma_submissions == 1 && !sif_bind_iop_.empty()) {
-        receiveFirstRpcBind(rdram, context);
-        return;
-    }
     if(code==0 && (selector==0x70 || selector==0x71)) {
         // GsGetIMR / GsPutIMR (ee_gs_privileged.cpp): the GS interrupt mask; PutIMR returns the previous mask.
         const auto mask=selector==0x71?gsPutImr(context->r[4].low,context->pc):gs_imr;
@@ -224,9 +202,10 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         if(!thread_initialized || !heap_initialized || current_thread_id!=1)throw UnsupportedSyscall(selector,context->pc);
         context->r[2].low=heap_end;++heap_end_queries;return;
     }
-    if(code==0 && selector==0x7C && sound_rpc_calls==1 && native_module_loads==14) {
-        if(context->pc!=0x32F098 || context->r[4].low!=16 || context->r[5].low!=context->r[29].low)
-            throw UnsupportedSyscall(selector,context->pc);
+    if(code==0 && selector==0x7C) {
+        // Deci2Call: only kputs (16), whose parameter block's first word names the text; it goes to the
+        // console messages and returns -1 (no DECI2 host), as the original's capture shows.
+        if(context->r[4].low!=16)throw UnsupportedSyscall(selector,context->pc);
         const auto pointer=read32(rdram,static_cast<std::uint32_t>(context->r[5].low));
         std::string message;bool terminated=false;
         for(unsigned n=0;n<4096;++n) {

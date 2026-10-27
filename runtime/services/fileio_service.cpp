@@ -92,5 +92,5 @@ bool EeRuntime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const
 }
 
 void EeRuntime::finishNativeFileio(R5900Context* context) {
-    ++fileio_calls;++sif_dma_submissions;++native_fileio_requests;context->r[2].low=0x70100+fileio_calls;
+    ++fileio_calls;++native_fileio_requests;context->r[2].low=submitSifDma(context);
 }

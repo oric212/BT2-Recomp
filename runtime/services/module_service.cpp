@@ -3,12 +3,13 @@
 #include <string>
 #include <string_view>
 
-// Native LOADFILE calls (0x80000006): IOP module loads by path (fn 0) and from an IOP buffer
-// (fn 6). No IOP module runs; their services are native. The reply is {module ID, residency
+// Native LOADFILE calls (0x80000006): its version (fn 0xFF), IOP module loads by path (fn 0) and
+// from an IOP buffer (fn 6). No IOP module runs; their services are native. The reply is {module ID, residency
 // result}: the result each module's entry returned (0 resident, 1 no resident, 2 removable).
 
 namespace {
-constexpr std::uint32_t load_by_path=0,load_from_buffer=6;
+constexpr std::uint32_t load_by_path=0,load_from_buffer=6,version=0xFF;
+constexpr std::uint32_t loadfile_version=0x30303033; // IOPRP300's LOADFILE (capture).
 struct ModuleResult {std::string_view path;std::uint32_t result;};
 constexpr std::array<ModuleResult,13> module_results={{
     {"cdrom0:\\IRX\\SIO2MAN.IRX;1",0},{"cdrom0:\\IRX\\MCMAN.IRX;1",2},{"cdrom0:\\IRX\\MCSERV.IRX;1",2},
@@ -20,8 +21,12 @@ constexpr std::uint32_t embedded_module_result=1; // The EE-embedded module ends
 }
 
 bool EeRuntime::nativeModuleCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
-    // Version (0xFF) and the bind stay on the captured LOADFILE replay for now.
-    if(r.rpc_number!=load_by_path && r.rpc_number!=load_from_buffer)return false;
+    if(r.rpc_number==version) {
+        if(r.send_size || r.recv_size!=4)throw UnsupportedSyscall(0x77,context->pc);
+        write32(rdram,r.receive,loadfile_version);completeNativeCall(rdram,context,r,server);
+        ++post_loadfile.versions;context->r[2].low=submitSifDma(context);return true;
+    }
+    if(r.rpc_number!=load_by_path && r.rpc_number!=load_from_buffer)throw UnsupportedSyscall(0x77,context->pc);
     if(r.send_size!=512 || r.recv_size!=8)throw UnsupportedSyscall(0x77,context->pc);
     std::uint32_t result;
     if(r.rpc_number==load_by_path) {
@@ -37,5 +42,5 @@ bool EeRuntime::nativeModuleCall(std::uint8_t* rdram,R5900Context* context,const
     }
     write32(rdram,r.receive,native_module_loads+1);write32(rdram,r.receive+4,result);
     completeNativeCall(rdram,context,r,server);
-    ++native_module_loads;++sif_dma_submissions;context->r[2].low=0x30000+serviceOperations();return true;
+    ++native_module_loads;context->r[2].low=submitSifDma(context);return true;
 }

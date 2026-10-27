@@ -18,12 +18,12 @@ bool EeRuntime::nativeHeapCall(std::uint8_t* rdram,R5900Context* context,const S
         const auto pointer=native_heap_.allocate(argument);
         if(!pointer)throw UnsupportedSyscall(0x77,context->pc);
         write32(rdram,r.receive,pointer);completeNativeCall(rdram,context,r,server);
-        ++heap_calls;++sif_dma_submissions;context->r[2].low=0x40000+heap_binds+heap_calls;return true;
+        ++heap_calls;context->r[2].low=submitSifDma(context);return true;
     }
     if(r.rpc_number==heap_free) {
         if(!native_heap_.release(argument))throw UnsupportedSyscall(0x77,context->pc);
         write32(rdram,r.receive,0);completeNativeCall(rdram,context,r,server);
-        ++heap_frees;++sif_dma_submissions;context->r[2].low=0x40000+heap_binds+heap_calls+heap_frees;return true;
+        ++heap_frees;context->r[2].low=submitSifDma(context);return true;
     }
     throw UnsupportedSyscall(0x77,context->pc);
 }
@@ -40,10 +40,10 @@ bool EeRuntime::handleNativeRawDma(std::uint8_t* rdram,R5900Context* context) {
     // Uploads go into blocks the heap handed out.
     if(!native_heap_.covers(destination,size))throw UnsupportedSyscall(0x77,context->pc);
     if(source==embedded_module_image) {
-        ++heap_transfers;++sif_dma_submissions;context->r[2].low=0x50000+heap_transfers;
+        ++heap_transfers;context->r[2].low=submitSifDma(context);
         native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&EeRuntime::heap_dma_polls;
     } else {
-        ++iop_uploads;++sif_dma_submissions;context->r[2].low=0x5A0000+iop_uploads;
+        ++iop_uploads;context->r[2].low=submitSifDma(context);
         native_dma_tokens_[static_cast<std::uint32_t>(context->r[2].low)]=&EeRuntime::iop_upload_polls;
     }
     return true;

@@ -105,7 +105,6 @@ bool EeRuntime::sifSystemCommand(std::uint8_t* rdram,R5900Context* context) {
         iop_reset_pending=true;prior_iop_services_valid=false;++iop_epoch;sif0_chcr&=~0x100u; // The reboot stops SIF0's receive.
     }
     if(cid==init_cmd)++post_sif.submissions;
-    ++sif_system_commands;++sif_dma_submissions;
-    context->r[2].low=0x10000u+sif_system_commands; // A nonzero transfer id.
+    ++sif_system_commands;context->r[2].low=submitSifDma(context);
     return true;
 }

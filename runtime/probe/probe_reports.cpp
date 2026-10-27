@@ -127,7 +127,7 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"bytes\":" << runtime.byte_writes << ",\"quads\":" << runtime.quadword_writes
         << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
         << ",\"deletions\":" << runtime.semaphore_deletions << ",\"dma_disables\":" << runtime.dmac_disable_calls
-        << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls
+        << ",\"dma_removals\":" << runtime.dmac_removals << ",\"media_mode_calls\":" << runtime.scmd_mmode_calls << ",\"first_cd_init_calls\":" << runtime.cd_init_calls
         << ",\"sif_stops\":" << runtime.sif_stop_calls << ",\"sif_register_reads\":" << runtime.sif_register_reads
         << ",\"sif_register_writes\":" << runtime.sif_register_writes << ",\"sif_system_commands\":" << runtime.sif_system_commands
         << ",\"sif_smflag\":" << runtime.sif_smflag << ",\"iop_epoch\":" << runtime.iop_epoch
@@ -313,7 +313,6 @@ void writeBindReport(EeRuntime& runtime,R5900Context& context,const ProbeStop& s
         << ",\"waits\":" << runtime.semaphore_waits << ",\"signals\":" << runtime.semaphore_signals
         << ",\"semas\":" << runtime.semaphores.size() << ",\"sp\":" << context.r[29].low
         << ",\"lo\":" << context.lo << ",\"bind_callbacks\":" << runtime.sif_bind_callbacks
-        << ",\"bind_context_preservations\":" << runtime.sif_bind_context_preservations
         << ",\"semaphore_deletions\":" << runtime.semaphore_deletions
         << ",\"call_semaphore_unused_attr\":" << runtime.rpc_call_sema_attributes
         << ",\"arguments\":[" << GPR_U32(&context, 4) << "," << GPR_U32(&context, 5) << "]"

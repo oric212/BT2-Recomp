@@ -43,8 +43,7 @@ bool EeRuntime::nativeSoundDriverCall(std::uint8_t* rdram,R5900Context* context,
     }
     for(unsigned n=0;n<4;++n)write32(rdram,r.receive+n*4,reply[n]);
     completeNativeCall(rdram,context,r,server);
-    ++sound_rpc_calls;++sif_dma_submissions;
-    context->r[2].low=sound_rpc_calls==1?0x60002:0x60002+sound_rpc_calls;return true;
+    ++sound_rpc_calls;context->r[2].low=submitSifDma(context);return true;
 }
 
 bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
@@ -128,6 +127,5 @@ bool EeRuntime::nativeSoundsCall(std::uint8_t* rdram,R5900Context* context,const
     }
     for(unsigned n=0;n<16;++n)write32(rdram,r.receive+n*4,!native_sounds_started_?0u:n==5?native_sounds_banks_:sounds_status[n]);
     completeNativeCall(rdram,context,r,server);
-    ++sounds_rpc_calls;++sif_dma_submissions;
-    context->r[2].low=sounds_rpc_calls==1?0x60004:0x60004+sounds_rpc_calls;return true;
+    ++sounds_rpc_calls;context->r[2].low=submitSifDma(context);return true;
 }

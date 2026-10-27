@@ -27,7 +27,8 @@ public:
     std::uint32_t ee_receive_address=0;
 };
 
-// Diagnostic service ownership for epoch 1, independent of pre-reset clients.
+// The CD-init and S-command replies after the reset (a capture), checked against the native disc
+// service's answers; the counters count its requests after the reset (diagnostics).
 class PostResetCd {
 public:
     void supply(std::span<const std::uint8_t> evidence) {
@@ -45,16 +46,16 @@ public:
         expected[68]=0x400;expected[69]=0x3695C0;expected[70]=0x80000008;expected[75]=0x369F40;expected[76]=0x8000000A;expected[84]=1;
         if(supplied || (evidence.size()!=208 && evidence.size()!=340) || std::memcmp(evidence.data(),expected.data(),evidence.size()))
             throw std::runtime_error("Fresh CD evidence differs");
-        std::copy(evidence.begin(),evidence.end(),replies.begin());supplied=true;scmd_supplied=evidence.size()==340;
+        supplied=true;scmd_supplied=evidence.size()==340;
     }
     bool supplied=false;
     bool scmd_supplied=false;
     unsigned binds=0,calls=0,scmd_binds=0,modes=0;
     unsigned operations() const {return binds+calls+scmd_binds+modes;}
-    std::array<std::uint8_t,340> replies{};
 };
 
-// Separate LOADFILE binding/version diagnostic; module loading is never acknowledged.
+// LOADFILE's bind and version reply after the reset (a capture), checked against the native module
+// service's answers; the counters count those requests (diagnostics).
 class PostResetLoadfile {
 public:
     void supply(std::span<const std::uint8_t> evidence) {
@@ -65,10 +66,9 @@ public:
         expected[23]=0x3ACC00;expected[24]=0x8000000A;expected[32]=0x30303033;
         if(supplied || evidence.size()!=sizeof(expected) || std::memcmp(evidence.data(),expected.data(),sizeof(expected)))
             throw std::runtime_error("LOADFILE evidence differs");
-        std::copy(evidence.begin(),evidence.end(),replies.begin());supplied=true;
+        supplied=true;
     }
     bool supplied=false;
     unsigned binds=0,versions=0;
     unsigned operations() const {return binds+versions;}
-    std::array<std::uint8_t,132> replies{};
 };

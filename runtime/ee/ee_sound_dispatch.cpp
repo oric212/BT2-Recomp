@@ -48,7 +48,7 @@ void EeRuntime::queueSoundsBind(R5900Context* context,const std::array<unsigned,
         || current_thread_id!=1 || main_thread_priority!=2 || iop_epoch!=1 || reply[7]!=0x6351C0 || reply[8]!=0x80000009)
         throw UnsupportedSyscall(0x77,context->pc);
     queued_sounds_bind={true,iop_epoch,reply};++queued_sound_submissions;
-    ++sif_dma_submissions;context->r[2].low=0x60003; // Accepted transport submission only.
+    context->r[2].low=submitSifDma(context); // Accepted transport submission only.
 }
 void EeRuntime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* context) {
     if(!ee_queued_sound_rpc || !queued_sounds_bind.pending || queued_sound_completions || queued_sounds_bind.epoch!=iop_epoch

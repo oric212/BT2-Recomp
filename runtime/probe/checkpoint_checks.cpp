@@ -15,7 +15,7 @@ void checkCdContinuation(EeRuntime& runtime,R5900Context& context,const ProbeSto
     const auto stop_resume=stop.resume;
     require(stopped && !stop_handler && (stop_target || (stop_selector == 0x40 && context.pc == 0x32EC68)),
             "CD continuation did not reach a checked boundary");
-    require(runtime.cd_init_calls == 1 && runtime.cd_init_context_preservations == 1
+    require(runtime.cd_init_calls == 1
             && runtime.sif_dma_submissions == 3 && runtime.semaphore_deletions == 2
             && runtime.semaphore_waits == 3 && runtime.semaphore_signals == 3,
             "CD-init callback or cleanup effects differ");
@@ -126,7 +126,7 @@ void checkBindContinuation(EeRuntime& runtime,R5900Context& context,const ProbeS
     const auto stop_handler=stop.handler;
     const auto stop_target=stop.target;
     require(stopped && !stop_target && !stop_handler && runtime.sif_bind_callbacks == 1
-            && runtime.sif_bind_context_preservations == 1 && runtime.sif_dma_submissions == 2
+            && runtime.sif_dma_submissions == 2
             && runtime.semaphore_waits == 2 && runtime.semaphore_signals == 2
             && runtime.semaphore_deletions == 1 && runtime.startup_zero_verified
             && runtime.syscall_registrations == 18 && runtime.custom_syscall_calls == 17

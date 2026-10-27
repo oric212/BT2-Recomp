@@ -270,7 +270,7 @@ public:
     }
     unsigned uncached_byte_accesses = 0;
     // The same alias for halfword, doubleword and quadword accesses (owned RAM is coherent).
-    std::uint32_t uncachedWideAddress(std::uint32_t address, unsigned size) {
+    std::uint32_t uncachedWideAddress(std::uint32_t address) {
         if (address < 0x20000000 || address >= 0x22000000) return address;
         ++uncached_wide_accesses;
         return address - 0x20000000;
@@ -286,21 +286,21 @@ public:
 
     std::uint16_t read16(std::uint8_t* rdram,std::uint32_t address) {
         if(auto* spr=scratchpadAt(address,2)){std::uint16_t value;std::memcpy(&value,spr,2);return value;}
-        address=uncachedWideAddress(address,2);
+        address=uncachedWideAddress(address);
         checkMemory(rdram,address,2);
         if(address%2)throw std::runtime_error("Unsupported unaligned halfword load");
         std::uint16_t value;std::memcpy(&value,memory_.data()+address,2);return value;
     }
     void write16(std::uint8_t* rdram,std::uint32_t address,std::uint16_t value) {
         if(auto* spr=scratchpadAt(address,2)){std::memcpy(spr,&value,2);return;}
-        address=uncachedWideAddress(address,2);
+        address=uncachedWideAddress(address);
         checkMemory(rdram,address,2);
         if(address%2)throw std::runtime_error("Unsupported unaligned halfword store");
         std::memcpy(memory_.data()+address,&value,2);++halfword_writes;
     }
     ProbeGpr read128(std::uint8_t* rdram,std::uint32_t address) {
         if(auto* spr=scratchpadAt(address,16)){ProbeGpr value;std::memcpy(&value,spr,16);return value;}
-        address=uncachedWideAddress(address,16);
+        address=uncachedWideAddress(address);
         if(address==0x10005000)[[unlikely]]return vif1FifoRead(); // VIF1 FIFO: local->host GS data.
         checkMemory(rdram,address,sizeof(ProbeGpr));
         if(address%16)throw std::runtime_error("Unsupported unaligned quadword load");
@@ -310,7 +310,7 @@ public:
     void write128(std::uint8_t* rdram, std::uint32_t address, __m128i value) { write128(rdram, address, std::bit_cast<ProbeGpr>(value)); }
     void write128(std::uint8_t* rdram, std::uint32_t address, const ProbeGpr& value) {
         if (auto* spr = scratchpadAt(address, 16)) {std::memcpy(spr, &value, 16); return;}
-        address = uncachedWideAddress(address, 16);
+        address = uncachedWideAddress(address);
         checkMemory(rdram, address, sizeof(value));
         if (address % 16) throw std::runtime_error("Unsupported unaligned quadword store");
         if (address == quadword_watch_address && on_watched_quadword) on_watched_quadword(value);
@@ -336,7 +336,7 @@ public:
     }
     void write64(std::uint8_t* rdram, std::uint32_t address, std::uint64_t value) {
         if (auto* spr = scratchpadAt(address, 8)) {std::memcpy(spr, &value, 8); return;}
-        address = uncachedWideAddress(address, 8);
+        address = uncachedWideAddress(address);
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword store");
         std::memcpy(memory_.data() + address, &value, 8);
@@ -350,7 +350,7 @@ public:
     }
     std::uint64_t read64(std::uint8_t* rdram, std::uint32_t address) {
         if (auto* spr = scratchpadAt(address, 8)) {std::uint64_t value; std::memcpy(&value, spr, 8); return value;}
-        address = uncachedWideAddress(address, 8); // E.g. bounded searches copying owned results.
+        address = uncachedWideAddress(address); // E.g. bounded searches copying owned results.
         checkMemory(rdram, address, 8);
         if (address % 8) throw std::runtime_error("Unsupported unaligned doubleword read");
         std::uint64_t value;
@@ -622,14 +622,19 @@ public:
     bool sifSystemCommand(std::uint8_t* rdram,R5900Context* context);
     unsigned scmd_bind_calls = 0, scmd_mmode_calls = 0;
     unsigned semaphore_polls = 0;
-    unsigned cd_init_calls = 0, cd_init_context_preservations = 0, cd_semaphores_created = 0;
-    unsigned sif_bind_callbacks = 0;
-    unsigned sif_bind_context_preservations = 0;
+    unsigned cd_init_calls = 0, cd_semaphores_created = 0;
+    unsigned sif_bind_callbacks = 0; // Binds of the BIOS's CD-init server.
     unsigned semaphore_deletions = 0;
     unsigned rpc_call_semaphores = 0;
     std::uint32_t rpc_call_sema_attributes = 0;
     std::span<const std::uint8_t> sifIopMemory() const { return sif_iop_; }
     unsigned sif_dma_submissions = 0;
+    // sceSifSetDma's transfer id, for every transfer: the kernel numbers the transfers, the low byte is the
+    // descriptor count. The BIOS's boot made six before the game's first (captures: the first CHANGE_SADDR
+    // 0x701, the first bind 0x801, the CD-init call with its send data 0x902).
+    std::uint32_t submitSifDma(const R5900Context* context) {
+        return ((sif_dma_submissions++ + 7u) << 8) | static_cast<std::uint32_t>(context->r[5].low);
+    }
     std::uint32_t sif_ee_receive_address = 0;
     // The boot's state, as the BIOS left it (captures): SIFCMD's buffer in software register 0, the DMAC
     // status (D_STAT: SIF1's channel interrupt, SIF2 masked) and SIF0's chain receive running.
@@ -792,35 +797,38 @@ public:
     std::uint64_t interior_entry_dispatches=0; // Dispatches that entered a function at an interior entry.
     bool interior_entries_disabled=false; // BT2_NO_INTERIOR_ENTRIES: dispatch knows function starts only (diagnostic comparison).
 private:
-    void receiveFirstRpcBind(std::uint8_t* rdram, R5900Context* context);
     // An IOP->EE SIF command handler call: packet header at the EE command buffer (0x3A94C0),
     // run on a CPU copy below the interrupted stack, as RPC_END is.
     void deliverEeCommand(std::uint8_t* rdram,R5900Context* context,std::uint32_t handler,std::uint32_t argument);
     void deliverRpcEnd(std::uint8_t* rdram, R5900Context* context,
-                       std::uint32_t client = 0x3A87A8, unsigned semaphore = 3,
-                       std::uint32_t server = 0x3F570, std::uint32_t buffer = 0x3FB20);
+                       std::uint32_t client, unsigned semaphore, std::uint32_t server, std::uint32_t buffer);
     // Native SIF RPC services (runtime/services/). A server's handles are the opaque IOP addresses
-    // the EE stores at bind time; calls route by the handle in the client (client+36).
+    // the EE stores at bind time; calls route by the handle in the client (client+36). Each IOP boot
+    // has its own servers: the BIOS's modules (boot 0) until the reset, IOPRP300's (boot 1) after it.
     struct NativeServer {
-        std::uint32_t id,server,buffer,bind_token;bool native_bind;
+        std::uint32_t id,server,buffer,boot;
     };
     static constexpr std::uint32_t sif_receive_buffer=0x3A94C0; // EE SIF command receive buffer.
-    std::array<NativeServer,14> native_servers_{{
-        {0x80000597,0x433D0,0x441C8,0x740001,true},  // CDVD file search
-        {0x80000595,0x43418,0x43DB8,0x760001,true},  // CDVD N-commands
-        {0x80000593,0x434F0,0x439A8,0,false},        // CDVD S-commands (bound with CD init)
-        {0x80000001,0x47788,0x477D0,0x70001,true}, // FILEIO file server
-        {0x80000400,0x536F8,0x532B0,0x70001,true},   // MCSERV memory card
-        {0x80001300,0x62DE0,0x62F08,0,true},          // DBCMAN main
-        {0x8000131C,0x62E28,0x62F98,0,true},          // DBCMAN (bound, unused)
-        {0x8000131E,0x62E70,0x65028,0,true},          // DBCMAN port 1
-        {0x8000131F,0x62EB4,0x650B8,0,true},          // DBCMAN port 0
-        {0x80000003,0x48438,0x48480,0x40001,true},    // IOP heap
-        {0x80000006,0x22568,0x225B0,0,false},         // LOADFILE (bound with the captured replay)
-        {0x80000701,0xA15E0,0xA1C30,0x60001,true},    // SDRDRV sound driver
-        {0x02000004,0x1E5D90,0x1D16E0,0x60003,true},  // SOUNDS
-        {0x90000200,0x1B5D30,0x1B57C0,0x780001,true}, // CRI ADX
+    std::array<NativeServer,17> native_servers_{{
+        {0x80000592,0x3F570,0x3FB20,0},   // CDVD init (the BIOS's)
+        {0x80000593,0x3F690,0x3F6D8,0},   // CDVD S-commands (the BIOS's)
+        {0x80000592,0x43388,0x441B8,1},   // CDVD init
+        {0x80000597,0x433D0,0x441C8,1},   // CDVD file search
+        {0x80000595,0x43418,0x43DB8,1},   // CDVD N-commands
+        {0x80000593,0x434F0,0x439A8,1},   // CDVD S-commands
+        {0x80000001,0x47788,0x477D0,1},   // FILEIO file server
+        {0x80000400,0x536F8,0x532B0,1},   // MCSERV memory card
+        {0x80001300,0x62DE0,0x62F08,1},   // DBCMAN main
+        {0x8000131C,0x62E28,0x62F98,1},   // DBCMAN (bound, unused)
+        {0x8000131E,0x62E70,0x65028,1},   // DBCMAN port 1
+        {0x8000131F,0x62EB4,0x650B8,1},   // DBCMAN port 0
+        {0x80000003,0x48438,0x48480,1},   // IOP heap
+        {0x80000006,0x22568,0x225B0,1},   // LOADFILE
+        {0x80000701,0xA15E0,0xA1C30,1},   // SDRDRV sound driver
+        {0x02000004,0x1E5D90,0x1D16E0,1}, // SOUNDS
+        {0x90000200,0x1B5D30,0x1B57C0,1}, // CRI ADX
     }};
+    unsigned first_bind_epoch_=0; // The IOP boot whose first bind request was answered.
     const NativeServer* nativeServerById(std::uint32_t id) const;
     const NativeServer* nativeServerByHandle(std::uint32_t handle) const;
     bool decodeSifRpc(std::uint8_t* rdram,const R5900Context* context,SifRpcRequest& out);
@@ -872,27 +880,14 @@ public:
     const std::vector<std::uint8_t>& nativeIopMemory() const {return native_iop_ram_;}
     bool handleNativeSifDma(std::uint8_t* rdram,R5900Context* context);
 private:
-    void receiveFreshLoadfile(std::uint8_t* rdram,R5900Context* context);
-    void receiveFreshScmd(std::uint8_t* rdram,R5900Context* context);
-    void receiveFreshCd(std::uint8_t* rdram,R5900Context* context);
-    void receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context);
-    void receiveScmdBind(std::uint8_t* rdram, R5900Context* context);
-    void receiveScmdMmode(std::uint8_t* rdram,R5900Context* context);
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;
-    bool scmd_mmode_supplied_ = false;
-    std::array<std::uint8_t,64> scmd_mmode_reply_{};
-    bool scmd_bind_supplied_ = false;
-    std::array<std::uint8_t,64> scmd_reply_{};
+    bool scmd_mmode_supplied_ = false, scmd_bind_supplied_ = false;
     bool cd_init_supplied_ = false, cd_semaphores_supplied_ = false;
-    std::array<std::uint8_t, 88> cd_init_bundle_{};
-    bool sif_call_sema_supplied_ = false;
-    std::vector<std::uint8_t> sif_bind_iop_;
-    std::array<std::uint8_t, 64> sif_bind_reply_{};
+    bool sif_call_sema_supplied_ = false, sif_bind_supplied_ = false;
 
     std::vector<std::uint8_t> sif_iop_;
-    std::uint32_t sif_dma_result_ = 0;
     bool sif_rpc_supplied_ = false;
     bool rpc_end_callback_active_ = false;
     bool sif_command_supplied_ = false;

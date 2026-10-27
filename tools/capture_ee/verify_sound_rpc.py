@@ -3,12 +3,16 @@ import argparse,hashlib,json,struct,sys
 from pathlib import Path
 from capture_ee import EXPECTED_SHA,MARKER,FRESH_BIND_STUB,capture_trap,texture_stub
 
+def disc_setup_calls(r):
+    # sceCdInit and the media mode, before and after the IOP reset, also reach the native disc service.
+    return r.get('first_cd_init_calls',0)+r.get('post_cd_calls',0)+r.get('media_mode_calls',0)+r.get('post_scmd_modes',0)
+
 def completed_directory_diagnostics(r):
     names=['ZS2US_1.AFS','ZS2US_2.AFS','ZS2USOP.SFD','ZS2USED.SFD','LOGO_O.SFD']
     expected=['DVCI: "'+name+'" found.\n' for name in names]+['DVCI: Total 5 files.\n']
     # Every EE disc request (search, NCMD ready/read, SCMD) reaches the native disc service exactly once.
     return (r.get('console_messages')==len(r.get('console_messages_text',[])) and r.get('console_messages_text',[])[:6]==expected and r.get('disc_rpc_calls')==6 and r.get('ncmd_read_calls',0)>=1
-        and r.get('native_disc_requests')==r['disc_rpc_calls']+r.get('ncmd_ready_calls',0)+r['ncmd_read_calls']+r.get('scmd_calls',0) and r.get('native_iop_error','')=='')
+        and r.get('native_disc_requests')==r['disc_rpc_calls']+r.get('ncmd_ready_calls',0)+r['ncmd_read_calls']+r.get('scmd_calls',0)+disc_setup_calls(r) and r.get('native_iop_error','')=='')
 
 def require(condition,message):
     if not condition:raise ValueError(message)
