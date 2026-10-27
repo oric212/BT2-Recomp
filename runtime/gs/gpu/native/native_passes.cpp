@@ -16,32 +16,42 @@ constexpr std::array passes{
     // The ink outline's edges per sample: the game's at 1x, its thickness with smooth edges with super-sampling
     // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 2); on, the look the user chose on 2026-10-27.
     NativePass{"ink-edges",true,inkEdgesDraw,inkEdges},
+    // A super attack's glow and the blended layers between its quads, shaded once per game pixel with super-sampling
+    // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 3); on (the user's decision of 2026-10-27).
+    NativePass{"glow",true,glowDraw,glow},
 };
 
-// BT2_NATIVE_PASSES: the passes named (comma-separated), "none", or without it those on by default.
+// BT2_NATIVE_PASSES: the passes named (comma-separated), "none", or without it those on by default; names written
+// "-name" take a pass away from those on by default (the player setting "HD outline" off: "-ink-edges").
 std::array<bool,passes.size()> enabledPasses() {
     std::array<bool,passes.size()> on{};
     const char* setting=std::getenv("BT2_NATIVE_PASSES");
-    if(!setting) {for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default;return on;}
-    const std::string_view text(setting);
-    if(text=="none")return on;
+    const std::string_view text(setting?setting:"");
+    if(!setting || text.starts_with('-'))for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default;
+    if(!setting || text=="none")return on;
     for(std::size_t at=0;at<=text.size();) {
         const auto end=std::min(text.find(',',at),text.size());
-        const auto name=text.substr(at,end-at);
+        auto name=text.substr(at,end-at);
+        const bool remove=name.starts_with('-');
+        if(remove)name.remove_prefix(1);
         std::size_t n=0;
         while(n<passes.size() && name!=passes[n].name)++n;
         if(n==passes.size())throw std::runtime_error("BT2_NATIVE_PASSES: no native pass named '"+std::string(name)+"'");
-        on[n]=true;at=end+1;
+        on[n]=!remove;at=end+1;
     }
     return on;
 }
 }
 
-Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms) {
+Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms,unsigned textures,unsigned spec_constants) {
     Vulkan::ResourceLayout layout;
     for(unsigned b=0;b<buffers;++b) {layout.sets[0].storage_buffer_mask|=1u<<b;layout.sets[0].meta[b].array_size=1;}
     for(unsigned b=buffers;b<buffers+uniforms;++b) {layout.sets[0].uniform_buffer_mask|=1u<<b;layout.sets[0].meta[b].array_size=1;}
+    for(unsigned b=buffers+uniforms;b<buffers+uniforms+textures;++b) {
+        layout.sets[0].sampled_image_mask|=1u<<b;layout.sets[0].fp_mask|=1u<<b;layout.sets[0].meta[b].array_size=1;
+    }
     layout.push_constant_size=push_bytes;
+    layout.spec_constant_mask=(1u<<spec_constants)-1u;
     return device.request_program(spirv.data(),spirv.size_bytes(),&layout);
 }
 

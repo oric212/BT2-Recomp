@@ -26,11 +26,14 @@ struct NativePass {
 };
 
 // A compute program of one of the passes' shaders: `buffers` storage buffers at set 0, bindings 0 on, then
-// `uniforms` uniform buffers, and `push_bytes` of push constants (the build has no shader reflection).
-Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms=0);
+// `uniforms` uniform buffers, then `textures` combined image samplers, `push_bytes` of push constants and
+// `spec_constants` specialization constants from id 0 (the build has no shader reflection).
+Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms=0,unsigned textures=0,unsigned spec_constants=0);
 
 // The passes (one file each).
 bool alphaFillDraw(const ParallelGS::RegisterState& registers); // alpha_fill.cpp
 bool alphaFill(const NativeRenderPass& pass,NativeContext& context);
 bool inkEdgesDraw(const ParallelGS::RegisterState& registers); // ink_edges.cpp
 bool inkEdges(const NativeRenderPass& pass,NativeContext& context);
+bool glowDraw(const ParallelGS::RegisterState& registers); // glow.cpp
+bool glow(const NativeRenderPass& pass,NativeContext& context);

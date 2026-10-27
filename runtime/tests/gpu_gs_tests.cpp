@@ -218,6 +218,62 @@ void nativeInkEdges(GpuGsBackend& gpu) {
     require(std::equal(expected.begin(),expected.end(),n.begin()),"the same GS memory");
 }
 
+// Native pass "glow" (gs/gpu/native/glow.cpp): with super-sampling, a textured quad added to the frame with a depth test
+// draws as the renderer draws it, within one step of the texture filter; at 1x the renderer draws it. An 8 x 8 texture (a ramp) is uploaded at block 0x100, the frame (page 0, 64 x 32) and the depth buffer (page 2)
+// are filled, then a quad of two triangles covers x 8..40, y 4..28, half of it behind the depth buffer's value.
+void nativeGlow(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Native glow: ")+what);};
+    const auto passes=[](const char* value) {
+#ifdef _WIN32
+        _putenv_s("BT2_NATIVE_PASSES",value);
+#else
+        setenv("BT2_NATIVE_PASSES",value,1);
+#endif
+    };
+    passes("none");GpuGsBackend emulated;emulated.initShared(gpu,16);
+    passes("glow");GpuGsBackend native;native.initShared(gpu,16);GpuGsBackend single;single.initShared(gpu,1);
+    passes("");
+    // The texture: an IMAGE transfer of 8 x 8 PSMCT32 texels (16 quadwords).
+    std::vector<std::uint8_t> upload=packet({{0x50,(0x100ull<<32)|(1ull<<48)},{0x51,0},{0x52,8|(8ull<<32)},{0x53,0}});
+    const std::uint64_t image_tag[2]={16|(1ull<<15)|(2ull<<58),0};
+    upload.insert(upload.end(),reinterpret_cast<const std::uint8_t*>(image_tag),reinterpret_cast<const std::uint8_t*>(image_tag)+16);
+    for(std::uint32_t y=0;y<8;++y)for(std::uint32_t x=0;x<8;++x) {
+        const std::uint32_t texel=(x*30)|((y*30)<<8)|(0x40u<<16)|(0x80u<<24);
+        upload.insert(upload.end(),reinterpret_cast<const std::uint8_t*>(&texel),reinterpret_cast<const std::uint8_t*>(&texel)+4);
+    }
+    const auto xyz=[](unsigned x,unsigned y,std::uint64_t z){return std::uint64_t(x*16)|(std::uint64_t(y*16)<<16)|(z<<32);};
+    const auto uv=[](unsigned u,unsigned v){return std::uint64_t(u*16)|(std::uint64_t(v*16)<<16);};
+    const std::uint64_t zbuf=2|(1ull<<24); // Page 2, PSMZ24.
+    const auto draw=packet({{0x1A,1},{0x18,0},{0x40,0x001F0000003F0000ULL},{0x4C,0x0000000000010000ULL},
+        // The frame a dark grey; the depth buffer 100 on the left half, 300 on the right (the quad's 200 passes on the left).
+        {0x4E,zbuf},{0x47,(1u<<16)|(1u<<17)},{0x00,6},{0x01,0x80202020},{0x05,xyz(0,0,100)},{0x05,xyz(32,32,100)},
+        {0x05,xyz(32,0,300)},{0x05,xyz(64,32,300)},
+        // The quad: textured (FST), bilinear, MODULATE, (Cs - 0) x As / 128 + Cd with COLCLAMP, depth greater or equal.
+        {0x4E,zbuf|(1ull<<32)},{0x47,(1u<<16)|(2u<<17)},{0x46,1},{0x42,0x48},
+        {0x06,0x100|(1ull<<14)|(3ull<<26)|(3ull<<30)|(1ull<<34)},{0x14,0x60},
+        {0x00,4|(1u<<4)|(1u<<6)|(1u<<8)},{0x01,0x80808080},
+        {0x03,uv(0,0)},{0x05,xyz(8,4,200)},{0x03,uv(8,0)},{0x05,xyz(40,4,200)},
+        {0x03,uv(0,8)},{0x05,xyz(8,28,200)},{0x03,uv(8,8)},{0x05,xyz(40,28,200)},
+        {0x00,6},{0x4E,zbuf|(1ull<<32)},{0x47,0x30000},{0x4C,0x0000000000010000ULL|(10ull)},{0x01,0},{0x05,xyz(0,0,0)},{0x05,xyz(1,1,0)}});
+    for(auto* r:{&emulated,&native,&single}) {r->transfer(upload);r->transfer(draw);}
+    const auto e=emulated.readVram();
+    const std::vector<std::uint32_t> expected(e.begin(),e.end());
+    const auto n=native.readVram();
+    require(native.nativePassSummary()=="Native passes: glow 1" && emulated.nativePassSummary().empty(),"the pass ran with super-sampling only where asked");
+    single.readVram();
+    require(single.nativePassSummary().empty(),"not at 1x");
+    // The frame's resolved pixels: the glow on the left half only, and the same within a few levels.
+    unsigned largest=0;
+    for(unsigned y=0;y<32;++y)for(unsigned x=0;x<64;++x) {
+        const std::uint32_t a=pixel(expected,x,y),b=pixel(n,x,y);
+        for(int c=0;c<24;c+=8)largest=std::max<unsigned>(largest,unsigned(std::abs(int((a>>c)&255)-int((b>>c)&255))));
+    }
+    require(pixel(expected,20,16)!=0x80202020u && (pixel(expected,36,16)&0xFFFFFFu)==0x202020u,"the emulated glow and its depth test");
+    // The GS filters with weights in sixteenths, the GPU's sampler finer: one step of the texture's steepest ramp (210 a
+    // texel, where it repeats) is about 13 levels.
+    require(largest<=16,"the same picture within one filter step");
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -262,7 +318,8 @@ int main() try {
     secondRenderer(gpu);
     nativeAlphaFill(gpu);
     nativeInkEdges(gpu);
+    nativeGlow(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory and the glow the same picture; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

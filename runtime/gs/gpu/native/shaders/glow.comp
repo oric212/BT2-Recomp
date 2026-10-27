@@ -1,0 +1,316 @@
+#version 450
+// Native pass "glow" (runtime/gs/gpu/native/glow.cpp): a run of textured triangles blended into a PSMCT32 frame
+// ((Cs - 0) x C / 128 + Cd, or (Cs - Cd) x C / 128 + Cd), depth-tested without depth writes, drawn per game pixel
+// with super-sampling. The triangles are taken in order; per sample: coverage on the renderer's sample grid with the
+// GS's top-left rule, the depth test against the depth buffer's samples, the blend; the colour is shaded once per
+// pixel and triangle, where the renderer takes its texture. GS memory as paraLLEl-GS holds it: per 32-bit word the resolved value, the super-sample reference one plane
+// on, sample s at plane s + 2; a pixel keeps samples only where they differ and is resolved as the renderer does.
+layout(local_size_x = 8, local_size_y = 8) in;
+// Samples per pixel, 4 or 16, a constant: the loops over samples unroll and the samples stay in registers.
+layout(constant_id = 0) const uint SAMPLES = 16u;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint words[]; };
+
+struct Triangle
+{
+	ivec4 x;      // Vertices' x in 1/16 pixels (after the offset); w: the first pixel's x of the box.
+	ivec4 y;      // y; w: the box's first pixel y.
+	uvec4 z;      // Depth; w: the box's last pixel x (low 16 bits) and y (high 16 bits).
+	uvec4 rgba;   // Colours (flat: all three the provoking vertex's); w: unused.
+	vec4 s;       // Texture coordinates: S, T and Q, or U and V in texels with Q 1 (FST); w unused.
+	vec4 t;
+	vec4 q;
+	uvec4 info;   // x: flags; y: FIX; z: frame mask; w: texture slot.
+};
+
+layout(set = 0, binding = 1, std430) readonly buffer Triangles { Triangle triangles[]; };
+
+struct Slot
+{
+	vec4 scale;  // Texels to the image's coordinates: xy multiply, zw add.
+	vec4 size;   // Width and height in texels; z, w non-zero: S, T clamped to the region.
+	vec4 region; // The first and last texels of the clamp (x, y, x, y), as the renderer clamps: to their middles.
+};
+
+layout(set = 0, binding = 2, std140) uniform Pass
+{
+	uvec4 area;     // First pixel x, y; size in pixels.
+	uvec4 buffers;  // The frame's block and width; the depth buffer's block and width (64-word blocks, 64-pixel units).
+	uvec4 memory;   // Words per plane, samples per pixel, reference planes (present), depth format (0: 32, 1: 24).
+	uvec4 run;      // First triangle, triangle count.
+	Slot slots[8];
+} pass;
+
+layout(set = 0, binding = 3) uniform sampler2D texture0;
+layout(set = 0, binding = 4) uniform sampler2D texture1;
+layout(set = 0, binding = 5) uniform sampler2D texture2;
+layout(set = 0, binding = 6) uniform sampler2D texture3;
+layout(set = 0, binding = 7) uniform sampler2D texture4;
+layout(set = 0, binding = 8) uniform sampler2D texture5;
+layout(set = 0, binding = 9) uniform sampler2D texture6;
+layout(set = 0, binding = 10) uniform sampler2D texture7;
+
+const uint FLAG_GOURAUD = 1u, FLAG_PERSPECTIVE = 2u, FLAG_TCC = 4u, FLAG_COLCLAMP = 8u, FLAG_FIX = 16u;
+const uint FLAG_ZTEST = 32u, FLAG_ZGREATER = 64u, FLAG_MINUS_DESTINATION = 128u, FLAG_PARALLELOGRAM = 256u;
+const uint FLAG_PER_SAMPLE = 512u;
+
+vec4 sample_slot(uint slot, vec2 uv)
+{
+	switch (slot)
+	{
+	case 0u: return textureLod(texture0, uv, 0.0);
+	case 1u: return textureLod(texture1, uv, 0.0);
+	case 2u: return textureLod(texture2, uv, 0.0);
+	case 3u: return textureLod(texture3, uv, 0.0);
+	case 4u: return textureLod(texture4, uv, 0.0);
+	case 5u: return textureLod(texture5, uv, 0.0);
+	case 6u: return textureLod(texture6, uv, 0.0);
+	default: return textureLod(texture7, uv, 0.0);
+	}
+}
+
+// The PSMCT32 word of pixel p (64 x 32 pixel pages of 32 blocks, 8 x 8 pixel blocks); Z formats take the same layout
+// with the block index XORed by 0x18.
+uint word_at(uint block, uint width, uvec2 p, uint block_xor)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint b = ((bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u)) ^ block_xor;
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (block * 64u + ((p.y >> 5u) * width + (p.x >> 6u)) * 2048u + b * 64u + pixel) & 0xFFFFFu;
+}
+
+// Sample s's place in the pixel as the renderer lays it out (bits 0 and 2 are y, bits 1 and 3 are x), in 1/16 pixels.
+ivec2 sample_offset(uint s, uint side)
+{
+	uint x = ((s >> 1u) & 1u) | ((s >> 2u) & 2u), y = (s & 1u) | ((s >> 1u) & 2u);
+	return ivec2(x, y) * int(16u / side);
+}
+
+// The edge from a to b at p, positive inside for a counter-clockwise triangle. Evaluated with its ends in one order
+// whichever way round it is asked for, then signed: two triangles sharing an edge get exactly opposite values, so the
+// tie rule gives a sample on it to one of them.
+float edge(ivec2 a, ivec2 b, ivec2 p)
+{
+	bool flip = a.y > b.y || (a.y == b.y && a.x > b.x);
+	ivec2 lo = flip ? b : a, hi = flip ? a : b;
+	float v = float(hi.x - lo.x) * float(p.y - lo.y) - float(hi.y - lo.y) * float(p.x - lo.x);
+	return flip ? -v : v;
+}
+
+// A sample exactly on an edge belongs to one of the two triangles sharing it: d and -d give opposite answers.
+bool owns_tie(ivec2 d)
+{
+	return d.y < 0 || (d.y == 0 && d.x > 0);
+}
+
+vec4 channels(uint c)
+{
+	return vec4(c & 255u, (c >> 8u) & 255u, (c >> 16u) & 255u, c >> 24u);
+}
+
+void main()
+{
+	// One lane a pixel, an 8 x 8 pixel tile a workgroup. (Four lanes a pixel, each with a quarter of the samples, were
+	// measured slower: each lane shades the triangle again.)
+	uvec2 local = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(local, pass.area.zw)))
+		return;
+	uvec2 p = pass.area.xy + local;
+	uint plane = pass.memory.x;
+	const uint side = SAMPLES == 4u ? 2u : 4u;
+
+	uint ci = word_at(pass.buffers.x, pass.buffers.y, p, 0u);
+	uint zi = word_at(pass.buffers.z, pass.buffers.w, p, 0x18u);
+	uint z_mask = pass.memory.w == 1u ? 0xFFFFFFu : ~0u;
+
+	// The pixel's samples, read when the first triangle reaches it.
+	uint colour[SAMPLES];
+	uint depth[SAMPLES];
+	bool loaded = false, changed = false;
+
+	ivec2 base = ivec2(p) * 16;
+	int reach = 16 - int(16u / side); // The last sample's offset in the pixel, in 1/16 pixels.
+	ivec2 tile_lo = ivec2(pass.area.xy + gl_WorkGroupID.xy * 8u), tile_hi = tile_lo + 7;
+	for (uint n = pass.run.x; n < pass.run.x + pass.run.y; n++)
+	{
+		// The triangle's box: against the workgroup's tile (the same for all its pixels), then the pixel.
+		ivec2 lo = ivec2(triangles[n].x.w, triangles[n].y.w);
+		uint packed = triangles[n].z.w;
+		ivec2 hi = ivec2(packed & 0xFFFFu, packed >> 16u);
+		if (any(lessThan(tile_hi, lo)) || any(greaterThan(tile_lo, hi)))
+			continue;
+		if (any(lessThan(ivec2(p), lo)) || any(greaterThan(ivec2(p), hi)))
+			continue;
+
+		ivec3 xs = triangles[n].x.xyz, ys = triangles[n].y.xyz;
+		vec3 zs = vec3(triangles[n].z.xyz);
+		uvec3 colours = triangles[n].rgba.xyz;
+		vec3 ss = triangles[n].s.xyz, ts = triangles[n].t.xyz, qs = triangles[n].q.xyz;
+		ivec2 v0 = ivec2(xs.x, ys.x), v1 = ivec2(xs.y, ys.y), v2 = ivec2(xs.z, ys.z);
+		float area = edge(v0, v1, v2);
+		if (area == 0.0)
+			continue;
+		if (area < 0.0)
+		{
+			// Counter-clockwise: vertices 1 and 2 swapped, with their attributes.
+			v1 = ivec2(xs.z, ys.z);
+			v2 = ivec2(xs.y, ys.y);
+			zs = zs.xzy;
+			colours = colours.xzy;
+			ss = ss.xzy;
+			ts = ts.xzy;
+			qs = qs.xzy;
+			area = -area;
+		}
+
+		// The outline's edges: a triangle's three, or a parallelogram's four (the renderer's: its fourth corner opposite
+		// vertex 0, at v1 + v2 - v0).
+		bool parallelogram = (triangles[n].info.x & FLAG_PARALLELOGRAM) != 0u;
+		ivec2 d = v1 + v2 - v0;
+		int edges = parallelogram ? 4 : 3;
+		ivec2 from[4] = parallelogram ? ivec2[4](v0, v1, d, v2) : ivec2[4](v1, v2, v0, v0);
+		ivec2 to[4] = parallelogram ? ivec2[4](v1, d, v2, v0) : ivec2[4](v2, v0, v1, v0);
+
+		// Whole pixels in or out by the edges' range over the pixel's samples, with a margin over the rounding (a sample on
+		// an edge is decided by the tie rule below).
+		const float margin = 4096.0;
+		bool outside = false, inside = true;
+		for (int k = 0; k < 4; k++)
+		{
+			if (k >= edges)
+				break;
+			float e = edge(from[k], to[k], base);
+			vec2 step = vec2(-(to[k].y - from[k].y), to[k].x - from[k].x) * float(reach);
+			float low = e + min(step.x, 0.0) + min(step.y, 0.0), high = e + max(step.x, 0.0) + max(step.y, 0.0);
+			outside = outside || high < -margin;
+			inside = inside && low > margin;
+		}
+		if (outside)
+			continue;
+
+		// The pixel's covered samples.
+		uint covered = (1u << SAMPLES) - 1u;
+		if (!inside)
+		{
+			covered = 0u;
+			for (uint s = 0u; s < SAMPLES; s++)
+			{
+				ivec2 q = base + sample_offset(s, side);
+				bool in_all = true;
+				for (int k = 0; k < 4; k++)
+				{
+					if (k >= edges)
+						break;
+					float at = edge(from[k], to[k], q);
+					in_all = in_all && (at > 0.0 || (at == 0.0 && owns_tie(to[k] - from[k])));
+				}
+				if (in_all)
+					covered |= 1u << s;
+			}
+			if (covered == 0u)
+				continue;
+		}
+		// Where the renderer takes the texture: at the pixel (its first sample), or, for coordinates per sample (a
+		// replacement on 2D art), at the centre of the covered samples.
+		vec2 centre = vec2(0.0);
+		if ((triangles[n].info.x & FLAG_PER_SAMPLE) != 0u)
+		{
+			for (uint s = 0u; s < SAMPLES; s++)
+				if ((covered & (1u << s)) != 0u)
+					centre += vec2(sample_offset(s, side));
+			centre /= float(bitCount(covered));
+		}
+
+		// Vertex weights at a point o (1/16 pixels from the first sample), linear in o: edge v1-v2 weighs v0, and so on
+		// (over a parallelogram too, whose attributes are one plane).
+		float inv_area = 1.0 / area;
+		vec3 w0 = vec3(edge(v1, v2, base), edge(v2, v0, base), edge(v0, v1, base)) * inv_area;
+		vec3 wx = vec3(v1.y - v2.y, v2.y - v0.y, v0.y - v1.y) * inv_area, wy = vec3(v2.x - v1.x, v0.x - v2.x, v1.x - v0.x) * inv_area;
+		vec3 w = w0 + wx * centre.x + wy * centre.y;
+
+		uint flags = triangles[n].info.x;
+		uint slot_index = triangles[n].info.w;
+		vec4 vertex = (flags & FLAG_GOURAUD) != 0u ?
+		              floor(channels(colours.x) * w.x + channels(colours.y) * w.y + channels(colours.z) * w.z + 0.5) :
+		              channels(colours.x);
+		float sv = dot(ss, w), tv = dot(ts, w), qv = dot(qs, w);
+		Slot slot = pass.slots[slot_index];
+		vec2 texels = (flags & FLAG_PERSPECTIVE) != 0u ? vec2(sv, tv) / qv * slot.size.xy : vec2(sv, tv);
+		vec2 clamped = clamp(texels, slot.region.xy + 0.5, slot.region.zw + 0.5);
+		texels = mix(texels, clamped, notEqual(slot.size.zw, vec2(0.0)));
+		vec4 texel = floor(sample_slot(slot_index, texels * slot.scale.xy + slot.scale.zw) * 255.0 + 0.5);
+		// MODULATE.
+		vec4 source = min(floor(texel * vertex / 128.0), vec4(255.0));
+		if ((flags & FLAG_TCC) == 0u)
+			source.a = vertex.a;
+		float factor = (flags & FLAG_FIX) != 0u ? float(triangles[n].info.y) : source.a;
+		bool minus_destination = (flags & FLAG_MINUS_DESTINATION) != 0u;
+		vec3 term = floor(source.rgb * factor / 128.0);
+		uint mask = triangles[n].info.z;
+		bool z_test = (flags & FLAG_ZTEST) != 0u, z_greater = (flags & FLAG_ZGREATER) != 0u;
+		float z0 = dot(zs, w0), zx = dot(zs, wx), zy = dot(zs, wy);
+
+		if (!loaded)
+		{
+			bool colour_samples = words[ci + plane] == ~0u;
+			bool depth_samples = (words[zi + plane] & z_mask) == z_mask;
+			for (uint s = 0u; s < SAMPLES; s++)
+			{
+				colour[s] = colour_samples ? words[ci + (s + 2u) * plane] : words[ci];
+				depth[s] = (depth_samples ? words[zi + (s + 2u) * plane] : words[zi]) & z_mask;
+			}
+			loaded = true;
+		}
+		for (uint s = 0u; s < SAMPLES; s++)
+		{
+			if ((covered & (1u << s)) == 0u)
+				continue;
+			if (z_test)
+			{
+				vec2 o = vec2(sample_offset(s, side));
+				uint z = uint(clamp(floor(z0 + zx * o.x + zy * o.y), 0.0, float(z_mask)));
+				if (z_greater ? z <= depth[s] : z < depth[s])
+					continue;
+			}
+			vec3 dest = channels(colour[s]).rgb;
+			// (Cs - 0) x C / 128 + Cd, or (Cs - Cd) x C / 128 + Cd.
+			vec3 sum = (minus_destination ? floor((source.rgb - dest) * factor / 128.0) : term) + dest;
+			sum = (flags & FLAG_COLCLAMP) != 0u ? clamp(sum, vec3(0.0), vec3(255.0)) : mod(sum, 256.0);
+			uvec4 r = uvec4(uvec3(sum), uint(source.a));
+			uint result = r.x | (r.y << 8u) | (r.z << 16u) | (r.w << 24u);
+			colour[s] = (result & ~mask) | (colour[s] & mask);
+			changed = true;
+		}
+	}
+	if (!changed)
+		return;
+
+	// Samples kept only where they differ.
+	bool differ = false;
+	for (uint s = 1u; s < SAMPLES; s++)
+		differ = differ || colour[s] != colour[0];
+	if (!differ)
+	{
+		words[ci] = colour[0];
+		words[ci + plane] = 0u;
+		return;
+	}
+	vec4 sum[SAMPLES];
+	for (uint s = 0u; s < SAMPLES; s++)
+	{
+		words[ci + (s + 2u) * plane] = colour[s];
+		sum[s] = unpackUnorm4x8(colour[s]);
+	}
+	// The renderer's resolve: sums of samples a half, a quarter ... of the samples apart, as sample 0 sees them.
+	for (uint stride = SAMPLES >> 1u; stride >= 1u; stride >>= 1u)
+	{
+		vec4 next[SAMPLES];
+		for (uint s = 0u; s < SAMPLES; s++)
+			next[s] = sum[s] + sum[s ^ stride];
+		for (uint s = 0u; s < SAMPLES; s++)
+			sum[s] = next[s];
+	}
+	words[ci] = packUnorm4x8(sum[0] / float(SAMPLES));
+	words[ci + plane] = ~0u;
+}
