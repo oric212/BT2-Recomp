@@ -3,6 +3,7 @@
 // is filtered on the GPU (docs/plans/ee/PERFORMANCE_PLAN.md, presenting without readback).
 #pragma once
 #include "host/display_frame.h"
+#include <chrono>
 
 class WindowPresenter {
 public:
@@ -14,4 +15,7 @@ public:
     // one pixel for one at `status_at`'s corner.
     virtual void show(void* window,const DisplayFrame* frame,Rect at,unsigned client_width,unsigned client_height,bool smooth,
                       const DisplayFrame& status,Rect status_at)=0;
+    // The next picture shown is presented no earlier than `at` (a picture scheduled a field ahead, while the
+    // game goes on). Presenters that show at once ignore it.
+    virtual void presentAt(std::chrono::steady_clock::time_point) {}
 };

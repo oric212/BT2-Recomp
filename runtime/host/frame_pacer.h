@@ -50,15 +50,19 @@ public:
     // The game read its input at the field's start, so this takes the time a picture sat waiting for its
     // deadline out of the delay between a button and the screen. The moment is when 99% of the last 120
     // pictures were ready, plus a millisecond; a later picture is shown when it is ready.
-    void waitToShow() {
-        if(free_run || !started_ || waited_)return;
-        const auto field_start=deadline_-period_,now=Clock::now();
-        const auto ready=std::clamp(now-field_start,Clock::duration::zero(),period_);
+    // `ready`: when the picture was ready (60 fps: when its in-between picture was). Returns when it is shown.
+    Clock::time_point waitToShow(Clock::time_point ready_at=Clock::now()) {
+        if(free_run || !started_ || waited_)return Clock::now();
+        const auto field_start=deadline_-period_;
+        const auto ready=std::clamp(ready_at-field_start,Clock::duration::zero(),period_);
         ready_[ready_next_++%ready_.size()]=ready;ready_count_=std::min<std::size_t>(ready_count_+1,ready_.size());
         auto recent=ready_;std::sort(recent.begin(),recent.begin()+ready_count_);
         const auto usual=recent[std::min(ready_count_-1,ready_count_*99/100)]+std::chrono::milliseconds(1);
         waitUntil(field_start+std::min(usual,period_));
+        return Clock::now();
     }
+    Clock::duration period() const {return period_;}
+    Clock::time_point deadline() const {return deadline_;}
     // How far ahead of their deadline pictures are shown now (statistics).
     double showAheadSeconds() const {
         if(!ready_count_)return 0;

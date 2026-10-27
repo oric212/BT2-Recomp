@@ -59,7 +59,7 @@ The pad is read at a field's deadline and the flipped picture is handed over at 
 
 Left in the hitches (a profile at 20,000 samples a second): the IPU's picture decoding about 22%, the loop guard (`eeCheckpointDue`, one call per loop iteration) about 6%, the game's start-code scan (`0x2DCFE8`, byte by byte) about 5%.
 
-**Step 2, pictures ahead of their deadline (2026-10-27):** a picture was ready about 1 ms into its field and then held to the field's deadline (15 ms); the game read its input at the field's start, so that hold was delay the console does not have in it. Now the picture goes out at the same moment in every field, when 99% of the last 120 pictures were ready plus 1 ms (`FramePacer::waitToShow`), and the deadline is waited for after it: the game's pace, input and state are unchanged. With 60 fps the in-between pictures go out at the deadlines, so pictures keep the deadline there (left for a later step); `BT2_PICTURE_AT_DEADLINE=1` keeps it everywhere.
+**Step 2, pictures ahead of their deadline (2026-10-27):** a picture was ready about 1 ms into its field and then held to the field's deadline (15 ms); the game read its input at the field's start, so that hold was delay the console does not have in it. Now the picture goes out at the same moment in every field, when 99% of the last 120 pictures were ready plus 1 ms (`FramePacer::waitToShow`), and the deadline is waited for after it: the game's pace, input and state are unchanged. With 60 fps outside fights the in-between pictures go out at the deadlines, so pictures keep the deadline there; fights with 60 fps below. `BT2_PICTURE_AT_DEADLINE=1` keeps the deadline everywhere.
 
 | From the game's flip to the refresh that shows it (the gate's path, 1x) | Window | Fullscreen |
 | --- | --- | --- |
@@ -67,6 +67,8 @@ Left in the hitches (a profile at 20,000 samples a second): the IPU's picture de
 | Ahead of it | 17.0 ms (p90 23.4) | 10.3 ms (p90 18.7) |
 
 Evenness, from the presents' times (5,097 intervals in a window): the median distance from a whole number of fields 0.19 ms (0.26 at the deadline); 24 intervals off by more than 4 ms (4 at the deadline), late pictures at screen changes. The rates per 120 flips are the same (60 in menus, 30 in the fight). A unit test checks the pacer (`frame_pacer_tests.cpp`).
+
+**Step 2, with 60 fps (2026-10-27):** a fight frame's commands come a frame ahead, so its in-between picture is usually drawn before the flip. At the flip the game's thread (which waits for the field's deadline anyway) waits for the in-between picture, shows it when such pictures are usually ready, and hands the flip's own picture to the presenter scheduled exactly a field later (`WindowPresenter::presentAt`; the presenter keeps two pictures and waits for a scheduled one on its thread). Measured in a window at 1x on the gate's path with 60 fps, the fight's flips: flip to screen 44.8 to 35.3 ms median (p90 49.3 to 42.3); the same pictures shown (1,125 in-between of 1,221 drawn); presents off a whole field by more than 4 ms 57 to 25. The field the in-between picture needs before the flip's own stays.
 
 ## Verification
 

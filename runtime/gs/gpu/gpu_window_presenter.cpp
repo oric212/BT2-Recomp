@@ -75,12 +75,14 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
     Request request;
     request.window=window;request.at=at;request.client_width=client_width;request.client_height=client_height;request.smooth=smooth;
     request.status=status;request.status_at=status_at;
-    request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(frame)request.frame=*frame;else request.picture=renderer_picture_();
     {
         std::lock_guard guard(lock_);
         if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
-        pending_=std::move(request);
+        if(next_at_) {request.present_at=*next_at_;next_at_.reset();}
+        const auto due=std::max(std::chrono::steady_clock::now(),request.present_at);
+        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(due.time_since_epoch()).count();
+        if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
     }
     changed_.notify_all();
 }
@@ -91,9 +93,13 @@ void GpuWindowPresenter::run() {
         Request request;
         {
             std::unique_lock guard(lock_);
-            changed_.wait(guard,[this]{return pending_ || stop_;});
-            if(!pending_)return;
-            request=std::move(*pending_);pending_.reset();
+            changed_.wait(guard,[this]{return !pending_.empty() || stop_;});
+            if(pending_.empty())return;
+            // A picture scheduled ahead waits for its time (a newer picture handed over meanwhile queues behind it).
+            while(!stop_ && std::chrono::steady_clock::now()<pending_.front().present_at)
+                changed_.wait_until(guard,pending_.front().present_at);
+            if(stop_)return;
+            request=std::move(pending_.front());pending_.pop_front();
         }
         try {
             bool presenting=false;

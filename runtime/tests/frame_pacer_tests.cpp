@@ -28,6 +28,15 @@ int main() {
         pacer.wait();
     }
     check(pacer.showAheadSeconds()<0.007,"the moment follows when pictures are ready");
+    // A picture ready earlier than the call (60 fps: its in-between picture): the moment it is shown is
+    // returned, and the period puts the next picture a field after it.
+    pacer.fieldStarted();
+    {
+        const auto shown=pacer.waitToShow(FramePacer::Clock::now());
+        check(shown<=FramePacer::Clock::now() && pacer.deadline()-shown>FramePacer::Clock::duration::zero(),"shown before the deadline");
+        check(pacer.period()>std::chrono::milliseconds(16) && pacer.period()<std::chrono::milliseconds(17),"a field's period");
+        pacer.wait();
+    }
     // Fast forward waits for nothing.
     pacer.free_run=true;pacer.fieldStarted();
     const auto start=FramePacer::Clock::now();

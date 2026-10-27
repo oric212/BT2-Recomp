@@ -434,7 +434,7 @@ int main(int argc, char** argv) {
             // the flip's own at the next field and, at the flip's deadline, the in-between picture of the job started at
             // the flip before; so an in-between picture has a field more to be drawn (16.7 ms later input in fights).
             static const bool delay_fights = !(std::getenv("BT2_SIXTY_FPS_DELAY") && std::string_view(std::getenv("BT2_SIXTY_FPS_DELAY")) == "0");
-            static struct DelayedMain {bool pending = false;unsigned slot = 0, width = 0, height = 0, flip = 0;std::uint64_t vblank = 0;} delayed_main;
+            static struct DelayedMain {bool pending = false;unsigned slot = 0, width = 0, height = 0, flip = 0;std::uint64_t vblank = 0;bool presented = false;} delayed_main;
             // A failure ends the in-between pictures, not the game.
             static const auto stop_in_between = [&runtime](const std::exception& e) {
                 std::cerr << "60 fps battles stopped at flip " << runtime.gs_display_flips << ": " << e.what() << std::endl;
@@ -457,6 +457,7 @@ int main(int argc, char** argv) {
                         if (runtime.vblank_deliveries < delayed_main.vblank + 2) return;
                         delayed_main.pending = false;in_between_started = false;
                         if (runtime.vblank_deliveries > delayed_main.vblank + 2) return; // Its field has passed.
+                        if (delayed_main.presented) return; // Scheduled at its flip (ahead of the deadline).
                         if (pacer) pacer->wait();
                         gpu_mirror.showHeld(nullptr, int(delayed_main.slot));
                         viewer.presentRenderer(delayed_main.width, delayed_main.height, delayed_main.flip);
@@ -608,19 +609,34 @@ int main(int argc, char** argv) {
                                      && !in_between->replay_only && !in_between->scan_replay;
                 // The picture goes out ahead of its field's deadline, at the same moment in every field (FramePacer::
                 // waitToShow), and the deadline is waited for after it: the game's pace and input are unchanged, the
-                // screen is a field closer to the button. With 60 fps the in-between pictures go out at the deadlines,
-                // so the flip's picture does too. BT2_PICTURE_AT_DEADLINE=1 keeps the deadline for every picture.
+                // screen is a field closer to the button. A delayed 60 fps fight does the same with its two pictures:
+                // the in-between picture (usually drawn before the flip: the frame's commands come a frame ahead)
+                // goes out when such pictures are usually ready, and the flip's own exactly a field after it,
+                // scheduled on the presenter's thread (presentRendererAt). With 60 fps outside fights the in-between
+                // pictures go out at the deadlines, so the flip's picture does too. BT2_PICTURE_AT_DEADLINE=1 keeps the
+                // deadline for every picture.
                 static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
-                const bool ahead = pacer && !in_between && !at_deadline;
-                if (ahead) pacer->waitToShow(); else if (pacer) pacer->wait();
+                const bool ahead_sixty = pacer && delayed && on_gpu && !at_deadline;
+                const bool ahead = pacer && !at_deadline && (!in_between || ahead_sixty);
+                Clock::time_point shown_at{};
+                if (ahead_sixty) {
+                    // The game's thread waits for this field's deadline anyway: meanwhile, for the in-between picture.
+                    if (in_between_flip + 1 == flip) {
+                        const auto job = in_between->lastJob();
+                        while (!in_between->readyFor(job) && in_between->busy() && Clock::now() < pacer->deadline()) Sleep(0);
+                    }
+                    shown_at = pacer->waitToShow(Clock::now());
+                } else if (ahead) pacer->waitToShow(); else if (pacer) pacer->wait();
                 const auto t_shown = Clock::now();
+                // The flip's own picture with 60 fps ahead: a field after the in-between picture.
+                const auto main_at = ahead_sixty ? shown_at + pacer->period() : t_shown;
                 // BT2_LATENCY_LOG=<path>: each shown flip: when the game flipped it and when it was handed to the
                 // window after the pacer's wait (steady clock, microseconds), and whether 60 fps holds it a field;
                 // the presenter writes <path>.presents (gpu_window_presenter.h). tools/perf/latency_report.py.
                 static std::ofstream latency_log = [] {const char* p = std::getenv("BT2_LATENCY_LOG");return p ? std::ofstream(p) : std::ofstream();}();
                 if (latency_log.is_open()) {
                     const auto us = [](Clock::time_point t) {return std::chrono::duration_cast<std::chrono::microseconds>(t.time_since_epoch()).count();};
-                    latency_log << "flip," << flip << ',' << us(t0) << ',' << us(t_shown) << ',' << (delayed ? 1 : 0) << '\n';
+                    latency_log << "flip," << flip << ',' << us(t0) << ',' << us(main_at) << ',' << (delayed && !ahead_sixty ? 1 : 0) << '\n';
                 }
                 if (delayed) {
                     // This flip's picture is held for the next field; its deadline shows the in-between picture of the
@@ -639,6 +655,13 @@ int main(int argc, char** argv) {
                             ++in_between->shown;
                             if (player) player->shown();
                         }
+                    }
+                    if (ahead_sixty) {
+                        gpu_mirror.showHeld(nullptr, int(delayed_main.slot));
+                        viewer.presentRendererAt(width, height, flip, main_at);
+                        gpu_mirror.showPictureOf(nullptr);
+                        if (player) player->shown();
+                        delayed_main.presented = true;
                     }
                 } else {
                     delayed_main.pending = false;

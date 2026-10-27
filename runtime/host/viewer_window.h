@@ -45,6 +45,11 @@ public:
         pump();
     }
     // The renderer's last scanout (width x height), shown by the presenter.
+    // The renderer's picture, presented no earlier than `at` (WindowPresenter::presentAt).
+    void presentRendererAt(unsigned width,unsigned height,unsigned flip,std::chrono::steady_clock::time_point at) {
+        if(presenter_)presenter_->presentAt(at);
+        presentRenderer(width,height,flip);
+    }
     void presentRenderer(unsigned width,unsigned height,unsigned flip) {
         if(closed_)return;
         if(!presenter_)throw std::runtime_error("Viewer: the renderer's picture needs a GPU presenter");
