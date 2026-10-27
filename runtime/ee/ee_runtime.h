@@ -468,7 +468,7 @@ public:
     unsigned native_iop_steps=0,native_iop_targets=0,native_iop_waiters=0;
     std::uint32_t native_iop_pc=0;
     unsigned heap_binds=0,heap_calls=0,heap_frees=0;
-    bool sound_thread_start_supplied=false,sound_thread_checkpoint=false;
+    bool sound_thread_start_supplied=false;
     unsigned sound_thread_queries=0,sound_thread_starts=0;
     void supplySoundThreadStart(std::span<const std::uint8_t> evidence) {
         const std::array<std::uint32_t,14> expected={0x70030C11,3,0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};

@@ -84,7 +84,7 @@ def verify(root,native=None):
     require(console[text:end].decode('ascii'),'Empty DECI2 diagnostic')
     if native:
         r=json.loads(native.read_text(encoding='utf-8'))
-        require((r.get('sound_thread_starts')==1 or (r['target']==0x32FDA0 and r['source_pc']==0x315210)) and (r['console_messages']==0 or completed_directory_diagnostics(r)),'Native checked EE thread-start state differs')
+        require(r.get('sound_thread_starts')==1 and (r['console_messages']==0 or completed_directory_diagnostics(r)),'Native checked EE thread-start state differs')
         later=r.get('display_reset_phase',0)==13 # Main's later sound-driver commands follow the first call.
         require(r['sound_rpc_binds']==1 and (r['sound_rpc_calls']==1 or (later and r['sound_rpc_calls']>1)) and r.get('native_iop_error','')=='','Native sound lifecycle differs')
         descriptor,buffer=SERVERS[0x80000701]

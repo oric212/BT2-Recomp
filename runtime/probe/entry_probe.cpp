@@ -662,6 +662,9 @@ int main(int argc, char** argv) {
         context.hi = context.lo = context.hi1 = context.lo1 = UINT64_MAX;
         context.fcr31 = context.sa = UINT32_MAX;
         context.f_acc = 1.0f;
+        // A user thread runs with IE set (the kernel enters it so; the captured Status at the sound thread's
+        // start is 0x70030C11); EI and DI change EIE.
+        context.cop0_status = 1;
         loadContinuationEvidence(runtime,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime);

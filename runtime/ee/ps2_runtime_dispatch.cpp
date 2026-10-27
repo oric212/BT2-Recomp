@@ -74,14 +74,6 @@ bool EeRuntime::dispatchGuestBranch(std::uint8_t* rdram, R5900Context* context, 
         if((kind==GuestBranchKind::DirectCall || kind==GuestBranchKind::IndirectCall) && ++main_calls_since_field_>main_calls_per_field)busyMainField();
     }
     const auto found = functions_.find(target);
-    if(target==0x32FDA0 && source==0x315210 && sound_rpc_calls==1) {
-        if(!sound_thread_start_supplied || sound_thread_checkpoint || current_thread_id!=1 || main_thread_priority!=2
-            || threads.size()!=2 || threads[1].id!=3 || context->r[4].low!=3 || context->r[5].low
-            || context->cop0_status!=0x10000)throw UnsupportedGuestBranch(target,source,resume);
-        // Independent caller capture supplies only the reached IE/EIE bits.
-        // Other CP0 fields remain outside this bootstrap compatibility scope.
-        context->cop0_status|=0x10001;sound_thread_checkpoint=true;
-    }
     // The function to run and the function that counts as entered: an interior entry runs the function
     // holding it, which resumes at the label the pc names.
     RecompiledFunction function;

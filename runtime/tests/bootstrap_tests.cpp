@@ -1521,12 +1521,6 @@ int main() {
             require(FPU_CVT_W_S(-2.75f)==-2 && FPU_CVT_W_S(2.75f)==2 && FPU_CVT_W_S(3.0e9f)==INT32_MAX
                 && FPU_CVT_W_S(-3.0e9f)==INT32_MIN && FPU_CVT_W_S(std::bit_cast<float>(0x80000001u))==0);
         }
-        EeRuntime start_boundary;R5900Context start_context{};
-        start_boundary.registerFunction(0x32FDA0,return_leaf);start_boundary.sound_rpc_calls=1;
-        start_context.r[2].low=0x1234;
-        reject([&]{start_boundary.dispatchGuestBranch(nullptr,&start_context,0x32FDA0,0x315210,0x315218,
-            EeRuntime::GuestBranchKind::DirectCall,"checked StartThread");});
-        require(start_boundary.guest_calls==0 && start_context.r[2].low==0x1234);
         {
             EeRuntime rt;rt.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
             const std::array<std::uint32_t,14> data={0x70030C11,3,0x10,0x315380,0x3A5CC0,0x1000,0x38BDF0,5,5,0,0,0,0,0};
@@ -1539,7 +1533,7 @@ int main() {
             std::memcpy(ram+0x2000,descriptor.data(),sizeof(descriptor));R5900Context cpu{};cpu.r[3].low=0x20;cpu.r[4].low=0x2000;
             rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==3 && !rt.threads[1].ready);
             auto& t=rt.threads[1];require(rt.read32(ram,t.context_address+31*16)==0x100250);
-            rt.sound_thread_checkpoint=true;cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=3;cpu.r[5].low=rt.initial_sp-256;
+            cpu.pc=0x32EB68;cpu.cop0_status=1;cpu.r[3].low=0x30;cpu.r[4].low=3;cpu.r[5].low=rt.initial_sp-256;
             const std::vector<std::uint8_t> untouched(rt.memory().begin(),rt.memory().end());cpu.r[4].low=9;reject([&]{rt.handleSyscall(ram,&cpu,0);});require(std::equal(rt.memory().begin(),rt.memory().end(),untouched.begin()) && !rt.sound_thread_queries);
             cpu.r[4].low=3;rt.handleSyscall(ram,&cpu,0);require(cpu.r[2].low==0x10 && rt.sound_thread_queries==1);
             // The full descriptor, as the startup capture of this query shows.
