@@ -604,10 +604,16 @@ int main(int argc, char** argv) {
                 }
                 if (!show || !width) return;
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
-                if (pacer) pacer->wait(); // The picture appears at the field's deadline.
-                const auto t_shown = Clock::now();
                 const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->free_run)
                                      && !in_between->replay_only && !in_between->scan_replay;
+                // The picture goes out ahead of its field's deadline, at the same moment in every field (FramePacer::
+                // waitToShow), and the deadline is waited for after it: the game's pace and input are unchanged, the
+                // screen is a field closer to the button. With 60 fps the in-between pictures go out at the deadlines,
+                // so the flip's picture does too. BT2_PICTURE_AT_DEADLINE=1 keeps the deadline for every picture.
+                static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
+                const bool ahead = pacer && !in_between && !at_deadline;
+                if (ahead) pacer->waitToShow(); else if (pacer) pacer->wait();
+                const auto t_shown = Clock::now();
                 // BT2_LATENCY_LOG=<path>: each shown flip: when the game flipped it and when it was handed to the
                 // window after the pacer's wait (steady clock, microseconds), and whether 60 fps holds it a field;
                 // the presenter writes <path>.presents (gpu_window_presenter.h). tools/perf/latency_report.py.
@@ -662,6 +668,7 @@ int main(int argc, char** argv) {
                         window_start = t2;scanout_s = present_s = slowest_s = 0;late = 0;waited_at_window = pacer ? pacer->waited_seconds : 0;(void)waited_before;window_fields = runtime.vblank_deliveries;frame_profile = {};frame_profile.enabled = true;
                     }
                 }
+                if (ahead) pacer->wait(); // The field's deadline, before the game goes on (it reads its input after it).
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
             };
         }

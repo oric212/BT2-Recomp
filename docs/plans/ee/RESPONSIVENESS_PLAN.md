@@ -59,6 +59,15 @@ The pad is read at a field's deadline and the flipped picture is handed over at 
 
 Left in the hitches (a profile at 20,000 samples a second): the IPU's picture decoding about 22%, the loop guard (`eeCheckpointDue`, one call per loop iteration) about 6%, the game's start-code scan (`0x2DCFE8`, byte by byte) about 5%.
 
+**Step 2, pictures ahead of their deadline (2026-10-27):** a picture was ready about 1 ms into its field and then held to the field's deadline (15 ms); the game read its input at the field's start, so that hold was delay the console does not have in it. Now the picture goes out at the same moment in every field, when 99% of the last 120 pictures were ready plus 1 ms (`FramePacer::waitToShow`), and the deadline is waited for after it: the game's pace, input and state are unchanged. With 60 fps the in-between pictures go out at the deadlines, so pictures keep the deadline there (left for a later step); `BT2_PICTURE_AT_DEADLINE=1` keeps it everywhere.
+
+| From the game's flip to the refresh that shows it (the gate's path, 1x) | Window | Fullscreen |
+| --- | --- | --- |
+| At the deadline | 27.2 ms median (p90 30.4) | 20.1 ms (p90 23.4) |
+| Ahead of it | 17.0 ms (p90 23.4) | 10.3 ms (p90 18.7) |
+
+Evenness, from the presents' times (5,097 intervals in a window): the median distance from a whole number of fields 0.19 ms (0.26 at the deadline); 24 intervals off by more than 4 ms (4 at the deadline), late pictures at screen changes. The rates per 120 flips are the same (60 in menus, 30 in the fight). A unit test checks the pacer (`frame_pacer_tests.cpp`).
+
 ## Verification
 
 Each step: the gate (game state unchanged), step 1's numbers before and after, `BT2_FIELD_LOG` for hitches and loading, and the user's feel in play.

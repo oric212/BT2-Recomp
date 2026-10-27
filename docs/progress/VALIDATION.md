@@ -8,7 +8,7 @@ What has actually been checked, how, and when. Only checks that were run are lis
 
 | Area | What was checked | Kind | Date |
 | --- | --- | --- | --- |
-| Gate (every commit) | Debug and Release builds, 25 unit tests, the Python suites, the probe runs, 31 comparisons and renders, map closure, and the scripted 1P-vs-COM fight against its baseline (5,100 frames, VU1 hash `7f996c1524a22bea`) | Exact, Original | last passed 2026-10-27 |
+| Gate (every commit) | Debug and Release builds, 26 unit tests, the Python suites, the probe runs, 31 comparisons and renders, map closure, and the scripted 1P-vs-COM fight against its baseline (5,100 frames, VU1 hash `7f996c1524a22bea`) | Exact, Original | last passed 2026-10-27 |
 | Startup | 46 comparison scripts against PCSX2 captures: 42 pass; `cri_rpc`, `second_heap`, `cri_preemption` and `spu2_initialization` fail | Original | 2026-10-13 |
 | Native services | The same stop and identical EE memory as the emulated IOP, except two regions of stale IOP bytes | Exact | 2026-10-11 |
 | Movies | The logo and opening films' first pictures match an independent decode; the boot films' sound level, channel order and timing match a PCSX2 recording | Original | 2026-10-13 |
