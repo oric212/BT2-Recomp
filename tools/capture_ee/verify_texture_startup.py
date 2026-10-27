@@ -26,7 +26,8 @@ def verify(root,output=None,native=None):
         if r.get('main_thread_priority')==2:
             point='main-priority-after';folder=root/'work/pcsx2-capture'/point;m=json.loads((folder/'capture.json').read_text(encoding='utf-8'));ee=(folder/'ee-ram.bin').read_bytes();address,trap,marker=capture_trap(point);stub=texture_stub(point)
             if hashlib.sha256(ee).hexdigest()!=m['capture_sha256'] or any(m[k]!=baseline[k] for k in ['source_elf_sha256','pcsx2_sha256','bios_sha256','disc_sha256']) or ee[address:address+len(trap)]!=trap or ee[FRESH_BIND_STUB:FRESH_BIND_STUB+len(stub)]!=stub or struct.unpack_from('<I',ee,MARKER)[0]!=marker or struct.unpack_from('<4I',ee,MARKER+8)!=(1,0,0x1FFED40,0):raise ValueError('Priority return capture differs')
-        if [r[k] for k in ['texture_gif_phase','texture_gif_starts','texture_gif_completions','texture_gif_polls']]!=[8,1,1,2] or r['tex0']!=[w[4],w[6]] or r['pabe']!=(w[2]&1):raise ValueError('Native texture startup differs')
+        # The GS registers as the startup left them for the first display flip.
+        if r['first_flip_gif_starts']<1 or r['tex0']!=[w[4],w[6]] or r['pabe']!=(w[2]&1):raise ValueError('Native texture startup differs')
     print('Independent GIF configuration source/loads/return verified'+(' against native execution.' if native else '.'))
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path.cwd());p.add_argument('--output',type=Path);p.add_argument('--native',type=Path);a=p.parse_args();verify(a.root,a.output,a.native)

@@ -480,48 +480,24 @@ int main() {
         }
 
         {
-            std::vector<std::uint8_t> packet(240,0x5A),ram(512,0);
-            std::copy(packet.begin(),packet.end(),ram.begin()+16);
-            GifDmaStaging stage;reject([&]{stage.readIdle();});reject([&]{stage.setCount(15);});
-            reject([&]{stage.supply(std::span(packet).first(16));});stage.supply(packet);
-            reject([&]{stage.supply(packet);});require(stage.readIdle()==0);
-            reject([&]{stage.readIdle();});reject([&]{stage.setCount(0);});stage.setCount(15);
-            reject([&]{stage.setCount(15);});
-            reject([&]{stage.setAddress(17,17,ram);});reject([&]{stage.setAddress(16,32,ram);});
-            reject([&]{stage.setAddress(496,496,ram);});reject([&]{stage.setAddress(528,528,ram);});
-            ram[16]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[16]^=1;
-            stage.setAddress(16,16,ram);require(stage.ready() && stage.packet_verified && stage.qwc==15
-                && stage.madr==16 && stage.idle_reads==1 && stage.staging_writes==2);
-            reject([&]{stage.setAddress(16,16,ram);});
-        }
-        {
-            // Authored A+D words: semantic bit mutations must still fail.
-            std::vector<std::uint8_t> packet(240,0),ram(256,0);
-            const std::array<std::uint64_t,3> registers{0x1A,0x46,0x45};
-            for(unsigned i=0;i<3;++i)std::memcpy(packet.data()+24+i*16,&registers[i],8);
-            std::copy(packet.begin(),packet.end(),ram.begin()+16);
-            for(unsigned i=0;i<3;++i)ram[32+i*16]=0x80;
-            GifDmaStaging stage;stage.supply(packet);stage.readIdle();stage.setCount(15);
-            ram[32]|=1;reject([&]{stage.setAddress(16,16,ram);});ram[32]&=0xFE;
-            ram[40]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[40]^=1;
-            ram[16]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[16]^=1;
-            ram[80]^=1;reject([&]{stage.setAddress(16,16,ram);});ram[80]^=1;
-            stage.setAddress(16,16,ram);require(stage.ready() && stage.reserved_difference_words==3);
-            require(ram[32]==0x80 && ram[48]==0x80 && ram[64]==0x80);
-        }
-        {
-            IntcCheckpoint wait;reject([&]{wait.acknowledge(4);});
-            wait.arm(12,0x1802);reject([&]{wait.arm(12,0x1802);});
-            reject([&]{wait.acknowledge(8);});wait.acknowledge(4);
-            require(wait.status()==8 && wait.events==0 && !wait.callbackPending());
-            reject([&]{wait.acknowledge(4);});
-            require(wait.poll()==8 && wait.events==0);
-            require(wait.poll()==12 && wait.events==1 && !wait.callbackPending());
-            require(wait.poll()==12 && wait.events==1);wait.acknowledge(4);
-            require(wait.status()==8);reject([&]{wait.acknowledge(4);});
-            IntcCheckpoint absent;absent.arm(12,0x1802);absent.acknowledge(4);
-            for(unsigned i=0;i<64;++i)require(absent.poll(false)==8);
-            reject([&]{absent.poll(false);});require(absent.events==0);
+            // The GIF channel from any pc (normal mode, complete when it starts): CHCR reads back with STR
+            // clear, GIF_STAT and the VIF1 channel read idle. INTC_STAT is write-one-to-clear; main polling
+            // with VBLANK_START clear and cause 2 masked latches the next VBlank (FIELD toggles).
+            EeRuntime gif;gif.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));auto* ram=gif.memory().data();
+            R5900Context c;c.pc=0x123450;gif.current_thread_id=1;
+            gif.write64(ram,0x1000,0x1000000000008001ULL);gif.write64(ram,0x1008,0xE);gif.write64(ram,0x1010,1);gif.write64(ram,0x1018,0x49); // A+D: PABE.
+            gif.Store32(ram,&c,0x1000A020,2);gif.Store32(ram,&c,0x1000A010,0x1000);gif.Store32(ram,&c,0x1000A000,0x101);
+            require(gif.Load32(ram,&c,0x1000A000)==1 && gif.Load32(ram,&c,0x1000A020)==0 && gif.Load32(ram,&c,0x1000A010)==0x1020
+                && gif.Load32(ram,&c,0x10003020)==0 && gif.Load32(ram,&c,0x10009000)==0 && gif.Load32(ram,&c,0x10003C00)==0x40
+                && gif.gif_channel.starts==1 && gif.gs_sink.state.regs[0x49]==1);
+            reject([&]{gif.Store32(ram,&c,0x1000A010,0x1001);}); // Unaligned source.
+            reject([&]{gif.Store32(ram,&c,0x1000A000,0x101);}); // Nothing to send.
+            gif.Store32(ram,&c,0x1000F000,4);require(gif.display_intc_stat==8);
+            const bool field=gif.display_field;
+            require(gif.Load32(ram,&c,0x1000F000)==12 && gif.polled_vblanks==1 && gif.display_field!=field);
+            require(gif.Load32(ram,&c,0x1000F000)==12 && gif.polled_vblanks==1); // Already latched.
+            gif.current_thread_id=2;gif.Store32(ram,&c,0x1000F000,4);
+            require(gif.Load32(ram,&c,0x1000F000)==8 && gif.polled_vblanks==1); // Other threads see the status as it is.
         }
         {
             EeRuntime widths;std::vector<std::uint8_t> image(EeRuntime::ram_size,0xA5);
@@ -1850,7 +1826,10 @@ int main() {
             R5900Context add{};add.pc=0x32E948;add.r[3].low=0x10;add.r[4].low=2;add.r[5].low=0x1006D8;add.r[6].low=UINT64_MAX;add.r[28].low=0x38BDF0;
             sched.handleSyscall(ram,&add,0);
             require(add.r[2].low==1 && sched.intc_handlers.back().address==0x1006D8 && sched.intc_handlers.back().gp==0x38BDF0);
-            reject([&]{sched.handleSyscall(ram,&add,0);});                       // Second cause-2 handler is unobserved.
+            sched.handleSyscall(ram,&add,0);require(add.r[2].low==2);           // A second handler joins the chain with a fresh id.
+            R5900Context remove{};remove.pc=0x123450;remove.r[3].low=0x11;remove.r[4].low=2;remove.r[5].low=2;
+            sched.handleSyscall(ram,&remove,0);require(remove.r[2].low==0 && sched.intc_handler_order.size()==1); // From any pc.
+            reject([&]{sched.handleSyscall(ram,&remove,0);});                    // Already removed.
             require(call(0x14,2,0)==1 && sched.vblank_deliveries==1 && call(0x14,2,0)==0 && (sched.intc_mask&4) && call(0x15,2,0)==1 && call(0x15,2,0)==0);
             reject([&]{call(0x14,3,0);});
         }
@@ -1925,15 +1904,15 @@ int main() {
             c.r[4].low=0x1000;c.r[5].low=0x1008;vs.handleSyscall(ram,&c,0);
             require(c.r[2].low==0x12345678 && vs.vsync_flag==0x1000 && vs.vsync_csr==0x1008);
             vs.deliverVblank(ram,&c);
-            require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B400C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
+            require(vs.read32(ram,0x1000)==1 && vs.read32(ram,0x1008)==0x551B600C && !vs.vsync_flag && vs.frame_vsync_deliveries==1);
             vs.write32(ram,0x1000,7);vs.deliverVblank(ram,&c);
             require(vs.read32(ram,0x1000)==7 && vs.frame_vsync_deliveries==1);
-            // In the frame phase no VU microprogram runs: VPU_STAT reads idle from any code or thread, and the COP2
-            // condition is false; before the first frame the read stays refused.
+            // No VU microprogram runs behind the EE: VPU_STAT reads idle from any code or thread, and the COP2
+            // condition is false.
             R5900Context stat{};stat.pc=0x123456;
             require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));
             vs.current_thread_id=2;require(vs.readVuStatus(&stat)==0 && !vs.cop2Condition(&stat));vs.current_thread_id=1; // Whoever asks.
-            {auto early=std::make_unique<EeRuntime>();reject([&]{early->readVuStatus(&stat);});} // Heap: main's frame is already large.
+            {auto early=std::make_unique<EeRuntime>();require(early->readVuStatus(&stat)==0 && !early->cop2Condition(&stat));} // Also before the first frame. Heap: main's frame is already large.
             // Admitted main that keeps calling without an idle point gets a VBLANK after a field's worth
             // of calls (a busy-wait on a flag); each delivery restarts the count.
             vs.main_priority_admissions=1;vs.registerFunction(0x300,return_leaf);
@@ -1965,18 +1944,18 @@ int main() {
             require(vf.frame_vif1.starts==1 && vf.frame_vif1.tags==1 && vf.frame_vif1.tadr==0x2010 && vf.frame_vif1.cis);
             tag(0x2100,0x10000001,0x5000000110000000ull);tag(0x2110,0x8000,0);tag(0x2120,0x70000000,0); // FLUSHE, DIRECT 1: empty GIFtag (EOP).
             vf.frame_vif1.tadr=0x2100;vf.frameVif1Start(0x145);
-            require(vf.frame_vif1.starts==2 && vf.frame_vif1.directs==1 && vf.frame_vif1.direct_qwords==1 && vf.gif_dma.gs.transfers==1 && vf.frame_vif1.tadr==0x2130);
+            require(vf.frame_vif1.starts==2 && vf.frame_vif1.directs==1 && vf.frame_vif1.direct_qwords==1 && vf.gs_sink.transfers==1 && vf.frame_vif1.tadr==0x2130);
             auto refuse=[&](std::uint32_t at,std::uint32_t code) {
-                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;const auto starts=vf.frame_vif1.starts,transfers=vf.gif_dma.gs.transfers;
+                vf.frame_vif1.cis=false;vf.frame_vif1.tadr=at;const auto before=vf.frame_vif1.unsupported;const auto starts=vf.frame_vif1.starts,transfers=vf.gs_sink.transfers;
                 bool refused=false;try{vf.frameVif1Start(0x145);}catch(const UnsupportedGuestMemory&){refused=true;}
-                require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gif_dma.gs.transfers==transfers
+                require(refused && vf.frame_vif1.starts==starts && vf.frame_vif1.tadr==at && !vf.frame_vif1.cis && vf.gs_sink.transfers==transfers
                     && vf.frame_vif1.blocked_code==code && vf.frame_vif1.unsupported==before+1);
             };
             tag(0x3000,0x10000001,0x0800000000000000ull);tag(0x3010,0,0);tag(0x3020,0x70000000,0);refuse(0x3000,0x08000000); // Undefined VIF command.
             // DIRECT 2 whose second quadword is the next tag's upper half and the first half of its data.
             tag(0x3100,0x10000001,0x5000000200000000ull);tag(0x3110,0x8000,0);tag(0x3120,0x70000001,0);tag(0x3130,0,0);
             vf.frame_vif1.cis=false;vf.frame_vif1.tadr=0x3100;vf.frameVif1Start(0x145);
-            require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gif_dma.gs.transfers==2 && vf.frame_vif1.tadr==0x3140);
+            require(vf.frame_vif1.starts==3 && vf.frame_vif1.directs==2 && vf.frame_vif1.direct_qwords==3 && vf.gs_sink.transfers==2 && vf.frame_vif1.tadr==0x3140);
             tag(0x3200,0x10000001,0x5000000100000000ull);tag(0x3210,0x1000000000008001ull,0xE);tag(0x3220,0x70000000,0);
             refuse(0x3200,0x50000000); // DIRECT whose PACKED GIF packet claims more data than it holds: refused by the GS.
         }
@@ -2001,11 +1980,11 @@ int main() {
             require(!rb.gsFinishPending() && rb.vif1Status()==0x40);
             rb.frame_vif1.madr=0x4000;rb.frame_vif1.qwc=7;rb.frameVif1Send(0x101);
             require(rb.frame_vif1.sends==1 && !rb.frame_vif1.qwc && rb.frame_vif1.madr==0x4070 && rb.frame_vif1.chcr==1 && rb.vif1.r.mskpath3
-                && rb.gsFinishPending() && rb.gif_dma.gs.downloadQwords()==8);
+                && rb.gsFinishPending() && rb.gs_sink.downloadQwords()==8);
             require(rb.gsReadbackStore64(0x12001000,2) && !rb.gsFinishPending() && !rb.gsReadbackStore64(0x12000000,0));
             // Nothing is delivered before both directions are turned; the GIF channel stays held.
             rb.frame_vif1.madr=0x5000;rb.frame_vif1.qwc=6;reject([&]{rb.frameVif1Receive(0x100);});reject([&]{rb.vif1FifoRead();});
-            rb.frame_gif.tadr=0x4010;reject([&]{rb.frameGifChainStart(0x105);});
+            rb.gif_channel.tadr=0x4010;reject([&]{rb.frameGifChainStart(0x105);});
             reject([&]{rb.gsReadbackStore32(0x10003C00,0x40);});
             require(rb.gsReadbackStore32(0x10003C00,0x800000) && !rb.gsReadbackStore32(0x10003C10,0) && (rb.vif1Status()>>24)==0);
             reject([&]{rb.gsReadbackStore64(0x12001040,2);});

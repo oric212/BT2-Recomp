@@ -11,8 +11,7 @@ FIELDS = (
     "distinct_kernel_completed", "calls", "returns",
     "native_module_loads", "ee_thread_count", "cri_rpc_calls", "heap_calls",
     "ncmd_read_calls", "native_disc_requests", "disc_rpc_calls",
-    "gs_packets",
-    "gs_sprites", "gs_pixels", "startup_worker_queries", "startup_worker_starts",
+    "gs_transfers", "gs_register_writes", "startup_worker_queries", "startup_worker_starts",
     "startup_worker_priority_changes", "startup_ready_queries", "startup_worker_suspends",
 )
 

@@ -3,7 +3,7 @@ from verify_display_reset import native_scope
 
 def report():
     """Synthetic display-setup report fields; no captured or game data."""
-    return {'display_reset_phase':13,'polled_vblanks':2,'vblank_handler_registrations':2,'vblank_enable_calls':2,
+    return {'display_reset_phase':13,'polled_vblanks':3,'vblank_handler_registrations':2,'vblank_enable_calls':2,
         'vblank_disable_calls':1,'heap_calls':7,'heap_frees':2,'native_module_loads':15,'cri_rpc_calls':42,'native_iop_error':''}
 
 class DisplayResetScopeTest(unittest.TestCase):
@@ -16,8 +16,8 @@ class DisplayResetScopeTest(unittest.TestCase):
 
     def test_rejects_incomplete_or_extra_phases(self):
         self.rejects(display_reset_phase=12)
-        self.rejects(polled_vblanks=1)
-        self.rejects(polled_vblanks=3)
+        self.rejects(polled_vblanks=2)
+        self.rejects(polled_vblanks=4)
 
     def test_rejects_handler_replacement_mismatch(self):
         self.rejects(vblank_handler_registrations=1)

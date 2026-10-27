@@ -54,7 +54,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         && (!post_loadfile.binds || !post_loadfile.versions)) {receiveFreshLoadfile(rdram,context);return;}
     if(code==0 && selector==0x77 && post_cd.scmd_supplied && post_cd.calls==1
         && (!post_cd.scmd_binds || !post_cd.modes)) {receiveFreshScmd(rdram,context);return;}
-    if(code==0 && post_sif.supplied && gif_dma.completions==2 && iop_epoch==1) {
+    if(code==0 && post_sif.supplied && gif_channel.starts>=2 && iop_epoch==1) {
         if(selector==0x78 && post_sif.phase==2) {
             post_sif.chain();return; // SDK declares void, retain v0.
         }
@@ -276,7 +276,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
             context->r[2].low = UINT64_MAX;
             return;
         }
-        if(post_sif.supplied && gif_dma.completions==2) {
+        if(post_sif.supplied && gif_channel.starts>=2) {
             if(address!=0x331DF0 || !dmac_handlers.empty())throw UnsupportedSyscall(selector,context->pc);
             post_sif.handler();
         }
@@ -312,7 +312,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
         // Captured mask bits only. No status acknowledgements, DMA or interrupt delivery.
         if (context->r[4].low != 5 || dma_status_reads != 1 || dma5_control_reads != 1
                 || dmac_handlers.empty()) throw UnsupportedSyscall(selector, context->pc);
-        if(post_sif.supplied && gif_dma.completions==2)post_sif.enable();
+        if(post_sif.supplied && gif_channel.starts>=2)post_sif.enable();
         const auto bit = 0x10000u << 5;
         const bool changed = !(dmac_mask & bit);
         dmac_mask |= bit;
@@ -510,7 +510,7 @@ void EeRuntime::handleSyscall(std::uint8_t* rdram, R5900Context* context, std::u
             ++semaphore_signals;
             if(id==8 && semaphore.option==0x3824C8 && context->pc==0x32EC88 && (context->r[31].low==0x31DD34 || context->r[31].low==0x31D3E0))++mc_lock_signals;
             if(id==7 && semaphore.option==0x381C28 && context->pc==0x32EC88)++dbc_lock_signals;
-            if(context->pc==0x32EC88 && texture_gif.phase==8 && id==read32(rdram,0x36AB58))++ee_heap_lock_signals;
+            if(context->pc==0x32EC88 && graph_startup_phase==4 && id==read32(rdram,0x36AB58))++ee_heap_lock_signals; // After the graph startup (diagnostic).
         }
         context->r[2].low = id;
         return;

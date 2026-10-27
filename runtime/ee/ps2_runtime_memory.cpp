@@ -63,12 +63,12 @@ void EeRuntime::indexedDataCache(std::uint8_t* rdram, R5900Context* ctx,
 void EeRuntime::frameGifChainStart(std::uint32_t value) {
     // Source chain (MOD 1, no tag transfer): the data of every tag, in order, is PATH3 GIF data.
     // GIF packets may continue across tags, so the data is joined and sent as one GS transaction.
-    auto& g=frame_gif;
+    auto& g=gif_channel;
     if(g.qwc || (value&0xC0) || vif1.r.mskpath3)throw UnsupportedGuestMemory(0x1000A000,4); // Pending MADR data, TTE or TIE; PATH3 masked.
     const auto chain=walkDmaSourceChain(std::span<const std::uint8_t>(memory_.data(),ram_size),g.tadr,"GIF");
     std::vector<std::uint8_t> data;
     for(const auto& c:chain.segments)data.insert(data.end(),c.data.begin(),c.data.end());
-    if(!data.empty())gif_dma.gs.transfer(data);
+    if(!data.empty())gs_sink.transfer(data);
     const auto& last=chain.segments.back();
     std::uint64_t last_tag;std::memcpy(&last_tag,memory_.data()+last.tag,8);
     g.madr=last.data.empty()?g.madr:std::uint32_t(last.data.data()+last.data.size()-memory_.data());
@@ -99,7 +99,7 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
         throw UnsupportedGuestMemory(0x10009000,4); // Checked boundary at the channel start.
     };
     const auto codes=vif1.codes,directs=vif1.directs;const auto direct_qwords=vif1.direct_qwords;
-    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gif_dma.gs.transfer(data);};
+    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gs_sink.transfer(data);};
     if(on_vif1_transfer)on_vif1_transfer(words);
     try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1_running=true;struct Done {bool& flag;~Done(){flag=false;}} done{vif1_running};vif1.run(words,to_gs,to_gs);}
     catch(const Vif1Unsupported& u) {
@@ -116,26 +116,37 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
 }
 
 void EeRuntime::countDisplayFlip() {
+    if(!gs_display_flips)first_flip={gs_sink.state.regs,gif_channel.starts};
     ++gs_display_flips;
     if(on_display_flip)on_display_flip(); // Host presentation of the completed flip (viewer mode).
     // Probe frame budget: stop after this completed flip as a checked boundary.
     if(frame_limit && gs_display_flips==frame_limit) {frame_budget_reached=true;throw UnsupportedGuestMemory(0x120000E0,8);}
 }
 
-void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address, std::uint64_t value) {
+// INTC_STAT polled for VBLANK_START. Logical time: main finding it clear receives the next VBlank,
+// delivered with its handlers when cause 2 is enabled, otherwise latched (VBLANK_START and END set,
+// FIELD toggles, nothing runs). Other threads see the status as it is.
+std::uint32_t EeRuntime::intcStatusPoll(std::uint8_t* rdram,R5900Context* context) {
+    if(!(display_intc_stat&4) && current_thread_id==1 && !in_interrupt_) {
+        if(intc_mask&4)deliverVblank(rdram,context);
+        else {display_intc_stat|=0xC;display_field=!display_field;gs_csr_cleared=false;++polled_vblanks;advanceLogicalField();}
+    }
+    return display_intc_stat;
+}
+
+void EeRuntime::Store64(std::uint8_t* rdram, R5900Context*, std::uint32_t address, std::uint64_t value) {
     checkMemory(rdram,0,0);
     if(address==0x12001000 && value==0x200) {gsCsrReset();return;} // CSR RESET (ee_gs_privileged.cpp).
-    if(frameGifContext() && display_reset_phase==13 && !frame_gs_reset_step && gsReadbackStore64(address,value))return;
-    // Privileged GS display registers after display setup (main's thread): PMODE, SMODE2, DISPFB1/2,
-    // DISPLAY1/2, EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
+    if(!in_interrupt_ && gsReadbackStore64(address,value))return;
+    // Privileged GS display registers outside interrupts: PMODE, SMODE2, DISPFB1/2, DISPLAY1/2,
+    // EXTWRITE (off only) and BGCOLOR are recorded as display state for presentation.
     // CRT timing registers stay with SetGsCrt. A flip is counted at the library flip's last store
     // (BGCOLOR), or at the VBLANK ending a field whose display update did not include one (the
     // per-field update used while a movie plays).
-    if(current_thread_id==1 && !in_interrupt_ && display_reset_phase==13 && address>=0x12000000 && address<=0x120000E0 && !(address&15)) {
+    if(!in_interrupt_ && address>=0x12000000 && address<=0x120000E0 && !(address&15)) {
         const auto n=(address-0x12000000)/16;
         if(n!=0 && n!=2 && n!=7 && n!=8 && n!=9 && n!=10 && n!=13 && n!=14)throw UnsupportedGuestMemory(address,8);
         if(n==13 && value)throw UnsupportedGuestMemory(address,8); // EXTWRITE: write-back circuit stays off.
-        if(!gs_display_flips && context->pc!=0x3118D0 && !gs_display_writes)throw UnsupportedGuestMemory(address,8); // First write is the library flip.
         gs_privileged[n]=value;++gs_display_writes;
         if(n==14)countDisplayFlip(); // The library flip ends with BGCOLOR.
         return;
@@ -143,22 +154,12 @@ void EeRuntime::Store64(std::uint8_t* rdram, R5900Context* context, std::uint32_
     throw UnsupportedGuestMemory(address,8);
 }
 
-std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context* context, std::uint32_t address) {
+std::uint64_t EeRuntime::Load64(std::uint8_t* rdram, R5900Context*, std::uint32_t address) {
     checkMemory(rdram,0,0);
     // IPU registers are 64-bit (IPU_CMD/IPU_TOP carry BUSY in bit 63): low word, then high word.
     if(address>=0x10002000 && address<0x10002040 && !(address&15)) {
         std::uint32_t low=0,high=0;
         if(ipuRead(address,low) && ipuRead(address+4,high))return low|(std::uint64_t(high)<<32);
-    }
-    if(address==0x12001000 && (displayResetStep(context,5,0x3104F4,640) || displayResetStep(context,7,0x3104F4,80))) {
-        // Only FIELD (bit 13) is consumed, after this wait's polled VBlank.
-        if(polled_vblanks!=(display_reset_phase==5?1u:2u) || (display_intc_stat&4))throw UnsupportedGuestMemory(address,8); // One acknowledged VBlank per wait.
-        ++display_reset_phase;if(display_reset_phase==6)clear_repeat_gif=gif_dma.repeat();
-        return 0x551B4004|(display_field?0x2000u:0u);
-    }
-    if(address==0x12001000 && gs_field_supplied_ && gs_interrupt.acknowledgements==2 && !gs_field_reads
-        && context->pc==0x3104F4 && context->r[29].low==initial_sp-640) {
-        ++gs_field_reads;return 0x551B6004; // Independent captured field, not timed native GS state.
     }
     if(address==0x12001000) {
         if(!gs_csr_cleared)++frame_csr_reads;
@@ -171,7 +172,7 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
     if(auto* ram=ramWord(rdram,address)) {std::memcpy(ram,&value,4);++word_writes;return;} // Main RAM first, as in Load32.
     if(ipuWrite(address,value)) {checkMemory(rdram,0,0);return;}
     if(timer1Store(address,value) || timer2Store(context,address,value)) {checkMemory(rdram,0,0);return;} // ee_hardware_registers.cpp
-    if(frameGifContext() && (address==0x10009000 || address==0x10009010 || address==0x10009020 || address==0x10009030)) {
+    if(!in_interrupt_ && (address==0x10009000 || address==0x10009010 || address==0x10009020 || address==0x10009030)) {
         checkMemory(rdram,0,0);auto& v=frame_vif1;
         if(v.chcr&0x100)throw UnsupportedGuestMemory(address,4);
         if(address==0x10009020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);v.qwc=value;return;}
@@ -182,9 +183,9 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         if(value==0x101)frameVif1Send(value);else if(value==0x100)frameVif1Receive(value);else frameVif1Start(value);
         return;
     }
-    if(frameGifContext() && gsReadbackStore32(address,value)) {checkMemory(rdram,0,0);return;}
-    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
-        checkMemory(rdram,0,0);auto& g=frame_gif;
+    if(!in_interrupt_ && gsReadbackStore32(address,value)) {checkMemory(rdram,0,0);return;}
+    if(!in_interrupt_ && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
+        checkMemory(rdram,0,0);auto& g=gif_channel;
         if(g.chcr&0x100)throw UnsupportedGuestMemory(address,4); // Writes while a transfer runs.
         if(address==0x1000A020) {if(value>0xFFFF)throw UnsupportedGuestMemory(address,4);g.qwc=value;return;}
         if(address==0x1000A010) {if(value&0x8000000F)throw UnsupportedGuestMemory(address,4);g.madr=value&0x0FFFFFFF;return;}
@@ -192,49 +193,12 @@ void EeRuntime::Store32(std::uint8_t* rdram, R5900Context* context, std::uint32_
         // CHCR bits 16-31 (TAG) are read-only: a read-modify-write start carries the last tag back.
         if((value&0xFFFF)==0x105) {frameGifChainStart(value);return;}
         if((value&0xFFFF)!=0x101 || vif1.r.mskpath3 || !g.qwc || g.madr>=ram_size || std::size_t(g.qwc)*16>ram_size-g.madr)throw UnsupportedGuestMemory(address,4);
-        gif_dma.gs.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
-        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;return;
+        gs_sink.transfer(std::span<const std::uint8_t>(memory_.data()+g.madr,std::size_t(g.qwc)*16));
+        g.bytes+=std::size_t(g.qwc)*16;g.madr+=g.qwc*16;g.qwc=0;g.chcr=value&0xFEFFu;++g.starts;
+        if(display_reset_phase==6 && ++display_clear_transfers==2)display_reset_phase=7; // Diagnostic: both clear requests sent.
+        return;
     }
-    if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
-        if(address==0x1000A020 && context->pc==0x28B96C) {checkMemory(rdram,0,0);texture_gif.count(value);return;}
-        if(address==0x1000A010 && context->pc==0x28B978) {checkMemory(rdram,0,0);texture_gif.address(value,initial_sp-112,memory());return;}
-        if(address==0x1000A000 && context->pc==0x28B98C) {checkMemory(rdram,0,0);texture_gif.start(value,memory(),gif_dma.gs);return;}
-    }
-    if(address==0x1000F000 && value==4 && (displayVsyncWait(context,0x32F10C,0) || displayVsyncWait(context,0x32F160,0))) {
-        checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear VBLANK_START.
-    }
-    if(clear_repeat_gif && display_reset_phase==6 && context->r[29].low==initial_sp-624 && displayResetStep(context,6,context->pc,624)) {
-        if(address==0x1000A000 && context->pc==0x3101A8) {checkMemory(rdram,0,0);clear_repeat_gif->start(value,memory(),gif_dma.gs);return;}
-        if(address==0x1000A020 && context->pc==0x310148) {checkMemory(rdram,0,0);clear_repeat_gif->setCount(value);return;}
-        if(address==0x1000A010 && context->pc==0x310194) {
-            checkMemory(rdram,0,0);clear_repeat_gif->setAddress(value,initial_sp-(clear_repeat_gif->starts?288u:528u),memory());return;
-        }
-    }
-    if(address==0x1000F000 && gs_interrupt_supplied_ && gs_crt_calls==1
-        && context->r[29].low==initial_sp-656 && value==4
-        && ((context->pc==0x32F10C && !gs_interrupt.acknowledgements)
-            || (context->pc==0x32F160 && gs_interrupt.acknowledgements==1))) {
-        checkMemory(rdram,0,0);
-        if(!gs_interrupt.acknowledgements) {
-            if(intc_mask!=0x1802)throw std::runtime_error("INTC mask differs from checkpoint");
-            gs_interrupt.arm(12,intc_mask);
-        }
-        gs_interrupt.acknowledge(value);return;
-    }
-    if(address==0x1000F000 && mainGameContext()) {
-        checkMemory(rdram,0,0);display_intc_stat&=~value;return; // Write-one-to-clear (the VBLANK bits are modelled).
-    }
-    if(gif_dma_supplied_ && gs_field_reads==1 && context->r[29].low==initial_sp-624) {
-        if(address==0x1000A000 && context->pc==0x3101A8) {
-            checkMemory(rdram,0,0);gif_dma.start(value,memory());return;
-        }
-        if(address==0x1000A020 && context->pc==0x310148) {
-            checkMemory(rdram,0,0);gif_dma.setCount(value);return;
-        }
-        if(address==0x1000A010 && context->pc==0x310194) {
-            checkMemory(rdram,0,0);gif_dma.setAddress(value,initial_sp-(gif_dma.starts?288u:528u),memory());return;
-        }
-    }
+    if(address==0x1000F000) {checkMemory(rdram,0,0);display_intc_stat&=~value;return;} // INTC_STAT: write-one-to-clear (the VBLANK bits are modelled).
     write32(rdram, address, value);
 }
 
@@ -242,14 +206,14 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
     // Main RAM first: none of the device and checkpoint cases below is a RAM address.
     if(const auto* ram=ramWord(rdram,address)) {std::uint32_t value;std::memcpy(&value,ram,4);return value;}
     if(std::uint32_t value=0;ipuRead(address,value)) {checkMemory(rdram,0,0);return value;}
-    if(frameGifContext() && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
-        checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs;
-        return address==0x1000A000?frame_gif.chcr:address==0x1000A010?frame_gif.madr:address==0x1000A020?frame_gif.qwc:frame_gif.tadr;
+    if(!in_interrupt_ && (address==0x1000A000 || address==0x1000A010 || address==0x1000A020 || address==0x1000A030)) {
+        checkMemory(rdram,0,0);if(context->pc==0x3105A4)++frame_syncs; // The GS library's sync (a diagnostic count).
+        return address==0x1000A000?gif_channel.chcr:address==0x1000A010?gif_channel.madr:address==0x1000A020?gif_channel.qwc:gif_channel.tadr;
     }
-    // Frame phase: GIF and VIF1 transfers complete synchronously and no VU1 work is started, so
+    // GIF and VIF1 transfers complete when they start and VU1 runs each microprogram to its end, so
     // channel and path status reads see idle (VIF1_STAT 0x40 and GIF_STAT 0 as captured at the
     // startup path sync).
-    if(frameGifContext() && !(frame_gif.chcr&0x100) && !(frame_vif1.chcr&0x100)) {
+    if(!in_interrupt_) {
         if(address==0x10009000 || address==0x10009020 || address==0x10009030) {
             checkMemory(rdram,0,0);return address==0x10009000?frame_vif1.chcr:address==0x10009020?frame_vif1.qwc:frame_vif1.tadr;
         }
@@ -262,54 +226,10 @@ std::uint32_t EeRuntime::Load32(std::uint8_t* rdram, R5900Context* context, std:
         if(const auto value=timer2Load(context,address))return *value;
         if(const auto value=timer3Load(address))return *value;
     }
-    if(address==0x1000F000 && displayVsyncWait(context,0x32F130,0)) {
-        checkMemory(rdram,0,0);
-        // Logical time: a poll that finds VBLANK_START clear advances one VBlank (START and END latch).
-        // Cause 2 is disabled here, so no handler runs; FIELD toggles in interlaced mode.
-        if(!(display_intc_stat&4)) {display_intc_stat|=0xC;display_field=!display_field;gs_csr_cleared=false;++polled_vblanks;advanceLogicalField();}
-        return display_intc_stat;
-    }
-    if(clear_repeat_gif && displayResetStep(context,6,context->pc,624)) {
-        auto& g=*clear_repeat_gif;
-        if(address==0x1000A000 && context->pc==0x3100E4) {checkMemory(rdram,0,0);return g.readIdle();}
-        if(address==0x10009000 && context->pc==0x310560) {checkMemory(rdram,0,0);return g.readVifIdle();}
-        if(address==0x1000A000 && (context->pc==0x3105A4 || context->pc==0x3105CC)) {checkMemory(rdram,0,0);return g.readStarted(context->pc==0x3105CC);}
-        if(address==0x10003C00 && context->pc==0x3105EC) {checkMemory(rdram,0,0);return g.readVifStatus();}
-        if(address==0x10003020 && context->pc==0x310664) {
-            checkMemory(rdram,0,0);const auto status=g.readGifStatus();
-            if(g.starts==2)display_reset_phase=7; // Both clear requests completed.
-            return status;
-        }
-    }
-    if(texture_gif.supplied && graph_startup_phase==4 && context->r[29].low==initial_sp-128) {
-        if(address==0x1000A000 && context->pc==0x28B928) {checkMemory(rdram,0,0);return texture_gif.idle();}
-        if(address==0x10003020 && context->pc==0x28B944) {checkMemory(rdram,0,0);return texture_gif.pathIdle();}
-        if(address==0x1000A000 && context->pc==0x28B998) {checkMemory(rdram,0,0);return texture_gif.poll();}
-        if(address==0x10003020 && context->pc==0x28B9B4) {checkMemory(rdram,0,0);return texture_gif.pathComplete();}
-    }
-    if(post_sif.supplied && gif_dma.completions==2 && iop_epoch==1 && context->r[29].low==initial_sp-192) {
+    if(address==0x1000F000) {checkMemory(rdram,0,0);return intcStatusPoll(rdram,context);}
+    if(post_sif.supplied && gif_channel.starts>=2 && iop_epoch==1 && context->r[29].low==initial_sp-192) {
         if(address==0x1000E010 && context->pc==0x3319CC) {checkMemory(rdram,0,0);return post_sif.status();}
         if(address==0x1000C000 && context->pc==0x3319EC) {checkMemory(rdram,0,0);return post_sif.channel();}
-    }
-    if(gif_dma.syncSupplied() && gif_dma.starts>=1 && gif_dma.starts<=2 && context->r[29].low==initial_sp-624) {
-        if(address==0x10009000 && context->pc==0x310560) {checkMemory(rdram,0,0);return gif_dma.readVifIdle();}
-        if(address==0x1000A000 && (context->pc==0x3105A4 || context->pc==0x3105CC)) {
-            checkMemory(rdram,0,0);return gif_dma.readStarted(context->pc==0x3105CC);
-        }
-        if(address==0x10003020 && context->pc==0x310664) {checkMemory(rdram,0,0);return gif_dma.readGifStatus();}
-        if(address==0x10003C00 && context->pc==0x3105EC) {checkMemory(rdram,0,0);return gif_dma.readVifStatus();}
-    }
-    if(address==0x1000A000 && gif_dma_supplied_ && gs_field_reads==1 && context->pc==0x3100E4
-        && context->r[29].low==initial_sp-624) {
-        checkMemory(rdram,0,0);return gif_dma.readIdle();
-    }
-    if(address==0x1000F000 && gs_interrupt_supplied_ && context->pc==0x32F130
-        && context->r[29].low==initial_sp-656) {
-        checkMemory(rdram,0,0);return gs_interrupt.poll();
-    }
-    if(address==0x1000F000 && mainGameContext()) {
-        // Logical time: main polling for VBLANK_START that finds it clear receives the next VBlank.
-        checkMemory(rdram,0,0);if(!(display_intc_stat&4))deliverVblank(rdram,context);return display_intc_stat;
     }
     return read32(rdram, address);
 }

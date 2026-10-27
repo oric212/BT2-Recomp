@@ -9,8 +9,7 @@
 #include <string>
 #include <vector>
 
-// The GS command sink: checks the GIF data the game sends (startup packets, PACKED, REGLIST and IMAGE
-// transfers) and follows the GS registers, the local->host transfers and FINISH, and hands the accepted
+// The GS command sink: checks the GIF data the game sends (PACKED, REGLIST and IMAGE transfers) and follows the GS registers, the local->host transfers and FINISH, and hands the accepted
 // data on to the GPU renderer (paraLLEl-GS, gs/gpu/), which draws every picture; this draws nothing and
 // keeps no copy of GS memory (the CPU renderer was removed 2026-10-21, the user's decision). It also feeds
 // the texture names (gs/textures/gs_texture_names.h) in step with the renderer. The GS memory layout
@@ -19,10 +18,6 @@ class GsTextureNames;
 
 class GsCommandSink {
 public:
-    void resetDrawingState() {
-        // CSR reset establishes SCANMSK/FBA/PABE defaults.
-        registers={};tex0={};pabe=0;drawing_reset_=true;
-    }
     static std::size_t address(unsigned page,unsigned width,unsigned x,unsigned y,bool depth) {
         // PSMCT32/PSMZ24: 64x32 pages, 8x8 blocks. Public GS bit layout,
         // independently expressed as bit placement rather than reference tables.
@@ -34,9 +29,7 @@ public:
         if(depth)word^=1536;
         return word%(1024*1024);
     }
-    void consume(std::span<const std::uint8_t> packet);
-    void consumeConfiguration(std::span<const std::uint8_t> packet);
-    // General GIF transfers (frame path): GIFtags in PACKED, REGLIST or IMAGE form update the GS
+    // GIF transfers: GIFtags in PACKED, REGLIST or IMAGE form update the GS
     // register file. A group of transfers is one transaction: register state and counters are restored
     // if any part is refused, so a rejected group changes nothing.
     void transfer(std::span<const std::uint8_t> data) {transferAll(std::span<const std::span<const std::uint8_t>>(&data,1));}
@@ -58,10 +51,10 @@ public:
     unsigned transfers=0,register_writes=0;
     // Accepted GIF data in order, after validation (GPU mirror, docs/plans/graphics/GPU_RENDERING_PLAN.md).
     std::function<void(std::span<const std::uint8_t>)> on_accepted;
-    // When set, accepted GIF transfers go here instead of on_accepted (which then has the startup
-    // packets): the GS thread names textures in transfers only (gs/gpu/gpu_gs_mirror.h).
+    // When set, accepted GIF transfers go here instead of on_accepted: the GS thread names the
+    // textures (gs/gpu/gpu_gs_mirror.h).
     std::function<void(std::span<const std::uint8_t>)> on_accepted_transfer;
-    // Every GIF transfer and startup packet as it arrives, before it is checked (the 60 fps in-between
+    // Every GIF transfer as it arrives, before it is checked (the 60 fps in-between
     // pictures record a frame's GS input; never changes what the sink does).
     std::function<void(std::span<const std::uint8_t>)> on_input;
     // Optional (BT2_TEXTURE_NAMES): sees every register write and the image data, to name the textures
@@ -111,17 +104,4 @@ private:
     void startTransfer(std::uint64_t dir);
     void packed(unsigned d,std::uint64_t lo,std::uint64_t hi,bool apply);
     void write(unsigned reg,std::uint64_t value,bool apply);
-public:
-    std::array<std::uint64_t,2> tex0{};
-    std::uint64_t pabe=0;
-    unsigned configuration_packets=0;
-    unsigned packets=0,sprites=0;
-    std::uint64_t pixels=0;
-    std::array<std::uint64_t,14> registers{};
-    // The startup clears accepted (consume): frame buffer, rectangle [x0,x1) x [y0,y1), colour and the
-    // FRAME mask of the bits kept.
-    struct Clear {unsigned fbp=0,width=0;int x0=0,y0=0,x1=0,y1=0;std::uint32_t color=0,mask=0;};
-    std::vector<Clear> clears;
-private:
-    bool drawing_reset_=false;
 };

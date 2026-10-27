@@ -11,7 +11,6 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
     :replay_only(replay_only),primary_(primary),
      thread_([](std::span<const std::uint8_t>,bool){throw std::logic_error("60 fps battles: the thread takes tasks only");},
              []{GpuGsBackend::registerRenderThread(1);giveWayToTheGame();}) {
-    sink_.resetDrawingState(); // The game reset the GS before the first frame; this sink starts there.
     mirror_.attachShared(sink_,primary,super_sampling);
     names_.count_drawn=false; // Only the main renderer's names keep the naming log.
     // The renderer's GS thread names its textures; replays draw each frame after its flip.

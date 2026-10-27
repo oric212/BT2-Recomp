@@ -3,17 +3,6 @@
 #include "ee/ps2_runtime_macros.h"
 #include <algorithm>
 
-namespace {
-// Whether the startup clears left a 640 x 448 frame buffer (FBW 10) at page `fbp` black up to its last
-// pixel: the last accepted clear covering (639, 447) writes colour 0 with no bit masked.
-bool clearedToBlack(const GsCommandSink& gs,unsigned fbp) {
-    for(auto it=gs.clears.rbegin();it!=gs.clears.rend();++it)
-        if(it->fbp==fbp && it->width==10 && it->x0<=639 && it->x1>639 && it->y0<=447 && it->y1>447)
-            return it->color==0 && it->mask==0;
-    return false;
-}
-}
-
 // Checkpoint validation: the state each replayed startup checkpoint must reach at its boundary.
 // Later checkpoints are validated per request by their receivers; these checks cover the boundary.
 
@@ -142,7 +131,7 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
             if(runtime.reset_ready_checkpoint_reads) {
                 require(runtime.reset_ready_checkpoint_reads==1 && (runtime.post_sif.supplied || !stop_target
                     || (stop_target==0x310548 && stop_source==0x1002B0 && stop_resume==0x1002B8
-                        && runtime.gif_dma.starts==1)),
+                        && runtime.gif_channel.starts==1)),
                         "Unexpected ready continuation target/replay");
                 if(runtime.post_sif.supplied) {
                     const bool chain_target=stop_target==0x32F040 && stop_source==0x3319FC && stop_resume==0x331A04 && runtime.post_sif.phase==2;
@@ -177,20 +166,12 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
                     const bool loader_progress=runtime.post_loadfile.supplied && runtime.post_loadfile.binds==1 && runtime.post_cd.modes==1
                         && (native_loader_progress || loadfile_helper || loadfile_version_sema || loadfile_version_submit || loadfile_module_sema || loadfile_module_submit);
                     require(loader_progress || cd_stop || loader_target || loader_stop || chain_target || sreg_target || service_stop,"Fresh SIF continuation boundary differs");
-                    // Main's repeated startup clear adds identical full-frame sprites to the same GS state.
-                    const unsigned repeat_clears=runtime.clear_repeat_gif?runtime.clear_repeat_gif->starts:0u;
-                    require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
-                        && runtime.gif_dma.gs.packets==(runtime.texture_gif.starts?3u:2u)+repeat_clears && runtime.gif_dma.gs.sprites==2+repeat_clears
-                        && runtime.gif_dma.gs.pixels==573440+std::uint64_t(repeat_clears)*640*448
-                        && runtime.gif_dma.qwc==0 && runtime.gif_dma.madr==runtime.initial_sp-48
-                        && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2 && runtime.gif_dma.packet_verified,
-                        "Fresh SIF prior GS effects differ");
-                    require(runtime.gs_interrupt.acknowledgements==2 && runtime.gs_interrupt.polls==2 && runtime.gs_interrupt.events==1
-                        && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
+                    // The first boot's GS setup: one reset and its read, the interrupt mask, the CRT mode and the
+                    // two clear transfers.
+                    require(runtime.gif_channel.starts>=2 && runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
                         && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
                         && (runtime.graph_startup_phase==4?runtime.graph_halfword_checkpoint:runtime.halfword_writes)==(runtime.graph_startup_phase>=3?8u:runtime.graph_startup_phase>=2?7u:4u),
-                        "Fresh SIF prior GS synchronization differs");
-                    for(unsigned page : {0u,140u})require(clearedToBlack(runtime.gif_dma.gs,page),"Fresh SIF startup framebuffer edge differs");
+                        "Fresh SIF prior GS setup differs");
                     if(loader_progress || cd_stop || loader_target || loader_stop) {
                         require(runtime.post_sif.phase==14 && runtime.post_sif.rpc_initialized && runtime.post_cd.binds==2 && runtime.post_cd.calls==1
                             && runtime.read32(runtime.memory().data(),0x3A87A8)==0 && runtime.read32(runtime.memory().data(),0x3A87CC)==0x43388
@@ -235,67 +216,13 @@ void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeSt
                         for(unsigned n=0;n<packet.size();++n)require(runtime.read32(runtime.memory().data(),0x3A97C0+n*4)==packet[n],"Fresh RPC bind request differs");
                     }
                 }
-                if(!runtime.gs_csr_reset_writes) require(stop_address==0x12001000 && stop_size==8
-                    && context.pc==0x30FE44 && runtime.guest_calls==230 && runtime.returns==226
-                    && context.r[29].low==runtime.initial_sp-688 && !runtime.halfword_writes,
-                    "First GS reset boundary differs");
-                else if(!runtime.gs_imr_writes) require(runtime.gs_csr_reads==1 && stop_selector==0x71
-                    && context.pc==0x32EFA8 && runtime.guest_calls==231 && runtime.returns==226
-                    && context.r[29].low==runtime.initial_sp-688 && runtime.halfword_writes==3,
-                    "GS IMR boundary differs");
-                else if(!runtime.gs_crt_calls) require(stop_selector==2 && context.pc==0x32E868
-                    && runtime.guest_calls==231 && runtime.returns==227
-                    && context.r[29].low==runtime.initial_sp-608 && runtime.halfword_writes==4,
-                    "GS CRT boundary differs");
-                else if(runtime.gif_dma.starts && !runtime.post_sif.supplied) {
-                    require(runtime.gif_dma.gs.packets==runtime.gif_dma.starts
-                        && runtime.gif_dma.gs.sprites==runtime.gif_dma.starts
-                        && runtime.gif_dma.gs.pixels==std::uint64_t(runtime.gif_dma.starts)*640*448
-                        && runtime.gif_dma.qwc==0 && runtime.gif_dma.packet_verified
-                        && runtime.gif_dma.idle_reads==runtime.gif_dma.starts
-                        && runtime.gif_dma.staging_writes==runtime.gif_dma.starts*2,
-                        "GS command consumption/GIF state differs");
-                    if(runtime.gif_dma.starts==1) require(runtime.gif_dma.chcr==0x101
-                        && runtime.gif_dma.madr==runtime.initial_sp-288 && !runtime.gif_dma.completions
-                        && runtime.returns==252
-                        && ((stop_target==0x310548 && context.pc==0x310548 && !stop_address
-                                && context.r[29].low==runtime.initial_sp-608 && runtime.guest_calls==255)
-                            || (!stop_target && !runtime.gif_dma.syncSupplied()
-                                && stop_address==0x10009000 && stop_size==4 && context.pc==0x310560
-                                && context.r[29].low==runtime.initial_sp-624 && runtime.guest_calls==256)),
-                        "First GS synchronization evidence boundary differs");
-                    else require(runtime.gif_dma.starts==2 && runtime.gif_dma.completions==2
-                        && runtime.gif_dma.sync_reads==5 && runtime.gif_dma.vu_reads==2
-                        && runtime.gif_dma.chcr==1 && runtime.gif_dma.madr==runtime.initial_sp-48
-                        && stop_address==0x1000E010 && stop_size==4 && context.pc==0x3319CC
-                        && context.r[29].low==runtime.initial_sp-192
-                        && runtime.guest_calls==265 && runtime.returns==261 && runtime.dma_status_reads==1,
-                        "Post-reset SIF DMA status boundary differs");
-                    for(unsigned page : {0u,140u}) {
-                        if(page==0 && runtime.gif_dma.starts==1)continue;
-                        require(clearedToBlack(runtime.gif_dma.gs,page),"Startup framebuffer clear edge differs");
-                    }
-                }
-                else if(runtime.gs_interrupt.acknowledgements==2 && !runtime.post_sif.supplied) require(runtime.gs_interrupt.polls==2
-                    && runtime.gs_interrupt.events==1 && runtime.gs_interrupt.status()==8
-                    && !runtime.gs_interrupt.callbackPending() && runtime.gs_csr_reset_writes==1
-                    && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1
-                    && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1} && runtime.halfword_writes==4
-                    && ((!runtime.gs_field_reads && stop_address==0x12001000 && stop_size==8
-                            && context.pc==0x3104F4 && runtime.guest_calls==254 && runtime.returns==250
-                            && context.r[29].low==runtime.initial_sp-640)
-                        || (runtime.gs_field_reads==1 && stop_address==0x1000A000 && stop_size==4
-                            && (context.pc==0x3100E4 || (context.pc==0x3101A8 && runtime.gif_dma.ready() && GPR_U32(&context,4)==0x101
-                                && runtime.gif_dma.idle_reads==1 && runtime.gif_dma.staging_writes==2
-                                && runtime.gif_dma.qwc==15 && runtime.gif_dma.madr==runtime.initial_sp-528)) && runtime.guest_calls==255 && runtime.returns==251
-                            && context.r[29].low==runtime.initial_sp-624)),
-                    "INTC/field/GIF DMA diagnostic boundary differs");
-                else if(!runtime.post_sif.supplied) require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1 && runtime.gs_imr_writes==1
-                    && runtime.gs_crt_calls==1 && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1}
-                    && stop_address==0x1000F000 && stop_size==4 && context.pc==0x32F10C
-                    && runtime.guest_calls==252 && runtime.returns==247 && context.r[29].low==runtime.initial_sp-656
-                    && runtime.halfword_writes==4 && GPR_U32(&context,4)==4,
-                    "GS interrupt acknowledgement boundary differs");
+                // Without the post-reset SIF evidence the run stops at its first status read, after the first
+                // boot's GS setup and clear transfers.
+                if(!runtime.post_sif.supplied) require(runtime.gs_csr_reset_writes==1 && runtime.gs_csr_reads==1
+                    && runtime.gs_imr_writes==1 && runtime.gs_crt_calls==1 && runtime.gs_crt_request==std::array<std::uint32_t,3>{1,2,1}
+                    && runtime.gif_channel.starts==2 && stop_address==0x1000E010 && stop_size==4 && context.pc==0x3319CC
+                    && context.r[29].low==runtime.initial_sp-192 && runtime.dma_status_reads==1,
+                    "Post-reset SIF DMA status boundary differs");
             } else
             require((stop_target == 0x338108 && stop_source == 0x1003C8 && stop_resume == 0x1003D0
                         && runtime.guest_calls == 222 && runtime.returns == 220 && context.r[29].low == runtime.initial_sp - 32)

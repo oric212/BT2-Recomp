@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
         } texture_name_log;
         if (const char* path = std::getenv("BT2_TEXTURE_NAMES")) {
             texture_name_log.path = path;
-            runtime.gif_dma.gs.texture_names = &texture_name_log.names;
+            runtime.gs_sink.texture_names = &texture_name_log.names;
         }
 #ifdef BT2_GPU_GS
         // paraLLEl-GS draws every picture; the GS command sink checks the packets and follows the registers.
@@ -355,9 +355,9 @@ int main(int argc, char** argv) {
         {
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
             const unsigned super_sampling = std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u;
-            gpu_mirror.attach(runtime.gif_dma.gs, super_sampling);
+            gpu_mirror.attach(runtime.gs_sink, super_sampling);
             // The names follow the renderer on the GS thread (gs/gpu/gpu_gs_mirror.h), not the game's sink.
-            if (runtime.gif_dma.gs.texture_names) {gpu_mirror.nameTextures(*runtime.gif_dma.gs.texture_names);runtime.gif_dma.gs.texture_names = nullptr;}
+            if (runtime.gs_sink.texture_names) {gpu_mirror.nameTextures(*runtime.gs_sink.texture_names);runtime.gs_sink.texture_names = nullptr;}
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB; default: half the card's free video memory>]: draw with a
             // PCSX2 texture pack's replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md). BT2_HD_BUTTONS=xbox: the
@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
             // A failure ends the in-between pictures, not the game.
             static const auto stop_in_between = [&runtime](const std::exception& e) {
                 std::cerr << "60 fps battles stopped at flip " << runtime.gs_display_flips << ": " << e.what() << std::endl;
-                runtime.on_vif1_transfer = nullptr;runtime.gif_dma.gs.on_input = nullptr; // field_picture checks in_between.
+                runtime.on_vif1_transfer = nullptr;runtime.gs_sink.on_input = nullptr; // field_picture checks in_between.
                 in_between_started = false;in_between.reset();
             };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
@@ -396,7 +396,7 @@ int main(int argc, char** argv) {
                                                                std::string_view(sixty) == "replay");
                 in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
                 runtime.on_vif1_transfer = [](std::span<std::uint32_t> words) { in_between->vif1Transfer(words); };
-                runtime.gif_dma.gs.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
+                runtime.gs_sink.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {
                     if (delayed_main.pending) {
@@ -724,43 +724,21 @@ int main(int argc, char** argv) {
             if (!bind_mode) throw;
             stop_target = stop.target; stop_source = stop.source_pc; stop_resume = stop.resume_pc; stopped = true;
         }
-        catch (const GifPacketMismatch& mismatch) {
-            // Diagnostics follow the caller's report path; pipeline uses ignored work/.
-            for(const auto& item : {std::pair{".gif-expected.bin",&mismatch.expected},
-                                    std::pair{".gif-actual.bin",&mismatch.actual}}) {
-                std::ofstream dump(std::string(argv[2])+item.first,std::ios::binary);
-                if(!dump.write(reinterpret_cast<const char*>(item.second->data()),item.second->size()))
-                    throw std::runtime_error("Could not write GIF mismatch diagnostic");
-            }
-            throw;
-        }
         catch (const UnsupportedGuestMemory& stop) {
             if(runtime.ee_sound_probe_attempted) context=runtime.ee_sound_probe_frontier;
-            std::cerr << "Memory address/pc/acks/polls: " << std::hex << stop.address << "/" << context.pc << "/" << runtime.gs_interrupt.acknowledgements << "/" << runtime.gs_interrupt.polls << "\n";
+            std::cerr << "Memory address/pc: " << std::hex << stop.address << "/" << context.pc << "\n";
             std::cerr << "Memory sp-offset/ra/main/cri/graph/display: " << std::hex << (runtime.initial_sp-context.r[29].low) << "/" << context.r[31].low << "/" << runtime.main_priority_admissions << "/" << std::dec << runtime.cri_rpc_calls << "/" << runtime.graph_startup_phase << "/" << runtime.display_reset_phase << " stat/polled/mask " << std::hex << runtime.display_intc_stat << "/" << runtime.polled_vblanks << "/" << runtime.intc_mask << "\n";
             if (dma5_mode && !(argc>=18 && runtime.reset_ready_checkpoint_reads)) throw;
-            const bool texture_handoff=runtime.graph_startup_phase==4 && runtime.gif_resets==1
-                && stop.address==0x1000A000 && stop.size==4 && context.pc==0x28B928
-                && context.r[29].low==runtime.initial_sp-128 && runtime.gif_dma.completions==2;
             // Frame phase (after the first display flip, main thread): a refused access to a hardware
             // register (EE registers or GS privileged registers) is the checked boundary of the next
             // subsystem, named by its address. Refused accesses elsewhere (RAM) remain failures.
             const bool hardware_register=(stop.address>=0x10000000 && stop.address<0x10010000) || (stop.address>=0x12000000 && stop.address<0x12002000);
             const bool frame_register_boundary=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && (stop.size==4 || stop.size==8 || runtime.frame_budget_reached)
                 && hardware_register;
-            // Frame-phase GS reset (the GS library's CSR reset during the frame loop; next subsystem).
-            const bool frame_gs_reset=runtime.gs_display_flips>=1 && runtime.current_thread_id==1 && runtime.display_reset_phase==13
-                && stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44;
-            if(runtime.post_sif.supplied && !texture_handoff && !frame_register_boundary && !frame_gs_reset) throw; // Explicit subsystem boundaries only.
-            if(texture_handoff || frame_register_boundary || frame_gs_reset) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
+            if(runtime.post_sif.supplied && !frame_register_boundary) throw; // Explicit subsystem boundaries only.
+            if(frame_register_boundary) { /* Preserve the checked memory stop; no unsupported request succeeds. */ }
             else if (argc>=18 && runtime.reset_ready_checkpoint_reads) require(
-                (stop.address==0x12001000 && stop.size==8 && context.pc==0x30FE44)
-                || (stop.address==0x1000F000 && stop.size==4 && context.pc==0x32F10C)
-                || (runtime.gs_interrupt.acknowledgements==2 && stop.address==0x12001000 && stop.size==8 && context.pc==0x3104F4)
-                || (runtime.gs_field_reads==1 && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3100E4)
-                || (runtime.gif_dma.starts==1 && stop.address==0x10009000 && stop.size==4 && context.pc==0x310560)
-                || (runtime.gif_dma.starts==2 && stop.address==0x1000E010 && stop.size==4 && context.pc==0x3319CC)
-                || (runtime.gif_dma.ready() && stop.address==0x1000A000 && stop.size==4 && context.pc==0x3101A8),
+                runtime.gif_channel.starts>=2 && stop.address==0x1000E010 && stop.size==4 && context.pc==0x3319CC,
                 "Unexpected GS continuation memory boundary");
             else if (dma_status_mode) require(stop.address == 0x1000C000 && stop.size == 4
                     && context.pc == 0x003319EC && runtime.dma_status_reads == 1,

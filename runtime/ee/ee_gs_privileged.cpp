@@ -8,9 +8,9 @@
 // request is accepted.
 
 void EeRuntime::gsCsrReset() {
-    // RESET: the drawing registers return to their defaults (VRAM stays as drawn). The status bits and
-    // FIELD read as clear until the next VBlank, as every capture of the read after a reset shows.
-    gif_dma.gs.resetDrawingState();gs_csr_cleared=true;++gs_resets;
+    // RESET: the status bits and FIELD read as clear until the next VBlank, as every capture of the read
+    // after a reset shows (VRAM stays as drawn; the renderer keeps the registers the game sets again).
+    gs_csr_cleared=true;++gs_resets;
     if(!gs_csr_reset_writes)gs_csr_reset_writes=1;
     else if(!graph_startup_phase)graph_startup_phase=1;
     else if(graph_startup_phase==4 && (display_reset_phase==0 || display_reset_phase==8))++display_reset_phase;
@@ -20,6 +20,7 @@ void EeRuntime::gsCsrReset() {
 std::uint64_t EeRuntime::gsCsrRead() {
     if(graph_startup_phase==1)graph_startup_phase=2;
     else if(display_reset_phase==1 || display_reset_phase==9)++display_reset_phase;
+    else if(display_reset_phase==5 || display_reset_phase==7)++display_reset_phase; // The two VSync waits' field reads.
     else if(frame_gs_reset_step==1)frame_gs_reset_step=2;
     else if(gs_csr_reset_writes && !gs_csr_reads)gs_csr_reads=1;
     // Revision 0x1B (the game consumes this byte), ID 0x55, the latched status bits, FINISH while a

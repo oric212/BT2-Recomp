@@ -104,12 +104,12 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"interior_entry_dispatches\":" << runtime.interior_entry_dispatches
         << interpreterReport(runtime)
         << ",\"sound_tick_boundaries\":" << runtime.sound_tick_boundaries << ",\"timer1_starts\":" << runtime.timer1_starts << ",\"frame_budget_reached\":" << (runtime.frame_budget_reached?1:0) << ",\"timer1_counting\":" << (runtime.timer1.counting()?1:0) << ",\"timer1_mode\":" << runtime.timer1.mode() << ",\"timer1_polls\":" << runtime.timer1_polls
-        << ",\"frame_gif_starts\":" << runtime.frame_gif.starts << ",\"frame_gif_chain_starts\":" << runtime.frame_gif.chain_starts << ",\"frame_gif_bytes\":" << runtime.frame_gif.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
+        << ",\"frame_gif_starts\":" << runtime.gif_channel.starts << ",\"frame_gif_chain_starts\":" << runtime.gif_channel.chain_starts << ",\"frame_gif_bytes\":" << runtime.gif_channel.bytes << ",\"frame_syncs\":" << runtime.frame_syncs
         << ",\"vif1_unpacks\":" << runtime.vif1.unpacks << ",\"vif1_programs\":" << runtime.vif1.programs << ",\"vu1_runs\":" << runtime.vif1.vu.runs
         << ",\"vu1_instructions\":" << runtime.vif1.vu.instructions << ",\"vu1_native_runs\":" << runtime.vif1.vu.native_runs << ",\"vu1_hand_written_runs\":" << runtime.vif1.vu.hand_written_runs << ",\"vu1_verified_runs\":" << runtime.vif1.vu.verified_runs << ",\"vu1_kicks\":" << runtime.vif1.vu.kicks << ",\"vu1_kick_hash\":\"" << std::hex << runtime.vif1.vu.kick_hash << std::dec << "\""
         << ",\"vu1_early_q_reads\":" << runtime.vif1.vu.early_q_reads << ",\"vu1_early_clip_reads\":" << runtime.vif1.vu.early_clip_reads
         << ",\"vif1_starts\":" << runtime.frame_vif1.starts << ",\"vif1_tags\":" << runtime.frame_vif1.tags << ",\"vif1_codes\":" << runtime.frame_vif1.codes << ",\"vif1_directs\":" << runtime.frame_vif1.directs << ",\"vif1_direct_qwords\":" << runtime.frame_vif1.direct_qwords << ",\"vif1_blocked_code\":" << runtime.frame_vif1.blocked_code << ",\"vif1_blocked_tag\":" << runtime.frame_vif1.blocked_tag << ",\"vif1_blocked_tadr\":" << runtime.frame_vif1.blocked_tadr
-        << ",\"gs_transfers\":" << runtime.gif_dma.gs.transfers << ",\"gs_register_writes\":" << runtime.gif_dma.gs.register_writes
+        << ",\"gs_transfers\":" << runtime.gs_sink.transfers << ",\"gs_register_writes\":" << runtime.gs_sink.register_writes
         << ",\"frame_gs_resets\":" << runtime.frame_gs_resets << ",\"frame_gs_reset_step\":" << runtime.frame_gs_reset_step << ",\"frame_gs_crt_request\":[" << runtime.frame_gs_crt_request[0] << "," << runtime.frame_gs_crt_request[1] << "," << runtime.frame_gs_crt_request[2] << "],\"frame_vsync_handler_removed\":" << (runtime.frame_vsync_handler_removed?1:0) << ",\"frame_vsync_handler\":" << runtime.frame_vsync_handler
                 << ",\"gs_display_flips\":" << runtime.gs_display_flips << ",\"gs_display_writes\":" << runtime.gs_display_writes
         << ",\"gs_pmode\":" << runtime.gs_privileged[0] << ",\"gs_dispfb2\":" << runtime.gs_privileged[9] << ",\"gs_display2\":" << runtime.gs_privileged[10] << ",\"gs_dispfb1\":" << runtime.gs_privileged[7] << ",\"gs_display1\":" << runtime.gs_privileged[8]
@@ -247,12 +247,9 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"heap_end_queries\":" << runtime.heap_end_queries
         << ",\"ee_heap_lock_waits\":" << runtime.ee_heap_lock_waits
         << ",\"ee_heap_lock_signals\":" << runtime.ee_heap_lock_signals
-        << ",\"texture_gif_phase\":" << runtime.texture_gif.phase
-        << ",\"texture_gif_starts\":" << runtime.texture_gif.starts
-        << ",\"texture_gif_completions\":" << runtime.texture_gif.completions
-        << ",\"texture_gif_polls\":" << runtime.texture_gif.polls
-        << ",\"tex0\":[" << runtime.gif_dma.gs.tex0[0] << "," << runtime.gif_dma.gs.tex0[1] << "]"
-        << ",\"pabe\":" << runtime.gif_dma.gs.pabe
+        << ",\"first_flip_gif_starts\":" << runtime.first_flip.gif_starts
+        << ",\"tex0\":[" << runtime.first_flip.gs_registers[8] << "," << runtime.first_flip.gs_registers[9] << "]"
+        << ",\"pabe\":" << (runtime.first_flip.gs_registers[0x49]&1)
         << ",\"graph_startup_phase\":" << runtime.graph_startup_phase
         << ",\"vif_resets\":" << runtime.vif_setup.vif_resets << ",\"vif_commands\":" << runtime.vif_setup.codes
         << ",\"vif_words\":" << runtime.vif_setup.fifo_writes*4 << ",\"vif_fifo_writes\":" << runtime.vif_setup.fifo_writes
@@ -266,22 +263,7 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"post_sif_phase\":" << runtime.post_sif.phase
         << ",\"post_sif_submissions\":" << runtime.post_sif.submissions
         << ",\"post_sif_responses\":" << runtime.post_sif.sreg_responses
-        << ",\"gif_completions\":" << runtime.gif_dma.completions
-        << ",\"gif_sync_reads\":" << runtime.gif_dma.sync_reads
-        << ",\"gs_packets\":" << runtime.gif_dma.gs.packets
-        << ",\"gs_sprites\":" << runtime.gif_dma.gs.sprites
-        << ",\"gs_pixels\":" << runtime.gif_dma.gs.pixels
-        << ",\"gif_starts\":" << runtime.gif_dma.starts
-        << ",\"gif_idle_reads\":" << runtime.gif_dma.idle_reads
-        << ",\"gif_staging_writes\":" << runtime.gif_dma.staging_writes
-        << ",\"gif_qwc\":" << runtime.gif_dma.qwc
-        << ",\"gif_madr\":" << runtime.gif_dma.madr
-        << ",\"gif_reserved_difference_words\":" << runtime.gif_dma.reserved_difference_words
-        << ",\"gif_packet_verified\":" << (runtime.gif_dma.packet_verified ? "true" : "false")
-        << ",\"intc_acks\":" << runtime.gs_interrupt.acknowledgements
-        << ",\"intc_polls\":" << runtime.gs_interrupt.polls
-        << ",\"intc_events\":" << runtime.gs_interrupt.events
-        << ",\"gs_field_reads\":" << runtime.gs_field_reads
+        << ",\"gif_starts\":" << runtime.gif_channel.starts
         << ",\"gs_csr_reads\":" << runtime.gs_csr_reads
         << ",\"memory_address\":" << stop_address << ",\"memory_size\":" << stop_size
         << ",\"reset_ready_checkpoint_reads\":" << runtime.reset_ready_checkpoint_reads

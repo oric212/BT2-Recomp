@@ -21,7 +21,7 @@ std::vector<std::uint32_t> wordsAt(std::span<const std::uint8_t> memory,std::uin
 
 void EeRuntime::frameVif1Codes(std::span<const std::uint32_t> words) {
     // VIF codes outside a display list (normal-mode DMA, FIFO writes): checked as a whole, then run.
-    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gif_dma.gs.transfer(data);};
+    const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gs_sink.transfer(data);};
     std::vector<std::uint32_t> copy;
     if(on_vif1_transfer) {copy.assign(words.begin(),words.end());on_vif1_transfer(copy);words=copy;}
     try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1_running=true;struct Done {bool& flag;~Done(){flag=false;}} done{vif1_running};vif1.run(words,to_gs,to_gs);}
@@ -39,7 +39,7 @@ void EeRuntime::frameVif1Send(std::uint32_t value) {
 void EeRuntime::frameVif1Receive(std::uint32_t value) {
     // Normal mode, to memory (CHCR 0x100): QWC quadwords of the local->host transfer go to MADR.
     auto& v=frame_vif1;
-    if(!v.qwc || !gs_readback.fdr || !gs_readback.busdir || v.qwc>gif_dma.gs.downloadQwords()
+    if(!v.qwc || !gs_readback.fdr || !gs_readback.busdir || v.qwc>gs_sink.downloadQwords()
         || v.madr>=ram_size || std::size_t(v.qwc)*16>ram_size-v.madr)throw UnsupportedGuestMemory(0x10009000,4);
     gsDownload(std::span<std::uint8_t>(memory_.data()+v.madr,std::size_t(v.qwc)*16));
     gs_readback.dma_qwords+=v.qwc;
@@ -49,7 +49,7 @@ void EeRuntime::frameVif1Receive(std::uint32_t value) {
 void EeRuntime::gsDownload(std::span<std::uint8_t> out) {
     // The CPU model advances the transfer (and supplies the pixels when it draws); in GPU-only mode
     // the renderer holds VRAM and supplies them.
-    try {gif_dma.gs.readDownload(out);if(gs_download_source)gs_download_source(out);}
+    try {gs_sink.readDownload(out);if(gs_download_source)gs_download_source(out);}
     catch(const std::runtime_error& e) {std::cerr<<"GS readback stopped: "<<e.what()<<'\n';throw UnsupportedGuestMemory(0x10005000,16);}
 }
 
@@ -62,10 +62,10 @@ bool EeRuntime::gsReadbackStore32(std::uint32_t address,std::uint32_t value) {
 }
 
 bool EeRuntime::gsReadbackStore64(std::uint32_t address,std::uint64_t value) {
-    if(address==0x12001000 && value==2) {gs_readback.finishes_cleared=gif_dma.gs.state.finishes;return true;} // CSR: FINISH is write-one-to-clear.
+    if(address==0x12001000 && value==2) {gs_readback.finishes_cleared=gs_sink.state.finishes;return true;} // CSR: FINISH is write-one-to-clear.
     if(address!=0x12001040)return false;
     // BUSDIR: 1 while the GS drives the bus for a local->host transfer.
-    if(value>1 || (value && !gif_dma.gs.state.download))throw UnsupportedGuestMemory(address,8);
+    if(value>1 || (value && !gs_sink.state.download))throw UnsupportedGuestMemory(address,8);
     if(value && !gs_readback.busdir)++gs_readback.downloads;
     gs_readback.busdir=value!=0;
     return true;
@@ -74,12 +74,12 @@ bool EeRuntime::gsReadbackStore64(std::uint32_t address,std::uint64_t value) {
 std::uint32_t EeRuntime::vif1Status() const {
     // Idle VIF1 as captured at the startup path sync (0x40), DBF, FDR, and the quadwords the FIFO
     // holds (FQC, at most 16) while a local->host transfer has data left.
-    const auto left=gs_readback.fdr && gs_readback.busdir?gif_dma.gs.downloadQwords():0;
+    const auto left=gs_readback.fdr && gs_readback.busdir?gs_sink.downloadQwords():0;
     return 0x40u|(vif1.r.dbf?0x80u:0u)|(gs_readback.fdr?0x800000u:0u)|(std::uint32_t(std::min<std::size_t>(left,16))<<24);
 }
 
 ProbeGpr EeRuntime::vif1FifoRead() {
-    if(!gs_display_flips || !gs_readback.fdr || !gs_readback.busdir || !gif_dma.gs.downloadQwords())throw UnsupportedGuestMemory(0x10005000,16);
+    if(!gs_display_flips || !gs_readback.fdr || !gs_readback.busdir || !gs_sink.downloadQwords())throw UnsupportedGuestMemory(0x10005000,16);
     ProbeGpr value;std::array<std::uint8_t,16> bytes;
     gsDownload(bytes);std::memcpy(&value,bytes.data(),16);++gs_readback.fifo_qwords;
     return value;

@@ -1,5 +1,4 @@
-#include "gs/gif_dma_staging.h"
-#include "gs/texture_gif_startup.h"
+#include "gs/cpu/gs_command_sink.h"
 #include "gs/textures/gs_texture_names.h"
 #include <iostream>
 #include <set>
@@ -77,22 +76,23 @@ int main() {
         check(seen.size()==8192 && *seen.rbegin()==8191);
         check(GsCommandSink::t8Byte(0,4,128,0)==2048*4); // Second page in the row (TBW 4 = 256 pixels).
     }
+    // The startup's clear (PACKED A+D: frame and depth buffers, offset, scissor, test, a sprite) and its
+    // texture configuration (PABE, registers 8 and 9) are ordinary transfers: the register file follows
+    // every write.
     std::vector<std::uint8_t> p(240);
     auto put=[&](unsigned offset,std::uint64_t value){std::memcpy(p.data()+offset,&value,8);};
     put(0,0x100000000000800EULL);put(8,14);
     std::array<unsigned,14> regs={0x4C,0x4E,0x18,0x40,0x1A,0x46,0x45,0x47,0x47,0,1,5,5,0x47};
     std::array<std::uint64_t,14> values={0x10000,0x1000020,0,0x0007000000070000ULL,1,1,0,0x50000,0x30000,6,0x3F80000012345678ULL,0,0x0000000900800080ULL,0x50000};
     for(unsigned i=0;i<14;++i){put(16+i*16,values[i]);put(24+i*16,regs[i]);}
-    const auto original=p;
-    GsCommandSink gs;
-    bool uninitialized_rejected=false;
-    try{gs.consume(p);}catch(const std::runtime_error&){uninitialized_rejected=true;}
-    check(uninitialized_rejected && gs.packets==0);
-    gs.resetDrawingState();gs.consume(p);
-    // The clear is recorded: frame buffer 0, 64 pixels wide, 8 x 8 at the origin, its colour, no mask.
-    check(gs.pixels==64 && gs.packets==1 && gs.clears.size()==1);
-    const auto first=gs.clears.back();
-    check(first.fbp==0 && first.width==1 && first.x0==0 && first.y0==0 && first.x1==8 && first.y1==8 && first.color==0x12345678 && first.mask==0);
+    GsCommandSink gs;gs.transfer(p);
+    check(gs.register_writes==14 && gs.state.regs[0x4C]==0x10000 && gs.state.regs[0]==6 && gs.state.regs[1]==0x3F80000012345678ULL && gs.state.regs[0x47]==0x50000);
+    std::vector<std::uint8_t> config(64);
+    auto configPut=[&](unsigned offset,std::uint64_t value){std::memcpy(config.data()+offset,&value,8);};
+    configPut(0,0x1000000000008003ULL);configPut(8,14);
+    configPut(16,1);configPut(24,0x49);configPut(32,0x1234);configPut(40,8);configPut(48,0x5678);configPut(56,9);
+    gs.transfer(config);
+    check(gs.state.regs[0x49]==1 && gs.state.regs[8]==0x1234 && gs.state.regs[9]==0x5678 && gs.register_writes==17);
     // Independent address landmarks and complete-page bijection.
     check(GsCommandSink::address(0,1,8,0,false)==64);
     check(GsCommandSink::address(0,1,0,8,false)==128);
@@ -101,78 +101,6 @@ int main() {
     std::set<std::size_t> addresses;
     for(unsigned y=0;y<32;++y)for(unsigned x=0;x<64;++x)addresses.insert(GsCommandSink::address(0,1,x,y,false));
     check(addresses.size()==2048 && *addresses.rbegin()==2047);
-    // A late malformed register must leave earlier state and pixels untouched.
-    put(24+13*16,0x7F);bool rejected=false;
-    try{gs.consume(p);}catch(const std::runtime_error&){rejected=true;}
-    check(rejected && gs.packets==1 && gs.pixels==64);put(24+13*16,regs[13]);
-    // Frame mask, disabled depth writes, clipping and lower/right exclusive edges.
-    put(16,0x00FF00FF00010000ULL);put(32,0x101000020ULL);
-    put(16+3*16,0x0006000200060002ULL);
-    put(16+12*16,0x0000000C00800080ULL);
-    gs.consume(p);check(gs.pixels==89 && gs.clears.size()==2);
-    check(gs.clears.back().x0==2 && gs.clears.back().y0==2 && gs.clears.back().x1==7 && gs.clears.back().y1==7 && gs.clears.back().mask==0x00FF00FF);
-    put(16+9*16,0x46);rejected=false;
-    try{gs.consume(p);}catch(const std::runtime_error&){rejected=true;}
-    check(rejected && gs.pixels==89);
-    // A transfer consumes commands before completion. Later reads require
-    // explicit evidence and ordering; source mutation cannot draw partial data.
-    GifDmaStaging dma;dma.gs.resetDrawingState();dma.supply(original);check(dma.readIdle()==0);dma.setCount(15);
-    std::vector<std::uint8_t> ram(4096);std::copy(original.begin(),original.end(),ram.begin()+256);
-    dma.setAddress(256,256,ram);ram[256+16]^=1;rejected=false;
-    try{dma.start(0x101,ram);}catch(const GifPacketMismatch&){rejected=true;}
-    check(rejected && dma.gs.packets==0 && dma.starts==0);ram[256+16]^=1;
-    dma.start(0x101,ram);check(dma.qwc==0 && dma.madr==496 && dma.chcr==0x101 && dma.gs.packets==1);
-    rejected=false;try{dma.readVifIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
-    std::array<std::uint32_t,33> pub={0,0,0x1FFEAF0,0,0x101,0,0x1FFEC40,0x40,0xE00,
-        1,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0,
-        0x1000A000,0,0x1FFEAF0,0,1,0,0x1FFEC40,0x40,0,
-        0,0,0x1FFEAF0,0,0,0x1FFEB00};
-    std::vector<std::uint8_t> evidence(372);std::memcpy(evidence.data(),pub.data(),sizeof(pub));
-    std::copy(original.begin(),original.end(),evidence.begin()+132);dma.supplySync(evidence);
-    check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
-    check(dma.completions==1 && dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0);
-    check(dma.readIdle()==1);dma.setCount(15);std::copy(original.begin(),original.end(),ram.begin()+512);
-    dma.setAddress(512,512,ram);dma.start(0x101,ram);check(dma.starts==2 && dma.gs.packets==2);
-    check(dma.readVifIdle()==0 && dma.readStarted(false)==0x101 && dma.readStarted(true)==1);
-    check(dma.readVifStatus()==0x40 && dma.readVuIdle()==0 && dma.readGifStatus()==0 && dma.completions==2);
-    rejected=false;try{dma.readIdle();}catch(const std::runtime_error&){rejected=true;}check(rejected);
-    // A later identical request pair replays both packets from fresh state into a shared sink.
-    auto repeat=dma.repeat();check(repeat.starts==0 && repeat.readIdle()==0);repeat.setCount(15);
-    repeat.setAddress(256,256,ram);repeat.start(0x101,ram,dma.gs);
-    check(repeat.readVifIdle()==0 && repeat.readStarted(false)==0x101 && repeat.readStarted(true)==1);
-    check(repeat.readVifStatus()==0x40 && repeat.readVuIdle()==0 && repeat.readGifStatus()==0 && repeat.readIdle()==1);
-    repeat.setCount(15);repeat.setAddress(512,512,ram);ram[512+16]^=1;rejected=false;
-    try{repeat.start(0x101,ram,dma.gs);}catch(const GifPacketMismatch&){rejected=true;}
-    check(rejected && repeat.starts==1 && dma.gs.packets==3);ram[512+16]^=1;
-    repeat.start(0x101,ram,dma.gs);check(repeat.starts==2 && dma.gs.packets==4 && dma.starts==2 && repeat.gs.packets==0);
-    rejected=false;try{(void)repeat.repeat();}catch(const std::runtime_error&){rejected=true;}check(rejected); // Pair not yet completed.
-    dma.gs.resetDrawingState();dma.gs.resetDrawingState();
-    check(dma.gs.packets==4 && dma.gs.pixels==256 && dma.gs.clears.size()==4); // A reset keeps what was accepted.
-    std::vector<std::uint8_t> config(64);
-    auto configPut=[&](unsigned offset,std::uint64_t value){std::memcpy(config.data()+offset,&value,8);};
-    configPut(0,0x1000000000008003ULL);configPut(8,14);
-    configPut(16,3);configPut(24,0x49);configPut(32,0x1234);configPut(40,8);configPut(48,0x5678);configPut(56,9);
-    dma.gs.consumeConfiguration(config);
-    check(dma.gs.pabe==1 && dma.gs.tex0[0]==0x1234 && dma.gs.tex0[1]==0x5678 && dma.gs.pixels==256);
-    configPut(16,0);configPut(56,0x7F);rejected=false;
-    try{dma.gs.consumeConfiguration(config);}catch(const std::runtime_error&){rejected=true;}
-    check(rejected && dma.gs.pabe==1 && dma.gs.configuration_packets==1);
-    configPut(56,9);configPut(48,1ULL<<61);rejected=false;
-    try{dma.gs.consumeConfiguration(config);}catch(const std::runtime_error&){rejected=true;}
-    check(rejected && dma.gs.tex0[1]==0x5678);
-    configPut(48,0x5678);
-    std::array<std::array<std::uint32_t,8>,5> config_publications{};
-    for(unsigned i=0;i<4;++i)config_publications[i]={i==0||i==3?1u:i==2?0x101u:0u,0,0x1FFECE0,0,1,0x1FFED30,0,0};
-    config_publications[4][2]=0x1FFED40;
-    std::vector<std::uint8_t> config_evidence(224),config_ram(128);
-    std::memcpy(config_evidence.data(),config_publications.data(),160);std::memcpy(config_evidence.data()+160,config.data(),64);std::memcpy(config_ram.data()+16,config.data(),64);
-    TextureGifStartup transfer;transfer.supply(config_evidence);
-    check(transfer.idle()==1 && transfer.pathIdle()==0);transfer.count(4);transfer.address(16,16,config_ram);
-    config_ram[32]^=1;rejected=false;try{transfer.start(0x101,config_ram,dma.gs);}catch(const std::runtime_error&){rejected=true;}
-    check(rejected && transfer.starts==0 && transfer.phase==4);config_ram[32]^=1;
-    transfer.start(0x101,config_ram,dma.gs);check(transfer.madr==80 && transfer.qwc==0 && transfer.poll()==0x101 && transfer.poll()==1 && transfer.pathComplete()==0);
-    check(transfer.completions==1 && transfer.phase==8 && dma.gs.pixels==256);
-    rejected=false;try{transfer.poll();}catch(const std::runtime_error&){rejected=true;}check(rejected);
     {
         // IMAGE data continuing in later transfers: a 4x2 CT32 upload whose tag carries 2 quadwords,
         // one in the tag's transfer and one in the next; then a new tag works again.
@@ -236,22 +164,18 @@ int main() {
         whole.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
         whole.transfer(t);check(pieces.size()==1 && pieces[0]==t);
         // The GS thread (gs/gpu/gpu_gs_mirror.h): the game's sink without names hands transfers to
-        // on_accepted_transfer and startup packets to on_accepted; a sink with names, given the accepted
+        // on_accepted_transfer; a sink with names, given the accepted
         // transfers one by one, hands the renderer the same bytes in step and names as the direct path did,
         // also when IMAGE data continues into the next transfer of a group.
         const std::size_t split=image_data+32; // Two of the four IMAGE quadwords in the first transfer.
         const std::vector<std::uint8_t> first(t.begin(),t.begin()+std::ptrdiff_t(split)),second(t.begin()+std::ptrdiff_t(split),t.end());
-        GsCommandSink game;game.resetDrawingState();
+        GsCommandSink game;
         std::vector<std::vector<std::uint8_t>> transfers,packets;
         game.on_accepted=[&](std::span<const std::uint8_t> d){packets.emplace_back(d.begin(),d.end());};
         game.on_accepted_transfer=[&](std::span<const std::uint8_t> d){transfers.emplace_back(d.begin(),d.end());};
         const std::array<std::span<const std::uint8_t>,2> group{first,second};
         game.transferAll(group);
-        std::vector<std::uint8_t> config;
-        auto c=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);config.insert(config.end(),b,b+16);};
-        c(0x1000000000008001ULL,0xE);c(1,0x49); // PABE on.
-        game.consumeConfiguration(config);
-        check(transfers.size()==2 && transfers[0]==first && transfers[1]==second && packets.size()==1 && packets[0]==config);
+        check(transfers.size()==2 && transfers[0]==first && transfers[1]==second && packets.empty());
         GsTextureNames thread_names;GsCommandSink named;named.texture_names=&thread_names;pieces.clear();
         named.on_accepted=[&](std::span<const std::uint8_t> d){pieces.emplace_back(d.begin(),d.end());};
         for(const auto& data:transfers)named.transfer(data);

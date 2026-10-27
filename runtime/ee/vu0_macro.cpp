@@ -62,21 +62,12 @@ void EeRuntime::vu0RandomInstruction(R5900Context* context,std::uint32_t instruc
     std::memcpy(&context->vu0_vf[ft],lanes,16);
 }
 
-// Once frames are presented no VU microprogram has been started by anything the runtime models (VIF
-// microprogram calls are refused), so both units are idle whoever asks: main, a worker thread or an
-// interrupt handler. Before the first frame only the captured startup sequences are answered.
-bool EeRuntime::cop2Condition(R5900Context*) {
-    if(gs_display_flips>=1)return false;
-    throw UnsupportedVuStatus();
-}
+// VU1 runs each microprogram to its end inside the VIF1 transfer that starts it and VU0 runs macro code
+// only (no microprogram call is modelled), so both units are idle whoever asks: main, a worker thread
+// or an interrupt handler.
+bool EeRuntime::cop2Condition(R5900Context*) {return false;}
 
-std::uint32_t EeRuntime::readVuStatus(R5900Context* context) {
-    if(clear_repeat_gif && displayResetStep(context,6,0x31062C,624))return clear_repeat_gif->readVuIdle();
-    if(gs_display_flips>=1)return 0;
-    if(gif_dma.syncSupplied() && context->pc==0x31062C && context->r[29].low==initial_sp-624)
-        return gif_dma.readVuIdle();
-    throw UnsupportedVuStatus();
-}
+std::uint32_t EeRuntime::readVuStatus(R5900Context*) {return 0;}
 
 // CFC2/CTC2 of the VU0 status flag register. The flags are maintained only inside functions that clear
 // and then read them (the game's clip tests): there every flag-setting instruction between the two is

@@ -74,45 +74,35 @@ void EeRuntime::finishQueuedSoundsBind(std::uint8_t* rdram,R5900Context* context
 }
 
 bool EeRuntime::handleAdmittedIntcSyscall(std::uint8_t* rdram,std::uint32_t selector,R5900Context* context) {
-    // VBLANK_START (cause 2) registration after main's admitted priority, and its replacement
-    // during main's display re-initialization (GS reset removes it; the VSync setter re-adds it).
+    // VBLANK_START (cause 2) handlers, as the kernel keeps them: AddIntcHandler appends to the chain
+    // (next -1) and returns a fresh id (a removed slot is not reused: the original kernel returned 4 -> 5);
+    // RemoveIntcHandler unlinks a handler of the cause by id (both reached callers ignore the result).
+    // Afterwards the startup's sequence counters advance from their own state (diagnostics): the display
+    // re-initialization removes the GS library's handler and re-adds it, as does a frame-phase GS reset.
     if(selector!=0x10 && selector!=0x11 && selector!=0x14 && selector!=0x15)return false;
     constexpr std::uint32_t cause=2,bit=1u<<cause;
     if(static_cast<std::uint32_t>(context->r[4].low)!=cause || !intc_mask_supplied_)throw UnsupportedSyscall(selector,context->pc);
     if(selector==0x10) {
         const auto address=static_cast<std::uint32_t>(context->r[5].low);
         const auto next=static_cast<std::int32_t>(context->r[6].low);
-        const bool replacement=display_reset_phase==12 && vblank_handler_registrations==1 && address==0x1006D8
-            && context->pc==0x32E948 && context->r[31].low==0x311410 && context->r[29].low==initial_sp-96;
-        // After a frame-phase GS reset removed the VSync handler, the library re-adds one (once).
-        const bool frame_replacement=frame_vsync_handler_removed && display_reset_phase==13 && !frame_gs_reset_step
-            && current_thread_id==1 && !in_interrupt_ && context->pc==0x32E948;
-        if(!address || address%4 || next!=-1 || (vblank_handler_registrations && !replacement && !frame_replacement)
-            || std::any_of(intc_handlers.begin(),intc_handlers.end(),[](const IntcHandler& h){return h.cause==cause;}))
-            throw UnsupportedSyscall(selector,context->pc);
+        if(!address || address%4 || next!=-1)throw UnsupportedSyscall(selector,context->pc);
         checkMemory(rdram,address,4);
         if(intc_handlers.size()==128){context->r[2].low=UINT64_MAX;return true;}
         // The kernel records the caller GP and argument register; next=-1 appends to the chain tail.
         intc_handlers.push_back({cause,address,static_cast<std::uint32_t>(context->r[7].low),static_cast<std::uint32_t>(context->r[28].low)});
         const auto id=static_cast<std::uint32_t>(intc_handlers.size());intc_handler_order.push_back(id);
-        // A removed slot is not reused: the original kernel also returned a fresh ID (4 -> 5).
-        if(frame_replacement){frame_vsync_handler_removed=false;frame_vsync_handler=address;}
-        ++vblank_handler_registrations;if(replacement)display_reset_phase=13;context->r[2].low=id;return true;
+        if(frame_vsync_handler_removed){frame_vsync_handler_removed=false;frame_vsync_handler=address;}
+        else if(display_reset_phase==12)display_reset_phase=13;
+        ++vblank_handler_registrations;context->r[2].low=id;return true;
     }
     if(selector==0x11) {
         const auto id=static_cast<std::uint32_t>(context->r[5].low);
         const auto order=std::find(intc_handler_order.begin(),intc_handler_order.end(),id);
-        if(frameGsResetStep(context,3,0x32E968)) {
-            // Frame-phase reset: the GS library unlinks its VSync handler while cause 2 is disabled.
-            if((intc_mask&bit) || order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause || context->r[31].low!=0x30FE90)
-                throw UnsupportedSyscall(selector,context->pc);
-            intc_handler_order.erase(order);intc_handlers.at(id-1).cause=~0u;frame_gs_reset_step=4;frame_vsync_handler_removed=true;
-            context->r[2].low=0;return true;
-        }
-        if(!displayResetStep(context,3,0x32E968,688) || (intc_mask&bit) || order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause
-            || intc_handlers.at(id-1).address!=0x1006D8 || context->r[31].low!=0x30FE90)throw UnsupportedSyscall(selector,context->pc);
-        // Unlinked while cause 2 is disabled; both reached callers ignore the result.
-        intc_handler_order.erase(order);intc_handlers.at(id-1).cause=~0u;display_reset_phase=4;context->r[2].low=0;return true;
+        if(order==intc_handler_order.end() || intc_handlers.at(id-1).cause!=cause)throw UnsupportedSyscall(selector,context->pc);
+        intc_handler_order.erase(order);intc_handlers.at(id-1).cause=~0u;context->r[2].low=0;
+        if(frame_gs_reset_step==3) {frame_gs_reset_step=4;frame_vsync_handler_removed=true;}
+        else if(display_reset_phase==3)display_reset_phase=4;
+        return true;
     }
     if(selector==0x14) {
         const bool newly=!(intc_mask&bit);

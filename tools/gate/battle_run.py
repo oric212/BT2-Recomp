@@ -16,7 +16,10 @@ FRAMES = 5100
 # 2026-10-26: Timer 2 moves one tick per read within a field (ee/logical_timer2.h), so the fight's second
 # random seed at its load differs from the first as on hardware; the CPU fighters' choices follow it
 # (before: 5a4960667d4a3dff, 724698589, 2140195, which the run gives again without the tick).
-BASELINE = {'vu1_kick_hash': '94b27c5bb9a49166', 'vu1_instructions': 724713805, 'vu1_runs': 2140205}
+# 2026-10-27: the first boot's VSync wait latches a logical VBlank like every other wait (runtime
+# generalization group 4), so Timer 2 counts one field more from the boot and the random seeds follow
+# (before: 94b27c5bb9a49166, 724713805, 2140205, which the run gives again without that field).
+BASELINE = {'vu1_kick_hash': '7f996c1524a22bea', 'vu1_instructions': 724707622, 'vu1_runs': 2140202}
 ENTERED_AT_LEAST = 3700 # 3,731 at the baseline; the exact count moves when the map splits functions.
 
 

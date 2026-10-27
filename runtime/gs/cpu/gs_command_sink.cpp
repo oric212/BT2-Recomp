@@ -9,66 +9,6 @@
 // header so changes rebuild one translation unit instead of every generated unit that includes
 // ps2_runtime.h.
 
-void GsCommandSink::consume(std::span<const std::uint8_t> packet) {
-    if(on_input && packet.size()==240)on_input(packet); // Configuration packets are reported by consumeConfiguration.
-    if(packet.size()!=240) {consumeConfiguration(packet);return;}
-    auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,packet.data()+offset,8);return v;};
-    auto reject=[](){throw std::runtime_error("Unsupported GS sprite packet/state");};
-    if(!drawing_reset_ || packet.size()!=240)reject();
-    if(read(0)!=0x100000000000800EULL || read(8)!=0xE)reject();
-    constexpr std::array<unsigned,14> regs={0x4C,0x4E,0x18,0x40,0x1A,0x46,0x45,0x47,0x47,0,1,5,5,0x47};
-    std::array<std::uint64_t,14> v{};
-    for(unsigned i=0;i<14;++i) {if(read(24+i*16)!=regs[i])reject();v[i]=read(16+i*16);}
-    unsigned width=unsigned((v[0]>>16)&63),fbp=unsigned(v[0]&511),zbp=unsigned(v[1]&511);
-    if(!width || ((v[0]>>24)&63)!=0 || (v[0]&0xC0C0FE00ULL)
-        || ((v[1]>>24)&63)!=1 || (v[1]&~0x1000001FFULL)!=0x1000000ULL
-        || v[4]%2!=1 || v[5]%2!=1 || v[6]%2!=0 || v[7]!=0x50000
-        || v[8]!=0x30000 || v[9]!=6 || v[13]!=0x50000)reject();
-    // At the draw: alpha/destination tests disabled, depth ALWAYS, no blend,
-    // texture, fog or dither. ZMSK is supported; FRAME mask preserves bits.
-    unsigned ox=unsigned(v[2]&65535),oy=unsigned((v[2]>>32)&65535);
-    if(v[2]&0xFFFF0000FFFF0000ULL || v[3]&0xF800F800F800F800ULL)reject();
-    auto coordinate=[&](std::uint64_t vertex,bool y) {
-        int n=int((vertex>>(y?16:0))&65535)-int(y?oy:ox);
-        if(n%16)reject();return n/16;
-    };
-    int x0=coordinate(v[11],false),y0=coordinate(v[11],true);
-    int x1=coordinate(v[12],false),y1=coordinate(v[12],true);
-    if(x1<x0 || y1<y0)reject();
-    x0=std::max(x0,int(v[3]&2047));y0=std::max(y0,int((v[3]>>32)&2047));
-    x1=std::min(x1,int((v[3]>>16)&2047)+1);y1=std::min(y1,int((v[3]>>48)&2047)+1);
-    if(x0<0 || y0<0 || x1>int(width*64) || y1>2048)reject();
-    // All rejection occurs above: no partial effects on malformed requests.
-    (void)zbp;
-    if(clears.size()==64)clears.erase(clears.begin()); // The startup checks need the last few.
-    clears.push_back({fbp,width,x0,y0,x1,y1,std::uint32_t(v[10]),std::uint32_t(v[0]>>32)});
-    pixels+=std::uint64_t(x1-x0)*std::uint64_t(y1-y0);
-    registers=v;++packets;++sprites;
-    if(on_accepted)on_accepted(packet);
-}
-
-void GsCommandSink::consumeConfiguration(std::span<const std::uint8_t> packet) {
-    if(on_input)on_input(packet);
-    auto reject=[](){throw std::runtime_error("Unsupported GS configuration packet");};
-    if(!drawing_reset_ || packet.size()<32 || packet.size()%16)reject();
-    auto read=[&](std::size_t offset) {std::uint64_t value;std::memcpy(&value,packet.data()+offset,8);return value;};
-    auto tag=read(0);const auto loops=tag&32767;
-    // Packed, one A+D register, EOP, no PRE/primitive side effect.
-    if(tag!=(0x1000000000008000ULL|loops) || read(8)!=14 || loops!=(packet.size()-16)/16)reject();
-    auto next_tex0=tex0;auto next_pabe=pabe;
-    for(std::size_t i=16;i<packet.size();i+=16) {
-        const auto value=read(i),reg=read(i+8);
-        if(reg==0x49)next_pabe=value&1;
-        else if(reg==8 || reg==9) {
-            // CLD requires a CLUT transaction, not a register-only update.
-            if(value>>61)reject();
-            next_tex0[reg-8]=value;
-        } else reject();
-    }
-    tex0=next_tex0;pabe=next_pabe;++packets;++configuration_packets;
-    if(on_accepted)on_accepted(packet);
-}
-
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
     if(on_input)for(const auto& data:group)on_input(data);
     for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");

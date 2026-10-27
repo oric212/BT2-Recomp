@@ -20,13 +20,11 @@
 #include <immintrin.h>
 #include "ps2_runtime.h"
 #include "ee_interpreter_handlers.h"
-#include "intc_checkpoint.h"
 #include "retained_ee_stack.h"
-#include "gs/gif_dma_staging.h"
+#include "gs/cpu/gs_command_sink.h"
 #include "logical_timer2.h"
 #include "logical_timer1.h"
 #include "post_reset_sif.h"
-#include "gs/texture_gif_startup.h"
 #include "ipu_device.h"
 #include "services/sif_rpc.h"
 #include "services/iop_heap.h"
@@ -58,11 +56,6 @@ struct UnsupportedGuestMemory : std::runtime_error {
     std::uint32_t address;
     std::size_t size;
 };
-
-struct UnsupportedVuStatus : std::runtime_error {
-    UnsupportedVuStatus():std::runtime_error("Unsupported VU0 VPU_STAT read") {}
-};
-
 
 class EeRuntime : public PS2Runtime {
 public:
@@ -468,7 +461,7 @@ public:
     void supplyCdInit(std::span<const std::uint8_t> bundle);
     void supplyScmdBind(std::span<const std::uint8_t> bundle);
     bool iop_reset_pending=false, prior_iop_services_valid=true;
-    GifDmaStaging gif_dma;
+    GsCommandSink gs_sink; // Every GIF transfer, VIF1 DIRECT and VU1 XGKICK reaches the GS through it.
     PostResetSif post_sif;
     PostResetCd post_cd;
     PostResetLoadfile post_loadfile;
@@ -501,13 +494,15 @@ public:
     // last GIF reset left it (the startup setup: the comparison with the original reads it).
     std::uint32_t vif1_error=0;unsigned vif1_resets=0,vif1_fifo_writes=0,vif1_fifo_codes=0,vu1_resets=0,gif_resets=0;
     struct VifSetup {Vif1::Registers registers;std::uint32_t error=0;unsigned fifo_writes=0,codes=0,vif_resets=0,vu_resets=0;} vif_setup;
-    TextureGifStartup texture_gif;
     unsigned ee_heap_lock_waits=0,ee_heap_lock_signals=0,heap_end_queries=0;
     // GS privileged display registers (0x12000000 + 16*n) as last written; PMODE n=0 .. BGCOLOR n=14.
     std::array<std::uint64_t,15> gs_privileged{};unsigned gs_display_writes=0,gs_display_flips=0;
     // Frame-phase GIF DMA (channel 2), normal mode from main RAM; transfers complete synchronously
     // into the general GS path (FRAME_GIF_PLAN.md).
-    struct FrameGif {std::uint32_t chcr=0,madr=0,qwc=0,tadr=0;unsigned starts=0,chain_starts=0;std::uint64_t bytes=0;} frame_gif;unsigned frame_syncs=0; // Frame GIF: normal and source-chain mode.
+    // The GIF channel (2): normal and source-chain mode from main RAM, complete when they start.
+    struct GifChannel {std::uint32_t chcr=0,madr=0,qwc=0,tadr=0;unsigned starts=0,chain_starts=0;std::uint64_t bytes=0;} gif_channel;unsigned frame_syncs=0;
+    // What the startup left for the first display flip (diagnostics: the startup comparisons read it).
+    struct FirstFlip {std::array<std::uint64_t,0x64> gs_registers{};unsigned gif_starts=0;} first_flip;
     // Frame-phase VIF1 DMA (channel 1), chain mode with tag transfer; tags are walked synchronously
     // and their VIF codes run by the VIF1 interpreter, which owns VU1 (VU1_PIPELINE_PLAN.md).
     Vif1 vif1;
@@ -518,7 +513,7 @@ public:
     // CSR, and counters. gs_download_source supplies local->host pixels when the GPU renderer holds VRAM.
     struct GsReadback {bool fdr=false,busdir=false;unsigned finishes_cleared=0,downloads=0;std::uint64_t dma_qwords=0,fifo_qwords=0;} gs_readback;
     std::function<void(std::span<std::uint8_t>)> gs_download_source;
-    bool gsFinishPending() const {return gif_dma.gs.state.finishes!=gs_readback.finishes_cleared;}
+    bool gsFinishPending() const {return gs_sink.state.finishes!=gs_readback.finishes_cleared;}
     void frameVif1Codes(std::span<const std::uint32_t> words);
     void frameVif1Send(std::uint32_t value);
     void frameVif1Receive(std::uint32_t value);
@@ -530,8 +525,6 @@ public:
     void vif1FifoWrite(const ProbeGpr& value);
     void frameVif1Start(std::uint32_t value);void frameGifChainStart(std::uint32_t value);
     bool frameGifContext() const {return gs_display_flips>=1 && current_thread_id==1 && !in_interrupt_;}
-    // Main running the game's own code past the replayed startup checkpoints, outside an interrupt.
-    bool mainGameContext() const {return current_thread_id==1 && main_priority_admissions && !startup_scheduler_active && !in_interrupt_;}
     LogicalTimer1 timer1;unsigned timer1_starts=0,timer1_polls=0,timer1_wait_polls=0,timer1_stops=0,timer1_vblanks=0,sound_tick_boundaries=0;
     unsigned frame_limit=0;bool frame_budget_reached=false; // Optional probe frame budget (display flips).
     // Diagnostic float watch (probe: BT2_EE_WATCH_FLOAT=<hex address>:<limit>): the run stops at the first
@@ -575,32 +568,18 @@ public:
             || (!in_interrupt_ && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active)) && context;
     }
     std::uint32_t vsync_flag=0,vsync_csr=0;unsigned frame_vsync_deliveries=0;
-    std::uint32_t display_intc_stat=0;
-    bool display_field=true; // Toggles at every VBlank; anchored to the original 0x271178 sample (field 1).
-    std::optional<GifDmaStaging> clear_repeat_gif;
+    // INTC_STAT's VBLANK bits: both latched at boot (the first boot's captured status, 12).
+    std::uint32_t display_intc_stat=0xC;
+    // Toggles at every VBlank; anchored to the original's samples: FIELD 1 at the first boot's VSync wait
+    // and at 0x271178 (the display re-initialization's field sample).
+    bool display_field=false;
+    unsigned display_clear_transfers=0; // GIF transfers of the display re-initialization's clear (phase 6).
+    std::uint32_t intcStatusPoll(std::uint8_t* rdram,R5900Context* context);
     // Frame-phase GS reset (the GS library reset routine 0x30FDC0, mode 0, called again after display
-    // setup for a new scene): CSR reset, CSR read, PutIMR, VSync handler removal, SetGsCrt. Separate
-    // from the startup sequence above; each step is checked by its program counter.
+    // setup for a new scene): CSR reset, CSR read, PutIMR, VSync handler removal, SetGsCrt. Diagnostic
+    // steps, separate from the startup sequence above.
     unsigned frame_gs_reset_step=0,frame_gs_resets=0;bool frame_vsync_handler_removed=false;
     std::array<std::uint32_t,3> frame_gs_crt_request{};std::uint32_t frame_vsync_handler=0;
-    bool frameGsResetStep(const R5900Context* context,unsigned step,std::uint32_t pc) const {
-        return frame_gs_reset_step==step && display_reset_phase==13 && gs_display_flips>=1 && current_thread_id==1
-            && !in_interrupt_ && context->pc==pc;
-    }
-    bool displayResetStep(const R5900Context* context,unsigned phase,std::uint32_t pc,std::uint32_t frame) const {
-        return display_reset_phase==phase && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active
-            && !in_interrupt_ && graph_startup_phase==4 && gs_csr_reset_writes==1 && cri_rpc_calls==42
-            && context->pc==pc && context->r[29].low==initial_sp-frame;
-    }
-    // Main's second embedded-buffer load (0x100634 -> 0x320580), between the field sample and display setup.
-    bool embeddedReload() const {
-        return display_reset_phase==8 && main_priority_admissions && current_thread_id==1 && !startup_scheduler_active
-            && !in_interrupt_ && cri_rpc_calls==42 && iop_epoch==1;
-    }
-    bool displayVsyncWait(const R5900Context* context,std::uint32_t pc,std::uint32_t offset) const {
-        // SyncV without a callback polls INTC_STAT directly while cause 2 is disabled.
-        return !(intc_mask&4) && (displayResetStep(context,5,pc,656-offset) || displayResetStep(context,7,pc,96-offset));
-    }
     std::uint64_t graph_halfword_checkpoint=0;
     bool heap_allocation_supplied=false,heap_copy_supplied=false;
     unsigned heap_transfers=0,heap_dma_polls=0;
@@ -623,8 +602,6 @@ public:
         heap_bind_supplied=true;
     }
     unsigned serviceOperations() const {return cri_rpc_calls+cri_rpc_binds+ncmd_ready_calls+ncmd_rpc_binds+disc_rpc_calls+disc_rpc_binds+mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
-    IntcCheckpoint gs_interrupt;
-    unsigned gs_field_reads=0;
     // The GS library's reset path (ee_gs_privileged.cpp). The four counters mark the first reset's steps
     // (the startup checks read them); gs_resets counts every CSR reset.
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0,gs_resets=0;
@@ -895,8 +872,6 @@ private:
     void receiveFirstCdInit(std::uint8_t* rdram, R5900Context* context);
     void receiveScmdBind(std::uint8_t* rdram, R5900Context* context);
     void receiveScmdMmode(std::uint8_t* rdram,R5900Context* context);
-    bool gif_dma_supplied_=false;
-    bool gs_interrupt_supplied_=false,gs_field_supplied_=false;
     bool reset_submission_supplied_=false, reset_ready_supplied_=false;
     std::array<std::uint8_t,104> reset_request_{};
     bool sif_stop_supplied_ = false, sif_reset_subaddr_supplied_ = false, reset_smflag_supplied_ = false;

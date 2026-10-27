@@ -109,20 +109,16 @@ void EeRuntime::supplyScmdBind(std::span<const std::uint8_t> bundle) {
         const std::array<std::uint32_t,16> evidence{12,0x1802,0x1FFEAD0,1,8,0x1802,0x1FFEAD0,1,
             12,0x1802,0x1FFEAD0,4,8,0x1802,0x1FFEAD0,1};
         if(std::memcmp(bundle.data()+252,evidence.data(),64))throw std::runtime_error("INTC evidence differs");
-        gs_interrupt_supplied_=true;
     }
     if(bundle.size()>=324) {
         std::uint64_t field;std::memcpy(&field,bundle.data()+316,8);
         if(field!=0x551B6004)throw std::runtime_error("GS field checkpoint differs");
-        gs_field_supplied_=true;
     }
     if(bundle.size()>=616) {
         const std::array<std::uint32_t,9> idle{0,0,0x1FFEAF0,0,0,0,1,0x800040,0x1201};
         const std::array<std::uint64_t,2> results{15,0};
         if(std::memcmp(bundle.data()+324,idle.data(),36) || std::memcmp(bundle.data()+360,results.data(),16))
             throw std::runtime_error("GIF idle/staging/reference return evidence differs");
-        gif_dma.supply(bundle.subspan(376,240));gif_dma_supplied_=true;
-        if(bundle.size()>=988)gif_dma.supplySync(bundle.subspan(616,372));
         if(bundle.size()>=1124)post_sif.supply(bundle.subspan(988,136));
         if(bundle.size()>=1332)post_cd.supply(bundle.subspan(1124,bundle.size()>=1464?340:208));
         if(bundle.size()>=1596)post_loadfile.supply(bundle.subspan(1464));

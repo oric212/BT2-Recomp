@@ -82,7 +82,7 @@ std::uint32_t loadStartupEvidence(EeRuntime& runtime,const ProbeModes& modes,cha
         runtime.supplySifRpcState(readWord(argv[14],"Invalid SIF RPC checkpoint word","SIF RPC checkpoint read failed"));
     if(argc>=19)runtime.supplyHeapBind(readFixed<64>(argv[18],"Invalid IOP heap bind evidence","IOP heap evidence read failed"));
     if(argc>=20)runtime.supplyHeapAllocation(readEvidence(argv[19],{68,88},"Invalid heap allocation evidence","Heap allocation evidence read failed"));
-    if(argc>=21)runtime.texture_gif.supply(readFixed<224>(argv[20],"Invalid texture GIF evidence","Texture evidence read failed"));
+    // argv[20] (texture-startup.bin) is no longer read: the texture setup is a general GIF transfer.
     if(argc>=22)runtime.supplySoundThreadStart(readFixed<56>(argv[21],"Invalid EE thread-start evidence","EE thread-start evidence read failed"));
     if(argc>=25)runtime.supplyNcmdBind(readFixed<64>(argv[24],"Invalid command bind bundle","Command bind read failed"));
     if(argc>=24)runtime.local_disc_path=argv[23];
