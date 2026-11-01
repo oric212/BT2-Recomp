@@ -1,0 +1,84 @@
+#version 450
+// Native pass "dof-weight" (runtime/gs/gpu/native/dof_weight.cpp): the depth of field's weight pass with a lighter
+// strength. The game writes the frame's alpha (the blur weight its blend after reads) from the depth buffer's top byte
+// read as T8H through a PSMCT32 palette; here each sample gets that palette value's alpha scaled by the strength, the
+// colour kept. GS memory as paraLLEl-GS holds it: per 32-bit word the resolved value, the super-sample reference one
+// plane on, sample s at plane s + 2; a pixel keeps samples only where they differ and is resolved as the renderer does.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(constant_id = 0) const uint SAMPLES = 16u;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint words[]; };
+
+layout(push_constant) uniform Push
+{
+	uvec4 area;    // First pixel x, y; size in pixels.
+	uvec4 buffers; // The frame's block and width; the read buffer's block and width (64-word blocks, 64-pixel units).
+	uvec4 texture; // Texel offset x, y (as signed); the palette's block; the strength in 256ths.
+	uvec4 memory;  // Words per plane; reference planes (present).
+} push;
+
+uint ct32_word(uint block, uint width, uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint b = (bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u);
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (block * 64u + ((p.y >> 5u) * width + (p.x >> 6u)) * 2048u + b * 64u + pixel) & 0xFFFFFu;
+}
+
+// A PSMCT32 palette in CSM1 order: index bits 3 and 4 swapped, 16 entries a row.
+uint palette(uint id)
+{
+	uint at = (id & 0xE7u) | ((id & 8u) << 1u) | ((id & 0x10u) >> 1u);
+	return words[ct32_word(push.texture.z, 1u, uvec2(at & 15u, at >> 4u))];
+}
+
+void main()
+{
+	uvec2 local = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(local, push.area.zw)))
+		return;
+	uvec2 p = push.area.xy + local;
+	uint plane = push.memory.x;
+	bool reference = push.memory.y != 0u && SAMPLES > 1u;
+	uvec2 texel = uvec2(ivec2(p) + ivec2(int(push.texture.x), int(push.texture.y)));
+	uint ti = ct32_word(push.buffers.z, push.buffers.w, texel);
+	// As the renderer's texture upload reads it: the sample's byte where the reference word's top byte is 0xFF.
+	bool texel_samples = reference && (words[ti + plane] >> 24u) == 0xFFu;
+	uint ci = ct32_word(push.buffers.x, push.buffers.y, p);
+	bool colour_samples = reference && words[ci + plane] == ~0u;
+
+	uint colour[SAMPLES];
+	bool differ = false;
+	for (uint s = 0u; s < SAMPLES; s++)
+	{
+		uint id = (texel_samples ? words[ti + (s + 2u) * plane] : words[ti]) >> 24u;
+		uint alpha = ((palette(id) >> 24u) * push.texture.w + 128u) >> 8u;
+		uint old = colour_samples ? words[ci + (s + 2u) * plane] : words[ci];
+		colour[s] = (old & 0xFFFFFFu) | (min(alpha, 255u) << 24u);
+		differ = differ || colour[s] != colour[0];
+	}
+	if (!differ || !reference)
+	{
+		words[ci] = colour[0];
+		if (reference)
+			words[ci + plane] = 0u;
+		return;
+	}
+	vec4 sum[SAMPLES];
+	for (uint s = 0u; s < SAMPLES; s++)
+	{
+		words[ci + (s + 2u) * plane] = colour[s];
+		sum[s] = unpackUnorm4x8(colour[s]);
+	}
+	for (uint stride = SAMPLES >> 1u; stride >= 1u; stride >>= 1u)
+	{
+		vec4 next[SAMPLES];
+		for (uint s = 0u; s < SAMPLES; s++)
+			next[s] = sum[s] + sum[s ^ stride];
+		for (uint s = 0u; s < SAMPLES; s++)
+			sum[s] = next[s];
+	}
+	words[ci] = packUnorm4x8(sum[0] / float(SAMPLES));
+	words[ci + plane] = ~0u;
+}

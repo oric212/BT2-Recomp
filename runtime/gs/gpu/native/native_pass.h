@@ -20,7 +20,9 @@ struct NativeContext {
 
 struct NativePass {
     const char* name;
-    enum Default {Off,On,WithSixtyFps} on_by_default; // WithSixtyFps: on when 60 fps battles are (BT2_SIXTY_FPS).
+    // WithSixtyFps: on when 60 fps battles are (BT2_SIXTY_FPS); WithLighterDof: when the depth of field is set lighter
+    // (BT2_DOF_STRENGTH below 100).
+    enum Default {Off,On,WithSixtyFps,WithLighterDof} on_by_default;
     bool (*draws)(const ParallelGS::RegisterState& registers);
     bool (*run)(const NativeRenderPass& pass,NativeContext& context);
 };
@@ -39,3 +41,6 @@ bool glowDraw(const ParallelGS::RegisterState& registers); // glow.cpp
 bool glow(const NativeRenderPass& pass,NativeContext& context);
 bool fightersDraw(const ParallelGS::RegisterState& registers); // fighters.cpp
 bool fighters(const NativeRenderPass& pass,NativeContext& context);
+bool dofWeightDraw(const ParallelGS::RegisterState& registers); // dof_weight.cpp
+bool dofWeight(const NativeRenderPass& pass,NativeContext& context);
+std::uint32_t dofStrength(); // In 256ths of the game's weights (dof_weight.cpp).

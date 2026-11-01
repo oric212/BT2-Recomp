@@ -2,7 +2,9 @@
 
 Updated: 2026-11-02. **The 60 fps approach revised (the user, 2026-11-01): native fight rendering** ([plan](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)). With 60 fps on, a fight's 3D is drawn natively: first the GPU's rasterizer for the fighters' render passes in both renderers (step 1), then the fighters' scene data on the GPU so their in-between geometry needs neither the blend nor VU1 nor the second renderer's GS thread (step 2, where the gain is: an in-between picture is processor time, 12 to 15 ms, measured and split in the run's 60 fps line), then a field less if 60 stays even. Post chain and HUD stay with paraLLEl-GS; textures come from the main renderer's images (the user's choice). Only with 60 fps; the original feel kept (look, pacing, no added delay).
 
-This pass (2026-11-01 and 02): 60 fps measured at the user's settings (98% of in-between pictures shown, flat 29.97 on a story fight); the in-between picture's time split in the run's 60 fps line; `BT2_IN_BETWEEN_GIF_DUMP`. **Step 1 built:** the native pass `fighters` (the fighters by the GPU's rasterizer, on with 60 fps; 29.75 flips per second in fullscreen at the user's settings against 29.91 without it: a small cost left). **The user's flicker fixed:** a thin line across the ground at 16x from the depth of field's depth view read per sample (`parallel_gs_depth_view_resolved.patch`, the user kept the look). **Next:** distant textures without HD replacements (the user, seen before today too), then step 2.
+This pass (2026-11-01 and 02): 60 fps measured at the user's settings (98% of in-between pictures shown, flat 29.97 on a story fight); the in-between picture's time split in the run's 60 fps line; `BT2_IN_BETWEEN_GIF_DUMP`. **Step 1 built:** the native pass `fighters` (the fighters by the GPU's rasterizer, on with 60 fps; 29.75 flips per second in fullscreen at the user's settings against 29.91 without it: a small cost left). **The user's flicker fixed:** a thin line across the ground at 16x from the depth of field's depth view read per sample (`parallel_gs_depth_view_resolved.patch`, the user kept the look). **Distant textures:** the game's depth of field blurred them; the setting "Light depth of field" (off by default, 25% when on; native pass `dof-weight`). Pass ended here (the user). **Next:** [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md) step 2, and step 1's remaining cost (29.75 against 29.91 flips per second).
+
+**Not seen by the user in play yet:** the fighters pass with 60 fps, the line fix and the light depth of field as settings in a real session (pictures only).
 
 ## Where the work stands
 
@@ -20,7 +22,7 @@ The whole game runs without input (all modes, all 200 story parts, 73 towns; [co
 
 ## Next
 
-1. **Next:** distant textures without HD replacements (the user, 2026-11-02); then [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md) step 2 (the fighters' scene data on the GPU) and step 1's remaining cost. Then the [responsiveness plan](../plans/ee/RESPONSIVENESS_PLAN.md)'s remaining steps, the edge filter (FSR on hold) and the final battle sweep.
+1. **Next:** [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md) step 2 (the fighters' scene data on the GPU) and step 1's remaining cost. Then the [responsiveness plan](../plans/ee/RESPONSIVENESS_PLAN.md)'s remaining steps, the edge filter (FSR on hold) and the final battle sweep.
 
 **Open reports from the user:** the frame rate in super attacks (29.96 to 29.97 in every super attack measured since the glow pass; the user's look in play left). FSR is on hold (the user, 2026-10-27). Earlier, not reproduced or awaiting the user's look: the same random music twice; "a fuzzy look in some areas" (the soft areas found are originals: the Map Select preview, a film).
 

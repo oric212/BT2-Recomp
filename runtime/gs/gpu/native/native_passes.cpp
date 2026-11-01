@@ -22,6 +22,9 @@ constexpr std::array passes{
     // The fighters' render passes by the GPU's rasterizer (docs/plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md step 1),
     // in both renderers with 60 fps battles (the user's decision of 2026-11-01).
     NativePass{"fighters",NativePass::WithSixtyFps,fightersDraw,fighters},
+    // The depth of field's weights scaled by the user's setting "Depth of field" (docs/plans/graphics/IMAGE_QUALITY_PLAN.md
+    // step 5b); at the game's strength the renderer draws the pass.
+    NativePass{"dof-weight",NativePass::WithLighterDof,dofWeightDraw,dofWeight},
 };
 
 bool sixtyFps() {const char* s=std::getenv("BT2_SIXTY_FPS");return s && *s;}
@@ -33,7 +36,8 @@ std::array<bool,passes.size()> enabledPasses() {
     const char* setting=std::getenv("BT2_NATIVE_PASSES");
     const std::string_view text(setting?setting:"");
     if(!setting || text.starts_with('-'))
-        for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default==NativePass::On || (passes[n].on_by_default==NativePass::WithSixtyFps && sixtyFps());
+        for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default==NativePass::On || (passes[n].on_by_default==NativePass::WithSixtyFps && sixtyFps())
+            || (passes[n].on_by_default==NativePass::WithLighterDof && dofStrength()<256);
     if(!setting || text=="none")return on;
     for(std::size_t at=0;at<=text.size();) {
         const auto end=std::min(text.find(',',at),text.size());
