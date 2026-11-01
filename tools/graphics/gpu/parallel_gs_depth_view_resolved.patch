@@ -1,0 +1,17 @@
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -1894,7 +1894,12 @@
+ 		if (tex_index < MaxTextures)
+ 		{
+ 			auto &info = render_pass.tex_infos[tex_index].info;
+-			if (info.arrayed)
++			// BT2 Recomp patch: a depth buffer read through a 16-bit view into a 16-bit frame (a depth-of-field chain
++			// moving depth into the frame's alpha, its blur weight) reads the depth resolved per pixel, as the GS reads
++			// its single sample: per sample, one sample row along each depth step got a weight of its own, a thin line
++			// across the ground that flickers as the camera moves. Its writes stay per sample.
++			const bool depth_view = (ctx.tex0.desc.PSM & 0x30u) == 0x30u && get_bits_per_pixel(ctx.frame.desc.PSM) == 16;
++			if (info.arrayed && !depth_view)
+ 			{
+ 				p.tex |= TEX_PER_SAMPLE_BIT;
+ 				if ((info.flags & TEX_INFO_FORCE_SAMPLE_MAPPING) != 0)

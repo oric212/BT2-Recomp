@@ -1,0 +1,100 @@
+#version 450
+// Native pass "fighters" (runtime/gs/gpu/native/fighters.cpp): the sample image's colour and depth back into GS memory
+// as paraLLEl-GS leaves a pixel: samples kept only where they differ (the reference word ~0 for colour, 0xFFFFFF for
+// a 24-bit depth), the colour resolved in the renderer's order of sums, the depth to the smallest sample, written as
+// 24 bits so the word's top byte (where the game keeps material ids) stays. One lane a game pixel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint words[]; };
+layout(set = 0, binding = 1) uniform sampler2D colour_image;
+layout(set = 0, binding = 2) uniform sampler2D depth_image;
+
+layout(push_constant) uniform Push
+{
+	uvec4 area;    // The first game pixel (x, y), samples per game pixel along a side, reference planes (1: present).
+	uvec4 buffers; // The frame's block and width; the depth buffer's block and width.
+	uvec4 memory;  // Words per plane; the area's width and height in game pixels.
+} push;
+
+uint word_at(uint block, uint width, uvec2 p, uint block_xor)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint b = ((bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u)) ^ block_xor;
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (block * 64u + ((p.y >> 5u) * width + (p.x >> 6u)) * 2048u + b * 64u + pixel) & 0xFFFFFu;
+}
+
+void main()
+{
+	uvec2 local = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(local, push.memory.yz)))
+		return;
+	uvec2 p = push.area.xy + local;
+	uint side = push.area.z, samples = side * side, plane = push.memory.x;
+	bool reference = push.area.w != 0u && side > 1u;
+	uint ci = word_at(push.buffers.x, push.buffers.y, p, 0u);
+	uint zi = word_at(push.buffers.z, push.buffers.w, p, 0x18u);
+
+	uint colour[16];
+	uint depth[16];
+	for (uint s = 0u; s < samples; s++)
+	{
+		// Sample s's place in the pixel: bits 1 and 3 are x, bits 0 and 2 are y.
+		ivec2 o = ivec2(((s >> 1u) & 1u) | ((s >> 2u) & 2u), (s & 1u) | ((s >> 1u) & 2u));
+		ivec2 f = ivec2(local * side) + o;
+		colour[s] = packUnorm4x8(texelFetch(colour_image, f, 0));
+		depth[s] = uint(clamp(round(texelFetch(depth_image, f, 0).x * 16777215.0), 0.0, 16777215.0));
+	}
+
+	bool colours_differ = false, depths_differ = false;
+	uint smallest = depth[0];
+	for (uint s = 1u; s < samples; s++)
+	{
+		colours_differ = colours_differ || colour[s] != colour[0];
+		depths_differ = depths_differ || depth[s] != depth[0];
+		smallest = min(smallest, depth[s]);
+	}
+
+	if (!colours_differ || !reference)
+	{
+		words[ci] = colour[0];
+		if (reference)
+			words[ci + plane] = 0u;
+	}
+	else
+	{
+		vec4 sum[16];
+		for (uint s = 0u; s < samples; s++)
+		{
+			words[ci + (s + 2u) * plane] = colour[s];
+			sum[s] = unpackUnorm4x8(colour[s]);
+		}
+		// The renderer's resolve: sums of samples a half, a quarter ... of the samples apart, as sample 0 sees them.
+		for (uint stride = samples >> 1u; stride >= 1u; stride >>= 1u)
+		{
+			vec4 next[16];
+			for (uint s = 0u; s < samples; s++)
+				next[s] = sum[s] + sum[s ^ stride];
+			for (uint s = 0u; s < samples; s++)
+				sum[s] = next[s];
+		}
+		words[ci] = packUnorm4x8(sum[0] / float(samples));
+		words[ci + plane] = ~0u;
+	}
+
+	uint top = words[zi] & 0xFF000000u;
+	if (!depths_differ || !reference)
+	{
+		words[zi] = top | depth[0];
+		if (reference)
+			words[zi + plane] = 0u;
+	}
+	else
+	{
+		for (uint s = 0u; s < samples; s++)
+			words[zi + (s + 2u) * plane] = depth[s];
+		words[zi] = top | smallest;
+		words[zi + plane] = 0xFFFFFFu;
+	}
+}

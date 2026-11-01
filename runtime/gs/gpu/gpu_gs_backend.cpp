@@ -170,8 +170,9 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     options.super_sampled_textures=superSampledTextures(super_sampling);
     // Its work on the async compute queue runs beside the main renderer's on the graphics queue instead of after
     // it (docs/plans/ee/PERFORMANCE_PLAN.md, item 4d); its scanouts stay on the graphics queue.
-    // BT2_IN_BETWEEN_GRAPHICS_QUEUE=1 keeps it on the graphics queue (for comparisons).
-    options.compute_queue=!std::getenv("BT2_IN_BETWEEN_GRAPHICS_QUEUE");
+    // BT2_IN_BETWEEN_GRAPHICS_QUEUE=1 keeps it on the graphics queue (for comparisons). The native pass "fighters"
+    // draws with the GPU's rasterizer, which the compute queue has not: with it the renderer stays on the graphics queue.
+    options.compute_queue=!std::getenv("BT2_IN_BETWEEN_GRAPHICS_QUEUE") && !nativePassEnabled("fighters");
     if(options.compute_queue)state->queue=Vulkan::CommandBuffer::Type::AsyncCompute;
     state->high_resolution=super_sampling>=4;
     if(!state->gs.init(state->device.get(),options))throw std::runtime_error("GPU GS: paraLLEl-GS initialization failed (second renderer)");

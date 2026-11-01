@@ -12,14 +12,19 @@ namespace {
 constexpr std::array passes{
     // The flat alpha byte written over a rectangle of a frame (the groundwork's check of the hook; the ink chain
     // starts with one): off by default.
-    NativePass{"alpha-fill",false,alphaFillDraw,alphaFill},
+    NativePass{"alpha-fill",NativePass::Off,alphaFillDraw,alphaFill},
     // The ink outline's edges per sample: the game's at 1x, its thickness with smooth edges with super-sampling
     // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 2); on, the look the user chose on 2026-10-27.
-    NativePass{"ink-edges",true,inkEdgesDraw,inkEdges},
+    NativePass{"ink-edges",NativePass::On,inkEdgesDraw,inkEdges},
     // A super attack's glow and the blended layers between its quads, shaded once per game pixel with super-sampling
     // (docs/plans/graphics/HYBRID_RENDERING_PLAN.md step 3); on (the user's decision of 2026-10-27).
-    NativePass{"glow",true,glowDraw,glow},
+    NativePass{"glow",NativePass::On,glowDraw,glow},
+    // The fighters' render passes by the GPU's rasterizer (docs/plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md step 1),
+    // in both renderers with 60 fps battles (the user's decision of 2026-11-01).
+    NativePass{"fighters",NativePass::WithSixtyFps,fightersDraw,fighters},
 };
+
+bool sixtyFps() {const char* s=std::getenv("BT2_SIXTY_FPS");return s && *s;}
 
 // BT2_NATIVE_PASSES: the passes named (comma-separated), "none", or without it those on by default; names written
 // "-name" take a pass away from those on by default (the player setting "HD outline" off: "-ink-edges").
@@ -27,7 +32,8 @@ std::array<bool,passes.size()> enabledPasses() {
     std::array<bool,passes.size()> on{};
     const char* setting=std::getenv("BT2_NATIVE_PASSES");
     const std::string_view text(setting?setting:"");
-    if(!setting || text.starts_with('-'))for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default;
+    if(!setting || text.starts_with('-'))
+        for(std::size_t n=0;n<passes.size();++n)on[n]=passes[n].on_by_default==NativePass::On || (passes[n].on_by_default==NativePass::WithSixtyFps && sixtyFps());
     if(!setting || text=="none")return on;
     for(std::size_t at=0;at<=text.size();) {
         const auto end=std::min(text.find(',',at),text.size());
@@ -41,6 +47,12 @@ std::array<bool,passes.size()> enabledPasses() {
     }
     return on;
 }
+}
+
+bool nativePassEnabled(std::string_view name) {
+    const auto on=enabledPasses();
+    for(std::size_t n=0;n<passes.size();++n)if(name==passes[n].name)return on[n];
+    return false;
 }
 
 Vulkan::Program* nativeComputeProgram(Vulkan::Device& device,std::span<const std::uint32_t> spirv,unsigned buffers,unsigned push_bytes,unsigned uniforms,unsigned textures,unsigned spec_constants) {

@@ -20,7 +20,7 @@ struct NativeContext {
 
 struct NativePass {
     const char* name;
-    bool on_by_default;
+    enum Default {Off,On,WithSixtyFps} on_by_default; // WithSixtyFps: on when 60 fps battles are (BT2_SIXTY_FPS).
     bool (*draws)(const ParallelGS::RegisterState& registers);
     bool (*run)(const NativeRenderPass& pass,NativeContext& context);
 };
@@ -37,3 +37,5 @@ bool inkEdgesDraw(const ParallelGS::RegisterState& registers); // ink_edges.cpp
 bool inkEdges(const NativeRenderPass& pass,NativeContext& context);
 bool glowDraw(const ParallelGS::RegisterState& registers); // glow.cpp
 bool glow(const NativeRenderPass& pass,NativeContext& context);
+bool fightersDraw(const ParallelGS::RegisterState& registers); // fighters.cpp
+bool fighters(const NativeRenderPass& pass,NativeContext& context);

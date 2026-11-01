@@ -7,9 +7,13 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace ParallelGS {class GSInterface;}
 namespace Vulkan {class Device;}
+
+// Whether the pass `name` runs (the settings above).
+bool nativePassEnabled(std::string_view name);
 
 class NativePasses {
 public:
