@@ -39,6 +39,9 @@ public:
     bool onThread() const {return std::this_thread::get_id()==id_.load();} // Called from a task or the consumer.
     // The thread's working time since the last call, in seconds.
     double takeBusySeconds();
+    // The thread's working time and its processor time in it, in seconds, since it started.
+    struct Totals {double busy=0,processor=0;};
+    Totals totals();
     static constexpr std::size_t chunk_bytes=64*1024;
 private:
     // Items one after another: a header (the data's size or the task's index; the kind), then the data.
@@ -56,6 +59,7 @@ private:
     std::atomic<bool> pause_wanted_{false}; // Looked at between items.
     std::mutex pause_requests_; // whilePaused's callers, one at a time.
     std::int64_t busy_ns_=0;
+    Totals totals_;
     std::atomic<std::thread::id> id_{}; // The thread's, set first on it.
     std::thread thread_; // Last: it starts in the constructor and uses the members above.
 };

@@ -55,7 +55,7 @@ Proprietary inputs, generated code, captures and rendered frames stay local and 
 Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](project/IMPLEMENTATION_PLAN.md):
 
 1. **Super attacks at 16x:** 29.96 to 29.97 flips per second with every enhancement and 60 fps in every super attack measured (ten fights swept, three measured in the window) since the glow pass (2026-10-27); left: the user's look in play ([hybrid rendering plan](plans/graphics/HYBRID_RENDERING_PLAN.md) step 3).
-2. **60 fps in play:** not flat in the user's play at 16x (2026-10-27: 84% of in-between pictures shown, 14.5 ms each to draw, against 99% and about 4 ms in the test fight); to reproduce at the user's settings and content ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md) 4g).
+2. **60 fps:** revised by the user toward [native fight rendering](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md) (2026-11-01; next: the rasterizer pass for the fighters, then their scene data on the GPU). Measured at the user's settings in fullscreen on a story fight: 98% of in-between pictures shown, flat 29.97, 14.7 ms of processor time each. Open: the flicker the user saw with 60 fps (a recording of the moment needed).
 3. **Blur** the user sees in some text and screens and on the fighters' edges, then **the randomizer** (the random fight music checked correct and varying with timing; the user's path needed, [handoff](progress/ACTIVE_PASS.md)); then the user's look at the HD textures (finished 2026-10-26, [HD textures](plans/graphics/HD_TEXTURES_PLAN.md) step 10) and the fighters' lit variants.
 4. **Picture:** FSR 1 scaling with sharpening, an edge filter ([image quality](plans/graphics/IMAGE_QUALITY_PLAN.md)).
 5. **The user's tests:** saving, the enhancements in play, the sound fix, fast forward, the play test fixes of 2026-10-21, 60 fps battles in play.
@@ -63,4 +63,4 @@ Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](
 
 ## Links
 
-[Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [October 2026 history](progress/2026-10.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)
+[Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [November 2026 history](progress/2026-11.md) · [October 2026 history](progress/2026-10.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)

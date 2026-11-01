@@ -1,0 +1,73 @@
+# Native fight rendering for 60 fps
+
+Decided by the user on 2026-11-01, as a revision of the [60 fps plan](HIGH_FRAME_RATE_PLAN.md)'s way of drawing: with 60 fps on, a fight's 3D scene is drawn natively by the GPU's own rasterizer and from the game's own scene data, in place of paraLLEl-GS emulating it twice a frame. This is step 5 of the [hybrid rendering plan](HYBRID_RENDERING_PLAN.md) ("whole native fights"), begun in its third form: native 3D under paraLLEl-GS's post-processing and HUD.
+
+## The user's decisions (2026-11-01)
+
+- **Level: the native 3D scene.** Meshes, bone matrices and cameras are taken from the VIF1 lists before VU1, skinned and rasterized on the GPU. The game's post chain (depth of field, ink outline, glow) and the HUD stay with paraLLEl-GS and run over the native 3D as before.
+- **Only with 60 fps.** At 30 fps nothing changes. With 60 fps both pictures of every fight frame (the flip's own and the in-between one) are native, so they look alike.
+- **The GPU's rasterizer,** on the graphics queue. The in-between renderer moves back from the async compute queue (that helped only while emulated shading filled the GPU).
+- **Fighters first:** the skinned fighters and their shadow map. The stage, effects and HUD keep today's path until later steps.
+- **Input delay back to the 30 fps one** if 60 stays even: today 60 fps fights are shown a field later (16.7 ms) so the in-between picture has time; with fast native pictures that field is removed, if pictures stay a field apart at the user's settings.
+- **The fighters' textures in the in-between picture** (the user, 2026-11-01, of three ways): the texture images the main renderer already holds for the same frame, its HD replacements and lit variants included; the fighters' draws are matched in order, and the in-between picture's native draw waits until the main renderer has taken that frame's fighters. (The others: a texture cache of the native renderer's own; first making today's path cheaper, its GS thread being paused 29% of its time and naming per vertex.)
+- **The original feel:** the fight looks as paraLLEl-GS draws it (the same textures and palettes, the cel shading, the outline, the effects over it), with the same pacing and no added delay. Nothing native touches the game's state: the fight is the same by construction, checked by the state hash.
+- **The order:** the rasterizer first (step 1), then the scene data (step 2); after the GPU measurement below showed step 1 alone gains little, the user chose to split the in-between picture's processor time first (below), then step 2. The drops the user saw (60 fps plan, step 4g) were in story fights and super attacks; episode 0's first fight is the story content measured.
+
+## Where an in-between picture's time goes (measured 2026-11-01)
+
+The CPU fight (`BT2_START_BATTLE=0,1,0`), Release, headless, at the settings of the 60 fps plan's step 4g (16x, the 4x scanout, HD, widescreen, the HD outline, 60 fps):
+
+- **GPU** (`BT2_GPU_PASS_TIMES`, main renderer, flips 1,000 to 1,300): 7.9 ms a picture in about 52 render passes. The fighters' render passes are about 0.4 to 1 ms of it; the stage 0.75; the depth of field's and the effects' full-screen blended passes 0.4 to 0.85 each; the outline pass 1.2. Drawing the fighters with the rasterizer alone (step 1) saves under 1 ms of GPU time a picture.
+- **CPU** (the split the 60 fps summary line now prints, 3,541 in-between pictures): 12.4 ms per in-between picture on the in-between thread (the user's run: 14.5): 2.2 pairing and blending the lists, 3.0 running VIF1/VU1 again and handing the GS data on, 6.9 waiting for the second renderer's GS thread; the thread's processor time 5.7 ms. That GS thread works 9.9 ms a frame (8.3 on the processor).
+- **Sampled** (`BT2_SAMPLE_GS_THREADS`, 2,000 flips): the second renderer's GS thread stands paused for the main renderer's frame changes 29% of its time; of its work, the texture names about 13% (per vertex: `GsTextureNames::vertex`, `writeBytes`, `loadClut`), paraLLEl-GS's intake of the packets about 7%, the packet check about 4%. The in-between thread waits for it 34% of its time, blends about 8%, runs VIF1/VU1 about 8%.
+
+So the 60 fps cost is on the processor, and nearly all of it grows with the fighters' primitives (most of a frame's vertices): their blend, their VU1 runs, and their GS data checked, named and taken in by the second renderer. The gain comes from step 2, the fighters' in-between geometry from the GPU with their GS data kept out of the second renderer; step 1's rasterizer is what draws them there.
+
+## Measured at the user's settings in a story fight (2026-11-01)
+
+Episode 0's first fight (`BT2_START_EPISODE=0,0,marker:14`, a map marker leads to it), Release, fullscreen, 16x, widescreen, 60 fps, without HD (the pack's path was given one folder too high: `data\textures` holds the pack in a subfolder): 29.97 flips per second throughout, 4,840 of 4,929 in-between pictures shown (98%), 1 not ready, the game waiting 2 ms in all; 14.7 ms per in-between picture (2.8 pairing and blending, 4.1 VIF1/VU1 and handing on, 7.5 waiting for the GS thread; that thread 10.4 ms a frame). The 84% of the user's run of 2026-10-27 (a stale program) did not come back. The in-between picture fits only because fights are shown a field later; a field less needs it well under a field.
+
+## The flicker the user saw (2026-11-01 and 02; open)
+
+The user, watching that run: slight flicker in fights, on the fighters' bodies and in the lower half of the screen, only with 60 fps; in a slow animation of 30 flips (main and in-between pictures in turn, HD on) "seams or patches" of the ground jumping. Ruled out, each by a test: the second renderer's state (60 fps check mode pixel-exact with HD at three flips); the game's own motion blur (no draw reads the picture shown before); bones the blend leaves alone (all bones of the stage's and fighters' setups pass its rigid test; the 94 transform-like values left at the newer frame's in a frame draw nothing when collapsed, `BT2_VIF1_REPLACE`); two blend rules, tried and taken out again because the user saw no difference: values that moved a little in an object's setup (an effect's projected anchor, as first read), and camera-facing particles (three axis rows from the camera and a projected position with w -750, found by bisecting a list's changes with `BT2_VIF1_REPLACE`). At draw level (`BT2_IN_BETWEEN_GIF_DUMP` against `BT2_GIF_DUMP`, flips 3,004 to 3,006 of that fight): every draw that moves between the two frames is blended in the in-between picture (3,233 to 3,593 a picture, none at the newer frame's place); the draws without a partner are the clipper's triangle fans at the screen's edges, which differ with the camera by nature. **Next:** the moment the user sees it (a recording), then a draw-by-draw comparison there.
+
+## A fight frame (flip 1,000 of the CPU fight, `BT2_GIF_DUMP`)
+
+About 4,570 draws and 324 uploads, in this order:
+
+1. **The stage:** the sky and far layers without depth writes, about 470 depth-tested strips (the clipped-strip VU1 program), translucent pieces.
+2. **A depth-of-field chain** over the stage: the depth into the frame's alpha, 2:1 and 4:1 downscales (`0x2a00`, `0x2e00`), a ping-pong blur (`0x3ec0`, `0x3f00`), blended back.
+3. **The fighters:** about 224 uploads, small 64 x 64 passes that rebuild the lighting palettes (`0x3c00`, `0x3ac0`), then 1,192 and 1,368 skinned strips. Per piece two layers at the same positions: the **base** (T4 textures through palettes, ALPHA (Cs - Cd) x FIX + Cd with FIX 0x80, so the source; depth test greater-or-equal with writes; alpha written: the material ids) and the **cel shading** (a T8 256 x 256 ramp, DECAL, RGB only, ALPHA (0 - Cs) x FIX + Cd with FIX 0x80: subtracted). Both lists come from one kick of the two-list skinned program (`runtime/vu/vu1_skinned_vertex_programs.cpp`): per vertex a position blended from two bones, a normal through two direction matrices (the ramp's coordinate), each output vertex one input vertex.
+4. **The ink outline** (native pass `ink-edges`) and a **second depth-of-field chain**.
+5. **The shadow map:** the fighters drawn again untextured into a 256 x 256 buffer (`0x2a00`, 1,060 draws, ALPHA (Cs - Cd) x FIX + Cd), projected onto the stage (ALPHA (Cd - Cs) x FIX).
+6. **Effects** (the glow pass's kind among them), then the **HUD** (2D sprites).
+
+So the 3D comes in pieces with the game's own passes reading the frame, its depth and alpha in between. The native 3D therefore writes into paraLLEl-GS's GS memory at the place of each piece, through the native-pass hook (`parallel_gs_native_passes.patch`), and everything after it reads what the emulated draws would have left.
+
+## How it works
+
+- **Samples without MSAA.** paraLLEl-GS's 16x samples lie on a regular 4 x 4 grid in each game pixel (offsets 0, 1/4, 2/4 and 3/4; `compute_sample_points` in `gs_renderer.cpp`), 4x on a 2 x 2 grid. A single-sampled image four (two) times the game's size in each direction, its projection shifted by half a fine pixel, puts every fine pixel exactly on one of paraLLEl-GS's samples. No sample-location extension is needed, and each sample's colour, depth and alpha are copied to and from paraLLEl-GS's sample planes one to one. At 1x the image is the game's size.
+- **A native 3D pass** inside paraLLEl-GS, like the glow pass: recognised by the GS state of the render pass (depth-tested textured strips into the PSMCT32 frame with the Z24 depth buffer, the blends above), never by guest PCs. Copy-in: the frame's colour and alpha and the depth's samples from paraLLEl-GS's planes into the fine colour (RGBA8) and depth (D32, holding the 24-bit integers exactly) images. Draw: one Vulkan pipeline per blend kind, the GS's depth test greater-or-equal, textures and palettes from paraLLEl-GS's own images (HD replacements included, as the glow pass reads them), perspective coordinates from S, T and Q, colour clamped by the unsigned format (COLCLAMP). Copy-out into the sample planes, and the resolved plane as the renderer resolves it. Ordered blending in the draws' order is the rasterizer's own guarantee.
+- **The scene's data** (fighters): for each kick of the skinned programs, the kick's input as VU1 receives it (its bone matrices, origins, output and clip matrices, the header's GIF tags with the draw state, and the vertex inputs) is recorded on the game's thread beside the GS data. Vertex inputs do not change between frames (60 fps plan step 1), so they are kept on the GPU by content hash; per frame only the matrices go up. A vertex shader does what the program does (two bones blended by weight, the normal's ramp coordinate, the divide by w, the 12.4 fixed point positions, the clip test's marker as a dropped triangle).
+- **The in-between picture:** the fighters' kicks are not run again on VU1 with blended lists; their matrices are blended (the rules of `vu/vif1_blend.*`: rigid transforms turned, cameras with every copy alike, no picture across a cut) and the GPU skins the same vertices again. Their GS data never reaches the second renderer: the native work is recorded at their place in its stream (`record_native_work`), so neither its GS thread (packet check, texture names, paraLLEl-GS's intake) nor the in-between thread (blend, VU1) handles their vertices. The rest of the frame (the stage until its step, effects, HUD, post chain) is still replayed by the in-between renderer as today.
+- **Fallback:** a render pass the native pass does not recognise, or a kick of an unknown program, is left to paraLLEl-GS exactly as now; the frame is still drawn whole.
+
+## Order of work
+
+Each step ends with its checks (below), the gate and a window measurement at the user's settings (fullscreen, the 4x scanout, 16x, HD, widescreen, HD outline, 60 fps) on a story fight and a super attack.
+
+1. **The rasterizer pass for the fighters' primitives.** The native 3D pass draws the fighters' render passes (base, cel shading, the shadow map) from the primitives paraLLEl-GS already holds (VU1's output), in both renderers when 60 fps is on. The in-between renderer back on the graphics queue. This is the GPU half of the native scene and shows the look and the GPU gain before the data path changes. Measure: the GPU time of both renderers and the in-between pictures shown, against today's.
+2. **The fighters' scene data on the GPU.** The kicks' inputs recorded, vertex inputs cached, skinning in the vertex shader; in the main picture checked against VU1's output vertex for vertex (positions within a 12.4 step, the same dropped triangles); then the in-between picture's fighters from blended matrices without running VU1 again. Measure: the in-between thread's time per picture.
+3. **A field less.** With in-between pictures early in the flip's field, the delayed fights turned off for the native path when 98% of pictures stay a field apart at the user's settings ([responsiveness plan](../ee/RESPONSIVENESS_PLAN.md) step 2 has the earlier trial); else kept, and the result recorded.
+4. **The stage** (the clipped-strip program: static geometry under the camera), then **effects** whose programs are known, each as its own step with the same checks. What stays emulated is decided by measurement.
+
+## Checks
+
+- **The fight unchanged:** the state hash with the native path on equals the run without it on every field.
+- **Pictures:** each step's pictures at 16x beside paraLLEl-GS's (`BT2_NATIVE_PASSES` with and without the pass), differences scored by pixels and looked at; the outline and depth of field, which read the native alpha and depth, compared in the same pictures. At 1x GS memory is compared too, and the differences (rasterization rules, interpolation) are counted and recorded, not required to be zero.
+- **60 fps check mode** (`BT2_SIXTY_FPS=check`) exact: the in-between path drawn all the way to the newer frame equals the main picture.
+- **The user's look in play,** recorded apart from the comparisons.
+
+## References
+
+paraLLEl-GS's sampling (`gs/gs_renderer.cpp`, `compute_sample_points`) and the hook's existing passes (`runtime/gs/gpu/native/`); the BT3 port's native seams (`work/references/bt3r/docs/NATIVE-RENDER-SEAM.md`), read for the approach only.

@@ -1,8 +1,11 @@
 #include "gs/gpu/in_between_frames.h"
 #include "host/thread_priority.h"
+#include "host/thread_time.h"
 #include <algorithm>
 #include <bit>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -16,6 +19,13 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
     // The renderer's GS thread names its textures; replays draw each frame after its flip.
     if(hd_textures)mirror_.shareHdTextures(primary,names_,replay_only);
     recording_.start=std::make_unique<Vif1>(vif1);
+    if(const char* dump=std::getenv("BT2_IN_BETWEEN_GIF_DUMP")) {
+        unsigned from=0,count=0;int used=0;
+        if(std::sscanf(dump,"%u:%u:%n",&from,&count,&used)!=2 || !used)throw std::runtime_error("BT2_IN_BETWEEN_GIF_DUMP: expected <first flip>:<flips>:<file>");
+        gif_dump_.open(dump+used,std::ios::binary);
+        if(!gif_dump_)throw std::runtime_error("BT2_IN_BETWEEN_GIF_DUMP: cannot write the file");
+        gif_dump_from_=from;gif_dump_to_=from+count;
+    }
 }
 
 InBetweenFrames::~InBetweenFrames() {
@@ -24,6 +34,16 @@ InBetweenFrames::~InBetweenFrames() {
         <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<scene_changes<<" scene changes, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
         <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
     if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
+    if(drawn) {
+        const double per=1000.0/drawn;
+        std::cerr<<"; per picture drawn: state taken "<<split.take*per<<" ms, lists paired and blended "<<split.blend*per
+            <<", VIF1/VU1 run and handed on "<<split.run*per<<", the rest handed on and waits for the GS thread "<<split.finish*per
+            <<" (the thread's processor time "<<split.processor*per<<" ms)";
+    }
+    if(started_) {
+        const auto gs=mirror_.renderThreadTotals();
+        std::cerr<<"; its GS thread per frame: "<<gs.busy*1000/double(started_)<<" ms working, "<<gs.processor*1000/double(started_)<<" ms of processor time";
+    }
     std::cerr<<std::endl;
 }
 
@@ -149,7 +169,14 @@ void InBetweenFrames::hand() {
 }
 
 void InBetweenFrames::send(std::span<const std::uint8_t> data) {
-    if(!data.empty())sink_.transfer(data);
+    if(data.empty())return;
+    if(gif_dump_.is_open()) {
+        const auto size=std::uint32_t(data.size());
+        gif_dump_frame_.push_back('T');
+        gif_dump_frame_.insert(gif_dump_frame_.end(),reinterpret_cast<const char*>(&size),reinterpret_cast<const char*>(&size)+4);
+        gif_dump_frame_.insert(gif_dump_frame_.end(),reinterpret_cast<const char*>(data.data()),reinterpret_cast<const char*>(data.data())+data.size());
+    }
+    sink_.transfer(data);
 }
 
 // On the thread: the newer frame's input with its lists blended against the older frame's, run on a copy of
@@ -157,16 +184,26 @@ void InBetweenFrames::send(std::span<const std::uint8_t> data) {
 // pair in order and each pair must pair code for code; no in-between picture across a camera cut
 // (vu/vif1_blend.h). Once a pair fails the rest runs as it is (that picture is not shown).
 void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool first,const Vif1* start,unsigned slot) {
-    const auto begin=std::chrono::steady_clock::now();
+    using Clock=std::chrono::steady_clock;
+    const auto since=[](Clock::time_point from){return std::chrono::duration<double>(Clock::now()-from).count();};
+    const auto begin=Clock::now();
+    const double begin_processor=threadProcessorSeconds();
     if(first) {
         stream_=Stream{};
         for(std::size_t n=0;n<previous_.used;++n)if(previous_.events[n].vif1)stream_.older.push_back(&previous_.events[n]);
         stream_.vif1.emplace(*start);
         mirror_.takeState(primary_,slot);
+        stream_.split.take+=since(begin);
     }
     const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data){send(data);};
     for(const auto* e:events) {
-        if(!e->vif1) {e->eachOutput([this](std::span<const std::uint8_t> data){send(data);});continue;}
+        if(!e->vif1) {
+            const auto at=Clock::now();
+            e->eachOutput([this](std::span<const std::uint8_t> data){send(data);});
+            stream_.split.run+=since(at);
+            continue;
+        }
+        const auto blend_begin=Clock::now();
         const Event* older=stream_.next<stream_.older.size()?stream_.older[stream_.next]:nullptr;
         ++stream_.next;
         std::optional<std::vector<std::uint32_t>> mid;
@@ -182,16 +219,23 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
                 if(!sameScene(refused,pairing->pairs.size())) {++scene_changes;stream_.paired=false;mid.reset();} // vu/vif1_blend.h
             }
         } else stream_.paired=false;
+        const auto run_begin=Clock::now();
+        stream_.split.blend+=std::chrono::duration<double>(run_begin-blend_begin).count();
         stream_.vif1->run(mid?std::span<const std::uint32_t>(*mid):std::span<const std::uint32_t>(e->words),to_gs,to_gs);
+        stream_.split.run+=since(run_begin);
     }
+    const auto submit_begin=Clock::now();
     mirror_.submit(); // The device's frame changes never wait for an open command buffer of this renderer.
-    stream_.seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+    stream_.split.finish+=since(submit_begin);
+    stream_.seconds+=since(begin);
+    stream_.split.processor+=threadProcessorSeconds()-begin_processor;
 }
 
 // On the thread, at the newer frame's flip: the in-between picture drawn as the frame came, or else the
 // real frame. The second renderer only submits (its flushes leave the device's frame to the main renderer).
 bool InBetweenFrames::draw(Frame finished,const Job& job) {
     const auto begin=std::chrono::steady_clock::now();
+    const double begin_processor=threadProcessorSeconds();
     bool ready=false;
     if(finished.streamed) {
         for(std::size_t n=finished.handed;n<finished.used;++n)finished.events[n].eachOutput([this](std::span<const std::uint8_t> data){send(data);});
@@ -203,8 +247,12 @@ bool InBetweenFrames::draw(Frame finished,const Job& job) {
         }
         if(ready) {
             ++drawn;
-            const double took=stream_.seconds+std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+            const double finishing=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+            const double took=stream_.seconds+finishing;
             drawing_seconds+=took;slowest_seconds=std::max(slowest_seconds,took);
+            split.take+=stream_.split.take;split.blend+=stream_.split.blend;split.run+=stream_.split.run;
+            split.finish+=stream_.split.finish+finishing;
+            split.processor+=stream_.split.processor+threadProcessorSeconds()-begin_processor;
         } else ++(finished.fight?unpaired:not_fights);
     } else {
         if(!replay_only)++(finished.fight?unpaired:not_fights);
@@ -212,8 +260,18 @@ bool InBetweenFrames::draw(Frame finished,const Job& job) {
         mirror_.submit();
         if(replay_only) {picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);ready=picture_.first!=0;}
     }
+    dumpFrame(job.field);
     {std::lock_guard<std::mutex> hold(lock_);free_.push_back(std::move(previous_));}
     previous_=std::move(finished);
     previous_.start.reset(); // Only the newer frame's start is used.
     return ready;
+}
+
+void InBetweenFrames::dumpFrame(unsigned flip) {
+    if(!gif_dump_.is_open())return;
+    if(flip>=gif_dump_from_ && flip<gif_dump_to_) {
+        gif_dump_.write(gif_dump_frame_.data(),std::streamsize(gif_dump_frame_.size()));
+        gif_dump_.put('F');gif_dump_.write(reinterpret_cast<const char*>(&flip),4);
+    }
+    gif_dump_frame_.clear();
 }

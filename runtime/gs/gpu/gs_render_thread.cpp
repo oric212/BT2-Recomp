@@ -1,5 +1,6 @@
 #include "gs/gpu/gs_render_thread.h"
 #include "host/sample_profiler.h"
+#include "host/thread_time.h"
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -120,6 +121,11 @@ double GsRenderThread::takeBusySeconds() {
     return seconds;
 }
 
+GsRenderThread::Totals GsRenderThread::totals() {
+    std::lock_guard guard(lock_);
+    return totals_;
+}
+
 void GsRenderThread::run() {
     for(;;) {
         Chunk chunk;
@@ -131,6 +137,7 @@ void GsRenderThread::run() {
             chunk=std::move(ready_.front());ready_.pop_front();busy_=true;
         }
         const auto start=std::chrono::steady_clock::now();
+        const double start_processor=threadProcessorSeconds();
         std::exception_ptr failure;
         try {
             const auto& bytes=chunk.bytes;
@@ -145,9 +152,11 @@ void GsRenderThread::run() {
             }
         } catch(...) {failure=std::current_exception();}
         const auto took=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();
+        const double processor=threadProcessorSeconds()-start_processor;
         {
             std::lock_guard guard(lock_);
             busy_ns_+=took;busy_=false;
+            totals_.busy+=double(took)*1e-9;totals_.processor+=processor;
             if(failure && !failure_)failure_=failure;
             if(failure_)ready_.clear(); // Nothing after a failure is taken.
             chunk.bytes.clear();chunk.tasks.clear();spare_.push_back(std::move(chunk));

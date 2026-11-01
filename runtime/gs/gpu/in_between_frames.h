@@ -31,6 +31,7 @@
 #include <condition_variable>
 #include <deque>
 #include <exception>
+#include <fstream>
 #include <mutex>
 #include <memory>
 #include <optional>
@@ -90,6 +91,11 @@ public:
     double waited_seconds=0; // The game's thread waiting for the frame.
     unsigned paced_waits=0; // Flips at which keepPace waited (more than 2 ms).
     double drawing_seconds=0,slowest_seconds=0; // The thread's time on the in-between pictures drawn, and the longest.
+    // That time in parts, summed over the pictures drawn: taking the main renderer's state, pairing and blending the
+    // lists, running VIF1/VU1 with the GS data handed to the renderer's GS thread, the waits for that thread (its
+    // submissions and the scanout); and the thread's processor time in all of it.
+    struct Split {double take=0,blend=0,run=0,finish=0,processor=0;};
+    Split split;
 
 private:
     // An event's GS data: the transfers one after another, `ends` where each ends.
@@ -123,7 +129,7 @@ private:
     bool draw(Frame finished,const Job& job);
     // The frame being drawn as it comes (the thread's): the VIF1/VU1 copy it runs on, the older frame's VIF1
     // events in order and how many were used, whether the lists paired so far, the time spent.
-    struct Stream {std::optional<Vif1> vif1;std::vector<const Event*> older;std::size_t next=0;bool paired=true;double seconds=0;};
+    struct Stream {std::optional<Vif1> vif1;std::vector<const Event*> older;std::size_t next=0;bool paired=true;double seconds=0;Split split;};
     Stream stream_;
     void hand(); // The game's thread: the recorded events not yet handed go to the thread.
     void drawEvents(const std::vector<const Event*>& events,bool first,const Vif1* start,unsigned slot); // The thread: blends and runs them.
@@ -135,4 +141,10 @@ private:
     std::pair<unsigned,unsigned> picture_{0,0};
     std::uint32_t recent_=~0u; // Whether each of the last 32 pictures was ready at its field (newest in bit 0).
     void send(std::span<const std::uint8_t> data);
+    // BT2_IN_BETWEEN_GIF_DUMP=<first flip>:<flips>:<file>: the GS data of the in-between pictures of the frames started
+    // at those flips (the flips BT2_SIXTY_FPS_SNAPSHOT counts), in BT2_GIF_DUMP's form (tools/graphics/gpu/gif_dump_draws.py
+    // lists the draws), to compare them draw by draw with the main pictures around them. The thread's.
+    std::ofstream gif_dump_;unsigned gif_dump_from_=0,gif_dump_to_=0;
+    std::vector<char> gif_dump_frame_; // The picture being drawn, written at its flip when in range.
+    void dumpFrame(unsigned flip);
 };

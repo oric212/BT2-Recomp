@@ -216,12 +216,19 @@ class Draws:
             self.write(reg, lo)
 
     def transfer(self, data, record):
+        # A packet that goes on in the next transfer (the GS takes it as one stream) is kept until it is whole.
+        data = getattr(self, 'pending', b'') + bytes(data)
+        self.pending = b''
         at = 0
         while at + 16 <= len(data):
             self.place = (record, at // 16)
             lo, hi = struct.unpack_from('<QQ', data, at)
-            at += 16
             nloop, flg, nreg = bits(lo, 0, 15), bits(lo, 58, 2), bits(lo, 60, 4) or 16
+            size = nloop * nreg * 16 if flg == 0 else (nloop * nreg * 8 + 15) // 16 * 16 if flg == 1 else nloop * 16
+            if at + 16 + size > len(data):
+                self.pending = data[at:]
+                break
+            at += 16
             if bits(lo, 46, 1):
                 self.write(0x00, bits(lo, 47, 11))
             if flg == 0:
