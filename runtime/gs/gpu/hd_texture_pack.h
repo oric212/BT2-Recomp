@@ -18,7 +18,8 @@ namespace Vulkan {class Device;}
 // - Index: every .dds below the pack's `replacements` folder (the folder itself if it has none), by
 //   name as PCSX2 reads it (the format word's bit 14 cleared). A name found twice keeps the first in
 //   path order (counted). With PlayStation buttons, the pack's `Original Buttons` folder (pack 2)
-//   replaces the button art of `replacements` (Xbox art there).
+//   replaces the button art of `replacements` (Xbox art there). Files in `overrides` (the port's own art for a
+//   setting, such as the beam struggle prompt of ee/struggle_buttons.h) replace any of the pack's by name.
 // - Images: DDS in BC1, BC2, BC3 or BC7 with their mip levels, kept compressed and read as UNORM (the
 //   game's colours are not sRGB-encoded). Other files are refused by name (counted, drawn as originals).
 // - Streaming (step 8): reader threads read and check the files (and a variant's colours), and a loader
@@ -38,7 +39,8 @@ namespace Vulkan {class Device;}
 class HdTexturePack {
 public:
     struct Image;
-    HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons=true);
+    HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons=true,
+                  const std::filesystem::path& overrides={});
     ~HdTexturePack();
     // A texture name as numbers ("<texture>-<palette>-<format>", or "<texture>-<format>" without a
     // palette), so a lookup needs no text.

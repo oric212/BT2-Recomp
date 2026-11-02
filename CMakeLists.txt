@@ -33,6 +33,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/services/sif_rpc.cpp
     runtime/services/sif_system.cpp
     runtime/ee/native_functions.cpp
+    runtime/ee/struggle_buttons.cpp
     runtime/services/disc_service.cpp
     runtime/services/fileio_service.cpp
     runtime/services/memory_card_service.cpp
@@ -170,7 +171,9 @@ if(BT2_BUILD_GENERATED_PROBE)
         # The launcher's logo goes into the assets folder next to the program, so it is always there.
         add_custom_command(TARGET ${bt2_player_program} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${bt2_player_program}>/assets"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/logo.png")
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/logo.png"
+            # The beam struggle prompt for "Beam struggles by buttons" (runtime/ee/struggle_buttons.h).
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/struggle-buttons" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/struggle-buttons")
     endforeach()
     target_compile_definitions(bt2-launcher PRIVATE BT2_LAUNCHER_ALWAYS=1)
     add_executable(bt2-vif1-blend-tests runtime/tests/vif1_blend_tests.cpp runtime/vu/vif1_blend.cpp)
@@ -221,6 +224,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-native-function-tests runtime/tests/native_function_tests.cpp)
     bt2_ee_target(bt2-native-function-tests)
     add_test(NAME native-functions COMMAND bt2-native-function-tests)
+    add_executable(bt2-struggle-buttons-tests runtime/tests/struggle_buttons_tests.cpp)
+    bt2_ee_target(bt2-struggle-buttons-tests)
+    add_test(NAME struggle-buttons COMMAND bt2-struggle-buttons-tests)
     # Single generated functions checked against handwritten expectations.
     function(bt2_generated_test target test_name source strict)
         add_executable(${target} runtime/tests/${source} ${ARGN})
@@ -394,7 +400,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_test(NAME disc-sector-bounds COMMAND bt2-disc-sector-tests)
 endif()
 
-foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-native-function-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
+foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-native-function-tests bt2-struggle-buttons-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
     if(TARGET ${bt2_ee_runtime_target})
         target_link_libraries(${bt2_ee_runtime_target} PRIVATE bt2-ee-runtime)
     endif()

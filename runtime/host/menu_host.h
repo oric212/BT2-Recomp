@@ -221,6 +221,7 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
     screen.entries.push_back(menuAction("Button mapping",[&host,&s,changed]{host.menu.open(buttonMapping(host,s,changed));},"The key and the gamepad button of each PS2 button."));
     screen.entries.push_back(number("Stick sensitivity",s.mapping.stick_sensitivity,50,200,10,"%",changed,"How far the game sees the sticks pushed. 100%: as they are."));
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
+    screen.entries.push_back(toggle("Beam struggles by buttons",s.struggle_buttons,changed,"Mash Square or Cross to push in a beam struggle; turning the sticks still works. From the next start."));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
     return screen;
 }

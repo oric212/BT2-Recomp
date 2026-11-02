@@ -441,7 +441,8 @@ WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::fun
 
 void GpuGsBackend::closeWindowPresenter() {state_->presenter.reset();}
 
-void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons) {
+void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons,
+                                    const std::filesystem::path& overrides) {
     if(!budget_bytes) {
         // The largest device-local heap's room left (VK_EXT_memory_budget), halved: the rest for the renderer and others.
         auto& device=*state_->device;
@@ -453,7 +454,7 @@ void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uin
                 room=std::max<std::uint64_t>(room,heaps[h].budget_size-heaps[h].device_usage);
         budget_bytes=std::clamp<std::uint64_t>(room/2,256ull<<20,8ull<<30);
     }
-    state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes,playstation_buttons);
+    state_->pack=std::make_shared<HdTexturePack>(*state_->device,folder,budget_bytes,playstation_buttons,overrides);
     replaceTextures(names);
 }
 

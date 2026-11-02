@@ -50,9 +50,10 @@ void GpuGsMirror::nameTextures(GsTextureNames& names) {
     named_.texture_names=&names;
 }
 
-void GpuGsMirror::enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons) {
+void GpuGsMirror::enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons,
+                                   const std::filesystem::path& overrides) {
     drain();
-    gpu_.enableHdTextures(pack,budget_bytes,names,playstation_buttons);
+    gpu_.enableHdTextures(pack,budget_bytes,names,playstation_buttons,overrides);
     named_.texture_names=&names;
 }
 

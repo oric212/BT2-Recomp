@@ -90,7 +90,8 @@ public:
     // it has one. The summary line says what was found, loaded and dropped. `budget_bytes` 0: half of the video
     // memory the card has free now (at least 256 MB, at most 8 GB). `playstation_buttons`: the pack's
     // PlayStation button art (else its Xbox art).
-    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true);
+    void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true,
+                          const std::filesystem::path& overrides={});
     std::string hdTextureSummary() const;
     std::string nativePassSummary() const; // gs/gpu/native/native_passes.h
     HdTexturePack* hdTexturePack(); // The pack (null without one), for tests.

@@ -15,6 +15,8 @@
 //   0x1038002) or 1 (query 0x101800C); port 1 is unchanged. Word 35 is the result.
 // - port requests (services 0x8000131E/F) {port, ...}: echo; word 35 is the result.
 // Results: 1 for the connected port 0, -23 for the empty port 1.
+// Tool runs only: with BT2_PAD2_SCRIPT or live input for port 2 (BT2_PAD2_LIVE), port 1 (the game's port 2)
+// answers as connected too, and its slot's buffers get that controller's blocks.
 // Each VBlank, once slot 0 is open and DBCMAN's detection has run (27 fields), the pad state is
 // written to the slot's two buffers alternately: a 128-byte block in the DualShock 2 report layout.
 
@@ -22,6 +24,9 @@ struct NativePadState {
     DualShock2 pad;
     std::array<std::uint32_t,2> buffers{};std::uint32_t table=0;bool open=false;
     unsigned fields_open=0,transfers=0;
+    // Tool runs: a second DualShock 2 in port 2 (slot 1), scripted (BT2_PAD2_SCRIPT) or live (on_pad2_input).
+    bool second=false;DualShock2 pad2;
+    std::array<std::uint32_t,2> buffers2{};bool open2=false;unsigned transfers2=0;
 };
 
 namespace {
@@ -41,7 +46,7 @@ bool EeRuntime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const Si
     if(r.send_size!=dbc_words*4 || r.recv_size!=dbc_words*4 || r.receive!=r.send_source)throw UnsupportedSyscall(0x77,context->pc);
     auto& state=nativePadState();
     std::array<std::uint32_t,dbc_words> w;for(unsigned n=0;n<dbc_words;++n)w[n]=read32(rdram,r.send_source+n*4);
-    const auto port_result=[&](std::uint32_t port){return port==0?dbc_connected:dbc_no_device;};
+    const auto port_result=[&](std::uint32_t port){return port==0 || state.second?dbc_connected:dbc_no_device;};
     bool startup=false;
     if(server.id==dbc_main) {
         switch(r.rpc_number) {
@@ -55,11 +60,12 @@ bool EeRuntime::nativePadCall(std::uint8_t* rdram,R5900Context* context,const Si
             if(w[2]>1)throw UnsupportedSyscall(0x77,context->pc);
             w[9]=w[2];
             if(w[2]==0){if(!state.table)throw UnsupportedSyscall(0x77,context->pc);state.buffers={w[10],w[11]};state.open=true;}
+            if(w[2]==1 && state.second){state.buffers2={w[10],w[11]};state.open2=true;}
             startup=true;break;
         case dbc_attach: w[1]=0;break;
         case dbc_query:
             if(w[1]!=0x1038002 && w[1]!=0x101800C)throw UnsupportedSyscall(0x77,context->pc);
-            if(w[0]==0){w[2]=1;w[3]=w[1]==0x1038002?3:1;}
+            if(w[0]==0 || state.second){w[2]=1;w[3]=w[1]==0x1038002?3:1;}
             w[dbc_result]=port_result(w[0]);break;
         default: throw UnsupportedSyscall(0x77,context->pc);
         }
@@ -81,6 +87,8 @@ NativePadState& EeRuntime::nativePadState() {
         native_pad_=std::make_shared<NativePadState>();
         // Repeatable input (pad_script.h); live input takes its place.
         if(const char* script=std::getenv("BT2_PAD_SCRIPT");script && !on_pad_input)native_pad_->pad.script=PadScript::parse(script);
+        if(const char* script=std::getenv("BT2_PAD2_SCRIPT");script && !on_pad2_input) {native_pad_->pad2.script=PadScript::parse(script);native_pad_->second=true;}
+        if(on_pad2_input)native_pad_->second=true;
     }
     return *native_pad_;
 }
@@ -92,6 +100,14 @@ bool EeRuntime::padButtonsHeld() const {
 void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
     auto& state=nativePadState();
     state.pad.advanceField(); // Scripted input changes at field starts; fields count every VBlank.
+    if(state.second) {
+        state.pad2.advanceField();
+        if(on_pad2_input) {
+            const auto input=on_pad2_input();
+            const PadInput before{std::uint16_t(~state.pad2.buttons),state.pad2.sticks};state.pad2.hold(input);
+            if(on_pad2_change && input!=before)on_pad2_change(state.pad2.field,input);
+        }
+    }
     if(on_pad_input) {
         const auto input=on_pad_input();
         const PadInput before{std::uint16_t(~state.pad.buttons),state.pad.sticks};state.pad.hold(input);
@@ -102,9 +118,15 @@ void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
         // Detection complete: the socket table reports the connected device.
         checkMemory(rdram,state.table,128);
         for(unsigned n=0;n<dbc_detected_table.size();++n)write32(rdram,state.table+n*4,dbc_detected_table[n]);
+        if(state.second)write32(rdram,state.table+4,1);
     }
     const auto buffer=state.buffers[state.transfers%2];checkMemory(rdram,buffer,128);
     const auto block=nativePadBlock(state.pad,state.transfers);
     for(unsigned n=0;n<block.size();++n)write32(rdram,buffer+n*4,block[n]);
     ++state.transfers;++native_pad_transfers;
+    if(state.open2) {
+        const auto buffer2=state.buffers2[state.transfers2%2];checkMemory(rdram,buffer2,128);
+        const auto block2=nativePadBlock(state.pad2,++state.transfers2);
+        for(unsigned n=0;n<block2.size();++n)write32(rdram,buffer2+n*4,block2[n]);
+    }
 }

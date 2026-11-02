@@ -82,13 +82,18 @@ std::optional<HdTexturePack::Key> HdTexturePack::key(const std::string& stem) {
     return k;
 }
 
-HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons)
+HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path& folder,std::uint64_t budget_bytes,bool playstation_buttons,
+                             const std::filesystem::path& overrides)
     :device_(device),budget_(budget_bytes) {
     const auto replacements=std::filesystem::is_directory(folder/"replacements")?folder/"replacements":folder;
     if(!std::filesystem::is_directory(replacements))throw std::runtime_error("HD textures: no pack folder at "+folder.string());
     for(const auto& file:ddsFiles(replacements))
         if(const auto k=key(file.stem().string()))if(!index_.emplace(*k,file).second)++duplicates;
     if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))if(const auto k=key(file.stem().string()))index_[*k]=file;
+    std::vector<Key> overridden;
+    if(!overrides.empty())for(const auto& file:ddsFiles(overrides))if(const auto k=key(file.stem().string())) {index_[*k]=file;overridden.push_back(*k);}
+    // The port's own few files are loaded from the start, so they are there at their first draw.
+    for(const auto& k:overridden)entry(&index_.at(k));
     for(const auto& named:index_)if(named.first.has_palette)variants_[Key{named.first.texture,0,named.first.format,false}].push_back(&named);
     for(unsigned n=0;n<reader_threads;++n)readers_.emplace_back([this]{read();});
     loader_=std::thread([this]{run();});

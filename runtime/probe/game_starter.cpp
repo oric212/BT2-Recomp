@@ -26,6 +26,7 @@ constexpr std::uint32_t modes=64;       // Entries of the entry's mode table.
 
 BattleStart configured;
 std::uint32_t configured_mode=0;
+bool configured_players=false; // BT2_START_SCREEN_PLAYERS: the screen's battles keep the sides the menus chose.
 std::uint32_t configured_episode[2]{};
 // The story map's queries (STORY_MODE_PLAN.md): has the player reached a marker, and which; in a
 // chase, has the player caught the enemy.
@@ -119,7 +120,12 @@ void startBattle(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) 
     call(rdram,context,runtime,setup_clear);
     const std::uint32_t system=read32(rdram,system_pointer),progress=read32(rdram,progress_pointer);
     std::memset(rdram+system+setup_flags,0,8);
-    for(std::uint32_t side=0;side<2;++side)call(rdram,context,runtime,side_control,{side,1,1,0}); // CPU on both sides.
+    // The CPU on both sides; with `players`, side 0 (1) or both sides (2) the controllers' (the setter's third argument 0, as
+    // the story's battles set it).
+    for(std::uint32_t side=0;side<2;++side) {
+        const bool played=configured.players>side;
+        call(rdram,context,runtime,side_control,{side,1,played?0u:1u,0});
+    }
     const std::uint32_t table=read32(rdram,system+character_table);
     for(std::uint32_t side=0;side<2;++side) {
         const std::uint32_t record=call(rdram,context,runtime,side_record,{side});
@@ -132,7 +138,10 @@ void startBattle(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) 
         write32(rdram,frame+64,read32(rdram,values));
         write32(rdram,frame+72,read32(rdram,values+4));
         setRegister(context,29,frame);
-        call(rdram,context,runtime,fighter_set,{record+8,character*variants_per_character+configured.variant[side],0,2,0,0,1,1});
+        // The fourth argument is the fighter's CPU level (fighter record word 2; 0 the player's, as the story sets it): the
+        // demo's 2, side 1's configured one, side 0's 0 when played.
+        const std::uint32_t level=configured.players>side?0u:side==1?configured.cpu_level:2u;
+        call(rdram,context,runtime,fighter_set,{record+8,character*variants_per_character+configured.variant[side],0,level,0,0,1,1});
         setRegister(context,29,stack);
     }
     const std::uint32_t stage=call(rdram,context,runtime,stage_choice,{configured.stage});
@@ -388,7 +397,7 @@ void touchedCharacters(std::uint8_t* rdram,R5900Context* context,PS2Runtime* run
 PS2Runtime::RecompiledFunction original_side_control=nullptr;
 constexpr std::uint32_t training_mode=61;
 void cpuSide(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
-    if(configured_mode!=training_mode)setRegister(context,6,1);
+    if(configured_mode!=training_mode && !configured_players)setRegister(context,6,1);
     original_side_control(rdram,context,runtime);
 }
 // The battles a screen leads to (WHOLE_GAME_COVERAGE_PLAN.md, step 6): the battle start (0x101BF0) and
@@ -458,7 +467,7 @@ void oneHealthBar(std::uint8_t* rdram,std::uint32_t system) {
         }
 }
 void battleStart(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
-    evenStrength(rdram,read32(rdram,system_pointer));
+    if(!configured_players)evenStrength(rdram,read32(rdram,system_pointer));
     if(configured_mode==ubz_mode)oneHealthBar(rdram,read32(rdram,system_pointer));
     original_battle_start(rdram,context,runtime);
     const std::uint32_t system=read32(rdram,system_pointer);
@@ -580,8 +589,8 @@ void fighterStep(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) 
     }
     original_fighter_step(rdram,context,runtime);
 }
-void installScreenStarter(EeRuntime& runtime,std::uint32_t mode) {
-    configured_mode=mode;
+void installScreenStarter(EeRuntime& runtime,std::uint32_t mode,bool players) {
+    configured_mode=mode;configured_players=players;
     original_entry=runtime.replaceFunction(overlay_entry,startScreen);
     original_side_control=runtime.replaceFunction(side_control,cpuSide);
     original_battle_start=runtime.replaceFunction(battle_start,battleStart);

@@ -20,6 +20,7 @@
 #include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
 #include "ee/game_patches.h"
+#include "ee/struggle_buttons.h"
 #include "ee/native_functions.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
@@ -260,7 +261,8 @@ int main(int argc, char** argv) {
         }
         // BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]: one line per call of those
         // functions from that display flip on: the flip, the calling address, the target, a0 to a3,
-        // f12, f13 and f0 (the previous call's result), and the four floats at each of a0 to a2 that points into RAM. Local evidence, not committed.
+        // f12, f13 and f0 (the previous call's result), v0 (the previous call's integer result, if nothing changed it since),
+        // and the four floats at each of a0 to a2 that points into RAM. Local evidence, not committed.
         static std::ofstream call_trace;
         if (const char* trace = std::getenv("BT2_EE_CALL_TRACE")) {
             const std::string text = trace;
@@ -269,16 +271,19 @@ int main(int argc, char** argv) {
             call_trace.open(text.substr(0, from));
             if (!call_trace) throw std::runtime_error("Cannot write the call trace " + text.substr(0, from));
             const unsigned first = static_cast<unsigned>(std::stoul(text.substr(from + 1, list - from - 1)));
-            std::vector<std::uint32_t> targets;
-            for (std::size_t at = list + 1; at < text.size();) {
+            // "a0=<hex>" in place of the addresses: every call whose a0 holds that value (a structure's users).
+            std::vector<std::uint32_t> targets;std::optional<std::uint32_t> a0_filter;
+            if (text.compare(list + 1, 3, "a0=") == 0) a0_filter = static_cast<std::uint32_t>(std::stoul(text.substr(list + 4), nullptr, 16));
+            else for (std::size_t at = list + 1; at < text.size();) {
                 const auto end = std::min(text.find(',', at), text.size());
                 targets.push_back(static_cast<std::uint32_t>(std::stoul(text.substr(at, end - at), nullptr, 16)));at = end + 1;
             }
-            runtime.on_guest_call = [&runtime, targets, first](const R5900Context& context, std::uint32_t source, std::uint32_t target) {
-                if (runtime.gs_display_flips < first || std::find(targets.begin(), targets.end(), target) == targets.end()) return;
+            runtime.on_guest_call = [&runtime, targets, a0_filter, first](const R5900Context& context, std::uint32_t source, std::uint32_t target) {
+                if (runtime.gs_display_flips < first) return;
+                if (a0_filter ? context.r[4].low != *a0_filter : std::find(targets.begin(), targets.end(), target) == targets.end()) return;
                 call_trace << std::dec << runtime.gs_display_flips << std::hex << ' ' << source << ' ' << target;
                 for (unsigned reg = 4; reg < 8; ++reg) call_trace << ' ' << context.r[reg].low;
-                call_trace << std::dec << ' ' << context.f[12] << ' ' << context.f[13] << ' ' << context.f[0];
+                call_trace << std::dec << ' ' << context.f[12] << ' ' << context.f[13] << ' ' << context.f[0] << std::hex << " v0 " << context.r[2].low << std::dec;
                 for (unsigned reg = 4; reg < 7; ++reg) {
                     const std::uint32_t address = context.r[reg].low;
                     if (address < 0x80000 || address > runtime.memory().size() - 16) continue;
@@ -368,6 +373,22 @@ int main(int argc, char** argv) {
                 if (!viewer.focused()) return PadInput{};
                 return mapInput(InputMapping{}, host_input->gamepad(), &HostInput::keyDown);
             };
+            // BT2_PAD2_LIVE (tool runs): a controller in port 2 too. "gamepad": the same input as port 1, so both
+            // sides do what the player does; "keyboard": the gamepad in port 1 and the keyboard in port 2.
+            if (const char* live = std::getenv("BT2_PAD2_LIVE")) {
+                const std::string_view source(live);
+                if (source == "gamepad") runtime.on_pad2_input = runtime.on_pad_input;
+                else if (source == "keyboard") {
+                    runtime.on_pad_input = [] {
+                        if (!viewer.focused()) return PadInput{};
+                        return mapInput(InputMapping{}, host_input->gamepad(), [](std::uint8_t) { return false; });
+                    };
+                    runtime.on_pad2_input = [] {
+                        if (!viewer.focused()) return PadInput{};
+                        return mapInput(InputMapping{}, GamepadState{}, &HostInput::keyDown);
+                    };
+                } else throw std::runtime_error("BT2_PAD2_LIVE is gamepad or keyboard");
+            }
             // BT2_PLAYER_SETTINGS=<settings file>: a player's run (host/player_session.h). Set by the game program only.
             if (const char* settings_path = std::getenv("BT2_PLAYER_SETTINGS")) {
                 player = std::make_unique<PlayerSession>(settings_path, viewer, *host_input, runtime.audio_mixer, pacer.get());
@@ -381,6 +402,17 @@ int main(int argc, char** argv) {
                     pad_record << (first ? "" : ",") << PadScript::step(field, input);first = false;
                     pad_record.flush();
                 };
+                // Live input in port 2: its steps in "<path>.pad2.txt", a script for BT2_PAD2_SCRIPT.
+                if (runtime.on_pad2_input) {
+                    static std::ofstream pad2_record;
+                    pad2_record.open(std::string(path) + ".pad2.txt");
+                    if (!pad2_record) throw std::runtime_error(std::string("Cannot write ") + path + ".pad2.txt");
+                    runtime.on_pad2_change = [](unsigned field, const PadInput& input) {
+                        static bool first = true;
+                        pad2_record << (first ? "" : ",") << PadScript::step(field, input);first = false;
+                        pad2_record.flush();
+                    };
+                }
             }
         }
 #endif
@@ -421,7 +453,14 @@ int main(int argc, char** argv) {
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.
             // BT2_HD_TEXTURES=<pack folder>[:<budget in MB; default: half the card's free video memory>]: draw with a
             // PCSX2 texture pack's replacements (docs/plans/graphics/HD_TEXTURES_PLAN.md). BT2_HD_BUTTONS=xbox: the
-            // pack's Xbox button art instead of its PlayStation art.
+            // pack's Xbox button art instead of its PlayStation art. BT2_TEXTURE_OVERRIDES=<folder>: the port's own
+            // replacements for a setting (the beam struggle prompt, ee/struggle_buttons.h), over the pack's; without a
+            // pack they are the only replacements.
+            const char* overrides = std::getenv("BT2_TEXTURE_OVERRIDES");
+            if (overrides && !std::getenv("BT2_HD_TEXTURES")) {
+                texture_name_log.names.count_drawn = !texture_name_log.path.empty();
+                gpu_mirror.enableHdTextures(overrides, 0, texture_name_log.names, true, overrides);
+            }
             if (const char* hd = std::getenv("BT2_HD_TEXTURES")) {
                 std::string folder = hd;std::uint64_t budget_mb = 0;
                 if (const auto colon = folder.rfind(':'); colon != std::string::npos && colon > 1) {budget_mb = std::stoull(folder.substr(colon + 1));folder.resize(colon);}
@@ -429,7 +468,8 @@ int main(int argc, char** argv) {
                 const char* buttons = std::getenv("BT2_HD_BUTTONS");
                 if (buttons && std::string_view(buttons) != "xbox" && std::string_view(buttons) != "playstation")
                     throw std::runtime_error("BT2_HD_BUTTONS must be xbox or playstation");
-                gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names, !buttons || std::string_view(buttons) == "playstation");
+                gpu_mirror.enableHdTextures(folder, budget_mb << 20, texture_name_log.names, !buttons || std::string_view(buttons) == "playstation",
+                                            overrides ? std::filesystem::path(overrides) : std::filesystem::path());
             }
             // BT2_SIXTY_FPS=1 (the setting "60 fps battles"): a picture between each two fight frames, drawn
             // from the game's commands by a second renderer (gs/gpu/in_between_frames.h); the game is unchanged.
@@ -454,7 +494,8 @@ int main(int argc, char** argv) {
             };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
                 if (std::getenv("BT2_VIF1_DUMP") || std::getenv("BT2_VIF1_REPLACE")) throw std::runtime_error("BT2_SIXTY_FPS excludes BT2_VIF1_DUMP and BT2_VIF1_REPLACE");
-                in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr,
+                in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling,
+                                                               std::getenv("BT2_HD_TEXTURES") != nullptr || std::getenv("BT2_TEXTURE_OVERRIDES") != nullptr,
                                                                std::string_view(sixty) == "replay");
                 in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
                 runtime.take_vif1_transfer = [](std::vector<std::uint32_t>& words) { return in_between->takeVif1Transfer(words); };
@@ -783,17 +824,31 @@ int main(int argc, char** argv) {
         registerKernelPayloads(runtime);
         // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
         if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
+        // BT2_STRUGGLE_BUTTONS=1 (the setting "Beam struggles by buttons"): Square and Cross push in a beam struggle.
+        if (const char* buttons = std::getenv("BT2_STRUGGLE_BUTTONS"); buttons && std::string_view(buttons) == "1")
+            std::cerr << (struggle_buttons::install(runtime) ? "Beam struggles by buttons: on." : "Beam struggles by buttons: the game's code differs; off.") << std::endl;
         // BT2_START_BATTLE / BT2_START_SCREEN / BT2_START_EPISODE: a CPU-against-CPU battle, a screen or a
         // story episode without input, for tool runs (game_starter.h).
         {
             const char* battle = std::getenv("BT2_START_BATTLE");
             const char* screen = std::getenv("BT2_START_SCREEN");
             if ((battle || screen) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN are for tool runs, not a player's session");
+            if ((std::getenv("BT2_PAD2_SCRIPT") || std::getenv("BT2_PAD2_LIVE")) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_PAD2_SCRIPT and BT2_PAD2_LIVE are for tool runs, not a player's session");
             const char* episode = std::getenv("BT2_START_EPISODE");
             if ((battle != nullptr) + (screen != nullptr) + (episode != nullptr) > 1) throw std::runtime_error("BT2_START_BATTLE, BT2_START_SCREEN and BT2_START_EPISODE exclude each other");
             if (episode && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_EPISODE is for tool runs, not a player's session");
-            if (battle) installBattleStarter(runtime, parseBattleStart(battle));
-            if (screen) installScreenStarter(runtime, parseScreenStart(screen));
+            if (battle) {
+                auto start = parseBattleStart(battle);
+                // BT2_START_BATTLE_PLAYER=1: side 0 is played with the controller in port 1 (to play into a situation and record it);
+                // 2: side 1 too, with the controller in port 2 (BT2_PAD2_SCRIPT, BT2_PAD2_LIVE).
+                if (const char* players = std::getenv("BT2_START_BATTLE_PLAYER")) {
+                    start.players = static_cast<std::uint32_t>(std::stoul(players));
+                    if (start.players > 2) throw std::runtime_error("BT2_START_BATTLE_PLAYER is 1 or 2");
+                }
+                if (const char* level = std::getenv("BT2_START_BATTLE_CPU_LEVEL")) start.cpu_level = static_cast<std::uint32_t>(std::stoul(level));
+                installBattleStarter(runtime, start);
+            }
+            if (screen) installScreenStarter(runtime, parseScreenStart(screen), std::getenv("BT2_START_SCREEN_PLAYERS") && std::string_view(std::getenv("BT2_START_SCREEN_PLAYERS")) == "1");
             if (episode) installEpisodeStarter(runtime, parseEpisodeStart(episode));
         }
         // BT2_FIGHT_UNCAPPED (tool runs; the 60 fps study, docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md): the fight's

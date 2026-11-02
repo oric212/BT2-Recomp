@@ -23,6 +23,8 @@ struct BattleStart {
     std::uint32_t variant[2]{};
     std::uint32_t stage = 0;
     std::uint32_t music = 9; // The music the versus menus chose with Wasteland.
+    std::uint32_t players = 0;   // Sides played with controllers instead of the CPU: 1 side 0, 2 both (BT2_START_BATTLE_PLAYER).
+    std::uint32_t cpu_level = 2; // Side 1's CPU level when the CPU plays it, fighter record word 2 (BT2_START_BATTLE_CPU_LEVEL; the demo's 2).
 };
 
 // "<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]", decimal; throws on other text.
@@ -31,7 +33,9 @@ void installBattleStarter(EeRuntime& runtime, const BattleStart& start);
 
 // A mode of the overlay's mode table, 1 to 64, decimal; throws on other text.
 std::uint32_t parseScreenStart(std::string_view text);
-void installScreenStarter(EeRuntime& runtime, std::uint32_t mode);
+// `players` (BT2_START_SCREEN_PLAYERS=1, to play a screen's battles): the sides the menus chose are kept, not
+// given to the CPU and evened.
+void installScreenStarter(EeRuntime& runtime, std::uint32_t mode, bool players = false);
 
 // BT2_START_EPISODE=<episode>[,<part>[,marker:<m>]]: the story routine with that episode, as after its opening
 // (STORY_MODE_PLAN.md). Decimal; throws on other text.
