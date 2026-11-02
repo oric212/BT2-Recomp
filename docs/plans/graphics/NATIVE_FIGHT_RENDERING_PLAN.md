@@ -46,7 +46,8 @@ The CPU fight, Release, headless, 2,000 flips at 16x, the 4x scanout, HD, widesc
 - **Tried and left out (load): palette loads that change nothing** (27% of them, 92% of all loads read the fighters' drawn lit palettes) kept from moving the names' generation: the same 484 names, 0.2% fewer namings, no measurable load (a different TEX0 names the draw again anyway).
 - **Done (load): the blended list in a buffer kept from picture to picture** (`blendVif1` into `InBetweenFrames::blended_`; a fight frame's list is about 2.4 MB, written to fresh pages each time before): pairing and blending 2.1 to 1.8 ms a picture, the in-between thread's processor time 5.44 to about 4.95 ms a picture; the same words blended.
 - **Done (load): VIF1's V4-32 unpacks copied whole** (`vif1.cpp`; the vertices and matrices, most of a fight's data, went element by element): the game's thread 0.45 ms a flip less in VIF1 (1.97 s against 2.85 to 2.97 over the CPU fight's 2,000 flips, with or without 60 fps), the in-between thread's VIF1/VU1 part 3.0 to 2.6 ms and its processor time about 4.95 to 4.53 ms a picture; the battle hash and VU1 verification unchanged.
-- **Next:** the user's choice between a fullscreen measurement for step 3 (a field less) and further load work: VIF1/VU1 run again (3.0 ms a picture) and the GS data handed to the second renderer's thread.
+- **Fullscreen after these** (2026-11-02, the story fight at the 60 fps settings with HD, 5,000 flips, the same frames): 13.5 ms per in-between picture (18.1 to 19.0 before them), 4,693 of 4,782 shown, 29.9 to 30.0 flips per second; the game's thread works 9.8 to 14 ms a flip (12 to 19 before). An in-between picture now fits in a field: step 3 can be tried.
+- **Next:** step 3 (a field less), or further load work: VIF1/VU1 run again (3.0 ms a picture) and the GS data handed to the second renderer's thread.
 
 ## The flicker the user saw (2026-11-01 and 02; found and fixed)
 
