@@ -65,8 +65,11 @@ measured.
 The user could not fire supers in a two-player fight. Measured: a super needs fighter flag word 0 bit 1, which
 0x20DBC0 sets only when the opponent is within lock-on range: the distance (0x210A20; 176 with the fighters apart)
 against the fighter's range (0x20DB08: command object `+0xFAC` plus 0x210D50; 72.4 in the measured fight). The HUD
-shows the same state ("Lock on!", the radar). The user expects supers from afar: whether the original fires them
-out of lock-on range is still to be checked (the user's knowledge, or PCSX2). With the fighters close, the Kamehameha fires in a two-player fight as in
+shows the same state ("Lock on!", the radar). The user expects supers from afar. Measured further: at a fight's
+start neither side is locked on in one- or two-player fights (the fighters start 176 apart, the radar green); in one
+player the flag is first set at flip 670, as the CPU flies in ("Lock on!"). The rule is the game's own code (the
+skill check 0x23D4E0 needs the lock flag), so supers beyond lock-on range are not enabled; to be changed only on
+evidence from the original (the user's play or PCSX2). With the fighters close, the Kamehameha fires in a two-player fight as in
 a one-player one; holding L2 charges ki, and holding it on spends a blast stock on the aura. Not a port fault as far
 as measured; not compared with PCSX2.
 
