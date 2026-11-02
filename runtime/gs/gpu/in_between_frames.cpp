@@ -142,9 +142,12 @@ InBetweenFrames::Event& InBetweenFrames::Frame::next(bool vif1) {
     return e;
 }
 
-void InBetweenFrames::vif1Transfer(std::span<const std::uint32_t> words) {
-    recording_.next(true).words.assign(words.begin(),words.end());
+std::span<const std::uint32_t> InBetweenFrames::takeVif1Transfer(std::vector<std::uint32_t>& words) {
+    // The event's words are not written again until its frame is recycled (events lie in a deque: they stay put).
+    auto& e=recording_.next(true);
+    e.words.swap(words);
     if(previous_fight_)hand();
+    return e.words;
 }
 
 void InBetweenFrames::gsInput(std::span<const std::uint8_t> data,bool from_vif1) {

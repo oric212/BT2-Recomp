@@ -442,7 +442,7 @@ int main(int argc, char** argv) {
             // A failure ends the in-between pictures, not the game.
             static const auto stop_in_between = [&runtime](const std::exception& e) {
                 std::cerr << "60 fps battles stopped at flip " << runtime.gs_display_flips << ": " << e.what() << std::endl;
-                runtime.on_vif1_transfer = nullptr;runtime.gs_sink.on_input = nullptr; // field_picture checks in_between.
+                runtime.take_vif1_transfer = nullptr;runtime.gs_sink.on_input = nullptr; // field_picture checks in_between.
                 in_between_started = false;in_between.reset();
             };
             if (const char* sixty = std::getenv("BT2_SIXTY_FPS")) {
@@ -450,7 +450,7 @@ int main(int argc, char** argv) {
                 in_between = std::make_unique<InBetweenFrames>(gpu_mirror, runtime.vif1, super_sampling, std::getenv("BT2_HD_TEXTURES") != nullptr,
                                                                std::string_view(sixty) == "replay");
                 in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
-                runtime.on_vif1_transfer = [](std::span<std::uint32_t> words) { in_between->vif1Transfer(words); };
+                runtime.take_vif1_transfer = [](std::vector<std::uint32_t>& words) { return in_between->takeVif1Transfer(words); };
                 runtime.gs_sink.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {

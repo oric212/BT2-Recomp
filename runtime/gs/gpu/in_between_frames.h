@@ -47,9 +47,10 @@ public:
     InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures,bool replay_only=false);
     ~InBetweenFrames();
 
-    // Recording, from the runtime's hooks: a VIF1 transfer before it runs, and each GS input (`from_vif1`:
-    // produced by the VIF1 transfer that runs now).
-    void vif1Transfer(std::span<const std::uint32_t> words);
+    // Recording, from the runtime's hooks: a VIF1 transfer before it runs (its vector taken, a spare buffer given
+    // back; the transfer then runs from the recorded words), and each GS input (`from_vif1`: produced by the VIF1
+    // transfer that runs now).
+    std::span<const std::uint32_t> takeVif1Transfer(std::vector<std::uint32_t>& words);
     void gsInput(std::span<const std::uint8_t> data,bool from_vif1);
 
     // After a display flip's own work (the main renderer's flip and picture): the frame recorded since

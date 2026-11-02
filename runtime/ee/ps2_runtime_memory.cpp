@@ -101,7 +101,8 @@ void EeRuntime::frameVif1Start(std::uint32_t value) {
     const auto codes=vif1.codes,directs=vif1.directs;const auto direct_qwords=vif1.direct_qwords;
     const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gs_sink.transfer(data);};
     if(on_vif1_transfer)on_vif1_transfer(words);
-    try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1_running=true;struct Done {bool& flag;~Done(){flag=false;}} done{vif1_running};vif1.run(words,to_gs,to_gs);}
+    const std::span<const std::uint32_t> list=take_vif1_transfer?take_vif1_transfer(words):std::span<const std::uint32_t>(words);
+    try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(list);vif1_running=true;struct Done {bool& flag;~Done(){flag=false;}} done{vif1_running};vif1.run(list,to_gs,to_gs);}
     catch(const Vif1Unsupported& u) {
         std::uint32_t tag=v.tadr;
         for(const auto& [first,address]:tags)if(first<=u.index)tag=address;

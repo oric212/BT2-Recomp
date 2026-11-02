@@ -23,7 +23,8 @@ void EeRuntime::frameVif1Codes(std::span<const std::uint32_t> words) {
     // VIF codes outside a display list (normal-mode DMA, FIFO writes): checked as a whole, then run.
     const Vu1::Kick to_gs=[this](std::span<const std::uint8_t> data) {FrameProfile::Scope timed(frame_profile.gs),of_vu1(frame_profile.vu1_gs);gs_sink.transfer(data);};
     std::vector<std::uint32_t> copy;
-    if(on_vif1_transfer) {copy.assign(words.begin(),words.end());on_vif1_transfer(copy);words=copy;}
+    if(on_vif1_transfer || take_vif1_transfer) {copy.assign(words.begin(),words.end());if(on_vif1_transfer)on_vif1_transfer(copy);words=copy;}
+    if(take_vif1_transfer)words=take_vif1_transfer(copy);
     try {FrameProfile::Scope timed(frame_profile.vif1);vif1.check(words);vif1_running=true;struct Done {bool& flag;~Done(){flag=false;}} done{vif1_running};vif1.run(words,to_gs,to_gs);}
     catch(const std::runtime_error& e) {std::cerr<<"VIF1 transfer stopped: "<<e.what()<<'\n';throw UnsupportedGuestMemory(0x10009000,4);}
 }
