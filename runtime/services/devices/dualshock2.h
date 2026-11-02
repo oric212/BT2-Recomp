@@ -25,10 +25,10 @@ public:
     std::vector<std::vector<std::uint8_t>> history; // Recent packets, for refusal diagnostics.
     PadScript script;unsigned field=0,script_steps=0;
 
-    // One logical field: a script step starting at this field sets the held buttons.
+    // One logical field: a script step starting at this field sets the held buttons and sticks.
     void advanceField() {
         ++field;
-        if(const auto pressed=script.at(field)) {buttons=std::uint16_t(~*pressed);++script_steps;}
+        if(const auto input=script.at(field)) {hold(*input);++script_steps;}
     }
     // Live input for the field that begins: replaces what the script holds.
     void hold(const PadInput& input) {buttons=std::uint16_t(~input.pressed);sticks=input.sticks;}

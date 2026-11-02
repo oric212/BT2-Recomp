@@ -21,8 +21,9 @@ namespace Vulkan {class Device;}
 //   replaces the button art of `replacements` (Xbox art there).
 // - Images: DDS in BC1, BC2, BC3 or BC7 with their mip levels, kept compressed and read as UNORM (the
 //   game's colours are not sRGB-encoded). Other files are refused by name (counted, drawn as originals).
-// - Streaming (step 8): a loader thread of its own reads the files and makes the GPU images (Granite
-//   thread index 3), so nothing is loaded on the game's thread. A renderer that first needs one waits for
+// - Streaming (step 8): reader threads read and check the files (and a variant's colours), and a loader
+//   thread of its own makes the GPU images (Granite thread index 3), so nothing is loaded on the game's
+//   thread. Files a renderer is waiting for are read before variants' colours. A renderer that first needs one waits for
 //   it a little, from a budget per frame (frame_wait: a new screen's many new files once held the GS thread
 //   5 ms each, about 90 ms at a stage's preview, which the music heard); one not ready by then is drawn as the
 //   original without the original being kept (texture_replacement_pending), so the replacement shows from
@@ -71,6 +72,7 @@ public:
     std::size_t names() const {return index_.size();}
     std::uint64_t budget() const {return budget_;}
     unsigned duplicates=0,refused=0,loaded=0,evicted=0,found=0,missing=0,waiting=0,late=0; // late: files not ready within the frame's wait.
+    double read_seconds=0,image_seconds=0; // The readers' time on files (summed over the threads), and the loader's on images.
     std::uint64_t resident_bytes=0,peak_bytes=0;
 
     // A pack's file name as PCSX2 reads it (the format word's bit 14 cleared), as a key; none for a name
@@ -80,6 +82,7 @@ public:
     // A DDS file's block-compressed levels; none for a file this does not read (exposed for tests).
     static std::optional<Dds> readDds(const std::vector<std::uint8_t>& file);
     static constexpr unsigned loader_thread_index=3;
+    static constexpr unsigned reader_threads=3,read_ahead_limit=8; // Files read and not yet made images, at most.
     static constexpr double frame_wait_seconds=0.004;
 
 private:
@@ -92,14 +95,16 @@ private:
     std::unordered_map<const std::filesystem::path*,Colours> colours_; // Variants' colours, kept (small).
     struct Entry;
     std::unordered_map<const std::filesystem::path*,Entry*> cache_; // By the file in index_ (its nodes stay put).
-    struct Job {const std::filesystem::path* file;bool colours;}; // Make the image, or read the colours only.
-    std::deque<Job> wanted_; // In the order the renderers asked.
-    std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;
+    struct Job {const std::filesystem::path* file;bool colours;}; // Make the image, or read the colours (and image) of a variant.
+    std::deque<Job> wanted_,variants_wanted_; // Files the renderers asked for, then variants; each in the order asked.
+    struct Read {Job job;std::optional<Dds> dds;std::optional<TextureColours> colours;};
+    std::deque<Read> read_; // Read by the readers, for the loader.
+    std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;unsigned reading_=0;
     double wait_left_=frame_wait_seconds; // Of this frame's wait for first uses.
     Entry* entry(const std::filesystem::path* file); // Under lock_: made when missing.
-    void load(Entry& entry); // On the loader thread, without lock_.
-    void makeImage(const Dds& dds,Entry& entry); // The same, from a file already read.
-    void run();
+    void makeImage(const Dds& dds,Entry& entry); // On the loader thread, without lock_.
+    void read(); // A reader thread.
+    void run(); // The loader thread.
     void evict(); // Under lock_.
-    std::thread loader_; // Last: it starts in the constructor.
+    std::vector<std::thread> readers_;std::thread loader_; // Last: they start in the constructor.
 };

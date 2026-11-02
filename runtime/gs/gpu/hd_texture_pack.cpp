@@ -90,12 +90,14 @@ HdTexturePack::HdTexturePack(Vulkan::Device& device,const std::filesystem::path&
         if(const auto k=key(file.stem().string()))if(!index_.emplace(*k,file).second)++duplicates;
     if(playstation_buttons)for(const auto& file:ddsFiles(folder/"Original Buttons"))if(const auto k=key(file.stem().string()))index_[*k]=file;
     for(const auto& named:index_)if(named.first.has_palette)variants_[Key{named.first.texture,0,named.first.format,false}].push_back(&named);
+    for(unsigned n=0;n<reader_threads;++n)readers_.emplace_back([this]{read();});
     loader_=std::thread([this]{run();});
 }
 
 HdTexturePack::~HdTexturePack() {
     {std::lock_guard<std::mutex> hold(lock_);stop_=true;}
     changed_.notify_all();
+    for(auto& reader:readers_)reader.join();
     loader_.join();
     for(auto& [name,entry]:cache_)delete entry;
 }
@@ -146,7 +148,7 @@ HdTexturePack::Choice HdTexturePack::closest(std::uint64_t texture,std::uint32_t
     for(const auto* variant:list->second) {
         auto& c=colours_[&variant->second];
         if(!c.done) {
-            if(!c.asked) {c.asked=true;wanted_.push_back({&variant->second,true});changed_.notify_all();}
+            if(!c.asked) {c.asked=true;variants_wanted_.push_back({&variant->second,true});changed_.notify_all();}
             loading=true;continue;
         }
         if(!c.colours)continue;
@@ -161,13 +163,7 @@ HdTexturePack::Choice HdTexturePack::closest(std::uint64_t texture,std::uint32_t
 
 void HdTexturePack::waitLoaded() {
     std::unique_lock<std::mutex> hold(lock_);
-    changed_.wait(hold,[this]{return wanted_.empty() && !busy_;});
-}
-
-void HdTexturePack::load(Entry& entry) {
-    std::ifstream in(entry.path,std::ios::binary);
-    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
-    if(const auto dds=readDds(file))makeImage(*dds,entry);
+    changed_.wait(hold,[this]{return wanted_.empty() && variants_wanted_.empty() && !reading_ && read_.empty() && !busy_;});
 }
 
 void HdTexturePack::makeImage(const Dds& dds,Entry& entry) {
@@ -193,59 +189,83 @@ std::optional<TextureColours> variantColours(const HdTexturePack::Dds& dds) {
 }
 }
 
+namespace {
+// A whole file in one read (a stream iterator takes it a byte at a time).
+std::vector<std::uint8_t> readFile(const std::filesystem::path& path) {
+    std::ifstream in(path,std::ios::binary|std::ios::ate);
+    if(!in)return {};
+    std::vector<std::uint8_t> file(std::size_t(in.tellg()));
+    in.seekg(0);
+    if(!in.read(reinterpret_cast<char*>(file.data()),std::streamsize(file.size())))return {};
+    return file;
+}
+}
+
+void HdTexturePack::read() {
+    giveWayToTheGame();
+    std::unique_lock<std::mutex> hold(lock_);
+    for(;;) {
+        // While the loader has enough read files waiting, reading more would only hold memory.
+        changed_.wait(hold,[this]{return stop_ || (read_.size()<read_ahead_limit && (!wanted_.empty() || !variants_wanted_.empty()));});
+        if(stop_)return;
+        auto& queue=wanted_.empty()?variants_wanted_:wanted_;
+        const auto job=queue.front();queue.pop_front();
+        if(!job.colours) {
+            const auto it=cache_.find(job.file);
+            if(it==cache_.end() || it->second->done)continue; // Dropped for the budget, or made from a variant's read.
+        }
+        ++reading_;hold.unlock();
+        // A variant's image is made from the same bytes as its colours (read ahead): the game relights a fighter
+        // gradually, so the variants of a texture it draws are soon drawn too.
+        Read done{job,{},{}};
+        const auto began=std::chrono::steady_clock::now();
+        try {
+            done.dds=readDds(readFile(*job.file));
+            if(job.colours && done.dds)done.colours=variantColours(*done.dds);
+        } catch(...) {done.dds.reset();}
+        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();
+        hold.lock();
+        --reading_;read_seconds+=seconds;
+        read_.push_back(std::move(done));
+        changed_.notify_all();
+    }
+}
+
 void HdTexturePack::run() {
     Util::register_thread_index(loader_thread_index);
     giveWayToTheGame();
+    std::unique_lock<std::mutex> hold(lock_);
     for(;;) {
-        Entry* e=nullptr;
-        {
-            std::unique_lock<std::mutex> hold(lock_);
-            changed_.wait(hold,[this]{return stop_ || !wanted_.empty();});
-            if(stop_)return;
-            const auto job=wanted_.front();wanted_.pop_front();
-            if(job.colours) {
-                busy_=true;hold.unlock();
-                // The variant's image is made from the same bytes too (read ahead): the game relights a fighter
-                // gradually, so the variants of a texture it draws are soon drawn too.
-                std::optional<TextureColours> colours;Entry ahead;ahead.path=*job.file;
-                try {
-                    std::ifstream in(*job.file,std::ios::binary);
-                    const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
-                    if(const auto dds=readDds(file)) {colours=variantColours(*dds);makeImage(*dds,ahead);}
-                } catch(...) {}
-                hold.lock();
-                auto& c=colours_[job.file];c.done=true;c.colours=colours;busy_=false;
-                if(ahead.image.handle && !cache_.contains(job.file)) {
-                    auto* made=new Entry;made->path=ahead.path;made->image=std::move(ahead.image);made->bytes=ahead.bytes;
-                    made->done=true;made->used=++tick_;++loaded;++read_ahead;
-                    cache_.emplace(job.file,made);
-                    resident_bytes+=made->bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
-                    if(resident_bytes>budget_)evict();
-                }
-                hold.unlock();changed_.notify_all();
-                continue;
+        changed_.wait(hold,[this]{return stop_ || !read_.empty();});
+        if(stop_)return;
+        // A file a renderer asked for before a variant's.
+        auto next=std::find_if(read_.begin(),read_.end(),[](const Read& r){return !r.job.colours;});
+        if(next==read_.end())next=read_.begin();
+        Read done=std::move(*next);read_.erase(next);
+        busy_=true;hold.unlock();
+        changed_.notify_all(); // A reader may read again.
+        Entry made;made.path=*done.job.file;
+        const auto began=std::chrono::steady_clock::now();
+        if(done.dds)try {makeImage(*done.dds,made);} catch(...) {made.image.handle.reset();}
+        done.dds.reset();
+        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();
+        hold.lock();
+        busy_=false;image_seconds+=seconds;
+        const auto keep=[&](Entry& e) {
+            e.image=std::move(made.image);e.bytes=made.bytes;e.used=++tick_;++loaded;
+            resident_bytes+=e.bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
+        };
+        if(done.job.colours) {
+            auto& c=colours_[done.job.file];c.done=true;c.colours=done.colours;
+            if(made.image.handle && !cache_.contains(done.job.file)) {
+                auto* entry=new Entry;entry->path=made.path;entry->done=true;keep(*entry);++read_ahead;
+                cache_.emplace(done.job.file,entry);
             }
-            const auto it=cache_.find(job.file);
-            if(it==cache_.end() || it->second->done)continue;
-            e=it->second;busy_=true;
+        } else if(const auto it=cache_.find(done.job.file);it!=cache_.end() && !it->second->done) {
+            auto& e=*it->second;e.done=true;e.none=!made.image.handle;
+            if(e.none)++refused;else keep(e);
         }
-        // Not under the lock: only this thread writes an entry that is not done, and nothing drops it.
-        Image image;std::uint64_t bytes=0;bool none=false;
-        {
-            Entry loading;loading.path=e->path;
-            try {load(loading);} catch(...) {}
-            none=!loading.image.handle;image=std::move(loading.image);bytes=loading.bytes;
-        }
-        {
-            std::lock_guard<std::mutex> hold(lock_);
-            e->done=true;e->none=none;busy_=false;
-            if(none)++refused;
-            else {
-                e->image=std::move(image);e->bytes=bytes;e->used=++tick_;++loaded;
-                resident_bytes+=bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
-                if(resident_bytes>budget_)evict();
-            }
-        }
+        if(resident_bytes>budget_)evict();
         changed_.notify_all();
     }
 }

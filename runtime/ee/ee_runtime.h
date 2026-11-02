@@ -553,7 +553,7 @@ public:
     std::function<void()> on_field_end; // At each VBLANK, before anything of the next field runs (state hash); never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
     bool padButtonsHeld() const; // A button of the controller in port 1 is held now (live or scripted).
-    std::function<void(unsigned field,std::uint16_t pressed)> on_pad_change; // Live input whose buttons changed, with the pad script's field number.
+    std::function<void(unsigned field,const PadInput& input)> on_pad_change; // Live input whose buttons or sticks changed, with the pad script's field number.
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,

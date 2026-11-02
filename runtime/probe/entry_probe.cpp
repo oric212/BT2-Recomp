@@ -357,8 +357,7 @@ int main(int argc, char** argv) {
 #endif
         // BT2_HOST_INPUT: the keyboard and a gamepad play the game while the viewer window has the focus
         // (default mapping, host/input_mapping.h); a pad script is then ignored.
-        // BT2_PAD_RECORD=<path>: the buttons played, written as a pad script that replays the session
-        // (stick positions are not part of a pad script).
+        // BT2_PAD_RECORD=<path>: the buttons and sticks played, written as a pad script that replays the session.
         static std::unique_ptr<HostInput> host_input;
         static std::unique_ptr<PlayerSession> player;
         static std::ofstream pad_record;
@@ -377,12 +376,9 @@ int main(int argc, char** argv) {
             if (const char* path = std::getenv("BT2_PAD_RECORD")) {
                 pad_record.open(path);
                 if (!pad_record) throw std::runtime_error(std::string("Cannot write ") + path);
-                runtime.on_pad_change = [](unsigned field, std::uint16_t pressed) {
+                runtime.on_pad_change = [](unsigned field, const PadInput& input) {
                     static bool first = true;
-                    pad_record << (first ? "" : ",") << field << ':';first = false;
-                    if (!pressed) pad_record << '-';
-                    for (unsigned bit = 0, any = 0; bit < 16; ++bit)
-                        if (pressed >> bit & 1) pad_record << (any++ ? "+" : "") << PadScript::names[bit];
+                    pad_record << (first ? "" : ",") << PadScript::step(field, input);first = false;
                     pad_record.flush();
                 };
             }

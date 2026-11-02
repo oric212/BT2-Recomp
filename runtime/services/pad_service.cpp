@@ -93,8 +93,9 @@ void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
     auto& state=nativePadState();
     state.pad.advanceField(); // Scripted input changes at field starts; fields count every VBlank.
     if(on_pad_input) {
-        const auto before=state.pad.buttons;state.pad.hold(on_pad_input());
-        if(on_pad_change && state.pad.buttons!=before)on_pad_change(state.pad.field,std::uint16_t(~state.pad.buttons));
+        const auto input=on_pad_input();
+        const PadInput before{std::uint16_t(~state.pad.buttons),state.pad.sticks};state.pad.hold(input);
+        if(on_pad_change && input!=before)on_pad_change(state.pad.field,input);
     }
     if(!state.open || ++state.fields_open<pad_detection_fields)return;
     if(!state.transfers) {

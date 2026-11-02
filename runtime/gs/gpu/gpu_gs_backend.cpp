@@ -557,5 +557,5 @@ std::string GpuGsBackend::hdTextureSummary() const {
     return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
         +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.variants_chosen)+" drawn palettes by a lit variant, "
         +std::to_string(p.variants_too_far)+" with none near enough, "+std::to_string(p.read_ahead)+" variants read ahead; "+std::to_string(p.loaded)+" loaded, "
-        +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB of a budget of "+std::to_string(p.budget()>>20)+" MB";
+        +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB of a budget of "+std::to_string(p.budget()>>20)+" MB; reading "+std::to_string(int(p.read_seconds*1000))+" ms (all readers), making images "+std::to_string(int(p.image_seconds*1000))+" ms";
 }

@@ -30,7 +30,7 @@ struct Settings {
     unsigned fast_forward_key=0x09; // Tab.
     unsigned fast_forward_button=GamepadState::Count;
     bool fast_forward_toggle=false;
-    bool fast_loading=false; // Silent loading waits run as fast as the machine allows (host/loading_skip.h), from the next start.
+    bool fast_loading=true; // Silent loading waits run as fast as the machine allows (host/loading_skip.h), from the next start.
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
     bool overlay_start_select=false;

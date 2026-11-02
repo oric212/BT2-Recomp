@@ -171,6 +171,7 @@ inline MenuScreen enhancements(Settings& s,std::function<void()> changed) {
     screen.entries.push_back(toggle("Light depth of field",s.light_depth_of_field,changed,"The fights' distance blurred at a quarter of the game's strength, so distant detail (and HD textures there) shows. Off: the game's own blur."));
     screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched."));
     screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. Turned off by itself if the processor cannot keep up."));
+    screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows; the game itself is unchanged."));
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {
@@ -191,7 +192,6 @@ inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> c
     screen.entries.push_back(key);screen.entries.push_back(button);
     screen.entries.push_back(menuAction("Clear the gamepad button",[&s,changed]{s.fast_forward_button=GamepadState::Count;changed();}));
     screen.entries.push_back(toggle("Switch instead of hold",s.fast_forward_toggle,changed,"Off: fast while held. On: each press switches it."));
-    screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows; the game itself is unchanged. From the next start."));
     return screen;
 }
 // Which key and which gamepad button each PS2 button is.

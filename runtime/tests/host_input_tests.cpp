@@ -74,5 +74,16 @@ int main() {
     check(device.buttons==std::uint16_t(~(1u<<bit("start"))) && device.sticks==live.sticks,"live input replaces it");
     const auto reply=device.transfer({1,0x42,0,0,0});
     check(reply[3]==std::uint8_t(~(1u<<bit("start"))) && reply[4]==0xFF,"a poll reports the live buttons");
+
+    // Pad scripts hold sticks too; a step that names none leaves them at rest, and a step reads back as written.
+    DualShock2 sticks;sticks.script=PadScript::parse("1:square+lx=00+ry=Ff,2:-");
+    sticks.advanceField();
+    check(sticks.buttons==std::uint16_t(~(1u<<bit("square"))) && sticks.sticks==std::array<std::uint8_t,4>{0x80,0xFF,0x00,0x80},"a script step sets the sticks");
+    sticks.advanceField();check(sticks.buttons==0xFFFF && sticks.sticks==std::array<std::uint8_t,4>{0x80,0x80,0x80,0x80},"the next step puts them at rest");
+    PadInput step;step.pressed=std::uint16_t(1u<<bit("cross"));step.sticks={0x80,0x80,0x12,0xAB};
+    check(PadScript::step(7,step)=="7:cross+lx=12+ly=ab" && PadScript::step(8,PadInput{})=="8:-","a step written as a script reads it");
+    check(PadScript::parse(PadScript::step(7,step)).at(7)==step,"a written step reads back");
+    bool refused=false;try {PadScript::parse("1:lx=0g");} catch(const std::runtime_error&) {refused=true;}
+    check(refused,"a stick position is two hex digits");
     std::cout<<"Host input checks passed.\n";
 }

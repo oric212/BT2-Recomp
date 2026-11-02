@@ -41,11 +41,17 @@ int main() {
         Settings s;check(Settings::parse(s.text())==s,"defaults read back");
         s.disc="a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
-        s.fast_forward_toggle=true;s.fast_loading=true;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
+        s.fast_forward_toggle=true;s.fast_loading=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
         s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings{}.hd_outline && Settings::parse("disc =\n").hd_outline,"the HD outline is on by default, also in older files");
         check(!Settings{}.light_depth_of_field && !Settings::parse("disc =\n").light_depth_of_field,"the game's own depth of field by default");
+        check(Settings{}.fast_loading && Settings::parse("disc =\n").fast_loading,"fast loading is on by default, also in older files");
+        {
+            // Fast loading is an enhancement, not part of fast forward.
+            Settings e;const auto screen=menu_screens::enhancements(e,[]{});
+            check(std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="Fast loading";}),"fast loading among the enhancements");
+        }
         {
             // The HD outline can be chosen only with super-sampling (it changes nothing without).
             Settings e;e.super_sampling=1;
