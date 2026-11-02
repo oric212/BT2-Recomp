@@ -108,8 +108,18 @@ void main()
 		uint source = vertex;
 		if ((flags & FLAG_TEXTURED) != 0u)
 		{
-			uvec2 texel = uvec2(ivec2(p) + layer.offset.xy) & pass.texture.xy;
-			uint t = palette(id_at(texel, s));
+			// The neighbour the game compares with, a texel away, taken a sample away in the same direction: the
+			// band then follows the boundary at the samples' width instead of standing a game pixel off it (the
+			// game's rule is one-sided, so a whole pixel's band beside a fighter read as a shadow copy at 16x).
+			// Samples lie on a side x side grid (x: bits 1 and 3 of the index, y: bits 0 and 2); at 1x the sample
+			// is the pixel.
+			uint side = pass.memory.y == 16u ? 4u : (pass.memory.y == 4u ? 2u : 1u);
+			ivec2 sub = ivec2(((s >> 1u) & 1u) | ((s >> 2u) & 2u), (s & 1u) | ((s >> 1u) & 2u));
+			ivec2 at = ivec2(p) * int(side) + sub + layer.offset.xy;
+			ivec2 inside = at & ivec2(int(side) - 1);
+			uint neighbour = uint(inside.y & 1) | (uint(inside.x & 1) << 1u) | (uint(inside.y >> 1) << 2u) | (uint(inside.x >> 1) << 3u);
+			uvec2 texel = uvec2(at >> int(findLSB(side))) & pass.texture.xy;
+			uint t = palette(id_at(texel, side == 1u ? s : neighbour));
 			source = (t & 0xFFFFFFu) | (((flags & FLAG_TCC) != 0u ? t : vertex) & 0xFF000000u); // DECAL
 		}
 		uint result = source;
