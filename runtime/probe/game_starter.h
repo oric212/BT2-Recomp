@@ -25,6 +25,9 @@ struct BattleStart {
     std::uint32_t music = 9; // The music the versus menus chose with Wasteland.
     std::uint32_t players = 0;   // Sides played with controllers instead of the CPU: 1 side 0, 2 both (BT2_START_BATTLE_PLAYER).
     std::uint32_t cpu_level = 2; // Side 1's CPU level when the CPU plays it, fighter record word 2 (BT2_START_BATTLE_CPU_LEVEL; the demo's 2).
+    // With both sides played: side 1 goes to the CPU (at cpu_level) when a beam struggle starts, so a scripted struggle
+    // is fought against the CPU's own push (BT2_START_BATTLE_STRUGGLE_CPU=1; docs/plans/input/BEAM_STRUGGLE_PLAN.md).
+    bool struggle_cpu = false;
 };
 
 // "<character>[:<variant>],<character>[:<variant>],<stage>[,<music>]", decimal; throws on other text.

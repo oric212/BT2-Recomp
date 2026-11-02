@@ -40,6 +40,15 @@ seen by the user in play.
   with the setting player 1 pushes 93.6 radians over 78 of 159 frames and wins; without it the same input pushes
   nothing and the other fighter wins.
 
+## Against the CPU (2026-11-03)
+
+The scripted struggle with side 1 handed to the CPU as it starts (`BT2_START_BATTLE_STRUGGLE_CPU=1`, CPU level 2), the
+player pressing Square at different rates: no input, player 0 against the CPU's 22.4 radians, the CPU wins; a press a
+second, 9.6 against 23.0, the CPU wins; 4 a second, 43.2 against 24.7, the player wins; 7.5 a second, 98.4 against
+17.8, the player wins (who took the hit seen in the pictures after the struggle). The CPU pushes about 5 radians a
+second, a stick turned 0.8 times a second; the even rate by presses is about 2 a second. Higher CPU levels not
+measured.
+
 ## Test tools made for it (tool runs only; refused in a player's session)
 
 - Pad scripts and `BT2_PAD_RECORD` hold stick positions (`lx=HH` and so on).
@@ -48,7 +57,7 @@ seen by the user in play.
   `<file>.pad2.txt`. Port 2 then answers as a connected DualShock 2 and the socket table's second word is set at
   detection (what brings the pad library's port 2 record to its ready state).
 - `BT2_START_BATTLE_PLAYER=1|2` (side 0, or both sides, played by controllers), `BT2_START_BATTLE_CPU_LEVEL` (side 1's
-  CPU level), `BT2_START_SCREEN_PLAYERS=1` (a screen's battles keep the sides the menus chose).
+  CPU level), `BT2_START_BATTLE_STRUGGLE_CPU=1` (side 1 to the CPU when a struggle starts), `BT2_START_SCREEN_PLAYERS=1` (a screen's battles keep the sides the menus chose).
 - The call trace prints `v0` and takes `a0=<hex>` (every call with that first argument).
 
 ## Two-player supers (2026-11-03)

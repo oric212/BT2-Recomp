@@ -522,9 +522,24 @@ BattleStart parseBattleStart(std::string_view text) {
     return start;
 }
 
+// The struggle's push measure (ee/struggle_buttons.h) runs only in a beam struggle: its first call hands side 1 to the
+// CPU (the side setter's CPU byte, side record +0x1C4, and the fighter's CPU level, fighter record word 2).
+constexpr std::uint32_t struggle_measure=0x217E58,side_cpu=0x1C4;
+PS2Runtime::RecompiledFunction original_measure=nullptr;
+bool struggle_handed_over=false;
+void struggleHandover(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
+    if(!struggle_handed_over) {
+        struggle_handed_over=true;
+        const std::uint32_t side1=read32(rdram,system_pointer)+side_records+side_record_size;
+        rdram[side1+side_cpu]=1;write32(rdram,side1+fighter_records+2*4,configured.cpu_level);
+    }
+    original_measure(rdram,context,runtime);
+}
+
 void installBattleStarter(EeRuntime& runtime,const BattleStart& start) {
     configured=start;
     original_entry=runtime.replaceFunction(overlay_entry,startBattle);
+    if(start.struggle_cpu)original_measure=runtime.replaceFunction(struggle_measure,struggleHandover);
 }
 
 std::uint32_t parseScreenStart(std::string_view text) {

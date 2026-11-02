@@ -859,6 +859,7 @@ int main(int argc, char** argv) {
                     if (start.players > 2) throw std::runtime_error("BT2_START_BATTLE_PLAYER is 1 or 2");
                 }
                 if (const char* level = std::getenv("BT2_START_BATTLE_CPU_LEVEL")) start.cpu_level = static_cast<std::uint32_t>(std::stoul(level));
+                start.struggle_cpu = std::getenv("BT2_START_BATTLE_STRUGGLE_CPU") && std::string_view(std::getenv("BT2_START_BATTLE_STRUGGLE_CPU")) == "1";
                 installBattleStarter(runtime, start);
             }
             if (screen) installScreenStarter(runtime, parseScreenStart(screen), std::getenv("BT2_START_SCREEN_PLAYERS") && std::string_view(std::getenv("BT2_START_SCREEN_PLAYERS")) == "1");
