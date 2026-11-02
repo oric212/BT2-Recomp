@@ -206,7 +206,7 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
         const auto blend_begin=Clock::now();
         const Event* older=stream_.next<stream_.older.size()?stream_.older[stream_.next]:nullptr;
         ++stream_.next;
-        std::optional<std::vector<std::uint32_t>> mid;
+        bool mid=false; // The list blended into blended_.
         if(stream_.paired && older) {
             const auto* x=older->walk();const auto* y=e->walk();
             const auto pairing=x && y?pairVif1(*x,*y):std::nullopt;
@@ -214,14 +214,14 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
             else if(cameraTurn(*pairing,older->words,e->words)<0.906f) {++camera_cuts;stream_.paired=false;}
             else {
                 std::size_t refused=0,words=0;
-                mid=blendVif1(*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused);
+                blendVif1(blended_,*pairing,older->words,e->words,scan_replay?1.0f:0.5f,&words,nullptr,&refused);mid=true;
                 refused_pairs+=refused;blended_words+=words;
-                if(!sameScene(refused,pairing->pairs.size())) {++scene_changes;stream_.paired=false;mid.reset();} // vu/vif1_blend.h
+                if(!sameScene(refused,pairing->pairs.size())) {++scene_changes;stream_.paired=false;mid=false;} // vu/vif1_blend.h
             }
         } else stream_.paired=false;
         const auto run_begin=Clock::now();
         stream_.split.blend+=std::chrono::duration<double>(run_begin-blend_begin).count();
-        stream_.vif1->run(mid?std::span<const std::uint32_t>(*mid):std::span<const std::uint32_t>(e->words),to_gs,to_gs);
+        stream_.vif1->run(mid?std::span<const std::uint32_t>(blended_):std::span<const std::uint32_t>(e->words),to_gs,to_gs);
         stream_.split.run+=since(run_begin);
     }
     const auto submit_begin=Clock::now();

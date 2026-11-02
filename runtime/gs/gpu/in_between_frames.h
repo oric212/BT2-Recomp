@@ -131,6 +131,7 @@ private:
     // events in order and how many were used, whether the lists paired so far, the time spent.
     struct Stream {std::optional<Vif1> vif1;std::vector<const Event*> older;std::size_t next=0;bool paired=true;double seconds=0;Split split;};
     Stream stream_;
+    std::vector<std::uint32_t> blended_; // The VIF1 list being run, blended (the thread's; its storage reused).
     void hand(); // The game's thread: the recorded events not yet handed go to the thread.
     void drawEvents(const std::vector<const Event*>& events,bool first,const Vif1* start,unsigned slot); // The thread: blends and runs them.
     GpuGsMirror& primary_;

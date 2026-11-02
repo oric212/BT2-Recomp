@@ -158,11 +158,11 @@ std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_
     return blendVif1(*pairing,older,newer,t,blended,unmatched,refused);
 }
 
-std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
-                                     std::size_t* blended,std::size_t* unmatched,std::size_t* refused) {
+void blendVif1(std::vector<std::uint32_t>& out,const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
+               std::size_t* blended,std::size_t* unmatched,std::size_t* refused) {
     const auto* a=pairing.older;const auto* b=pairing.newer;const auto* pairs=&pairing.pairs;
-    std::vector<std::uint32_t> out(newer.begin(),newer.end());
-    if(t>=1)return out; // The newer list as it is.
+    out.assign(newer.begin(),newer.end());
+    if(t>=1)return; // The newer list as it is.
     std::size_t changed=0,others=0;
     // Each camera's screen matrices (its first eight quadwords, as the newer frame has them) and their blend.
     struct Camera {std::array<std::uint32_t,32> newer,blend;};
@@ -217,6 +217,12 @@ std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const 
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();
     if(refused)*refused=others;
+}
+
+std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
+                                     std::size_t* blended,std::size_t* unmatched,std::size_t* refused) {
+    std::vector<std::uint32_t> out;
+    blendVif1(out,pairing,older,newer,t,blended,unmatched,refused);
     return out;
 }
 

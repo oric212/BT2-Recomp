@@ -41,6 +41,10 @@ std::optional<Vif1Pairing> pairVif1(const std::vector<Vif1Unpack>& older,const s
 // blended.
 std::vector<std::uint32_t> blendVif1(const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
                                      std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t* refused=nullptr);
+// The same into `out`, whose storage is reused (a fight frame's list is about 2.4 MB: a new one each time is written
+// to fresh pages).
+void blendVif1(std::vector<std::uint32_t>& out,const Vif1Pairing& pairing,std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
+               std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t* refused=nullptr);
 // The same from the lists alone; nullopt when a list cannot be walked or the two do not pair.
 std::optional<std::vector<std::uint32_t>> blendVif1(std::span<const std::uint32_t> older,std::span<const std::uint32_t> newer,float t,
                                                     std::size_t* blended=nullptr,std::size_t* unmatched=nullptr,std::size_t max_edits=1024,
