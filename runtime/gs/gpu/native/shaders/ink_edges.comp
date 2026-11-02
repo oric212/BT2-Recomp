@@ -108,14 +108,14 @@ void main()
 		uint source = vertex;
 		if ((flags & FLAG_TEXTURED) != 0u)
 		{
-			// The neighbour the game compares with, a texel away, taken a sample away in the same direction: the
-			// band then follows the boundary at the samples' width instead of standing a game pixel off it (the
-			// game's rule is one-sided, so a whole pixel's band beside a fighter read as a shadow copy at 16x).
-			// Samples lie on a side x side grid (x: bits 1 and 3 of the index, y: bits 0 and 2); at 1x the sample
-			// is the pixel.
+			// The ids a game pixel apart as the game compares them, with every read moved half a game pixel left:
+			// the band keeps the game's width (so its copies one and two pixels down join on slanted edges) but is
+			// centred on the boundary instead of lying a whole pixel beside it (the game's rule is one-sided, and
+			// a pixel's band outside a fighter's left side read as a shadow copy at 16x). Samples lie on a
+			// side x side grid (x: bits 1 and 3 of the index, y: bits 0 and 2); at 1x the sample is the pixel.
 			uint side = pass.memory.y == 16u ? 4u : (pass.memory.y == 4u ? 2u : 1u);
 			ivec2 sub = ivec2(((s >> 1u) & 1u) | ((s >> 2u) & 2u), (s & 1u) | ((s >> 1u) & 2u));
-			ivec2 at = ivec2(p) * int(side) + sub + layer.offset.xy;
+			ivec2 at = ivec2(p) * int(side) + sub + layer.offset.xy * int(side) - ivec2(int(side >> 1u), 0);
 			ivec2 inside = at & ivec2(int(side) - 1);
 			uint neighbour = uint(inside.y & 1) | (uint(inside.x & 1) << 1u) | (uint(inside.y >> 1) << 2u) | (uint(inside.x >> 1) << 3u);
 			uvec2 texel = uvec2(at >> int(findLSB(side))) & pass.texture.xy;
