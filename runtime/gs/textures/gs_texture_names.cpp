@@ -3,6 +3,8 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 #include <algorithm>
+#include <array>
+#include <emmintrin.h>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -366,17 +368,29 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
     auto put=[&](unsigned entry,std::uint32_t value){clut_[entry]=std::uint16_t(value);clut_[entry+256]=std::uint16_t(value>>16);};
+    // A drawn page is read from its latest copy; the palette lies in at most two pages, decided once each.
+    const bool copy_first=from_drawn && pageDrawn(first_page) && copied_[first_page];
+    const bool copy_last=from_drawn && pageDrawn(last_page) && copied_[last_page];
     auto word=[&](std::size_t w)->std::uint32_t {
-        const unsigned page=unsigned(w/2048);
-        return from_drawn && pageDrawn(page) && copied_[page]?drawn_copy_[w]:memory_[w]; // A drawn page: its latest copy.
+        return (unsigned(w/2048)==first_page?copy_first:copy_last)?drawn_copy_[w]:memory_[w];
     };
-    if(f->palette==16) {
-        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,word(ct32Word(cbp,1,k%8,k/8)));
-    } else {
-        for(unsigned i=(csa&15)*16;i<256;++i) {
+    // The entries' words: CBP's first word plus each entry's place in the 16 x 16 (or 8 x 2) pixels of a PSMCT32 page
+    // one page wide (ct32Word with x and y below 32), in entry order (for 256 entries with index bits 3 and 4 swapped).
+    struct Offsets {std::array<std::uint32_t,16> small;std::array<std::uint32_t,256> large;};
+    static const Offsets offsets=[] {
+        Offsets o{};
+        for(unsigned k=0;k<16;++k)o.small[k]=std::uint32_t(ct32Word(0,1,k%8,k/8));
+        for(unsigned i=0;i<256;++i) {
             const unsigned s=(i&~0x18u)|((i&0x08u)<<1)|((i&0x10u)>>1);
-            put(i,word(ct32Word(cbp,1,s%16,s/16)));
+            o.large[i]=std::uint32_t(ct32Word(0,1,s%16,s/16));
         }
+        return o;
+    }();
+    const std::size_t base=std::size_t(cbp)*64;
+    if(f->palette==16) {
+        for(unsigned k=0;k<16;++k)put((csa&15)*16+k,word((base+offsets.small[k])%memory_words));
+    } else {
+        for(unsigned i=(csa&15)*16;i<256;++i)put(i,word((base+offsets.large[i])%memory_words));
     }
 }
 
@@ -596,11 +610,21 @@ std::uint64_t GsTextureNames::textureHash(std::uint64_t tex0,std::uint64_t texa,
                     +blockInPage(psm,bx%f.blocks_w,by%f.blocks_h))%max_blocks;
                 XXH3_64bits_update(&state,&memory_[block*64],256);
                 if(f.palette) {
-                    const auto* b=reinterpret_cast<const std::uint8_t*>(&memory_[block*64]);
-                    std::uint8_t lo=255,hi=0;
-                    if(psm==psm_t8)for(unsigned k=0;k<256;++k){lo=std::min(lo,b[k]);hi=std::max(hi,b[k]);}
-                    else for(unsigned k=0;k<256;++k){const std::uint8_t l=b[k]&15,h=b[k]>>4;lo=std::min({lo,l,h});hi=std::max({hi,l,h});}
-                    low=std::min(low,unsigned(lo));high=std::max(high,unsigned(hi));
+                    // The block's lowest and highest index, 16 bytes at a time (4-bit: both nibbles of each byte).
+                    const auto* b=reinterpret_cast<const __m128i*>(&memory_[block*64]);
+                    __m128i lo=_mm_set1_epi8(-1),hi=_mm_setzero_si128();
+                    const __m128i nibble=_mm_set1_epi8(15);
+                    for(unsigned k=0;k<16;++k) {
+                        const __m128i v=_mm_loadu_si128(b+k);
+                        if(psm==psm_t8) {lo=_mm_min_epu8(lo,v);hi=_mm_max_epu8(hi,v);}
+                        else {
+                            const __m128i l=_mm_and_si128(v,nibble),h=_mm_and_si128(_mm_srli_epi16(v,4),nibble);
+                            lo=_mm_min_epu8(lo,_mm_min_epu8(l,h));hi=_mm_max_epu8(hi,_mm_max_epu8(l,h));
+                        }
+                    }
+                    alignas(16) std::uint8_t los[16],his[16];
+                    _mm_store_si128(reinterpret_cast<__m128i*>(los),lo);_mm_store_si128(reinterpret_cast<__m128i*>(his),hi);
+                    for(unsigned k=0;k<16;++k) {low=std::min(low,unsigned(los[k]));high=std::max(high,unsigned(his[k]));}
                 }
             }
     }
