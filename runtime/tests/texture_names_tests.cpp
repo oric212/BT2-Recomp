@@ -30,6 +30,24 @@ void upload(GsTextureNames& names,unsigned bp,unsigned bw,unsigned psm,unsigned 
 
 int main() {
     {
+        // A 32-bit upload at an unaligned place, in two pieces split mid-pixel: every pixel at its word.
+        GsTextureNames names;
+        const unsigned w=133,h=5,x0=3,y0=30;
+        std::vector<std::uint8_t> pixels(std::size_t(w)*h*4);
+        for(std::size_t i=0;i<pixels.size();++i)pixels[i]=std::uint8_t(i*31+7);
+        names.reg(0x50,(std::uint64_t(0x40)<<32)|(std::uint64_t(4)<<48));
+        names.reg(0x51,(std::uint64_t(x0)<<32)|(std::uint64_t(y0)<<48));
+        names.reg(0x52,std::uint64_t(w)|(std::uint64_t(h)<<32));
+        names.reg(0x53,0);
+        const std::size_t split=1001;
+        names.image(std::span(pixels).first(split));names.image(std::span(pixels).subspan(split));
+        const auto& m=names.memory();
+        for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x) {
+            std::uint32_t v;std::memcpy(&v,&pixels[(std::size_t(y)*w+x)*4],4);
+            require(m[GsCommandSink::ct32Word(0x40,4,x0+x,y0+y)]==v);
+        }
+    }
+    {
         // A 4-bit 64 x 32 texture is four 32 x 16 blocks, hashed in block order: blocks 0 and 2 across the
         // first block row (4-bit pages place blocks 0, 2, 8, 10 across), then 1 and 3.
         GsTextureNames names;

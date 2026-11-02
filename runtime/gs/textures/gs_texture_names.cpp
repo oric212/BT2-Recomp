@@ -222,11 +222,17 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
         if(psm_==psm_ct32 && !partial_bytes_) {
             // Whole 32-bit pixels (the films' pictures): written directly, each 8-pixel block column marked once.
             const unsigned count=unsigned(std::min<std::size_t>(w_-x_,(data.size()-at)/4));
-            for(unsigned n=0;n<count;++n,++x_,at+=4) {
+            for(unsigned n=0;n<count;) {
                 const unsigned x=(x0_+x_)%2048;
                 const std::size_t at_word=(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words;
-                std::memcpy(&memory_[at_word],data.data()+at,4);
                 if(n==0 || x%8==0)mark(at_word);
+                if(x%8==0 && count-n>=8) {
+                    // A block's row of 8 pixels: words 0, 1, 4, 5, 8, 9, 12 and 13 from its first, in pairs.
+                    for(unsigned k=0;k<4;++k)std::memcpy(&memory_[at_word+k*4],data.data()+at+k*8,8);
+                    n+=8;x_+=8;at+=32;continue;
+                }
+                std::memcpy(&memory_[at_word],data.data()+at,4);
+                ++n;++x_;at+=4;
             }
             uploaded_pixels+=count; // A pixel split between two pieces goes through the general path below.
         }
@@ -389,6 +395,11 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     const std::size_t base=std::size_t(cbp)*64;
     if(f->palette==16) {
         for(unsigned k=0;k<16;++k)put((csa&15)*16+k,word((base+offsets.small[k])%memory_words));
+    } else if(copy_first==copy_last && base+offsets.large[255]<memory_words) {
+        // Both pages from one source and no wrap at the end of memory (the 16 x 16 pixels' last word is the
+        // largest): read in place.
+        const std::uint32_t* from=(copy_first?drawn_copy_.data():memory_.data())+base;
+        for(unsigned i=(csa&15)*16;i<256;++i)put(i,from[offsets.large[i]]);
     } else {
         for(unsigned i=(csa&15)*16;i<256;++i)put(i,word((base+offsets.large[i])%memory_words));
     }
