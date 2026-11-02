@@ -179,6 +179,11 @@ void GpuGsBackend::initShared(GpuGsBackend& primary,unsigned super_sampling) {
     // Its flushes only submit: the primary moves the shared device to its next frame context, so this
     // renderer can flush while the primary's frame is open.
     state->gs.set_frame_boundaries(false);
+    // The game's local->host transfers are answered by the primary; this renderer replays them with the rest of the
+    // stream, but nothing reads its data back, so it never waits for the GPU to finish the source (that wait, about
+    // 60 ms each, stalled its GS thread: an in-between picture lost).
+    ParallelGS::Hacks hacks;hacks.unsynced_readbacks=true;
+    state->gs.set_hacks(hacks);
     state->native=std::make_unique<NativePasses>(state->gs,*state->device);
     state_=std::move(state);
 }
