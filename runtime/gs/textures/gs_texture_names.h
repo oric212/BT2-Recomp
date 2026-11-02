@@ -34,6 +34,9 @@ public:
     GsTextureNames():memory_(1024*1024) {regs_[0x1A]=1;} // PRMODECONT starts at 1: PRIM's attributes apply.
     // A GS register write as the GIF delivers it (A+D, REGLIST, decoded PACKED).
     void reg(unsigned reg,std::uint64_t value);
+    // A run of PACKED vertices (gs_command_sink.cpp): the same as their register writes one by one. `last`: each
+    // register's last value (ST, RGBAQ, the XYZ registers written); `kicks`: the drawing XYZ2 or XYZF2 values in order.
+    void vertexRun(std::span<const std::pair<unsigned,std::uint64_t>> last,std::span<const std::uint64_t> kicks);
     // IMAGE data of the host->local transfer in progress.
     void image(std::span<const std::uint8_t> data);
 
@@ -150,5 +153,8 @@ private:
     std::array<std::uint64_t,3> vertices_{};unsigned vertex_count_=0;
     std::vector<std::uint32_t> drawn_copy_;
     void vertex(std::uint64_t xyz);
+    // Whether a primitive of `kicks`, or of them with the last vertices before them, may cover a watched palette page:
+    // checked over all of them at once (a primitive's area lies in theirs), so a run that cannot is not taken apart.
+    bool runReachesPalettes(std::span<const std::uint64_t> kicks) const;
     bool pageDrawn(unsigned page) const {return page_drawn_[page]>page_written_[page] && page_drawn_[page]>all_written_;}
 };

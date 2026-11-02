@@ -294,6 +294,41 @@ void GsTextureNames::vertex(std::uint64_t xyz) {
         }
 }
 
+void GsTextureNames::vertexRun(std::span<const std::pair<unsigned,std::uint64_t>> last,std::span<const std::uint64_t> kicks) {
+    for(const auto& [reg,value]:last)regs_[reg]=value; // None of them is read by vertex or kick.
+    if(runReachesPalettes(kicks)) {for(const auto xyz:kicks) {vertex(xyz);kick();}return;}
+    // No page is marked: vertex only keeps the last vertices.
+    for(const auto xyz:kicks) {vertices_[vertex_count_++%3]=xyz;kick();}
+}
+
+bool GsTextureNames::runReachesPalettes(std::span<const std::uint64_t> kicks) const {
+    if(clut_pages_.none() || kicks.empty())return false;
+    const auto prim=(regs_[0x1A]&1)?regs_[0x00]:regs_[0x1B];
+    const unsigned context=unsigned((prim>>9)&1);
+    const auto frame=regs_[0x4C+context];
+    const unsigned fbp=unsigned(frame&0x1FF),fbw=unsigned((frame>>16)&63),fpsm=unsigned((frame>>24)&63);
+    unsigned page_w=64,page_h;
+    if(fpsm==0x00 || fpsm==0x01 || fpsm==0x30 || fpsm==0x31)page_h=32;
+    else if(fpsm==0x02 || fpsm==0x0A || fpsm==0x32 || fpsm==0x3A)page_h=64;
+    else return false; // vertex marks nothing in other formats.
+    const auto offset=regs_[0x18+context];
+    const int ofx=int(offset&0xFFFF),ofy=int((offset>>32)&0xFFFF);
+    int x0=INT32_MAX,y0=INT32_MAX,x1=INT32_MIN,y1=INT32_MIN;
+    const auto take=[&](std::uint64_t v) {
+        const int x=(int(v&0xFFFF)-ofx)>>4,y=(int((v>>16)&0xFFFF)-ofy)>>4;
+        x0=std::min(x0,x);y0=std::min(y0,y);x1=std::max(x1,x);y1=std::max(y1,y);
+    };
+    for(const auto v:kicks)take(v);
+    for(const auto v:vertices_)take(v); // Earlier vertices a primitive of the run may take (all three: a superset).
+    if(x1<0 || y1<0)return false;
+    x0=std::max(x0,0);y0=std::max(y0,0);
+    if(x1-x0>2048 || y1-y0>2048)return true; // Left to vertex.
+    for(int py=y0/int(page_h);py<=y1/int(page_h);++py)
+        for(int px=x0/int(page_w);px<=x1/int(page_w);++px)
+            if(clut_pages_[(fbp+unsigned(py)*std::max(fbw,1u)+unsigned(px))%512])return true;
+    return false;
+}
+
 std::vector<unsigned> GsTextureNames::drawnPalettePages() const {
     std::vector<unsigned> pages;
     for(unsigned page=0;page<512;++page)if(clut_pages_[page] && pageDrawn(page))pages.push_back(page);

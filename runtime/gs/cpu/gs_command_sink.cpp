@@ -58,8 +58,14 @@ void GsCommandSink::run(std::span<const std::uint8_t> data,bool apply) {
             if(!texture_names) {
                 // The renderer draws: this follows only what is set through A+D (the transfer registers,
                 // FINISH); vertex and texture data pass by unread.
-                for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
+                bool address_data=false;
+                for(unsigned r=0;r<nreg;++r)address_data=address_data || ((regs>>(4*r))&15)==0xE;
+                if(!address_data)at+=std::size_t(nloop)*nreg*16;
+                else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16)
                     if(((regs>>(4*r))&15)==0xE)write(unsigned(read(at+8)&0xFF),read(at),apply);
+            } else if(nreg==3 && ((regs&0xFFF)==0x512 || (regs&0xFFF)==0x412)) {
+                if(nloop) {cursor_=at+std::size_t(nloop)*48-16;vertexRun(data.subspan(at,std::size_t(nloop)*48),(regs&0xF00)==0x400,apply);}
+                at+=std::size_t(nloop)*48;
             } else for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg;++r,at+=16) {cursor_=at;packed(unsigned((regs>>(4*r))&15),read(at),read(at+8),apply);}
         } else if(flg==1) {
             const std::size_t words=std::size_t(nloop)*nreg;
@@ -145,6 +151,32 @@ void GsCommandSink::packed(unsigned d,std::uint64_t lo,std::uint64_t hi,bool app
     case 0xF: break;
     default: write(d,lo,apply);break; // TEX0_1/2, CLAMP_1/2, XYZF3, XYZ3: register-valued.
     }
+}
+
+// PACKED ST, RGBAQ and XYZ2 (or XYZF2) per vertex, the form of nearly every draw: what packed() does with each
+// quadword, decoded in one loop, and handed to the texture names as one run. None of these registers is refused or
+// starts a transfer or a CLUT load.
+void GsCommandSink::vertexRun(std::span<const std::uint8_t> data,bool fog,bool apply) {
+    auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,data.data()+offset,8);return v;};
+    const unsigned drawing=fog?0x04:0x05,adc=fog?0x0C:0x0D;
+    run_kicks_.clear();
+    bool drawn=false,skipped=false;
+    for(std::size_t at=0;at<data.size();at+=48) {
+        state.q=std::uint32_t(read(at+8));state.regs[0x02]=read(at);
+        const auto lo=read(at+16),hi=read(at+24);
+        state.regs[0x01]=(lo&0xFF)|((lo>>24)&0xFF00)|((hi&0xFF)<<16)|(((hi>>32)&0xFF)<<24)|(std::uint64_t(state.q)<<32);
+        const auto xyz_lo=read(at+32),xyz_hi=read(at+40);
+        const std::uint64_t xyz=fog?(xyz_lo&0xFFFF)|(((xyz_lo>>32)&0xFFFF)<<16)|(((xyz_hi>>4)&0xFFFFFF)<<32)|(((xyz_hi>>36)&0xFF)<<56)
+                                   :(xyz_lo&0xFFFF)|(((xyz_lo>>32)&0xFFFF)<<16)|((xyz_hi&0xFFFFFFFF)<<32);
+        if((xyz_hi>>47)&1) {state.regs[adc]=xyz;skipped=true;}
+        else {state.regs[drawing]=xyz;drawn=true;run_kicks_.push_back(xyz);}
+    }
+    if(apply)register_writes+=unsigned(data.size()/16);
+    std::pair<unsigned,std::uint64_t> last[4];unsigned count=0;
+    last[count++]={0x02,state.regs[0x02]};last[count++]={0x01,state.regs[0x01]};
+    if(drawn)last[count++]={drawing,state.regs[drawing]};
+    if(skipped)last[count++]={adc,state.regs[adc]};
+    texture_names->vertexRun(std::span(last,count),run_kicks_);
 }
 
 void GsCommandSink::write(unsigned reg,std::uint64_t value,bool apply) {

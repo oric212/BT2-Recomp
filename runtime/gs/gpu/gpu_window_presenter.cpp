@@ -58,9 +58,9 @@ struct GpuWindowPresenter::State {
 };
 
 GpuWindowPresenter::GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<Vulkan::ImageHandle()> renderer_picture,
-                                       std::function<void(const std::function<void()>&)> around_frame)
+                                       std::function<void(const std::function<void()>&)> around_frame,std::function<void()> before_change)
     :state_(std::make_unique<State>()),context_(std::move(context)),device_(std::move(device)),
-     renderer_picture_(std::move(renderer_picture)),around_frame_(std::move(around_frame)),thread_([this]{run();}) {}
+     renderer_picture_(std::move(renderer_picture)),around_frame_(std::move(around_frame)),before_change_(std::move(before_change)),thread_([this]{run();}) {}
 
 GpuWindowPresenter::~GpuWindowPresenter() {
     {std::lock_guard guard(lock_);stop_=true;}
@@ -214,6 +214,7 @@ bool GpuWindowPresenter::present(const Request& request) {
         VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_NONE,0);
     cmd->swapchain_touch_in_stages(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
     device.submit(cmd);
+    if(before_change_)before_change_();
     device.end_frame_context();
     return true;
 }

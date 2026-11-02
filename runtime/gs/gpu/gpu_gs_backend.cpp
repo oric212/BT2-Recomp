@@ -86,7 +86,7 @@ struct GpuGsBackend::State {
         gif_dump.put(kind);gif_dump.write(reinterpret_cast<const char*>(&value),sizeof value);
         gif_dump.write(reinterpret_cast<const char*>(data.data()),std::streamsize(data.size()));
     }
-    // The work before each of the last frame changes (awaitFrameChange): one fewer than the frame contexts.
+    // The work before each of the last frame changes (awaitFrameChange, markFrameChange): one fewer than the frame contexts.
     std::array<Vulkan::Fence,frame_contexts-1> frame_changes;unsigned next_frame_change=0;
     std::mutex frame_change_lock; // The game's thread and the presenter's thread.
     ~State() {presenter.reset();picture.reset();for(auto& h:held)h.reset();}
@@ -291,7 +291,9 @@ void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
     state_->gs.read_transfer_fifo(out.data(),std::uint32_t(out.size()/16));
 }
 
-void GpuGsBackend::flush() {
+void GpuGsBackend::flush() {endFrame();changeFrame();}
+
+void GpuGsBackend::endFrame() {
     if(state_->dumpingGif())state_->dumpRecord('F',std::uint32_t(state_->scanouts));
     state_->gs.flush();++state_->scanouts;
     if(state_->pass_times.is_open())state_->gs.set_timestamp_frame(state_->scanouts);
@@ -304,8 +306,9 @@ void GpuGsBackend::flush() {
         copyDrawnPalettes();
         if(!state_->shared_from)state_->pack->startFrame(); // The main renderer's flip starts the pack's frame.
     }
-    state_->device->next_frame_context();
 }
+
+void GpuGsBackend::changeFrame() {markFrameChange();state_->device->next_frame_context();}
 
 void GpuGsBackend::copyDrawnPalettes() {
     auto& s=*state_;
@@ -359,9 +362,14 @@ void GpuGsBackend::submit() {state_->gs.flush();}
 void GpuGsBackend::awaitFrameChange() {
     auto& s=*state_;
     std::lock_guard guard(s.frame_change_lock);
+    if(auto& fence=s.frame_changes[s.next_frame_change])fence->wait();
+}
+
+void GpuGsBackend::markFrameChange() {
+    auto& s=*state_;
+    std::lock_guard guard(s.frame_change_lock);
     auto& fence=s.frame_changes[s.next_frame_change];
-    if(fence) {fence->wait();fence.reset();}
-    s.device->submit_empty(Vulkan::CommandBuffer::Type::Generic,&fence);
+    fence.reset();s.device->submit_empty(Vulkan::CommandBuffer::Type::Generic,&fence);
     s.next_frame_change=(s.next_frame_change+1)%unsigned(s.frame_changes.size());
 }
 
@@ -412,6 +420,7 @@ DisplayFrame GpuGsBackend::readback() {
         frame.bgra[i]=0xFF000000u|((p&0xFF)<<16)|(p&0xFF00)|((p>>16)&0xFF);
     }
     device.unmap_host_buffer(*buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
+    markFrameChange();
     device.next_frame_context();
     return frame;
 }
@@ -421,7 +430,7 @@ WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::fun
         state_->presenter=std::make_unique<GpuWindowPresenter>(state_->context,state_->device,[this]{
             const auto& from=state_->shown_from?*state_->shown_from->state_:*state_;
             return state_->shown_slot>=0?from.held[unsigned(state_->shown_slot)]:from.picture;
-        },std::move(around_frame));
+        },std::move(around_frame),[this]{markFrameChange();});
     return *state_->presenter;
 }
 

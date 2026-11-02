@@ -24,9 +24,10 @@ class GpuWindowPresenter final : public WindowPresenter {
 public:
     // `renderer_picture`: the renderer's picture to show (empty when there is none), in
     // TRANSFER_SRC_OPTIMAL and visible to transfer reads; taken when a picture is handed over.
-    // `around_frame` runs the thread's frame (where the device changes its frame) given to it.
+    // `around_frame` runs the thread's frame (where the device changes its frame) given to it; `before_change` runs
+    // in it right before the device's frame change (GpuGsBackend::markFrameChange).
     GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<Vulkan::ImageHandle()> renderer_picture,
-                       std::function<void(const std::function<void()>&)> around_frame);
+                       std::function<void(const std::function<void()>&)> around_frame,std::function<void()> before_change);
     ~GpuWindowPresenter() override;
     // Hands the picture over to the thread; rethrows a failure of the thread's.
     void show(void* window,const DisplayFrame* frame,Rect at,unsigned client_width,unsigned client_height,bool smooth,
@@ -53,6 +54,7 @@ private:
     Vulkan::ContextHandle context_;Vulkan::DeviceHandle device_;
     std::function<Vulkan::ImageHandle()> renderer_picture_;
     std::function<void(const std::function<void()>&)> around_frame_;
+    std::function<void()> before_change_;
     std::mutex lock_;std::condition_variable changed_;
     // Pictures handed over and not yet taken: at most two (a picture and the one scheduled a field after
     // it); a further one replaces the newer.

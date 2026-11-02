@@ -182,5 +182,43 @@ int main() {
         joined.clear();for(const auto& p:pieces)joined.insert(joined.end(),p.begin(),p.end());
         check(joined==t && thread_names.clut()==names.clut() && thread_names.memory()==names.memory());
     }
+    {
+        // Vertex runs (GsCommandSink::vertexRun): PACKED ST, RGBAQ and XYZ2 (or XYZF2) leave the sink and the texture
+        // names as the same writes taken one by one do (here through a fourth, NOP register, which takes them so).
+        // A palette page is watched (a CLUT load from it) and the frame lies over it: a strip away from it marks
+        // nothing, one over it (with an ADC vertex) marks it, and the textured draws are named alike.
+        const auto build=[](bool one_by_one) {
+            std::vector<std::uint8_t> t;
+            auto q=[&](std::uint64_t lo,std::uint64_t hi){std::uint8_t b[16];std::memcpy(b,&lo,8);std::memcpy(b+8,&hi,8);t.insert(t.end(),b,b+16);};
+            const std::uint64_t tex0=(1ull<<14)|(0x14ull<<20)|(4ull<<26)|(4ull<<30)|(64ull<<37)|(1ull<<61); // T4 16x16, CBP 64 (page 2), CLD 1.
+            q(0x1000000000000005ULL,0xE);
+            q(2|(1ull<<16),0x4C);q(0,0x18);q(1,0x1A);q(tex0,0x06);q(0x14,0x00); // FRAME_1 page 2, FBW 1; XYOFFSET_1 0; PRMODECONT; TEX0_1; PRIM strip, TME.
+            const auto vertices=[&](std::uint32_t fog_form,std::initializer_list<std::array<unsigned,3>> list) {
+                const std::uint64_t regs=one_by_one?(0xF000ull|0x012ull|(std::uint64_t(fog_form)<<8)):(0x012ull|(std::uint64_t(fog_form)<<8));
+                q(std::uint64_t(list.size())|(std::uint64_t(one_by_one?4:3)<<60),regs);
+                unsigned n=0;
+                for(const auto& v:list) {
+                    const std::uint32_t s=0x3F000000u+n,t_=0x3E800000u+n;++n;
+                    q(s|(std::uint64_t(t_)<<32),0x3F800000u+n);               // ST, Q.
+                    q(0x10|(std::uint64_t(0x20+n)<<32),0x30|(std::uint64_t(0x80)<<32)); // RGBA.
+                    q(std::uint64_t(v[0]*16)|(std::uint64_t(v[1]*16)<<32),(fog_form==4?(std::uint64_t(v[2])<<4)|(0x40ull<<36):std::uint64_t(v[2]))|(n==3?1ull<<47:0)); // XYZ, the third with ADC.
+                    if(one_by_one)q(0,0);
+                }
+            };
+            vertices(5,{{{4,40,9}},{{20,44,9}},{{8,60,9}},{{30,50,9}}});          // Page 3: not watched.
+            vertices(4,{{{4,4,7}},{{20,8,7}},{{8,20,7}},{{30,10,7}},{{40,2,7}}}); // Page 2, XYZF2.
+            vertices(5,{{{50,40,3}},{{60,44,3}},{{58,62,3}}});
+            return t;
+        };
+        GsTextureNames fast_names,slow_names;GsCommandSink fast,slow;
+        fast.texture_names=&fast_names;slow.texture_names=&slow_names;
+        fast.transfer(build(false));slow.transfer(build(true));
+        check(fast.state.regs==slow.state.regs && fast.state.q==slow.state.q && fast.register_writes==slow.register_writes);
+        check(fast_names.drawnPalettePages()==slow_names.drawnPalettePages() && fast_names.drawnPalettePages()==std::vector<unsigned>{2});
+        check(fast_names.drawn==slow_names.drawn && !fast_names.drawn.empty());
+        // The sink without names skips data that has no A+D register whole: the same registers as before.
+        GsCommandSink bare;bare.transfer(build(false));
+        check(bare.state.regs[0x4C]==fast.state.regs[0x4C] && bare.state.regs[0x06]==fast.state.regs[0x06] && bare.register_writes==5);
+    }
     std::cout<<"GS scoped command tests passed\n";
 }

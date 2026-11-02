@@ -103,5 +103,7 @@ private:
     void image(std::span<const std::uint8_t> data);
     void startTransfer(std::uint64_t dir);
     void packed(unsigned d,std::uint64_t lo,std::uint64_t hi,bool apply);
+    void vertexRun(std::span<const std::uint8_t> data,bool fog,bool apply); // PACKED ST, RGBAQ, XYZ2 or XYZF2 with texture names.
+    std::vector<std::uint64_t> run_kicks_; // vertexRun's drawing vertices, kept to reuse its storage.
     void write(unsigned reg,std::uint64_t value,bool apply);
 };

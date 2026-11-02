@@ -52,12 +52,21 @@ public:
     void takeState(const GpuGsBackend& primary,unsigned slot);
     // The next quadwords of the local->host transfer the last TRXDIR started (zero past its end).
     void readFifo(std::span<std::uint8_t> out);
-    // Submits queued work at a frame boundary (each flip) and advances the frame context.
+    // Submits queued work at a frame boundary (each flip) and advances the frame context: endFrame, then changeFrame,
+    // which alone needs every other renderer on the device to stand still with no command buffer open.
     void flush();
+    void endFrame();
+    void changeFrame();
     // Before a frame change of the device (flush, readback, a picture shown in the window): waits for the GPU
     // work that Granite's frame change waits for while it holds the device's lock (the frame context it
-    // reuses: about 7 changes back), so that wait stops no other thread; notes this change's work.
+    // reuses: 7 changes back), so that wait stops no other thread. markFrameChange, right before the change itself
+    // (where the other renderers stand still), marks the end of the frame's work for that wait: marked any earlier, the
+    // other renderers' work submitted after it in the same frame context was not waited for (3 ms at each flip of
+    // headless runs, where the GPU is behind; 2026-11-02).
+    // Two frame changes from different threads whose waits come between each other's marks find the slot already
+    // waited for, and Granite then waits itself.
     void awaitFrameChange();
+    void markFrameChange();
     // Submits the work taken so far without ending the frame. Between flips the renderer holds a command
     // buffer, and the device's next frame context (a readback, the window presenter) waits for it.
     void submit();
