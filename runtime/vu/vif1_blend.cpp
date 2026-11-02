@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <tuple>
 
 std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words) {
     std::vector<Vif1Unpack> out;
@@ -202,17 +203,39 @@ void blendVif1(std::vector<std::uint32_t>& out,const Vif1Pairing& pairing,std::s
         }
         if(!done)++others;
     }
-    // Every copy of a camera's screen matrices in the newer list's V4-32 data: the blended camera.
-    for(const auto& c:cameras)for(const auto& y:*b) {
-        if(y.format!=0xC)continue;
-        for(std::size_t half=0;half<2;++half)
+    // Every copy of a camera's screen matrices in the newer list's V4-32 data: the blended camera. One walk over
+    // the list for all cameras and both halves (a walk per camera and half read the 2.4 MB list again each
+    // time); each walk goes on four quadwords after a copy, and the copies are written in the order of those
+    // walks (camera, unpack, half), so overlapping copies end the same.
+    if(!cameras.empty()) {
+        const std::size_t kinds=cameras.size()*2;
+        std::array<std::uint64_t,4> first{}; // The first words' low bytes, to pass over most quadwords at once.
+        for(const auto& c:cameras)for(std::size_t half=0;half<2;++half) {const std::uint8_t x=std::uint8_t(c.newer[half*16]);first[x>>6]|=1ull<<(x&63);}
+        struct Copy {std::size_t camera,unpack,half,at;};
+        std::vector<Copy> copies;
+        std::vector<std::size_t> next(kinds);
+        for(std::size_t u=0;u<b->size();++u) {
+            const auto& y=(*b)[u];
+            if(y.format!=0xC)continue;
+            std::fill(next.begin(),next.end(),std::size_t(0));
             for(std::size_t q=0;q+4<=y.words/4;++q) {
-                const std::size_t at=y.start+q*4;
-                const auto* m=c.newer.data()+half*16;const auto* w=newer.data()+at;
-                if(w[0]!=m[0] || !sameQuad(w,m) || !sameQuad(w+4,m+4) || !sameQuad(w+8,m+8) || !sameQuad(w+12,m+12))continue;
-                std::copy(c.blend.begin()+std::ptrdiff_t(half*16),c.blend.begin()+std::ptrdiff_t(half*16+16),out.begin()+std::ptrdiff_t(at));
-                changed+=16;q+=3;
+                const auto* w=newer.data()+y.start+q*4;
+                const std::uint8_t x=std::uint8_t(w[0]);
+                if(!(first[x>>6]>>(x&63)&1))continue;
+                for(std::size_t k=0;k<kinds;++k) {
+                    const auto* m=cameras[k/2].newer.data()+(k%2)*16;
+                    if(q<next[k] || w[0]!=m[0] || !sameQuad(w,m) || !sameQuad(w+4,m+4) || !sameQuad(w+8,m+8) || !sameQuad(w+12,m+12))continue;
+                    copies.push_back({k/2,u,k%2,y.start+q*4});next[k]=q+4;
+                }
             }
+        }
+        std::stable_sort(copies.begin(),copies.end(),[](const Copy& p,const Copy& r){
+            return std::tie(p.camera,p.unpack,p.half)<std::tie(r.camera,r.unpack,r.half);});
+        for(const auto& c:copies) {
+            const auto from=cameras[c.camera].blend.begin()+std::ptrdiff_t(c.half*16);
+            std::copy(from,from+16,out.begin()+std::ptrdiff_t(c.at));
+            changed+=16;
+        }
     }
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();

@@ -232,7 +232,7 @@ void Vu1::lower(std::uint32_t w,std::uint32_t at,const Kick& kick) {
             std::span<const std::uint8_t> packet(data.data()+first*16,std::size_t(qwords)*16);
             if(first+qwords>data_mask+1) {gifPacketInto(packet_,first);packet=packet_;}
             ++kicks;
-            for(std::size_t n=0;n+8<=packet.size();n+=8) {std::uint64_t part;std::memcpy(&part,packet.data()+n,8);kick_hash=(kick_hash^part)*0x100000001B3ull;}
+            if(hash_kicks)for(std::size_t n=0;n+8<=packet.size();n+=8) {std::uint64_t part;std::memcpy(&part,packet.data()+n,8);kick_hash=(kick_hash^part)*0x100000001B3ull;}
             if(kick) {const unsigned mode=_mm_getcsr();_mm_setcsr(host_csr_);kick(packet);_mm_setcsr(mode);} // The GS runs with the host's float mode.
             return;
         }

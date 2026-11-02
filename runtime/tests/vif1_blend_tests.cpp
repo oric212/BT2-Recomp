@@ -101,6 +101,29 @@ int main() {
     };
     const auto copied=blendVif1(with_copy(100),with_copy(300),0.5f,&blended);
     check(copied && value((*copied)[2+48+1+4+12])==200.0f && value((*copied)[2+48+1])==5.0f,"a camera's copy follows the blended camera");
+    // Two cameras (words (base + w) x scale in their first eight quadwords) and an unpack holding a copy of the
+    // first camera's second half, then of the second camera's first half: each copy follows its own camera.
+    auto two_cameras=[&](float scale) {
+        std::vector<std::uint32_t> l{0x01000101u};
+        std::vector<std::uint32_t> halves[2][2];
+        for(unsigned c=0;c<2;++c) {
+            l.push_back(0x6C0C0000u);
+            for(unsigned w=0;w<48;++w) {
+                const std::uint32_t v=bits(w<32?(100.0f+200.0f*float(c)+float(w))*scale*float(c+1):2.0f);
+                l.push_back(v);if(w<32)halves[c][w/16].push_back(v);
+            }
+        }
+        l.push_back(0x6C0A0000u);
+        for(unsigned w=0;w<4;++w)l.push_back(bits(5.0f));
+        l.insert(l.end(),halves[0][1].begin(),halves[0][1].end());
+        l.insert(l.end(),halves[1][0].begin(),halves[1][0].end());
+        for(unsigned w=0;w<4;++w)l.push_back(bits(5.0f));
+        return l;
+    };
+    const auto both=blendVif1(two_cameras(1.0f),two_cameras(3.0f),0.5f,&blended);
+    const std::size_t copies_at=1+2*49+1+4;
+    check(both && value((*both)[copies_at])==(100.0f+16)*2 && value((*both)[copies_at+16])==(300.0f)*4 && value((*both)[copies_at+32])==5.0f
+          && value((*both)[copies_at-1])==5.0f && blended==2*32+2*16,"copies of two cameras' halves follow their cameras");
     // At t = 1 the result is the newer list exactly.
     const auto end=blendVif1(block(20,5,0,10),block(20,5,40,20),1.0f);
     check(end && *end==block(20,5,40,20),"exact at t = 1");

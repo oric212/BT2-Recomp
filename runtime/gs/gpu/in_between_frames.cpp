@@ -191,7 +191,7 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
     if(first) {
         stream_=Stream{};
         for(std::size_t n=0;n<previous_.used;++n)if(previous_.events[n].vif1)stream_.older.push_back(&previous_.events[n]);
-        stream_.vif1.emplace(*start);
+        stream_.vif1.emplace(*start);stream_.vif1->vu.hash_kicks=false; // The game's output alone is hashed.
         mirror_.takeState(primary_,slot);
         stream_.split.take+=since(begin);
     }

@@ -314,6 +314,8 @@ int main(int argc, char** argv) {
         if (std::getenv("BT2_VU1_NO_HAND_WRITTEN")) runtime.vif1.vu.use_hand_written = false;
         // BT2_VU1_VERIFY: run every start that has a native program in the interpreter as well and stop at the first difference.
         if (std::getenv("BT2_VU1_VERIFY")) runtime.vif1.vu.verify_native = true;
+        // BT2_VU1_KICK_HASH: hash every packet VU1 sends (the report's vu1_kick_hash; the gate's battle run).
+        if (std::getenv("BT2_VU1_KICK_HASH")) runtime.vif1.vu.hash_kicks = true;
         // BT2_PROFILE_TOTALS: the frame profile's sums over the whole run, printed at exit (headless runs).
         if (std::getenv("BT2_PROFILE_TOTALS")) {
             frame_profile.enabled = true;

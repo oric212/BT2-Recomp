@@ -28,6 +28,7 @@ public:
     unsigned runs=0,kicks=0,native_runs=0; // `native_runs`: starts that ran a native program (hand-written or translated).
     unsigned hand_written_runs=0;          // Those of them that ran a hand-written program.
     std::uint64_t kick_hash=0xCBF29CE484222325ull; // Over every XGKICK packet's bytes, in order: equal hashes mean equal output.
+    bool hash_kicks=false; // `kick_hash` kept (BT2_VU1_KICK_HASH, the gate's battle run); a diagnostic, about 3% of the game's thread.
     // Reads of Q or the clipping flags while a newer result was still in the pipeline. The model
     // counts one cycle per instruction (no stalls), so a nonzero count marks timing-sensitive code.
     unsigned early_q_reads=0,early_clip_reads=0;

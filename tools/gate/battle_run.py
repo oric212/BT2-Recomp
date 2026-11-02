@@ -52,7 +52,7 @@ def main():
         print('Battle run skipped: the Release build has no GPU renderer, and only it draws the 3D frames.')
         return 0
     script = (Path(__file__).with_name('pad-fight.txt')).read_text(encoding='utf-8').strip()
-    env = dict(os.environ, BT2_VU1_VERIFY='1')
+    env = dict(os.environ, BT2_VU1_VERIFY='1', BT2_VU1_KICK_HASH='1')
     for name in ('BT2_CARD_FOLDER', 'BT2_PLAYER_SETTINGS', 'BT2_VU1_INTERPRET', 'BT2_VU1_NO_HAND_WRITTEN', 'BT2_GPU_GS_SNAPSHOT'):
         env.pop(name, None)
     done = subprocess.run([sys.executable, str(ROOT / 'tools/ps2recomp/run_startup_probe.py'), '--disc', str(args.disc), '--config', 'Release',
