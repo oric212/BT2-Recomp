@@ -309,8 +309,12 @@ void GsTextureNames::vertex(std::uint64_t xyz) {
 void GsTextureNames::vertexRun(std::span<const std::pair<unsigned,std::uint64_t>> last,std::span<const std::uint64_t> kicks) {
     for(const auto& [reg,value]:last)regs_[reg]=value; // None of them is read by vertex or kick.
     if(runReachesPalettes(kicks)) {for(const auto xyz:kicks) {vertex(xyz);kick();}return;}
-    // No page is marked: vertex only keeps the last vertices.
-    for(const auto xyz:kicks) {vertices_[vertex_count_++%3]=xyz;kick();}
+    // No page is marked: vertex only keeps the last vertices. Of the run's kicks only the first two can name the draw
+    // (the registers are set before them; naming may write a pending upload, which moves the generation once, so the
+    // second names it again; from the third on nothing has changed).
+    for(const auto xyz:kicks)vertices_[vertex_count_++%3]=xyz;
+    if(!kicks.empty())kick();
+    if(kicks.size()>1)kick();
 }
 
 bool GsTextureNames::runReachesPalettes(std::span<const std::uint64_t> kicks) const {

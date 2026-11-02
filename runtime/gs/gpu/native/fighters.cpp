@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -94,8 +95,21 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
     if(frame.PSM!=PSMCT32 || (zbuf.PSM|0x30u)!=PSMZ24 || zbuf.ZBP==frame.FBP || inst.sampling_rate_x_log2!=rate || inst.sampling_rate_y_log2!=rate)
         return false;
 
-    std::vector<Vertex> vertices;vertices.reserve(rp.num_primitives*6);
-    std::vector<Batch> batches;
+    // Kept per renderer's thread from pass to pass (the pass runs once per piece group, many times a frame): no
+    // allocation, and the vertices written in place (at most two triangles a primitive).
+    struct Vertices {
+        std::unique_ptr<Vertex[]> items;std::size_t capacity=0,count=0;
+        Vertex* data() {return items.get();}
+        std::size_t size() const {return count;}
+        Vertex& operator[](std::size_t i) {return items[i];}
+        Vertex* add(std::size_t n) {Vertex* at=items.get()+count;count+=n;return at;}
+    };
+    thread_local Vertices vertices;
+    thread_local std::vector<Batch> batches;
+    vertices.count=0;batches.clear();
+    if(vertices.capacity<std::size_t(rp.num_primitives)*6) {
+        vertices.capacity=std::size_t(rp.num_primitives)*6;vertices.items=std::make_unique_for_overwrite<Vertex[]>(vertices.capacity);
+    }
     int lo_x=INT_MAX,lo_y=INT_MAX,hi_x=INT_MIN,hi_y=INT_MIN;
     for(std::uint32_t n=0;n<rp.num_primitives;++n) {
         const auto& prim=pass.primitives[n];
@@ -151,7 +165,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
             if(perspective) {v[k].s=attribute.st.x;v[k].t=attribute.st.y;v[k].q=attribute.q;}
             else {v[k].s=float(attribute.uv.x)/16.0f;v[k].t=float(attribute.uv.y)/16.0f;}
         }
-        vertices.insert(vertices.end(),v,v+3);
+        std::copy(v,v+3,vertices.add(3));
         if(parallelogram) {
             v[3]={v[1].x+v[2].x-v[0].x,v[1].y+v[2].y-v[0].y,
                   std::uint32_t(std::clamp<std::int64_t>(std::int64_t(v[1].z)+v[2].z-v[0].z,0,0xFFFFFF)),v[0].rgba,
@@ -164,7 +178,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
                 }
                 v[3].rgba=rgba;
             }
-            vertices.push_back(v[1]);vertices.push_back(v[3]);vertices.push_back(v[2]);
+            auto* at=vertices.add(3);at[0]=v[1];at[1]=v[3];at[2]=v[2];
         }
         const std::uint32_t triangles=parallelogram?2u:1u;
         if(!batches.empty() && batches.back().same(batch))batches.back().count+=triangles;
@@ -181,7 +195,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
     // Half the draws, and none of them changes the pipeline. Differs from two draws only where two triangles of one
     // piece overlap at exactly equal depth.
     struct Draw {const Batch* base;const Batch* cel;};
-    std::vector<Draw> draws;draws.reserve(batches.size());
+    thread_local std::vector<Draw> draws;draws.clear();
     for(std::size_t b=0;b<batches.size();++b) {
         const auto& x=batches[b];
         if(b+1<batches.size()) {
