@@ -172,6 +172,7 @@ inline MenuScreen enhancements(Settings& s,std::function<void()> changed) {
     screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched."));
     screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. Turned off by itself if the processor cannot keep up."));
     screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows; the game itself is unchanged."));
+    screen.entries.push_back(toggle("Beam struggles by buttons",s.struggle_buttons,changed,"Mash Square (X on an Xbox pad) to push in a beam struggle; turning the sticks still works."));
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {
@@ -221,7 +222,6 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
     screen.entries.push_back(menuAction("Button mapping",[&host,&s,changed]{host.menu.open(buttonMapping(host,s,changed));},"The key and the gamepad button of each PS2 button."));
     screen.entries.push_back(number("Stick sensitivity",s.mapping.stick_sensitivity,50,200,10,"%",changed,"How far the game sees the sticks pushed. 100%: as they are."));
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
-    screen.entries.push_back(toggle("Beam struggles by buttons",s.struggle_buttons,changed,"Mash Square or Cross to push in a beam struggle; turning the sticks still works. From the next start."));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
     return screen;
 }

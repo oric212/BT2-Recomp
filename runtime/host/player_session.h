@@ -15,6 +15,7 @@
 class PlayerSession {
 public:
     static constexpr int launcher_exit_code=2; // The player chose "Quit to the launcher".
+    static constexpr int title_exit_code=3;    // The player chose "Return to the title screen": the game program starts the game again.
     Settings settings;
 
     PlayerSession(std::string path,ViewerWindow& window,HostInput& input,AudioMixer& mixer,FramePacer* pacer)
@@ -52,7 +53,7 @@ public:
             setFast(false);
             takePicture();
             const auto result=runOverlay(settings,path_,window_,input_,picture_,[this]{apply();});
-            if(result!=OverlayResult::Resume)std::exit(result==OverlayResult::Launcher?launcher_exit_code:0);
+            if(result!=OverlayResult::Resume)std::exit(result==OverlayResult::Launcher?launcher_exit_code:result==OverlayResult::Title?title_exit_code:0);
             trigger_.swallow();swallow_=true;
             return {};
         }

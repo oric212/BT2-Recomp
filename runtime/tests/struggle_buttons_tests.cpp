@@ -16,15 +16,15 @@ int main() {
         check(push(square,0,0,owed)==frame_turn && owed==press_turn-frame_turn,"a press pays at most a frame's turn");
         check(push(square,square,0,owed)==press_turn-frame_turn && owed==0,"holding pays the rest, nothing more");
         check(push(square,square,0,owed)==0,"a held button is not a new press");
-        check(push(square|cross,0,0,owed)==frame_turn && owed==2*press_turn-frame_turn,"Square and Cross pressed together count twice");
+        check(push(cross,0,0,owed)==0 && owed==0,"Cross does not push");
         owed=0;
         check(push(triangle,0,0,owed)==0 && owed==0,"other buttons do not push");
-        check(push(cross,0,1.6f,owed)==1.6f,"a larger stick turn wins");
+        check(push(square,0,1.6f,owed)==1.6f,"a larger stick turn wins");
         // Steady mashing at 7 presses a second (a press every fourth or fifth of the 30 frames) pays all it owes.
         owed=0;float total=0;
         for(unsigned frame=0;frame<30;++frame) {
             const bool press=frame*7/30!=(frame+1)*7/30;
-            total+=push(press?cross:0,0,0,owed);
+            total+=push(press?square:0,0,0,owed);
         }
         check(total+owed>6.9f*press_turn && owed<press_turn,"mashing is paid out as it comes");
         std::cout<<"Struggle button checks passed.\n";

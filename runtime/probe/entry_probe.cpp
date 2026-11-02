@@ -136,6 +136,7 @@ int main(int argc, char** argv) {
         };
         static Speaker speaker; // Static, so the summary is also printed when the viewer's closing ends the run.
         static std::unique_ptr<FramePacer> pacer;
+        static bool quick_title = false; // BT2_QUICK_TITLE: the startup still in fast forward.
         if (std::getenv("BT2_AUDIO_DEVICE")) {
             speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 4);
             speaker.device->fillTo(AudioMixer::rate / 20); // The queue starts at its target level.
@@ -161,6 +162,7 @@ int main(int argc, char** argv) {
                 }
                 if (wav) wav->write(pcm);
                 if (pacer) {
+                    if (quick_title && runtime.padButtonsHeld()) quick_title = pacer->free_run = false; // The player takes over.
                     if (sixty_fps::field_picture) sixty_fps::field_picture(); // An in-between picture, at this field's deadline.
                     pacer->wait(); // The field that ends here, if it showed no picture.
                     // A queue above its target means the fields come faster than the device plays them: lengthen the period a little.
@@ -824,6 +826,17 @@ int main(int argc, char** argv) {
         registerKernelPayloads(runtime);
         // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
         if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
+        // BT2_QUICK_TITLE=1 (the in-game menu's "Return to the title screen"): the startup (logos, films) runs in fast
+        // forward until the title begins or a button is pressed. 0x24BE80 runs once, as the title starts (traced
+        // 2026-11-03: flip 1,498 of a boot with a card, called from the overlay at 0x3BC458).
+        if (pacer && std::getenv("BT2_QUICK_TITLE") && std::string_view(std::getenv("BT2_QUICK_TITLE")) == "1") {
+            static PS2Runtime::RecompiledFunction title_start = nullptr;
+            pacer->free_run = quick_title = true;
+            title_start = runtime.replaceFunction(0x24BE80, [](std::uint8_t* rdram, R5900Context* ctx, PS2Runtime* base) {
+                if (quick_title) {quick_title = pacer->free_run = false;}
+                title_start(rdram, ctx, base);
+            });
+        }
         // BT2_STRUGGLE_BUTTONS=1 (the setting "Beam struggles by buttons"): Square and Cross push in a beam struggle.
         if (const char* buttons = std::getenv("BT2_STRUGGLE_BUTTONS"); buttons && std::string_view(buttons) == "1")
             std::cerr << (struggle_buttons::install(runtime) ? "Beam struggles by buttons: on." : "Beam struggles by buttons: the game's code differs; off.") << std::endl;

@@ -1,8 +1,8 @@
 """The beam struggle prompt for the setting "Beam struggles by buttons" (runtime/ee/struggle_buttons.h).
 
 In a beam struggle the game shows an analog stick turning (six 64 x 64 frames). With the setting on, the port draws
-these frames as two face buttons, Square and Cross (Xbox art: X and A), pressed in turn, so the prompt says
-"mash". The art is drawn here from simple shapes (the project's own) and written as DDS (BC3, 128 x 128) under the
+these frames as the one face button that pushes, Square (Xbox art: X), pressed and released in turn, so the prompt
+says "mash". The art is drawn here from simple shapes (the project's own) and written as DDS (BC3, 128 x 128) under the
 frames' texture names into assets/struggle-buttons/<playstation|xbox>/, which the HD texture loader reads as
 overrides (gs/gpu/hd_texture_pack.h). The files are kept in the repository; run this again only to change the art.
 
@@ -18,7 +18,7 @@ OUT = ROOT / 'assets' / 'struggle-buttons'
 SIZE = 128
 
 # The six frames of the turning stick (texture-palette-format), found 2026-11-03 in a scripted struggle
-# (docs/plans/input/BEAM_STRUGGLE_PLAN.md). Even frames show the left button pressed, odd frames the right one.
+# (docs/plans/input/BEAM_STRUGGLE_PLAN.md). Even frames show the button pressed, odd frames released.
 FRAMES = [
     '658ad09def435ebd-2576f11447071541-00001994',
     '891250f8aecfec1b-2deefa0ca5cb0527-00001994',
@@ -28,8 +28,8 @@ FRAMES = [
     'e934beb3810b920e-67e28298d4cf5049-00001994',
 ]
 
-SQUARE_PINK, CROSS_BLUE = (236, 140, 190), (120, 170, 235)
-XBOX_BLUE, XBOX_GREEN = (60, 130, 230), (100, 190, 80)
+SQUARE_PINK = (236, 140, 190)
+XBOX_BLUE = (60, 130, 230)
 
 
 def symbol(draw, kind, cx, cy, r, colour):
@@ -37,19 +37,10 @@ def symbol(draw, kind, cx, cy, r, colour):
     if kind == 'square':
         s = r * 0.55
         draw.rectangle([cx - s, cy - s, cx + s, cy + s], outline=colour, width=w)
-    elif kind == 'cross':
-        s = r * 0.55
-        draw.line([cx - s, cy - s, cx + s, cy + s], fill=colour, width=w)
-        draw.line([cx - s, cy + s, cx + s, cy - s], fill=colour, width=w)
     elif kind == 'letter-x':
         s = r * 0.5
         draw.line([cx - s, cy - s, cx + s, cy + s], fill=(255, 255, 255), width=w)
         draw.line([cx - s, cy + s, cx + s, cy - s], fill=(255, 255, 255), width=w)
-    elif kind == 'letter-a':
-        s = r * 0.55
-        draw.line([cx - s * 0.75, cy + s, cx, cy - s], fill=(255, 255, 255), width=w)
-        draw.line([cx, cy - s, cx + s * 0.75, cy + s], fill=(255, 255, 255), width=w)
-        draw.line([cx - s * 0.4, cy + s * 0.2, cx + s * 0.4, cy + s * 0.2], fill=(255, 255, 255), width=w)
 
 
 def button(draw, kind, colour, face, cx, cy, r, pressed):
@@ -63,19 +54,16 @@ def button(draw, kind, colour, face, cx, cy, r, pressed):
     symbol(draw, kind, cx, cy + drop, r, colour if face is None else (255, 255, 255))
 
 
-def frame(layout, left_pressed):
+def frame(layout, pressed):
     image = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    r = SIZE // 5
-    (k1, c1, f1), (k2, c2, f2) = layout
-    button(draw, k1, c1, f1, SIZE * 0.3, SIZE * 0.55, r, left_pressed)
-    button(draw, k2, c2, f2, SIZE * 0.7, SIZE * 0.55, r, not left_pressed)
+    kind, colour, face = layout
+    button(ImageDraw.Draw(image), kind, colour, face, SIZE * 0.5, SIZE * 0.44, int(SIZE * 0.3), pressed)
     return image
 
 
 LAYOUTS = {
-    'playstation': [('square', SQUARE_PINK, None), ('cross', CROSS_BLUE, None)],
-    'xbox': [('letter-x', None, XBOX_BLUE), ('letter-a', None, XBOX_GREEN)],
+    'playstation': ('square', SQUARE_PINK, None),
+    'xbox': ('letter-x', None, XBOX_BLUE),
 }
 
 

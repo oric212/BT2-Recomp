@@ -3,7 +3,8 @@
 The user's request (2026-11-02): in a beam struggle, mash Square or Cross instead of rotating the sticks, with the
 on-screen prompt showing Square/Cross; a setting, on by default. The original controls stay available.
 
-**Built 2026-11-03:** the setting "Beam struggles by buttons" (Controls, on by default, from the next start;
+**Built 2026-11-03:** the setting "Beam struggles by buttons" (Enhancements, on by default, from the next start; the
+user's choices the same day: one button, Square, or X with the Xbox button art, the same button;
 `struggle_buttons` in the settings file, `BT2_STRUGGLE_BUTTONS=1` and `BT2_TEXTURE_OVERRIDES` for tool runs). Not yet
 seen by the user in play.
 
@@ -26,16 +27,16 @@ seen by the user in play.
 ## What the setting does
 
 - `ee/struggle_buttons.*` wraps 0x217E58 (installed only when its code hashes as expected): the generated function
-  runs as always; for a fighter a controller plays, its result is raised to what new presses of Square or Cross give.
+  runs as always; for a fighter a controller plays, its result is raised to what new presses of Square give.
   A press is worth 2.4 radians of stick turn (about 0.38 of a turn: steady mashing at 7 a second matches turning a
   stick about 2.7 times a second), paid out at most 1.5 radians a frame (the original's largest result). CPU fighters
   and the sticks are unchanged. Tests: `struggle_buttons_tests.cpp`.
-- The prompt: the port's own art (two face buttons, Square and Cross, or X and A with the Xbox button art, pressed in
+- The prompt: the port's own art (one face button, Square, or X with the Xbox button art, pressed and released in
   turn), drawn by `tools/graphics/textures/make_struggle_button_art.py` into `assets/struggle-buttons/`, copied next
   to the programs by the build. The game program passes the folder as `BT2_TEXTURE_OVERRIDES`: with an HD pack its
   files replace the pack's of the same names; without one they are the only replacements (texture naming then runs
   for them). The six files are loaded at the start, so the art is there at the prompt's first draw.
-- Measured on a scripted struggle (both fighters Goku, both fire at once, player 1 pressing Cross every 8 fields):
+- Measured on a scripted struggle (both fighters Goku, both fire at once, player 1 pressing Cross every 8 fields; Cross counted then, Square only since):
   with the setting player 1 pushes 93.6 radians over 78 of 159 frames and wins; without it the same input pushes
   nothing and the other fighter wins.
 
@@ -53,8 +54,10 @@ seen by the user in play.
 ## Two-player supers (2026-11-03)
 
 The user could not fire supers in a two-player fight. Measured: a super needs fighter flag word 0 bit 1, which
-0x20DBC0 sets only when the opponent is within range (0x210A20 against 0x20DB08; about 12 units in the measured
-fight, 177 when the fighters stood apart). With the fighters close, the Kamehameha fires in a two-player fight as in
+0x20DBC0 sets only when the opponent is within lock-on range: the distance (0x210A20; 176 with the fighters apart)
+against the fighter's range (0x20DB08: command object `+0xFAC` plus 0x210D50; 72.4 in the measured fight). The HUD
+shows the same state ("Lock on!", the radar). The user expects supers from afar: whether the original fires them
+out of lock-on range is still to be checked (the user's knowledge, or PCSX2). With the fighters close, the Kamehameha fires in a two-player fight as in
 a one-player one; holding L2 charges ki, and holding it on spends a blast stock on the aura. Not a port fault as far
 as measured; not compared with PCSX2.
 

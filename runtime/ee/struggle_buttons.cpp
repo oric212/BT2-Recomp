@@ -14,7 +14,7 @@ constexpr std::uint64_t measure_hash=0x4665A843B217A594;
 // byte the side setter writes: nonzero when the CPU plays that side.
 constexpr std::uint32_t fighter_side=0x1534,fighter_held=0x20,fighter_previous=0x44;
 constexpr std::uint32_t system_pointer=0x3876A0,side_records=0xE0,side_record_size=0x1D0,side_cpu=0x1C4;
-constexpr std::uint32_t cross=1u<<14,square=1u<<15; // PadScript::names order.
+constexpr std::uint32_t square=1u<<15; // PadScript::names order.
 
 PS2Runtime::RecompiledFunction generated_measure=nullptr;
 struct Owed {float turn=0;std::uint64_t flip=0;};
@@ -44,7 +44,7 @@ void measure(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
 namespace struggle_buttons {
 float push(std::uint32_t held,std::uint32_t previous,float sticks,float& owed) {
     const std::uint32_t pressed=held&~previous;
-    owed+=press_turn*float(((pressed&cross)!=0)+((pressed&square)!=0));
+    if(pressed&square)owed+=press_turn;
     const float paid=std::min(owed,frame_turn);
     owed-=paid;
     return std::max(sticks,paid);

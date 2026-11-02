@@ -146,8 +146,11 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
                 settings.memory_card=cards.empty()?folders.newCard():cards.front();settings.save(settings_path.string());
             }
             const DWORD code=runGame(root,settings_path,settings,folders,log);
+            SetEnvironmentVariableA("BT2_QUICK_TITLE",nullptr);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
+            // "Return to the title screen": the game again, its startup in fast forward up to the title.
+            if(code==DWORD(PlayerSession::title_exit_code)) {launcher=false;SetEnvironmentVariableA("BT2_QUICK_TITLE","1");continue;}
             // Code that was never translated ran interpreted (slower), or stopped the game: the discovery
             // loop builds it in.
             const std::string discover="double-click\n"+(root/"work"/"scripts"/"discover.cmd").string()+"\nand play again.\n";

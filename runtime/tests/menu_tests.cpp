@@ -52,6 +52,7 @@ int main() {
             // Fast loading is an enhancement, not part of fast forward.
             Settings e;const auto screen=menu_screens::enhancements(e,[]{});
             check(std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="Fast loading";}),"fast loading among the enhancements");
+            check(std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="Beam struggles by buttons";}),"beam struggles by buttons among the enhancements");
         }
         {
             // The HD outline can be chosen only with super-sampling (it changes nothing without).
