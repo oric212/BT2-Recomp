@@ -2,6 +2,8 @@
 
 Opened on 2026-10-13 after the user reported the window as laggy (about 15 frames per second) with the graphics card at about 16% load.
 
+The state on 2026-11-02, where the time goes and what is left: [performance findings](../../reference/PERFORMANCE_FINDINGS.md).
+
 ## Requirements (set by the user, 2026-10-13)
 
 - **Fights: a flat 30 pictures per second.** The user confirmed in PCSX2 that the original shows 30 in fights; the fight loop's two-field frame, read from the code, agrees.

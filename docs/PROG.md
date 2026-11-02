@@ -63,4 +63,4 @@ Details in the [handoff](progress/ACTIVE_PASS.md) and the [implementation plan](
 
 ## Links
 
-[Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [November 2026 history](progress/2026-11.md) · [October 2026 history](progress/2026-10.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)
+[Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [November 2026 history](progress/2026-11.md) · [October 2026 history](progress/2026-10.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [performance findings](reference/PERFORMANCE_FINDINGS.md) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)
