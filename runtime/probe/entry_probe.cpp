@@ -489,9 +489,15 @@ int main(int argc, char** argv) {
                     }
                     in_between_started = false;
                     if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->freeRun()) || in_between->replay_only || in_between->scan_replay) return;
-                    // The field's deadline first (the field waits for it here anyway): the picture has until then.
-                    // Never waited for beyond it: a picture not ready is left out, so the game keeps its pace.
-                    if (pacer) pacer->wait();
+                    // The picture has until the field's deadline, never beyond it: a picture not ready is left out, so the
+                    // game keeps its pace. A ready one goes out ahead of the deadline at the moment the flips' pictures
+                    // do (FramePacer::waitToShow, which learns when both kinds are usually ready), so the two stay a
+                    // field apart; the deadline is waited for after it, at the field's end.
+                    static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
+                    if (pacer && !at_deadline) {
+                        while (!in_between->ready() && in_between->busy() && std::chrono::steady_clock::now() < pacer->deadline()) Sleep(0);
+                        pacer->waitToShow();
+                    } else if (pacer) pacer->wait();
                     const bool ready = in_between->ready();
                     if (!ready && in_between->busy()) ++in_between->late;
                     if (!in_between->keepsUp(ready)) return; // Not ready, or they have not been keeping up: a steady 30.
@@ -627,12 +633,12 @@ int main(int argc, char** argv) {
                 // screen is a field closer to the button. A delayed 60 fps fight does the same with its two pictures:
                 // the in-between picture (usually drawn before the flip: the frame's commands come a frame ahead)
                 // goes out when such pictures are usually ready, and the flip's own exactly a field after it,
-                // scheduled on the presenter's thread (presentRendererAt). With 60 fps outside fights the in-between
-                // pictures go out at the deadlines, so the flip's picture does too. BT2_PICTURE_AT_DEADLINE=1 keeps the
-                // deadline for every picture.
+                // scheduled on the presenter's thread (presentRendererAt). Otherwise with 60 fps the in-between picture goes out
+                // a field after the flip's, at the same moment in its field (sixty_fps::field_picture), so the two stay a
+                // field apart. BT2_PICTURE_AT_DEADLINE=1 keeps the deadline for every picture.
                 static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
                 const bool ahead_sixty = pacer && delayed && on_gpu && !at_deadline;
-                const bool ahead = pacer && !at_deadline && (!in_between || ahead_sixty);
+                const bool ahead = pacer && !at_deadline && (ahead_sixty || !delayed);
                 Clock::time_point shown_at{};
                 if (ahead_sixty) {
                     // The game's thread waits for this field's deadline anyway: meanwhile, for the in-between picture.
