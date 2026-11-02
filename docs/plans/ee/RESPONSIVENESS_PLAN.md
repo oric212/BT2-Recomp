@@ -74,6 +74,10 @@ Evenness, from the presents' times (5,097 intervals in a window): the median dis
 
 **Step 2, a field less with 60 fps: done 2026-11-02.** With the in-between pictures cheaper (the [native fight rendering plan](../graphics/NATIVE_FIGHT_RENDERING_PLAN.md) step 2's load work: 13.5 ms a picture in fullscreen at every enhancement, was 18 to 19), the undelayed path showed the same pictures as the delayed one (4,692 and 4,693 of 4,782) at 26.5 against 49.2 ms flip to screen, and nearly the same evenness (83.7% and 85.0% of the fight's presents a field apart by a stricter measure than October's). Undelayed is the default; `BT2_SIXTY_FPS_DELAY=1` restores the delayed fights.
 
+**Step 4, fast loading: built 2026-11-02, off by default (the user's choice).** A field that read the disc, asked for a file or waited at a load-wait idle point, was silent and had no button held starts a stretch run free, as fast forward runs (`host/loading_skip.h`, the pacer's `loading_run`); it lasts while fields stay silent without a button and the last loading field is at most 30 fields back. The setting "Fast loading" (Fast forward screen of the in-game menu, `fast_loading` in the settings file, `BT2_FAST_LOADING=1` for tool runs; from the next start). On the gate's path in the window: 109.1 s to 102.0 s (575 fields run free), the game's state identical on all 6,534 fields. Besides the boot's black wait (1.9 s) the stretches include the silent Atari logo, the Funimation logo's fade-in and the NOW LOADING screen before a fight, which then pass quickly (`work/frames/fast-loading/`); the user chose all silent loading, off by default, over black screens only. A unit test of the rule.
+
+**Step 3 measured again (2026-11-02):** the four slow fields on the gate's path headless are now 22, 25, 41 and 47 ms (were 21, 37, 60 and 70 before the October work): loading work landing in one field (75,000 to 129,000 guest calls each); left as they are.
+
 ## Verification
 
 Each step: the gate (game state unchanged), step 1's numbers before and after, `BT2_FIELD_LOG` for hitches and loading, and the user's feel in play.

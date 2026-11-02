@@ -27,6 +27,8 @@ public:
     double waited_seconds=0; // Time spent waiting, for statistics: a field's work is its length minus this.
     unsigned late_fields=0;  // Fields whose deadline had passed when they asked.
     bool free_run=false;     // Fast forward: nothing is waited for; pacing starts afresh when it ends.
+    bool loading_run=false;  // Fast loading (host/loading_skip.h): the same, while the game loads in silence.
+    bool freeRun() const {return free_run || loading_run;}
 
     FramePacer() {
         timeBeginPeriod(1);
@@ -52,7 +54,7 @@ public:
     // pictures were ready, plus a millisecond; a later picture is shown when it is ready.
     // `ready`: when the picture was ready (60 fps: when its in-between picture was). Returns when it is shown.
     Clock::time_point waitToShow(Clock::time_point ready_at=Clock::now()) {
-        if(free_run || !started_ || waited_)return Clock::now();
+        if(freeRun() || !started_ || waited_)return Clock::now();
         const auto field_start=deadline_-period_;
         const auto ready=std::clamp(ready_at-field_start,Clock::duration::zero(),period_);
         ready_[ready_next_++%ready_.size()]=ready;ready_count_=std::min<std::size_t>(ready_count_+1,ready_.size());
@@ -71,7 +73,7 @@ public:
     }
     // Waits for the current field's deadline, once per field (a second call in the same field returns at once).
     void wait() {
-        if(free_run) {started_=false;return;}
+        if(freeRun()) {started_=false;return;}
         if(!started_ || waited_)return;
         waited_=true;
         if(Clock::now()>=deadline_) {++late_fields;return;}
@@ -81,7 +83,7 @@ public:
     // field period has passed since the last one shown, so the run does not spend its time reading
     // back and drawing pictures nobody can see.
     bool pictureDue() {
-        if(!free_run)return true;
+        if(!freeRun())return true;
         const auto now=Clock::now();
         if(now-last_picture_<std::chrono::duration<double>(field_seconds))return false;
         last_picture_=now;return true;

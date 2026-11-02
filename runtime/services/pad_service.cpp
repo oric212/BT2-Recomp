@@ -85,6 +85,10 @@ NativePadState& EeRuntime::nativePadState() {
     return *native_pad_;
 }
 
+bool EeRuntime::padButtonsHeld() const {
+    return native_pad_ && native_pad_->pad.buttons!=0xFFFF;
+}
+
 void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
     auto& state=nativePadState();
     state.pad.advanceField(); // Scripted input changes at field starts; fields count every VBlank.

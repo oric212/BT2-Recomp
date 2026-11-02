@@ -30,6 +30,7 @@ struct Settings {
     unsigned fast_forward_key=0x09; // Tab.
     unsigned fast_forward_button=GamepadState::Count;
     bool fast_forward_toggle=false;
+    bool fast_loading=false; // Silent loading waits run as fast as the machine allows (host/loading_skip.h), from the next start.
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
     bool overlay_start_select=false;
@@ -43,7 +44,7 @@ struct Settings {
         out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
-           <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle
+           <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
@@ -94,6 +95,7 @@ struct Settings {
             else if(key=="fast_forward_key")s.fast_forward_key=number(0,255);
             else if(key=="fast_forward_button")s.fast_forward_button=button(true);
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
+            else if(key=="fast_loading")s.fast_loading=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
             else if(key=="memory_card") {
                 // One folder name. A full path (a card elsewhere, from an older file) is dropped; the

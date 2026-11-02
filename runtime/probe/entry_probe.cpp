@@ -12,6 +12,7 @@
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
 #include "host/input_mapping.h"
+#include "host/loading_skip.h"
 #include "host/player_session.h"
 #include "host/power_throttling.h"
 #include "host/sample_profiler.h"
@@ -141,11 +142,21 @@ int main(int argc, char** argv) {
         if (viewer_mode || speaker.device) pacer = std::make_unique<FramePacer>();
         // BT2_FAST_FORWARD: the whole run in fast forward, as when its key is held (to measure it).
         if (pacer && std::getenv("BT2_FAST_FORWARD")) pacer->free_run = true;
+        // BT2_FAST_LOADING=1 (the setting "Fast loading"): silent loading waits run free (host/loading_skip.h).
+        static struct FastLoading {
+            bool on = false;LoadingSkip skip;
+            ~FastLoading() {if (on) std::cerr << std::dec << "Fast loading: " << skip.fields << " fields run free." << std::endl;}
+        } fast_loading;
+        fast_loading.on = pacer && std::getenv("BT2_FAST_LOADING") && std::string_view(std::getenv("BT2_FAST_LOADING")) == "1";
         if (wav || pacer || field_log.is_open())
-            runtime.on_audio_field = [&wav](std::span<const std::int16_t> pcm) {
-                if (field_log.is_open()) {
+            runtime.on_audio_field = [&wav, &runtime](std::span<const std::int16_t> pcm) {
+                if (field_log.is_open() || fast_loading.on) {
                     int peak = 0;for (const auto sample : pcm) peak = std::max(peak, std::abs(int(sample)));
                     field_audio_peak = std::max(field_audio_peak, peak);
+                    // This field's wait too: it loaded in silence.
+                    if (fast_loading.on)
+                        pacer->loading_run = fast_loading.skip.update({std::uint64_t(runtime.ncmd_read_calls) + runtime.fileio_calls + runtime.load_poll_idles
+                            + runtime.file_load_idles + runtime.asset_poll_idles, peak == 0, runtime.padButtonsHeld()});
                 }
                 if (wav) wav->write(pcm);
                 if (pacer) {
@@ -158,7 +169,7 @@ int main(int argc, char** argv) {
                 // Fast forward is silent; when it ends the device's queue, run empty meanwhile, is filled
                 // to its target with silence at once instead of running dry for seconds.
                 static bool was_fast = false;
-                const bool fast = pacer && pacer->free_run;
+                const bool fast = pacer && pacer->freeRun();
                 if (speaker.device && !fast) {
                     if (was_fast) speaker.device->fillTo(AudioMixer::rate / 20);
                     speaker.device->write(pcm);
@@ -477,7 +488,7 @@ int main(int argc, char** argv) {
                         return;
                     }
                     in_between_started = false;
-                    if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->free_run) || in_between->replay_only || in_between->scan_replay) return;
+                    if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->freeRun()) || in_between->replay_only || in_between->scan_replay) return;
                     // The field's deadline first (the field waits for it here anyway): the picture has until then.
                     // Never waited for beyond it: a picture not ready is left out, so the game keeps its pace.
                     if (pacer) pacer->wait();
@@ -609,7 +620,7 @@ int main(int argc, char** argv) {
                 }
                 if (!show || !width) return;
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
-                const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->free_run)
+                const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->freeRun())
                                      && !in_between->replay_only && !in_between->scan_replay;
                 // The picture goes out ahead of its field's deadline, at the same moment in every field (FramePacer::
                 // waitToShow), and the deadline is waited for after it: the game's pace and input are unchanged, the

@@ -664,6 +664,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **VIF1 recording.** `BT2_VIF1_DUMP=<first flip>,<flips>:<folder>` writes every VIF1 transfer of those flips to `<folder>/vif1-<flip>.bin` (each transfer as its word count and its words), for the 60 fps study (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md). The data is the game's: it stays in `work/`. `BT2_VIF1_REPLACE=<flip>:<file>` replaces that flip's VIF1 transfers, one for one and of equal sizes, with a file in the same form (what VU1 and the GS receive changes; guest memory does not).
 
+**Fast loading.** `BT2_FAST_LOADING=1` with the viewer (or the audio device) runs silent loading stretches free (`host/loading_skip.h`, the setting "Fast loading"); the run's end prints how many fields ran free.
+
 **Fast forward measured.** `BT2_FAST_FORWARD=1` with the viewer (or the audio device) runs the whole run in fast forward, as when its key is held; with `BT2_VIEWER_STATS=1` the window's statistics give its speed.
 
 **Screen runs.** `python tools/ps2recomp/screen_run.py --disc <iso> [--modes 10,24,61] [--flips 30000] [--down-every 400] [--jobs 3]` runs main-menu screens through their battles without input: a generated pad script presses cross every 120 fields (and, with `--down-every`, down for 60 fields that often, which Ultimate Training's lessons need), and each run prints its result and the battles the screen starter recorded (kind, rule, the field it started, the lesson in Training, the result flags); pictures every `--pictures` flips go to `work/coverage/modes/`. Training (mode 61) with `--flips 90000 --down-every 400` runs all 21 lessons; Ultimate Battle Z (mode 10) with `--flips 600000` clears all 15 courses.

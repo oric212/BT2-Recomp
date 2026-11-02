@@ -191,6 +191,7 @@ inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> c
     screen.entries.push_back(key);screen.entries.push_back(button);
     screen.entries.push_back(menuAction("Clear the gamepad button",[&s,changed]{s.fast_forward_button=GamepadState::Count;changed();}));
     screen.entries.push_back(toggle("Switch instead of hold",s.fast_forward_toggle,changed,"Off: fast while held. On: each press switches it."));
+    screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows; the game itself is unchanged. From the next start."));
     return screen;
 }
 // Which key and which gamepad button each PS2 button is.
