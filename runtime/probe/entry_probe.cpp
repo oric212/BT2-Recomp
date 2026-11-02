@@ -430,10 +430,12 @@ int main(int argc, char** argv) {
             static std::unique_ptr<InBetweenFrames> in_between;
             // The worker's frame started at the field `in_between_vblank` (after flip `in_between_flip`).
             static bool in_between_started = false;static std::uint64_t in_between_vblank = 0;static unsigned in_between_flip = 0;
-            // Delayed fights (BT2_SIXTY_FPS_DELAY, default on; 0 off): in a fight every picture is shown a field later,
-            // the flip's own at the next field and, at the flip's deadline, the in-between picture of the job started at
-            // the flip before; so an in-between picture has a field more to be drawn (16.7 ms later input in fights).
-            static const bool delay_fights = !(std::getenv("BT2_SIXTY_FPS_DELAY") && std::string_view(std::getenv("BT2_SIXTY_FPS_DELAY")) == "0");
+            // Delayed fights (BT2_SIXTY_FPS_DELAY=1; off by default since 2026-11-02, when in-between pictures became cheap
+            // enough to be ready in the flip's own field: 26.5 against 49.2 ms flip to screen, the same pictures shown):
+            // in a fight every picture is shown a field later, the flip's own at the next field and, at the flip's
+            // deadline, the in-between picture of the job started at the flip before; so an in-between picture has a
+            // field more to be drawn (16.7 ms later input in fights).
+            static const bool delay_fights = std::getenv("BT2_SIXTY_FPS_DELAY") && std::string_view(std::getenv("BT2_SIXTY_FPS_DELAY")) == "1";
             static struct DelayedMain {bool pending = false;unsigned slot = 0, width = 0, height = 0, flip = 0;std::uint64_t vblank = 0;bool presented = false;} delayed_main;
             // A failure ends the in-between pictures, not the game.
             static const auto stop_in_between = [&runtime](const std::exception& e) {
