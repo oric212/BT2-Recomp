@@ -135,17 +135,17 @@ void GsTextureNames::startTransfer(std::uint64_t dir) {
 void GsTextureNames::finishUpload() {
     const auto hash=XXH3_64bits(pending_.data(),pending_.size());
     if(const auto found=uploads_.find(upload_key_);found!=uploads_.end() && found->second.hash==hash && found->second.generation>=all_written_
-       && std::all_of(found->second.pages.begin(),found->second.pages.end(),[&](std::uint16_t page){return page_written_[page]==found->second.generation;})) {
+       && std::all_of(found->second.blocks.begin(),found->second.blocks.end(),[&](std::uint16_t block){return block_written_[block]==found->second.generation;})) {
         ++repeated_uploads;uploaded_pixels+=std::uint64_t(w_)*h_;
         pending_.clear();transfer_=false;
         return;
     }
-    written_pages_.clear();
+    written_blocks_.clear();
     writeBytes(pending_,hash);
     pending_.clear();
-    std::sort(written_pages_.begin(),written_pages_.end());
-    written_pages_.erase(std::unique(written_pages_.begin(),written_pages_.end()),written_pages_.end());
-    uploads_[upload_key_]={hash,generation_,written_pages_};
+    std::sort(written_blocks_.begin(),written_blocks_.end());
+    written_blocks_.erase(std::unique(written_blocks_.begin(),written_blocks_.end()),written_blocks_.end());
+    uploads_[upload_key_]={hash,generation_,written_blocks_};
 }
 
 void GsTextureNames::writePending() {
@@ -174,13 +174,17 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
     }
     const auto& tables=layouts();
     auto* const bytes=reinterpret_cast<std::uint8_t*>(memory_.data()); // GS memory is little-endian words.
-    std::size_t at=0,last_page=~std::size_t(0);
+    std::size_t at=0,last_page=~std::size_t(0),last_block=~std::size_t(0);
     const auto mark=[&](std::size_t word) {
+        const std::size_t block=word/64;
+        if(block==last_block)return;
+        last_block=block;
+        if(block_written_[block]!=generation_) {block_written_[block]=generation_;written_blocks_.push_back(std::uint16_t(block));}
         const std::size_t page=word/2048;
         if(page==last_page)return;
         last_page=page;
         if(page_written_[page]!=generation_) {
-            page_written_[page]=generation_;written_pages_.push_back(std::uint16_t(page));
+            page_written_[page]=generation_;
             if(shared_)page_content_[page]=mix(page_content_[page],token);
         }
     };
@@ -214,13 +218,13 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
         const std::size_t t8_row=std::size_t(bp_)*256+std::size_t(y/64)*(bw_/2)*8192;const auto* t8_line=&tables.t8[(y%64)*128];
         const std::size_t t4_row=std::size_t(bp_)*512+std::size_t(y/128)*(bw_/2)*16384;const auto* t4_line=&tables.t4[(y%128)*128];
         if(psm_==psm_ct32 && !partial_bytes_) {
-            // Whole 32-bit pixels (the films' pictures): written directly, each 64-pixel page column marked once.
+            // Whole 32-bit pixels (the films' pictures): written directly, each 8-pixel block column marked once.
             const unsigned count=unsigned(std::min<std::size_t>(w_-x_,(data.size()-at)/4));
             for(unsigned n=0;n<count;++n,++x_,at+=4) {
                 const unsigned x=(x0_+x_)%2048;
                 const std::size_t at_word=(ct32_row+std::size_t(x/64)*2048+ct32_line[x%64])%memory_words;
                 std::memcpy(&memory_[at_word],data.data()+at,4);
-                if(n==0 || x%64==0)mark(at_word);
+                if(n==0 || x%8==0)mark(at_word);
             }
             uploaded_pixels+=count; // A pixel split between two pieces goes through the general path below.
         }

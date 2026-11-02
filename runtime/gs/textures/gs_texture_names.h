@@ -112,10 +112,14 @@ private:
     // nothing wrote since, leaves memory as it is, so it is not written and keeps the hashes valid.
     std::vector<std::uint8_t> pending_;std::size_t transfer_bytes_=0;bool direct_=false;
     std::array<std::uint64_t,3> upload_key_{};
-    struct Upload {std::uint64_t hash,generation;std::vector<std::uint16_t> pages;};
+    // Checked by the GS's 256-byte blocks, not by pages: the game uploads many small pieces into the same pages every
+    // frame (the fighters' base palettes), and by pages each one had changed the others' (84% of the uploads not taken
+    // as repeated were the same data to the same place, CPU fight 2026-11-02).
+    struct Upload {std::uint64_t hash,generation;std::vector<std::uint16_t> blocks;};
     struct UploadKeyHash {std::size_t operator()(const std::array<std::uint64_t,3>& k) const {return std::size_t((k[0]*0x9E3779B97F4A7C15ull)^(k[1]*0xC2B2AE3D27D4EB4Full)^k[2]);}};
     std::unordered_map<std::array<std::uint64_t,3>,Upload,UploadKeyHash> uploads_;
-    std::vector<std::uint16_t> written_pages_; // Pages the current transfer wrote.
+    std::vector<std::uint16_t> written_blocks_; // Blocks the current transfer wrote.
+    std::vector<std::uint64_t> block_written_=std::vector<std::uint64_t>(16384); // The generation of the last transfer into each block.
     // The last CLUT load: its TEX0 fields and the generation it was read at.
     std::uint64_t clut_key_=~0ull,clut_generation_=0;bool clut_drawn_=false;
     // Changes since a context's texture was last named.

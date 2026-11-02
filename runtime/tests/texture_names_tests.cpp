@@ -142,6 +142,18 @@ int main() {
         require(names.repeated_cluts==loads+1);
     }
     {
+        // Repeats are told by blocks: two 8 x 8 uploads into neighbouring blocks of one page are each not written again
+        // when they come again; a write into one of them makes that one written again, the other still repeated.
+        GsTextureNames names;
+        std::vector<std::uint8_t> a(8*8*4,0x11),b(8*8*4,0x22),c(8*8*4,0x33);
+        upload(names,0x400,1,0x00,8,8,a);upload(names,0x401,1,0x00,8,8,b);
+        upload(names,0x400,1,0x00,8,8,a);upload(names,0x401,1,0x00,8,8,b);
+        require(names.repeated_uploads==2);
+        upload(names,0x400,1,0x00,8,8,c);
+        upload(names,0x400,1,0x00,8,8,a);upload(names,0x401,1,0x00,8,8,b);
+        require(names.repeated_uploads==3 && names.memory()[0x400*64]==0x11111111u);
+    }
+    {
         // The page-table addresses equal the sink's for any start block, width and position.
         std::uint32_t seed=12345;
         auto next=[&]{seed=seed*1103515245u+12345u;return seed>>8;};
