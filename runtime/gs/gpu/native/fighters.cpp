@@ -22,10 +22,10 @@
 namespace {
 using namespace ParallelGS;
 
-constexpr std::uint32_t flagPerspective=1,flagTcc=2,flagDecal=4,flagSubtract=8; // shaders/fighters.frag
+constexpr std::uint32_t flagPerspective=1,flagTcc=2,flagDecal=4,flagSubtract=8,flagLayered=16,flagClampS=32,flagClampT=64; // shaders/fighters.frag
 
-struct Vertex {std::int32_t x,y;std::uint32_t z,rgba;float s,t,q,pad;};
-struct DrawPush {float area[4],image[4],scale[4],size[4],region[4];std::uint32_t mode[4];};
+struct Vertex {std::int32_t x,y;std::uint32_t z,rgba;float s,t,q,s2,t2,q2;}; // s2, t2, q2: the cel-shading layer's (Draw).
+struct DrawPush {float area[4],image[4],scale[2][4],region[2][4],sizes[4];std::uint32_t mode[4];};
 struct MemoryPush {std::uint32_t area[4],buffers[4],memory[4];};
 
 // Consecutive triangles drawn with the same texture and state.
@@ -52,7 +52,7 @@ Vulkan::Program* graphicsProgram(Vulkan::Device& device,std::span<const std::uin
     v.input_mask=inputs;v.push_constant_size=push_bytes;
     f.output_mask=1;f.push_constant_size=push_bytes;
     if(buffer) {f.sets[0].storage_buffer_mask=1;f.sets[0].meta[0].array_size=1;}
-    if(texture) {f.sets[0].sampled_image_mask=1;f.sets[0].fp_mask=1;f.sets[0].meta[0].array_size=1;}
+    if(texture) {f.sets[0].sampled_image_mask=3;f.sets[0].fp_mask=3;f.sets[0].meta[0].array_size=1;f.sets[0].meta[1].array_size=1;}
     auto* vs=device.request_shader(vert.data(),vert.size_bytes(),&v);
     auto* fs=device.request_shader(frag.data(),frag.size_bytes(),&f);
     return device.request_program(vs,fs);
@@ -147,7 +147,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
         for(int k=0;k<3;++k) {
             const auto& position=pass.positions[3*n+(k+first)%3];
             const auto& attribute=pass.attributes[3*n+(k+first)%3];
-            v[k]={position.pos.x,position.pos.y,std::min(position.z,0xFFFFFFu),gouraud?attribute.rgba:pass.attributes[3*n].rgba,0,0,1,0};
+            v[k]={position.pos.x,position.pos.y,std::min(position.z,0xFFFFFFu),gouraud?attribute.rgba:pass.attributes[3*n].rgba,0,0,1,0,0,1};
             if(perspective) {v[k].s=attribute.st.x;v[k].t=attribute.st.y;v[k].q=attribute.q;}
             else {v[k].s=float(attribute.uv.x)/16.0f;v[k].t=float(attribute.uv.y)/16.0f;}
         }
@@ -155,7 +155,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
         if(parallelogram) {
             v[3]={v[1].x+v[2].x-v[0].x,v[1].y+v[2].y-v[0].y,
                   std::uint32_t(std::clamp<std::int64_t>(std::int64_t(v[1].z)+v[2].z-v[0].z,0,0xFFFFFF)),v[0].rgba,
-                  v[1].s+v[2].s-v[0].s,v[1].t+v[2].t-v[0].t,v[1].q+v[2].q-v[0].q,0};
+                  v[1].s+v[2].s-v[0].s,v[1].t+v[2].t-v[0].t,v[1].q+v[2].q-v[0].q,0,0,1};
             if(gouraud) {
                 std::uint32_t rgba=0;
                 for(int k=0;k<4;++k) {
@@ -174,6 +174,34 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
         lo_x=std::min<int>(lo_x,bb.x);lo_y=std::min<int>(lo_y,bb.y);hi_x=std::max<int>(hi_x,bb.z);hi_y=std::max<int>(hi_y,bb.w);
     }
     if(lo_x<0 || lo_y<0)return false;
+
+    // A piece's base followed by its cel-shading layer at the same positions (paraLLEl-GS takes both alike: in the CPU
+    // fight every such pair matched, 2026-11-02) is one draw: where the base's triangle passes the depth test the
+    // layer's passes too (the same depth, greater or equal), and the layer only subtracts from what the base wrote.
+    // Half the draws, and none of them changes the pipeline. Differs from two draws only where two triangles of one
+    // piece overlap at exactly equal depth.
+    struct Draw {const Batch* base;const Batch* cel;};
+    std::vector<Draw> draws;draws.reserve(batches.size());
+    for(std::size_t b=0;b<batches.size();++b) {
+        const auto& x=batches[b];
+        if(b+1<batches.size()) {
+            const auto& y=batches[b+1];
+            bool layered=!(x.flags&flagSubtract) && (y.flags&flagSubtract) && (y.flags&flagDecal) && y.write_mask==0x7u && !x.greater && !y.greater
+                && x.count==y.count;
+            for(std::uint32_t k=0;layered && k<x.count*3;++k) {
+                const auto& u=vertices[x.first*3+k];const auto& v=vertices[y.first*3+k];
+                layered=u.x==v.x && u.y==v.y && u.z==v.z;
+            }
+            if(layered) {
+                for(std::uint32_t k=0;k<x.count*3;++k) {
+                    auto& u=vertices[x.first*3+k];const auto& v=vertices[y.first*3+k];
+                    u.s2=v.s;u.t2=v.t;u.q2=v.q;
+                }
+                draws.push_back({&x,&y});++b;continue;
+            }
+        }
+        draws.push_back({&x,nullptr});
+    }
 
     auto& device=context.device;
     auto& gs=context.gs;
@@ -194,7 +222,7 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
     if(programs.device!=&device) {
         programs.device=&device;
         programs.load=graphicsProgram(device,fighters_load_vert_spv,fighters_load_frag_spv,0,true,false,sizeof(MemoryPush));
-        programs.draw=graphicsProgram(device,fighters_vert_spv,fighters_frag_spv,0xF,false,true,sizeof(DrawPush));
+        programs.draw=graphicsProgram(device,fighters_vert_spv,fighters_frag_spv,0x1F,false,true,sizeof(DrawPush));
         programs.store=nativeComputeProgram(device,fighters_store_spv,1,sizeof(MemoryPush),0,2);
     }
     auto* load=programs.load;auto* draw=programs.draw;auto* store=programs.store;
@@ -234,18 +262,27 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context) {
         cmd.set_vertex_attrib(1,0,VK_FORMAT_R32_UINT,offsetof(Vertex,z));
         cmd.set_vertex_attrib(2,0,VK_FORMAT_R8G8B8A8_UINT,offsetof(Vertex,rgba));
         cmd.set_vertex_attrib(3,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,s));
+        cmd.set_vertex_attrib(4,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,s2));
         cmd.set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        for(const auto& batch:batches) {
+        const auto layer=[&](const Batch& batch,unsigned n,DrawPush& push) {
             const auto& texture=rp.textures[batch.texture];
             const auto& tex0=pass.tex0[batch.texture];
             const auto& region=texture.info.region;
-            DrawPush push{{float(lo_x),float(lo_y),float(side),0},{float(width*side),float(height*side),0,0},
-                          {texture.info.sizes.z,texture.info.sizes.w,texture.info.bias.x,texture.info.bias.y},
-                          {float(1u<<tex0.TW),float(1u<<tex0.TH),batch.clamp_s?1.0f:0.0f,batch.clamp_t?1.0f:0.0f},
-                          {region.x,region.y,region.z,region.w},{batch.flags,batch.fix,0,0}};
-            const bool clamp=batch.clamp_s || batch.clamp_t;
-            cmd.set_texture(0,0,*texture.view,batch.linear?(clamp?Vulkan::StockSampler::LinearClamp:Vulkan::StockSampler::LinearWrap)
-                                                           :(clamp?Vulkan::StockSampler::NearestClamp:Vulkan::StockSampler::NearestWrap));
+            const float scale[4]={texture.info.sizes.z,texture.info.sizes.w,texture.info.bias.x,texture.info.bias.y};
+            const float clamp[4]={region.x,region.y,region.z,region.w};
+            std::memcpy(push.scale[n],scale,sizeof scale);std::memcpy(push.region[n],clamp,sizeof clamp);
+            push.sizes[2*n]=float(1u<<tex0.TW);push.sizes[2*n+1]=float(1u<<tex0.TH);
+            push.mode[2*n]=batch.flags|(batch.clamp_s?flagClampS:0u)|(batch.clamp_t?flagClampT:0u);push.mode[2*n+1]=batch.fix;
+            const bool clamped=batch.clamp_s || batch.clamp_t;
+            cmd.set_texture(0,n,*texture.view,batch.linear?(clamped?Vulkan::StockSampler::LinearClamp:Vulkan::StockSampler::LinearWrap)
+                                                            :(clamped?Vulkan::StockSampler::NearestClamp:Vulkan::StockSampler::NearestWrap));
+        };
+        for(const auto& draw:draws) {
+            const auto& batch=*draw.base;
+            DrawPush push{{float(lo_x),float(lo_y),float(side),0},{float(width*side),float(height*side),0,0},{},{},{},{}};
+            layer(batch,0,push);
+            layer(draw.cel?*draw.cel:batch,1,push); // Bound either way: the layout has both.
+            if(draw.cel)push.mode[0]|=flagLayered;
             cmd.push_constants(&push,0,sizeof push);
             cmd.set_depth_test(true,batch.depth_write);
             cmd.set_depth_compare(batch.greater?VK_COMPARE_OP_GREATER:VK_COMPARE_OP_GREATER_OR_EQUAL);
