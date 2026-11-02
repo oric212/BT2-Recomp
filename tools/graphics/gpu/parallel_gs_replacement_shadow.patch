@@ -1,0 +1,80 @@
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -651,6 +651,8 @@ private:
+ 	template <bool quad>
+ 	uint32_t replacement_2d_texture(uint32_t tex, uint32_t tex_index, const VertexPosition *pos,
+ 	                                const VertexAttribute *attr, const ContextState &ctx, const PRIMBits &prim);
++	// BT2 Recomp patch: a drop shadow of a sprite with a texture replacement brought closer (see the definition).
++	void tighten_replacement_shadow();
+ 
+ 	template <bool list_primitive, bool fan_primitive, bool quad, unsigned num_vertices>
+ 	void drawing_kick_primitive(bool adc);
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -2535,6 +2535,54 @@ uint32_t GSInterface::replacement_2d_texture(uint32_t tex, uint32_t tex_index, c
+ 	return tex;
+ }
+ 
++// BT2 Recomp patch: games draw a drop shadow as the same sprite twice, first in another colour a pixel or two
++// away (BT2's story text: one pixel right and two down, grey at half strength). With a texture replacement
++// several times the original's size, that offset in game pixels stays while the art's strokes become thin, and
++// the shadow reads as a second copy. The first sprite of such a pair, both with the same replacement and the
++// same texture coordinates and size, is moved toward the second to the offset divided by the replacement's
++// scale (its texels), with its edges per sample instead of on whole pixels.
++void GSInterface::tighten_replacement_shadow()
++{
++	if (render_pass.primitive_count < 2)
++		return;
++	const uint32_t second = render_pass.primitive_count - 1, first = second - 1;
++	auto &shadow = render_pass.prim[first];
++	const auto &letter = render_pass.prim[second];
++	constexpr uint32_t sprite = 1u << STATE_BIT_SPRITE, snapped = 1u << STATE_BIT_SNAP_RASTER;
++	if ((shadow.state & sprite) == 0 || (shadow.state & snapped) == 0 || (shadow.tex & TEX_REPLACEMENT_BIT) == 0)
++		return;
++	const uint32_t index_mask = (1u << TEX_TEXTURE_INDEX_BITS) - 1u;
++	const uint32_t a = (shadow.tex >> TEX_TEXTURE_INDEX_OFFSET) & index_mask;
++	const uint32_t b = (letter.tex >> TEX_TEXTURE_INDEX_OFFSET) & index_mask;
++	if (a >= render_pass.tex_infos.size() || b >= render_pass.tex_infos.size() ||
++	    render_pass.tex_infos[a].view != render_pass.tex_infos[b].view)
++		return;
++	auto *pos = render_pass.positions + 3 * first;
++	const auto *letter_pos = render_pass.positions + 3 * second;
++	const auto *attr = render_pass.attributes + 3 * first;
++	const auto *letter_attr = render_pass.attributes + 3 * second;
++	if (attr[0].rgba == letter_attr[0].rgba && attr[1].rgba == letter_attr[1].rgba)
++		return;
++	for (unsigned i = 0; i < 2; i++)
++		if (any(notEqual(attr[i].uv, letter_attr[i].uv)) || any(notEqual(attr[i].st, letter_attr[i].st)) ||
++		    attr[i].q != letter_attr[i].q)
++			return;
++	const ivec2 offset = pos[0].pos - letter_pos[0].pos;
++	constexpr int most = 2 << PGS_SUBPIXEL_BITS;
++	if (any(notEqual(pos[1].pos - letter_pos[1].pos, offset)) || all(equal(offset, ivec2(0))) ||
++	    offset.x < -most || offset.x > most || offset.y < -most || offset.y > most)
++		return;
++	const int scale = int(render_pass.tex_infos[a].view->get_image().get_width() >> render_pass.tex0_infos[a].TW);
++	if (scale < 2)
++		return;
++	for (unsigned i = 0; i < 2; i++)
++		pos[i].pos = letter_pos[i].pos + offset / scale;
++	shadow.state &= ~snapped;
++	const ivec4 bb(std::min<int>(shadow.bb.x, letter.bb.x), std::min<int>(shadow.bb.y, letter.bb.y),
++	               std::max<int>(shadow.bb.z, letter.bb.z), std::max<int>(shadow.bb.w, letter.bb.w));
++	shadow.bb = i16vec4(bb);
++}
++
+ template <bool quad, unsigned num_vertices>
+ GSInterface::FBFeedbackMode
+ GSInterface::deduce_color_feedback_mode(const VertexPosition *pos, const VertexAttribute *attr,
+@@ -3011,6 +3059,9 @@ void GSInterface::drawing_kick_append()
+ 	if (quad && super_sampled_textures && prim.desc.TME && tex_index < render_pass.tex_infos.size() &&
+ 	    render_pass.tex_infos[tex_index].info.arrayed && neighbour_read(pos, attr, prim.desc))
+ 		render_pass.instances[render_pass.current_instance].has_neighbour_read = true;
++	// BT2 Recomp patch: a sprite drawn with a texture replacement may be the second of a drop shadow pair.
++	if (quad && (prim_attr.tex & TEX_REPLACEMENT_BIT) != 0)
++		tighten_replacement_shadow();
+ 
+ 	// Mark state as explicitly not dirty now. If we ended up flushing render pass due to e.g. texture state,
+ 	// some dirty bits will remain set, despite not actually being dirty.
