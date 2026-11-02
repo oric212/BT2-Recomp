@@ -826,6 +826,8 @@ int main(int argc, char** argv) {
         registerKernelPayloads(runtime);
         // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
         if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
+        // BT2_REPLAY_CALL (docs/plans/ee/AI_VERIFICATION_PLAN.md): one function on a RAM captured from PCSX2, then exit.
+        if (const char* replay = std::getenv("BT2_REPLAY_CALL")) {replayCall(runtime, context, replay);std::exit(0);}
         // BT2_QUICK_TITLE=1 (the in-game menu's "Return to the title screen"): the startup (logos, films) runs in fast
         // forward until the title begins or a button is pressed. 0x24BE80 runs once, as the title starts (traced
         // 2026-11-03: flip 1,498 of a boot with a card, called from the overlay at 0x3BC458).
