@@ -100,9 +100,9 @@ bool InBetweenFrames::busy() {
     return finished_<started_;
 }
 
-bool InBetweenFrames::keepsUp(bool ready) {
-    recent_=(recent_<<1)|(ready?1u:0u);
-    return ready && std::popcount(recent_)>=29;
+bool InBetweenFrames::keepsUp(bool late) {
+    recent_=(recent_<<1)|(late?0u:1u);
+    return std::popcount(recent_)>=29;
 }
 
 bool InBetweenFrames::ready() {

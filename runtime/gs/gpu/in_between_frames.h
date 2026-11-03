@@ -76,10 +76,13 @@ public:
     // When the last picture became ready (meaningful while ready()).
     std::chrono::steady_clock::time_point readyAt() {std::lock_guard<std::mutex> hold(lock_);return ready_at_;}
     bool busy(); // Whether the frame is still to be drawn (without waiting).
-    // Whether to show a picture that is `ready` at its field: only while the in-between pictures keep up
-    // (at least 29 of the last 32 were ready). Shown now and then they would make an uneven cadence that
-    // looks worse than a steady 30 (Tenkaichi3Decomp likewise shows only as many as fit).
-    bool keepsUp(bool ready);
+    // Whether the in-between pictures keep up, called once per frame with whether its picture was `late` (still
+    // being drawn at its field's deadline): at least 29 of the last 32 frames were not. Shown now and then they
+    // would make an uneven cadence that looks worse than a steady 30 (Tenkaichi3Decomp likewise shows only as many
+    // as fit). A frame without an in-between picture by design (unpaired lists, a camera cut, a scene change) is not
+    // late: counted as one, a few of them in a row turned 60 fps off for about 30 frames at a time (the user's
+    // session of 2026-11-03: 28 such runs in a fight, up to 45 frames long).
+    bool keepsUp(bool late);
     std::pair<unsigned,unsigned> pictureSize() const {return picture_;}
     // The jobs by number (the n-th start is job n - 1). For pictures shown a field later than drawn (the
     // delayed fights): whether job `job` is done with its in-between picture, held in the renderer's slot

@@ -581,10 +581,10 @@ int main(int argc, char** argv) {
                     const bool direct = sixty_fps::direct && sixty_fps::main_flip == in_between_flip;
                     if (pacer) while (!in_between->ready() && in_between->busy() && std::chrono::steady_clock::now() < pacer->deadline()) Sleep(0);
                     if (pacer && !direct) {if (at_deadline) pacer->wait(); else pacer->waitToShow();}
-                    const bool ready = in_between->ready();
-                    if (!ready && in_between->busy()) ++in_between->late;
-                    sixty_fps::keeping_up = in_between->keepsUp(ready);
-                    if (!sixty_fps::keeping_up) return; // Not ready, or they have not been keeping up: a steady 30.
+                    const bool ready = in_between->ready(), late = !ready && in_between->busy();
+                    if (late) ++in_between->late;
+                    sixty_fps::keeping_up = in_between->keepsUp(late);
+                    if (!ready || !sixty_fps::keeping_up) return; // None, or they have not been keeping up: a steady 30.
                     if (direct) {
                         sixty_fps::notePartnerReady(in_between->readyAt());
                         if (player && sixty_fps::direct_shown.exchange(false)) player->shown();
@@ -770,9 +770,9 @@ int main(int argc, char** argv) {
                     delayed_main = {true, flip % GpuGsBackend::held_slots, width, height, flip, runtime.vblank_deliveries};
                     if (in_between_flip + 1 == flip) {
                         const auto job = in_between->lastJob();
-                        const bool ready = in_between->readyFor(job);
-                        if (!ready && in_between->busy()) ++in_between->late;
-                        if (in_between->keepsUp(ready)) {
+                        const bool ready = in_between->readyFor(job), late = !ready && in_between->busy();
+                        if (late) ++in_between->late;
+                        if (in_between->keepsUp(late) && ready) {
                             const auto size = in_between->pictureSizeFor(job);
                             gpu_mirror.showHeld(&in_between->renderer(), int(job % GpuGsBackend::held_slots));
                             viewer.presentRenderer(size.first, size.second, flip);

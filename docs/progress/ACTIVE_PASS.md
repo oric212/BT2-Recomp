@@ -15,7 +15,7 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 Open, in order:
 
 1. The user's look in play with "Variable refresh rate" on: the aura fix and the even pictures.
-2. 40 of 2,826 in-between pictures left out (1.4%): the reason (ready after the next flip's picture, or not keeping up).
+2. Done (later): the keep-up check no longer turns 60 fps off after frames that have no in-between picture by design (the user's session: runs of up to 1.5 s at 30 fps); `work/scripts/play-with-stats.cmd` records `user/latency.log` for reading a real session.
 3. Bones left at the newer pose: 10% a picture, most without a counterpart.
 4. Load: the pacer's spin keeps one core busy while the game waits (the user's go-ahead for more hardware, 2026-11-03); the AI pass's rounding helpers (about 8% of the game thread); then [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
 
