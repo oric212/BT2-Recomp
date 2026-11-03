@@ -189,6 +189,7 @@ private:
         SetProcessDPIAware(); // One picture pixel is a whole number of screen pixels; the system does not rescale the window.
         WNDCLASSA wc{};wc.lpfnWndProc=&ViewerWindow::proc;wc.hInstance=GetModuleHandleA(nullptr);
         wc.lpszClassName="BT2RecompViewer";wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
+        wc.hIcon=LoadIconA(wc.hInstance,MAKEINTRESOURCEA(1)); // The program's icon (runtime/game/*.rc), none in tools.
         RegisterClassA(&wc);
         RECT r{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
         hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,

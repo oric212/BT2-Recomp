@@ -1,0 +1,2 @@
+// The launcher's icon: drawn by tools/build/make_icons.py.
+1 ICON "../../assets/icons/bt2-launcher.ico"

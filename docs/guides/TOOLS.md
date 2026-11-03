@@ -684,6 +684,8 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **Online battles (tool switches).** `BT2_UNLOCK_ROSTER=1` with a fresh start makes every fighter selectable; `BT2_ONLINE_VIEW=1|2` shows only that player's view of 1P vs 2P, full screen (`ee/online_view.h`); with `BT2_START_SCREEN=30` and `BT2_PAD2_SCRIPT` a two-player session runs scripted ([online battle plan](../plans/online/ONLINE_BATTLE_PLAN.md)).
 
+**Program icons.** `python tools/build/make_icons.py [--preview <png>]` draws `assets/icons/bt2-game.ico` and `bt2-launcher.ico` (no game artwork); the builds embed them (`runtime/game/*.rc`).
+
 **Pacer wait.** With 8 logical processors or more the frame pacer spins the last 6 ms of each wait, keeping the game's core awake (`host/frame_pacer.h`); `BT2_PACER_SPIN_US=<n>` sets another window, `BT2_PACER_SLEEP=1` sleeps throughout, for comparisons.
 
 **Variable refresh.** `BT2_VARIABLE_REFRESH=1` (the setting "Variable refresh rate") presents each picture at once with tearing allowed instead of at the display's refresh, for VRR displays (`gs/gpu/gpu_window_presenter.cpp`, docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md). With it, DXGI's frame statistics in `<BT2_LATENCY_LOG>.presents` do not tell when a picture was shown.

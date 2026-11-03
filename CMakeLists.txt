@@ -178,6 +178,9 @@ if(BT2_BUILD_GENERATED_PROBE)
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/struggle-buttons" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/struggle-buttons")
     endforeach()
     target_compile_definitions(bt2-launcher PRIVATE BT2_LAUNCHER_ALWAYS=1)
+    # Their icons (assets/icons/, tools/build/make_icons.py).
+    target_sources(bt2-game PRIVATE runtime/game/bt2_game.rc)
+    target_sources(bt2-launcher PRIVATE runtime/game/bt2_launcher.rc)
     add_executable(bt2-vif1-blend-tests runtime/tests/vif1_blend_tests.cpp runtime/vu/vif1_blend.cpp runtime/vu/gs_packet_blend.cpp)
     bt2_target_defaults(bt2-vif1-blend-tests)
     add_test(NAME vif1-blend COMMAND bt2-vif1-blend-tests)
@@ -260,6 +263,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
         runtime/probe/selected_bindings.cpp runtime/probe/overlay_bindings.cpp
         runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/game_starter.cpp runtime/probe/call_replay.cpp
+        runtime/game/bt2_game.rc # The game window's icon.
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_0033A238_0x33a238.cpp"

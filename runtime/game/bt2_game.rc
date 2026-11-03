@@ -1,0 +1,2 @@
+// The game program's icon (and the game window's, through bt2-entry-probe): drawn by tools/build/make_icons.py.
+1 ICON "../../assets/icons/bt2-game.ico"
