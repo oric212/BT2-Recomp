@@ -547,6 +547,7 @@ int main(int argc, char** argv) {
                 runtime.gs_sink.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
                 sixty_fps::field_picture = [&runtime, viewer_mode] {
+                    if (pacer && pacer->freeRun()) sixty_fps::direct = false; // Fast forward: only the flips' pictures, when due.
                     if (delayed_main.pending) {
                         // A delayed fight: the flip's own picture, held at the flip, a field after it.
                         // The field after the flip's (the call counted vblank + 1 is the flip's own field's end, where its
@@ -744,7 +745,7 @@ int main(int argc, char** argv) {
                         while (!in_between->readyFor(job) && in_between->busy() && Clock::now() < pacer->deadline()) Sleep(0);
                     }
                     shown_at = pacer->waitToShow(Clock::now());
-                } else if (ahead && in_between && sixty_fps::fight_waits > 0) {
+                } else if (ahead && in_between && sixty_fps::fight_waits > 0 && !pacer->freeRun()) {
                     // A 60 fps fight: the flip's picture no earlier than its in-between partner can follow a field later.
                     sixty_fps::main_flipped = t0;
                     const auto partner = t0 + sixty_fps::partnerReadyAfterFlip() - pacer->period();

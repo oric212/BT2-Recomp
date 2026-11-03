@@ -81,6 +81,7 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         std::lock_guard guard(lock_);
         if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
         layout_.emplace();layout_->window=window;layout_->at=at;layout_->client_width=client_width;layout_->client_height=client_height;layout_->smooth=smooth;
+        layout_->status=status;layout_->status_at=status_at; // The status line (frame rate, fast forward) on every picture.
         if(next_at_) {request.present_at=*next_at_;next_at_.reset();}
         const auto due=std::max(std::chrono::steady_clock::now(),request.present_at);
         request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(due.time_since_epoch()).count();

@@ -65,7 +65,7 @@ private:
     // it); a further one replaces the newer.
     std::deque<Request> pending_;bool stop_=false;std::exception_ptr failure_;
     std::optional<std::chrono::steady_clock::time_point> next_at_;
-    std::optional<Request> layout_; // The last picture's window and placement (show), for showPicture.
+    std::optional<Request> layout_; // The last picture's window, placement and status line (show), for showPicture.
     std::chrono::steady_clock::time_point last_present_{}; // On the thread: when the last picture was presented.
     std::thread thread_; // Last: it starts in the constructor.
 };
