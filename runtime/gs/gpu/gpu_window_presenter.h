@@ -7,11 +7,18 @@
 // picture over and goes on. A picture handed over while the one before still waits replaces it; a picture
 // scheduled ahead (presentAt, showPicture) is prepared first and waits on the thread for its time, so only
 // its present comes at that time; the next one queues behind it.
+// A picture is presented only once its copy is done on the GPU: a VRR display shows a picture when its GPU
+// work is done, not when it is presented, and a picture of a frame just drawn is done about 8.5 ms after
+// one drawn ahead (a 60 fps fight at 16x with HD, 2026-11-03), so pictures presented a field apart appeared
+// 10 and 24 ms apart. A picture shown on its own is presented a steady time after it was handed over, as
+// late as nearly all recent ones were done (usualCompletion); one scheduled a field after the last
+// (showPicture) a field after that one as presented.
 // Built only with BT2_GPU_GS; used by gpu_gs_backend.cpp.
 #pragma once
 #include "host/window_presenter.h"
 #include "context.hpp"
 #include "device.hpp"
+#include <array>
 #include <condition_variable>
 #include <deque>
 #include <exception>
@@ -43,16 +50,20 @@ private:
         void* window=nullptr;std::optional<DisplayFrame> frame;Vulkan::ImageHandle picture;Rect at;
         unsigned client_width=0,client_height=0;bool smooth=false;DisplayFrame status;Rect status_at;
         long long queued_us=0; // When it was handed over (the steady clock), for the latency log.
+        std::chrono::steady_clock::time_point due{}; // When it was handed over, or its presentAt time if later.
         std::chrono::steady_clock::time_point present_at{}; // Presented no earlier (presentAt).
         std::optional<std::chrono::steady_clock::duration> after_last; // Presented this long after the last (showPicture).
     };
     // BT2_LATENCY_LOG=<path>: <path>.presents gets each present (its DXGI present count, when it was handed
-    // over and when presented) and each present the display has shown since (its count and the refresh's
-    // time), in microseconds of the steady clock.
-    void logPresent(long long queued_us);
+    // over, when presented and when its copy was done on the GPU) and each present the display has shown
+    // since (its count and the refresh's time), in microseconds of the steady clock.
+    void logPresent(long long queued_us,std::chrono::steady_clock::time_point done);
     // On the thread: the picture copied into the swapchain and the device's frame context ended; whether
-    // it is to be presented (WSI::end_frame, after around_frame).
-    bool present(const Request& request);
+    // it is to be presented (WSI::end_frame, after around_frame). `done`: signalled when the copy is done.
+    bool present(const Request& request,Vulkan::Fence& done);
+    // How long after handover a picture shown on its own is presented: when 99% of the last 120 such pictures
+    // were done on the GPU, plus half a millisecond. `took`: this one's (run).
+    std::chrono::steady_clock::duration usualCompletion(std::chrono::steady_clock::duration took);
     void run();
     struct State;
     std::unique_ptr<State> state_;
@@ -67,5 +78,6 @@ private:
     std::optional<std::chrono::steady_clock::time_point> next_at_;
     std::optional<Request> layout_; // The last picture's window, placement and status line (show), for showPicture.
     std::chrono::steady_clock::time_point last_present_{}; // On the thread: when the last picture was presented.
+    std::array<std::chrono::steady_clock::duration,120> completion_{};std::size_t completion_next_=0,completion_count_=0; // usualCompletion.
     std::thread thread_; // Last: it starts in the constructor.
 };

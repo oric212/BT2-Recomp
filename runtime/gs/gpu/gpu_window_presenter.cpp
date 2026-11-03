@@ -83,8 +83,8 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         layout_.emplace();layout_->window=window;layout_->at=at;layout_->client_width=client_width;layout_->client_height=client_height;layout_->smooth=smooth;
         layout_->status=status;layout_->status_at=status_at; // The status line (frame rate, fast forward) on every picture.
         if(next_at_) {request.present_at=*next_at_;next_at_.reset();}
-        const auto due=std::max(std::chrono::steady_clock::now(),request.present_at);
-        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(due.time_since_epoch()).count();
+        request.due=std::max(std::chrono::steady_clock::now(),request.present_at);
+        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(request.due.time_since_epoch()).count();
         if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
     }
     changed_.notify_all();
@@ -96,7 +96,8 @@ bool GpuWindowPresenter::showPicture(Vulkan::ImageHandle picture,std::chrono::st
         if(!layout_ || failure_)return false;
         Request request=*layout_;
         request.picture=std::move(picture);request.after_last=after;
-        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        request.due=std::chrono::steady_clock::now();
+        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(request.due.time_since_epoch()).count();
         if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
     }
     changed_.notify_all();
@@ -114,12 +115,18 @@ void GpuWindowPresenter::run() {
             request=std::move(pending_.front());pending_.pop_front();
         }
         try {
-            bool presenting=false;
-            around_frame_([&]{presenting=present(request);});
+            bool presenting=false;Vulkan::Fence copied;
+            const auto started=std::max(std::chrono::steady_clock::now(),request.due);
+            around_frame_([&]{presenting=present(request,copied);});
             if(!presenting)continue;
             // A picture scheduled ahead is ready now (copied, its frame ended) and waits for its time, so only its
-            // present comes then (a newer picture handed over meanwhile queues behind it).
-            const auto at=request.after_last?last_present_+*request.after_last:request.present_at;
+            // present comes then (a newer picture handed over meanwhile queues behind it). Its time: a field after
+            // the last picture, or a steady time after it was handed over that covers its GPU work (header). The GPU
+            // work is timed from when this thread took the picture: a picture that waited behind another would
+            // otherwise count its wait, and hold the pictures after it longer, and they would keep waiting.
+            if(copied)copied->wait();
+            const auto done=std::chrono::steady_clock::now();
+            const auto at=request.after_last?last_present_+*request.after_last:request.due+usualCompletion(done-started);
             {
                 // A wait's wake-up on Windows is late by up to the system's timer tick (about 0.9 ms measured, the
                 // in-between picture then 17.6 instead of 16.7 ms after the flip's): the last millisecond is waited
@@ -132,19 +139,26 @@ void GpuWindowPresenter::run() {
             while(std::chrono::steady_clock::now()<at)YieldProcessor();
             last_present_=std::chrono::steady_clock::now();
             if(!state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
-            logPresent(request.queued_us);
+            logPresent(request.queued_us,done);
         }
         catch(...) {std::lock_guard guard(lock_);if(!failure_)failure_=std::current_exception();}
     }
 }
 
-void GpuWindowPresenter::logPresent(long long queued_us) {
+std::chrono::steady_clock::duration GpuWindowPresenter::usualCompletion(std::chrono::steady_clock::duration took) {
+    completion_[completion_next_++%completion_.size()]=std::max(took,std::chrono::steady_clock::duration::zero());
+    completion_count_=std::min(completion_count_+1,completion_.size());
+    auto recent=completion_;std::sort(recent.begin(),recent.begin()+completion_count_);
+    return recent[std::min(completion_count_-1,completion_count_*99/100)]+std::chrono::microseconds(500);
+}
+
+void GpuWindowPresenter::logPresent(long long queued_us,std::chrono::steady_clock::time_point done) {
     static std::ofstream log=[] {const char* p=std::getenv("BT2_LATENCY_LOG");return p?std::ofstream(std::string(p)+".presents"):std::ofstream();}();
     if(!log.is_open())return;
     const auto now_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     std::uint64_t last=0,shown=0;std::int64_t shown_qpc=0;
     if(!state_->wsi->get_dxgi_frame_statistics(last,shown,shown_qpc))return;
-    log<<"present,"<<last<<','<<queued_us<<','<<now_us<<'\n';
+    log<<"present,"<<last<<','<<queued_us<<','<<now_us<<','<<std::chrono::duration_cast<std::chrono::microseconds>(done.time_since_epoch()).count()<<'\n';
     static std::uint64_t logged_shown=0;
     if(shown!=logged_shown) {
         // The steady clock counts QueryPerformanceCounter's ticks on Windows: the same time base.
@@ -154,7 +168,7 @@ void GpuWindowPresenter::logPresent(long long queued_us) {
     }
 }
 
-bool GpuWindowPresenter::present(const Request& request) {
+bool GpuWindowPresenter::present(const Request& request,Vulkan::Fence& done) {
     void* window=request.window;const Rect at=request.at;const bool smooth=request.smooth;
     const unsigned client_width=request.client_width,client_height=request.client_height;
     const DisplayFrame* frame=request.frame?&*request.frame:nullptr;
@@ -245,7 +259,7 @@ bool GpuWindowPresenter::present(const Request& request) {
     cmd->image_barrier(target,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_NONE,0);
     cmd->swapchain_touch_in_stages(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
-    device.submit(cmd);
+    device.submit(cmd,&done);
     if(before_change_)before_change_();
     device.end_frame_context();
     return true;

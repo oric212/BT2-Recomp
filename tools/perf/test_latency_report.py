@@ -18,6 +18,16 @@ class LatencyReportTest(unittest.TestCase):
             self.assertEqual(rows[1][:2], (10.0, 1.0))
             self.assertIsNone(rows[1][3])
 
+    def test_cadence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / 'latency.csv'
+            log.write_text('', encoding='utf-8')
+            # A present whose GPU work ended after it counts from that end; a gap over 100 ms is left out.
+            Path(str(log) + '.presents').write_text(
+                'present,1,0,1000,500\npresent,2,0,17000,20000\npresent,3,0,37000,36000\npresent,4,0,200000,0\n', encoding='utf-8')
+            _, presents, _ = latency_report.read(log)
+            self.assertEqual(latency_report.cadence(presents), [19.0, 17.0])
+
 
 if __name__ == '__main__':
     unittest.main()
