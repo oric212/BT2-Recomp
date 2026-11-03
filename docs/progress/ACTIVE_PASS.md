@@ -15,11 +15,11 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 - **GPU completion (found at the end of the last pass):** a VRR panel shows a picture when its GPU work is done; main pictures were done 8.5 ms after their present, in-between pictures 1.4 ms, so the panel showed them about 10 and 24 ms apart, the steady judder the user felt.
 - **Built:** the presenter waits for each picture's GPU work; a flip's picture goes out a steady time after its handover that covers 99% of recent ones, the in-between picture a field after it. 97.1% of intervals within 1 ms of a field as the panel shows them, all in-between pictures shown; a main picture on the panel 16.6 ms after its flip (10.4 before, unevenly). **The user: "it feels smoother"** (their recording: 97.2% within 1 ms in the 60 fps stretches). Pictures of fast loading or fast forward are no longer learned from (they held the menus after a load).
 
-- **Latency (later):** the native fighters pass kept the in-between renderer on the GPU's only graphics queue, ahead of every main picture's work. Off by default now (the user's decision): a main picture on the panel 6.9 ms after its flip instead of 16.7, the in-between renderer's GS thread 1 ms less a frame, the same pictures shown. Fast forward: confirmed working by the user. Not yet seen by the user.
+- **Latency (later):** the native fighters pass kept the in-between renderer on the GPU's only graphics queue, ahead of every main picture's work. Off by default now (the user's decision): a main picture on the panel 6.9 ms after its flip instead of 16.7, the in-between renderer's GS thread 1 ms less a frame, the same pictures shown. Fast forward: confirmed working by the user. The user: "the match did feel smooth".
 
 Open, in order:
 
-1. The user's feel with the fighters pass off: their recorded match measures 7.5 ms flip to panel (16.7 before) and 96.9% of intervals within 1 ms; how it feels not said yet. In-between pictures are drawn while the game runs free (724 in that session) and never shown: load to take away.
+1. Done: the user's match with the fighters pass off "did feel smooth" (7.5 ms flip to panel, 96.9% within 1 ms); in-between pictures are no longer drawn while the game runs free.
 2. Frames without an in-between picture by design, if the user still feels them: looked at 2026-11-03 ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Frames without an in-between picture"): cuts, scene changes and lists that change by thousands of unpacks; 7 of 43 in 3,000 flips are just over the pairing limit, which a cheaper alignment could take.
 3. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread).
 

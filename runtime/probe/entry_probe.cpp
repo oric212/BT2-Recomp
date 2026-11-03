@@ -664,7 +664,9 @@ int main(int argc, char** argv) {
                         static const std::size_t back = std::getenv("BT2_SIXTY_FPS_DISPLAY") ? std::stoul(std::getenv("BT2_SIXTY_FPS_DISPLAY")) : 1;
                         const auto& display = shown[shown.size() - 1 - std::min(back, shown.size() - 1)];
                         try {
-                            in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % GpuGsBackend::kept_slots);
+                            // A free run (fast forward, fast loading) shows no in-between pictures: its frames are handed on as
+                            // other frames, replayed for the renderer's state without a picture drawn.
+                            in_between->start(sixty_fps::fight_waits > 0 && !(pacer && pacer->freeRun()), runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % GpuGsBackend::kept_slots);
                             in_between_started = true;in_between_vblank = runtime.vblank_deliveries;in_between_flip = flip;
                             sixty_fps::job_flip[in_between->lastJob() % sixty_fps::job_flip.size()] = flip;
                         } catch (const std::exception& e) {stop_in_between(e);}
