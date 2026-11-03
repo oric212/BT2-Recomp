@@ -44,13 +44,19 @@ bool chopFromNearest(float rounded, float error, std::uint32_t smallest, float& 
     result = std::bit_cast<float>(outward ? bits - 1u : bits);
     return true;
 }
+// A product through chop, out of line: inlined, its captured operands kept the fast path's values on the stack.
+__declspec(noinline) float chopMul(float a, float b) {return chop([&] { return a * b; });}
 float addTowardZero(float a, float b) {
-    // Fast2Sum: with |a| >= |b|, b - (s - a) is the exact error of s = a + b.
-    if (std::fabs(a) < std::fabs(b)) std::swap(a, b);
+    // Fast2Sum: with |a| >= |b|, b - (s - a) is the exact error of s = a + b. The magnitudes compare as integers (the
+    // operands are normalized: no infinities or NaNs); std::fabs was a call under fenv_access.
+    if ((std::bit_cast<std::uint32_t>(a) & 0x7FFFFFFFu) < (std::bit_cast<std::uint32_t>(b) & 0x7FFFFFFFu)) std::swap(a, b);
     const float s = a + b, error = b - (s - a);
     float result;
     if (chopFromNearest(s, error, 0x00800000u, result)) return result;
-    return chop([&] { return a + b; });
+    // The rest needs no rounding mode (it took chop, a third of the helpers' time in a fight): a sum of two floats
+    // up to the smallest normal number is exact (a zero sum is +0 to nearest and toward zero alike) and becomes a
+    // signed zero; a sum rounded to an infinity was beyond the largest magnitude, which toward zero gives.
+    return normalize(s);
 }
 const bool has_fma = [] {
     int registers[4];
@@ -92,6 +98,7 @@ float ps2_fpu_sqrt(float value) {
 }
 float ps2_fpu_mul(float left, float right) {
     const float a = normalize(left), b = normalize(right);
+    if (a == 0.0f || b == 0.0f) return a * b; // An exact signed zero in every rounding mode (often: the zeros of matrices).
     if (has_fma) {
         // The product's exact error from a fused multiply-add.
         const float product = a * b;
@@ -99,7 +106,7 @@ float ps2_fpu_mul(float left, float right) {
         float result;
         if (chopFromNearest(product, error, 0x0C800000u, result)) return result;
     }
-    return chop([&] { return a * b; });
+    return chopMul(a, b);
 }
 float ps2_fpu_div(float left, float right) {
     const float a = normalize(left), b = normalize(right);

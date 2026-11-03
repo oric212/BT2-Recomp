@@ -78,6 +78,13 @@ int main() {
         if (n & 1) y = (y & 0x807FFFFFu) | ((x & 0x7F800000u) + ((random() % 16u) << 23) - (8u << 23)) % 0x80000000u;
         compare(x, y);
     }
+    // Sums at the bottom of the range (results below the smallest normal number and exact cancellations, x + -x)
+    // and at the top (overflow): ps2_fpu.cpp gives these without changing the rounding mode.
+    for (unsigned n = 0; n < 400000; ++n) {
+        const std::uint32_t low = (random() & 0x807FFFFFu) | ((1u + random() % 3u) << 23), low2 = (random() & 0x807FFFFFu) | ((1u + random() % 3u) << 23);
+        const std::uint32_t high = (random() & 0x807FFFFFu) | ((0xFCu + random() % 3u) << 23), high2 = (random() & 0x807FFFFFu) | ((0xFCu + random() % 3u) << 23);
+        compare(low, low2);compare(low, low ^ 0x80000000u);compare(high, high2);compare(high, high ^ 0x80000000u);
+    }
     if (failures) {
         std::cerr << failures << " FPU results differ\n";
         return 1;
