@@ -107,11 +107,19 @@ inline ProbeGpr PS2_PMINH(ProbeGpr left,ProbeGpr right) {
     return ps2_halfwords(left,right,[](std::int16_t a,std::int16_t b){return a<b?a:b;});
 }
 // VU0 macro-mode arithmetic on four float lanes (COP2 VADD/VSUB/VMUL) and the field-masked register
-// write (lanes whose mask is set take the result). Host IEEE arithmetic: the VU's handling of
-// infinities, NaNs and denormals is not reproduced.
-inline __m128 PS2_VADD(__m128 left,__m128 right) {return _mm_add_ps(left,right);}
-inline __m128 PS2_VSUB(__m128 left,__m128 right) {return _mm_sub_ps(left,right);}
-inline __m128 PS2_VMUL(__m128 left,__m128 right) {return _mm_mul_ps(left,right);}
+// write (lanes whose mask is set take the result). Each lane rounds toward zero with no infinities or
+// denormals (ps2_fpu.cpp), as the VU's FMAC units do, without the EE FPU adder's operand alignment; host IEEE
+// rounding to nearest put results one unit off (the CPU opponent's vectors against PCSX2,
+// docs/plans/ee/AI_VERIFICATION_PLAN.md).
+inline __m128 ps2_vu_lanes(__m128 left,__m128 right,float (*operation)(float,float)) {
+    alignas(16) float a[4],b[4];
+    _mm_store_ps(a,left);_mm_store_ps(b,right);
+    for(unsigned lane=0;lane<4;++lane)a[lane]=operation(a[lane],b[lane]);
+    return _mm_load_ps(a);
+}
+inline __m128 PS2_VADD(__m128 left,__m128 right) {return ps2_vu_lanes(left,right,ps2_vu_add);}
+inline __m128 PS2_VSUB(__m128 left,__m128 right) {return ps2_vu_lanes(left,right,ps2_vu_sub);}
+inline __m128 PS2_VMUL(__m128 left,__m128 right) {return ps2_vu_lanes(left,right,ps2_fpu_mul);}
 inline __m128 PS2_VBLEND(__m128 kept,__m128 result,__m128 mask) {return _mm_blendv_ps(kept,result,mask);}
 // PCGTH: each halfword becomes 0xFFFF where rs > rt (signed), else 0.
 inline ProbeGpr PS2_PCGTH(ProbeGpr left,ProbeGpr right) {

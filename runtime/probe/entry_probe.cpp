@@ -261,6 +261,24 @@ int main(int argc, char** argv) {
                 for (const auto& [total, target, source, top] : rows) out << std::hex << target << std::dec << ' ' << total << ' ' << std::hex << source << std::dec << ' ' << top << '\n';
             };
         }
+        // BT2_EE_WATCH_WORD=<file>:<hex address>: one line each time the word there is found changed at a guest call:
+        // the flip, the call (source and target) it changed before, and the old and new words in hex. Finds which
+        // function wrote a scalar (the store watch below sees 128-bit stores only). Not with BT2_EE_CALL_TRACE.
+        static std::ofstream word_watch;
+        if (const char* watch = std::getenv("BT2_EE_WATCH_WORD")) {
+            const std::string text = watch;
+            const auto colon = text.rfind(':');
+            if (colon == std::string::npos || colon < 2) throw std::runtime_error("BT2_EE_WATCH_WORD needs <file>:<address>");
+            word_watch.open(text.substr(0, colon));
+            if (!word_watch) throw std::runtime_error("Cannot write the word watch " + text.substr(0, colon));
+            const std::uint32_t address = static_cast<std::uint32_t>(std::stoul(text.substr(colon + 1), nullptr, 16));
+            runtime.on_guest_call = [&runtime, address, last = std::optional<std::uint32_t>()](const R5900Context&, std::uint32_t source, std::uint32_t target) mutable {
+                std::uint32_t now;std::memcpy(&now, runtime.memory().data() + address, 4);
+                if (last && *last != now)
+                    word_watch << std::dec << runtime.gs_display_flips << std::hex << " before " << source << "->" << target << ' ' << *last << ' ' << now << std::endl;
+                last = now;
+            };
+        }
         // BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]: one line per call of those
         // functions from that display flip on: the flip, the calling address, the target, a0 to a3,
         // f12, f13 and f0 (the previous call's result), v0 (the previous call's integer result, if nothing changed it since),

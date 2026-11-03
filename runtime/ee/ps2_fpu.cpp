@@ -59,12 +59,30 @@ const bool has_fma = [] {
     if ((registers[2] & (1 << 12)) == 0 || (registers[2] & (1 << 27)) == 0) return false;
     return (_xgetbv(0) & 6u) == 6u;
 }();
+// The EE FPU's adder keeps a single guard bit: the operand of the smaller exponent loses its low (difference - 1)
+// bits before the addition, and becomes a signed zero from a difference of 25 (PCSX2's FPU recompiler, FPU_ADD_SUB;
+// the CPU opponent's sums against PCSX2, docs/plans/ee/AI_VERIFICATION_PLAN.md). Then the sum rounds toward zero.
+float alignedAdd(float a, float b) {
+    auto x = std::bit_cast<std::uint32_t>(a), y = std::bit_cast<std::uint32_t>(b);
+    const int difference = int((x >> 23) & 0xFF) - int((y >> 23) & 0xFF);
+    auto& smaller = difference > 0 ? y : x;
+    const int shift = difference > 0 ? difference : -difference;
+    if (shift >= 25) smaller &= 0x80000000u;
+    else if (shift > 1) smaller &= 0xFFFFFFFFu << (shift - 1);
+    return addTowardZero(std::bit_cast<float>(x), std::bit_cast<float>(y));
+}
 }
 
 float ps2_fpu_add(float left, float right) {
-    return addTowardZero(normalize(left), normalize(right));
+    return alignedAdd(normalize(left), normalize(right));
 }
 float ps2_fpu_sub(float left, float right) {
+    return alignedAdd(normalize(left), -normalize(right));
+}
+float ps2_vu_add(float left, float right) {
+    return addTowardZero(normalize(left), normalize(right));
+}
+float ps2_vu_sub(float left, float right) {
     return addTowardZero(normalize(left), -normalize(right));
 }
 float ps2_fpu_sqrt(float value) {
@@ -82,6 +100,23 @@ float ps2_fpu_mul(float left, float right) {
         if (chopFromNearest(product, error, 0x0C800000u, result)) return result;
     }
     return chop([&] { return a * b; });
+}
+float ps2_fpu_div(float left, float right) {
+    const float a = normalize(left), b = normalize(right);
+    // A zero divisor gives the largest magnitude, signed as the quotient (no infinities).
+    if (b == 0.0f)
+        return std::bit_cast<float>(((std::bit_cast<std::uint32_t>(a) ^ std::bit_cast<std::uint32_t>(b)) & 0x80000000u) | 0x7F7FFFFFu);
+    // Rounded to nearest, unlike the other operations: the CPU opponent's quotients in PCSX2 (whose division
+    // rounding mode is separate and nearest by default) were the nearest values, the chopped ones one unit below
+    // (docs/plans/ee/AI_VERIFICATION_PLAN.md).
+    return normalize(a / b);
+}
+float ps2_vu_div(float left, float right) {
+    const float a = normalize(left), b = normalize(right);
+    if (b == 0.0f)
+        return std::bit_cast<float>(((std::bit_cast<std::uint32_t>(a) ^ std::bit_cast<std::uint32_t>(b)) & 0x80000000u) | 0x7F7FFFFFu);
+    // VU0's DIV rounds toward zero as its other operations (the same comparison: its quotients were the chopped ones).
+    return chop([&] { return a / b; });
 }
 float ps2_fpu_cvt_s_w(std::int32_t value) {
     return chop([&] { return static_cast<float>(value); });

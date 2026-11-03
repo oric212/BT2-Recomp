@@ -38,31 +38,46 @@ apart). One AI call can be compared exactly:
 - Interrupt handlers running during the captured call in PCSX2 (VBlank) may write RAM: such words are told apart by
   address (the handlers' counters).
 
-## Status (2026-11-03, pass ended by the user before the first comparison)
+## Result (2026-11-03): the AI matches PCSX2 exactly, after four rounding fixes
 
-Built, not yet run to a result:
-- `tools/capture_ee/capture_ai_call.py --pcsx2 <exe> --bios <bios> --disc <iso> --card <PCSX2 card with a BT2 save>
-  --call <N> --when before|after`: the stub at 0x207760, PCSX2 unthrottled (`FrameLimitEnable = false`) with the
-  null renderer and a copy of the card, so the boot has no prompts; RAM and registers to
-  `work/pcsx2-capture/ai-call-<when>-<N>/`.
-- The probe's `BT2_REPLAY_CALL="<RAM in>|<function>|<a0>|<a1>|<sp>|<gp>|<RAM out>"` (`runtime/probe/call_replay.cpp`):
-  one function on a captured RAM from main's prepared context to a return sentinel; RAM written, v0 printed.
-- `tools/capture_ee/compare_ai_call.py --disc <iso> --call <N>`: runs the replay on the "before" capture and lists the
-  words that differ from the "after" capture (outside the AI's stack frame and the stub), marking those the port wrote.
+**Verified:** at three calls in the demo battle the port's recompiled AI, run on PCSX2's RAM, leaves exactly the
+words PCSX2 leaves and returns the same `v0`:
 
-Found on the way:
-- On this PC: PCSX2 in `D:\Emulation\PCXS2`; the BIOS of the earlier captures is `scph39001.bin` (US; its hash in
-  the captures' records); `memcards\Mcd001.ps2` holds a BT2 save.
-- The capture tool's stub segment at 0x01000000 is game heap by a fight: the first capture's stub was overwritten (the
-  counter read garbage, PCSX2 then ran unknown instructions). The stub now sits at 0x01D00000: 0x1BF4000 to 0x1EFD000
-  stayed zero in all 13 port RAM dumps at hand (title, fights, the demo battle); in PCSX2 the counter stayed clean.
-- In the port the boot with a card and no input reaches "Press START button" by flip 8,500 and the demo battle at flip
-  10,301 (2,728 AI calls; then the title again), so N = 400 falls in the demo battle.
-- PCSX2's log still says "target speed: 1" with `FrameLimitEnable = false`: whether it runs unthrottled is not
-  confirmed (the second capture was stopped 45 s in, at the films).
+- `input` 400 (0x1214F8, side 1): nothing written, `v0` 0 in both.
+- `think` 200 (0x11E988, the frame's AI for every CPU side; side 2's turn): 66 words, all equal.
+- `think` 900 (the fight under way): 59 words, all equal.
 
-Next: the "before" and "after" captures of call 400 (a run takes up to the demo battle, minutes), a second "before"
-for PCSX2's repeatability, the comparison; then calls across the demo battle and both sides.
+PCSX2 repeats itself: two "before" captures of call 400 differ only in sound buffers, pad and timer counters and
+library state, never in the fighters' data, so pairing "before" and "after" from separate runs is sound.
+
+**What was wrong, found by the comparison** (each a last-bit difference in the AI's vectors and distances):
+
+1. VU0 macro add, subtract and multiply (`PS2_VADD/VSUB/VMUL`, 1,700 sites) used the host's rounding to nearest;
+   now toward zero per lane (`ps2_vu_add`, `ps2_vu_sub`, `ps2_fpu_mul`). 17 differing words at `think` 200 became 12.
+2. Four operations the recompiler writes inline (not through the runtime's helpers) used host arithmetic: the FPU's
+   `div.s` (1,836 sites, also giving infinities on a zero divisor, which the EE has not), VU0's `vdiv` (34),
+   `vsqrt` (19) and `vrsqrt` (2; the recompiler also ignored its numerator). `tools/ps2recomp/float_rewrite.py`
+   rewrites them after each generation (`generate_game.py`, `generate_interpreter.py`; the discovery loop's receipt
+   check applies it to the old output first): `ps2_fpu_div`, `ps2_vu_div`, `ps2_fpu_sqrt`. 12 became 5.
+3. Division rounds differently by unit: the FPU's `div.s` to nearest (as PCSX2's separate FPU division rounding
+   setting does), VU0's `vdiv` toward zero. Measured: with both toward zero `think` 200 had 5 differing words, both
+   to nearest 2, split 0. Square roots toward zero: to nearest broke `think` 200.
+4. The EE FPU's adder keeps one guard bit: the operand of the smaller exponent loses its low (difference - 1) bits
+   before the addition, and is a signed zero from a difference of 25 (PCSX2's FPU recompiler `FPU_ADD_SUB`, always
+   on there; read for the rule, not copied). `add.s`, `sub.s` and `adda.s` (`ps2_fpu_add`, `ps2_fpu_sub`); VU0's
+   add has no such alignment (`think` 200 matches without it). This was `think` 900's last two words: a distance of
+   195.19 whose subtrahend lost bits.
+
+Tests: `fpu_tests.cpp` (each operation against a reference written separately: the alignment rule, division to
+nearest for the FPU and toward zero for VU0, VU0's add without alignment), `test_float_rewrite.py`. The gate's battle
+run fights slightly differently with the original's rounding and has a new baseline (`tools/gate/battle_run.py`).
+
+Tools: `capture_ai_call.py --site input|think`, `compare_ai_call.py --site`, the probe's `BT2_REPLAY_CALL`, and
+`BT2_EE_WATCH_WORD=<file>:<address>` (which call a scalar changed across; it found the distance's writer).
+
+Not checked: whether PCSX2 itself matches the hardware in these operations (it is the reference here); other
+floating-point code than the AI's (the fixes are general, so the whole game now rounds this way); VU1 (its own
+programs, checked against the interpreter in the gate).
 
 ## Checks
 

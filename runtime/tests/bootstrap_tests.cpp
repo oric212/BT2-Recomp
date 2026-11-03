@@ -1510,12 +1510,14 @@ int main() {
             const float max=std::bit_cast<float>(0x7F7FFFFFu),third=std::bit_cast<float>(0x3EAAAAABu);
             require(FPU_ADD_S(0, 0) == 0 && FPU_ADD_S(1.5f,2.25f)==3.75f);
             require(bits(FPU_MUL_S(third,3.0f))==0x3F800000u && bits(FPU_ADD_S(1.0f,std::bit_cast<float>(0x33C00000u)))==0x3F800000u); // Nearest would give 0x3F800001.
-            require(bits(FPU_ADD_S(1.0f,-std::bit_cast<float>(0x33000000u)))==0x3F7FFFFFu); // 1 - 2^-25 chops.
+            // The adder's single guard bit (ps2_fpu.cpp): 2^-25 against 1 is 25 binades down and drops out entirely.
+            require(bits(FPU_ADD_S(1.0f,-std::bit_cast<float>(0x33000000u)))==0x3F800000u);
             require(bits(FPU_MUL_S(max,2.0f))==0x7F7FFFFFu && bits(FPU_MUL_S(-max,2.0f))==0xFF7FFFFFu);
             require(bits(FPU_MUL_S(std::bit_cast<float>(0x00800000u),0.5f))==0u);  // Denormal result flushes.
             require(bits(FPU_ADD_S(std::bit_cast<float>(0x7F800000u),1.0f))==0x7F7FFFFFu); // Inf operand clamps.
             require(bits(FPU_CVT_S_W(16777217))==0x4B800000u);              // 2^24+1 chops to 2^24.
-            require(bits(FPU_SUB_S(1.0f,std::bit_cast<float>(0x33C00000u)))==0x3F7FFFFEu && FPU_SQRT_S(-4.0f)==2.0f
+            // 1.5 x 2^-24 is 24 binades down: its low 23 bits go, leaving 2^-24, so 1 - 2^-24 exactly.
+            require(bits(FPU_SUB_S(1.0f,std::bit_cast<float>(0x33C00000u)))==0x3F7FFFFFu && FPU_SQRT_S(-4.0f)==2.0f
                 && bits(FPU_SQRT_S(2.0f))==0x3FB504F3u && bits(FPU_NEG_S(0.0f))==0x80000000u && FPU_ABS_S(-3.5f)==3.5f
                 && FPU_C_OLT_S(-1.0f,0.0f) && !FPU_C_OLT_S(std::bit_cast<float>(1u),0.0f) && FPU_C_OLE_S(0.0f,-0.0f));
             require(FPU_CVT_W_S(-2.75f)==-2 && FPU_CVT_W_S(2.75f)==2 && FPU_CVT_W_S(3.0e9f)==INT32_MAX

@@ -19,7 +19,11 @@ FRAMES = 5100
 # 2026-10-27: the first boot's VSync wait latches a logical VBlank like every other wait (runtime
 # generalization group 4), so Timer 2 counts one field more from the boot and the random seeds follow
 # (before: 94b27c5bb9a49166, 724713805, 2140205, which the run gives again without that field).
-BASELINE = {'vu1_kick_hash': '7f996c1524a22bea', 'vu1_instructions': 724707622, 'vu1_runs': 2140202}
+# 2026-11-03: the EE's float rounding as the original's (VU0 add, subtract, multiply, divide and roots toward zero,
+# FPU division to nearest, the FPU adder's operand alignment; the CPU opponent's AI matched PCSX2 exactly,
+# docs/plans/ee/AI_VERIFICATION_PLAN.md), so the scripted fight goes slightly differently (was 7f996c1524a22bea,
+# 724707622, 2140202).
+BASELINE = {'vu1_kick_hash': '11860f808d115d87', 'vu1_instructions': 724706804, 'vu1_runs': 2140194}
 ENTERED_AT_LEAST = 3700 # 3,731 at the baseline; the exact count moves when the map splits functions.
 
 

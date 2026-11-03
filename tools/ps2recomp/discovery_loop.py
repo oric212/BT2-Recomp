@@ -15,6 +15,7 @@ timestamped log (default work/bt2-generation/discovery-loop.log) that can be fol
 import argparse,difflib,json,os,re,shutil,subprocess,sys,time
 from pathlib import Path
 import overlay_programs
+import float_rewrite
 ROOT=Path(__file__).resolve().parents[2]
 FOLDER=ROOT/'work/bt2-generation'
 STEPS={'prepare_map.py':'rebuilding the map','generate_game.py':'regenerating C++','expand_startup.py':'binding new entries','prepare_runtime.py':'preparing sources','msvc.py':'building the Release probe','run_startup_probe.py':'running the game (Release)','inspect_blocker.py':'classifying the stop','analyze_game.py':'Ghidra discovery'}
@@ -30,7 +31,9 @@ def unexpected_change(old,new):
     """First changed line that is not a tail jump turning from a dispatch into a direct call, or None.
 
     When a tail jump's target becomes a function of its own, the generator calls it directly; no
-    other difference in an already selected raw source is accepted without a look."""
+    other difference in an already selected raw source is accepted without a look. The float rewrite
+    (float_rewrite.py) is applied to the old lines first: a source it changed is not an unexpected change."""
+    old=float_rewrite.rewrite('\n'.join(old)).split('\n')
     for line in difflib.unified_diff(old,new,lineterm='',n=0):
         if line.startswith(('---','+++','@@')):continue
         text=line[1:].strip()

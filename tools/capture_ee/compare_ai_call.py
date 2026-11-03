@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools/ps2recomp'))
 from run_startup_probe import command  # noqa: E402
 
-AI = 0x1214F8
+FUNCTIONS = {'input': 0x1214F8, 'think': 0x11E988} # capture_ai_call.py's sites.
 STUB = (0x01D00000, 0x400) # The capture stub's segment (capture_ai_call.py).
 
 
@@ -38,16 +38,19 @@ def main():
     parser.add_argument('--disc', type=Path, required=True)
     parser.add_argument('--call', type=int, required=True)
     parser.add_argument('--config', default='Release')
+    parser.add_argument('--site', choices=tuple(FUNCTIONS), default='input')
     args = parser.parse_args()
     base = ROOT / 'work/pcsx2-capture'
-    before_dir, after_dir = base / f'ai-call-before-{args.call}', base / f'ai-call-after-{args.call}'
+    before_dir, after_dir = base / f'ai-{args.site}-before-{args.call}', base / f'ai-{args.site}-after-{args.call}'
     before = json.loads((before_dir / 'capture.json').read_text())
     after = json.loads((after_dir / 'capture.json').read_text())
-    for key in ('a0', 'a1', 'sp', 'gp'):
+    # a1 is the caller's sp (the call's delay slot sets it, after the 'before' stub has published the registers); a0
+    # does not survive the call, so the 'after' capture is matched by the count, sp and gp.
+    for key in ('calls_counted', 'sp', 'gp'):
         if before[key] != after[key]:
             raise SystemExit(f'The two captures are not the same call: {key} {before[key]:#x} against {after[key]:#x}')
-    out = ROOT / 'work/logs' / f'ai-call-{args.call}-port.bin'
-    env = dict(os.environ, BT2_REPLAY_CALL='|'.join([str(before_dir / 'ee-ram.bin'), f'{AI:x}', f"{before['a0']:x}", f"{before['a1']:x}",
+    out = ROOT / 'work/logs' / f'ai-{args.site}-{args.call}-port.bin'
+    env = dict(os.environ, BT2_REPLAY_CALL='|'.join([str(before_dir / 'ee-ram.bin'), f'{FUNCTIONS[args.site]:x}', f"{before['a0']:x}", f"{before['sp']:x}",
                                                      f"{before['sp']:x}", f"{before['gp']:x}", str(out)]))
     for name in ('BT2_START_BATTLE', 'BT2_PAD_SCRIPT', 'BT2_GPU_GS', 'BT2_VIEWER'):
         env.pop(name, None)
