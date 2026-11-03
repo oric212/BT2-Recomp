@@ -14,6 +14,66 @@ std::vector<std::uint32_t> list(float a,float b,std::uint32_t tag,std::uint32_t 
     return {0x01000101u,0x6C020000u,bits(a),tag,bits(1.0f),bits(0.0f),bits(b),bits(2.0f),bits(3.0f),bits(4.0f),
             0x14000000u,0x50000001u,direct,0,0,0,0x65010010u,0x00020001u};
 }
+
+// The GS packets the game builds itself (vu/gs_packet_blend.h). A flame as an aura draws it: a REGLIST tag of
+// PRIM, TEX0 and four RGBAQ, ST, XYZF2 (8 quadwords), its corners 8 pixels apart from (x, y) at depth z.
+struct Flame {std::uint32_t tex;unsigned x,y;std::uint32_t z,q;unsigned stretch=0;}; // stretch: the last corner further right
+void flame(std::vector<std::uint32_t>& l,const Flame& f) {
+    l.insert(l.end(),{1u,0xE4000000u,0x42142160u,0x00421421u}); // NLOOP 1, REGLIST, 14 registers
+    l.insert(l.end(),{0x5Cu,0u,f.tex,0x00000004u});              // PRIM, TEX0
+    for(unsigned c=0;c<4;++c) {
+        const std::uint32_t x=(f.x+(c&1)*8+(c==3?f.stretch:0))*16,y=(f.y+(c>>1)*8)*16;
+        l.insert(l.end(),{0x80808080u,f.q,c,c,x|y<<16,f.z|0x7Fu<<24}); // RGBAQ, ST, XYZF2 (fog 0x7F)
+    }
+}
+// Two DIRECT blocks: one that opens with an A+D of ALPHA, then the flames; one of a single A+D XYZ2.
+std::vector<std::uint32_t> flames(const std::vector<Flame>& fs,std::uint32_t xy) {
+    std::vector<std::uint32_t> data{0x8001u,0x10000000u,0x0Eu,0u,0x48u,0u,0x42u,0u};
+    for(const auto& f:fs)flame(data,f);
+    if(!fs.empty())data[8+(fs.size()-1)*32]|=0x8000u; // EOP on the last tag, as the game ends a packet
+    std::vector<std::uint32_t> l{0x50000000u|std::uint32_t(data.size()/4)};
+    l.insert(l.end(),data.begin(),data.end());
+    l.insert(l.end(),{0x50000002u,0x8001u,0x10000000u,0x0Eu,0u,xy,0x1234u,0x05u,0u});
+    return l;
+}
+// Word k (0 to 5: RGBAQ, ST, XYZF2) of corner c of flame f.
+std::uint32_t word(const std::vector<std::uint32_t>& l,std::size_t f,unsigned c,unsigned k) {return l[1+8+f*32+8+c*6+k];}
+void gsPacketTests() {
+    // The newer frame has the flames in another order, one more, one far away, and another Q.
+    const std::vector<Flame> older{{0x2B10,100,100,30000,1},{0x2B00,200,100,31000,1},{0x2B10,300,300,32000,1},{0x2B20,400,200,30000,1},{0x2B30,500,100,30000,1},{0x2B30,508,100,30000,1}};
+    const std::vector<Flame> newer{{0x2B00,210,120,33000,2},{0x2B10,120,110,34000,2},{0x2B70,50,50,35000,2},{0x2B10,900,300,36000,2},{0x2B20,401,200,30000,2,60},{0x2B30,502,100,30000,2},{0x2B30,510,100,30000,2,60}};
+    const auto a=flames(older,0x00400040u),b=flames(newer,0x00800080u);
+    std::size_t blended=0;
+    const auto mid=blendVif1(a,b,0.5f,&blended);
+    check(mid && mid->size()==b.size(),"lists with GS packets blend");
+    check((word(*mid,0,0,4)&0xFFFF)==205*16 && (word(*mid,0,0,4)>>16)==110*16,"a flame moves halfway to its partner of its kind");
+    check((word(*mid,0,3,5)&0xFFFFFF)==32000 && (word(*mid,0,3,5)>>24)==0x7F,"its depth blended, its fog kept");
+    check((word(*mid,1,0,4)&0xFFFF)==110*16 && (word(*mid,1,0,5)&0xFFFFFF)==32000,"a flame takes the nearest of its kind");
+    check(word(*mid,0,0,1)==2 && word(*mid,0,0,2)==0,"colours and texture coordinates stay the newer frame's");
+    for(unsigned c=0;c<4;++c)check(word(*mid,2,c,4)==word(b,2,c,4) && word(*mid,3,c,4)==word(b,3,c,4),"a flame without a partner, or too far, is the newer one");
+    for(unsigned c=0;c<4;++c)check(word(*mid,4,c,4)==word(b,4,c,4),"a polygon whose corners moved unlike each other (clipped anew) is the newer one");
+    for(unsigned c=0;c<4;++c)check(word(*mid,5,c,4)==word(b,5,c,4),"a polygon sharing corners with one left as it is stays too (no crack)");
+    check((*mid)[b.size()-4]==0x00600060u && (*mid)[b.size()-3]==0x1234u,"an A+D vertex blended");
+    check(blended==3*(4+4+1),"blended vertices counted");
+    const auto end=blendVif1(a,b,1.0f);
+    check(end && *end==b,"GS packets exact at t = 1");
+    // The same across blocks (each sky polygon comes in a block of its own): the second block's square, clipped anew,
+    // keeps the first block's square, which shares its corners, where it is.
+    auto two=[](unsigned second_x,unsigned stretch) {
+        auto l=flames({{0x2B40,600,100,30000,1}},0x00400040u);
+        const auto r=flames({{0x2B40,second_x,100,30000,1,stretch}},0x00400040u);
+        l.insert(l.end(),r.begin(),r.end());
+        return l;
+    };
+    const auto c=two(608,0),d=two(610,60);
+    auto shifted=d;for(unsigned k=0;k<4;++k)shifted[1+8+8+k*6+4]=d[1+8+8+k*6+4]+(2u*16); // first square 2 pixels right
+    const auto across=blendVif1(c,shifted,0.5f);
+    check(across && *across==shifted,"squares sharing corners across blocks stay together");
+    // The older block's last flame (with EOP) pairs with a newer one that is no longer last.
+    const auto last=flames({{0x2B50,700,100,30000,1}},0x00400040u),more=flames({{0x2B50,702,100,30000,1},{0x2B60,800,100,30000,1}},0x00400040u);
+    const auto eop=blendVif1(last,more,0.5f);
+    check(eop && (word(*eop,0,0,4)&0xFFFF)==701*16,"the end of packet mark is no part of a flame's kind");
+}
 }
 
 int main() {
@@ -130,6 +190,7 @@ int main() {
     // A camera block (12 quadwords) whose view axis turns by 90 degrees is a cut; a small turn is not.
     // (Its view axes are quadwords 4 to 6: a transform there turned by 90 degrees about z, or by 5.)
     check(cameraTurn(block(12,4,0,0),block(12,4,90,0))<0.01f && cameraTurn(block(12,4,0,0),block(12,4,5,0))>0.99f,"camera cuts found");
+    gsPacketTests();
     std::cout<<"VIF1 blend tests passed\n";
     return 0;
 }

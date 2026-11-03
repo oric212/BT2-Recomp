@@ -1,12 +1,13 @@
 #include "vu/vif1_blend.h"
+#include "vu/gs_packet_blend.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
 #include <tuple>
 
-std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words) {
-    std::vector<Vif1Unpack> out;
+std::optional<Vif1Walk> walkVif1(std::span<const std::uint32_t> words) {
+    Vif1Walk out;
     unsigned wl=1,cl=1;
     std::size_t i=0;
     while(i<words.size()) {
@@ -17,19 +18,26 @@ std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t
         else if(cmd==0x20)data=1;                                          // STMASK
         else if(cmd==0x30 || cmd==0x31)data=4;                             // STROW, STCOL
         else if(cmd==0x4A)data=std::size_t(num?num:256)*2;                 // MPG
-        else if(cmd==0x50 || cmd==0x51)data=std::size_t(imm?imm:65536)*4; // DIRECT, DIRECTHL
-        else if(cmd>=0x60) {                                               // UNPACK
+        else if(cmd==0x50 || cmd==0x51) {                                  // DIRECT, DIRECTHL
+            data=std::size_t(imm?imm:65536)*4;
+            if(data<=words.size()-i)out.directs.push_back({i,data,0,code});
+        } else if(cmd>=0x60) {                                             // UNPACK
             const unsigned vn=(cmd>>2)&3,vl=cmd&3,n=num?num:256;
             const std::size_t elements=wl<=cl?n:std::size_t(cl)*(n/wl)+std::min(n%wl,cl);
             if(vl==3 && vn!=3)return std::nullopt; // V*-5 exists only as V4-5.
             data=(std::size_t(32>>vl)*(vn+1)*elements+31)/32;
             if(data>words.size()-i)return std::nullopt;
-            out.push_back({i,data,cmd&0xF,code});
+            out.unpacks.push_back({i,data,cmd&0xF,code});
         } else if(cmd>0x17 && cmd!=0x20 && cmd!=0x30 && cmd!=0x31)return std::nullopt; // Not a code with a known size.
         if(data>words.size()-i)return std::nullopt;
         i+=data;
     }
     return out;
+}
+
+std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words) {
+    auto w=walkVif1(words);
+    return w?std::optional<std::vector<Vif1Unpack>>(std::move(w->unpacks)):std::nullopt;
 }
 
 namespace {
@@ -237,6 +245,7 @@ void blendVif1(std::vector<std::uint32_t>& out,const Vif1Pairing& pairing,std::s
             changed+=16;
         }
     }
+    changed+=3*blendGsPackets(out,older,newer,t,pairing.older_directs,pairing.newer_directs); // vu/gs_packet_blend.h
     if(blended)*blended=changed;
     if(unmatched)*unmatched=b->size()-pairs->size();
     if(refused)*refused=others;

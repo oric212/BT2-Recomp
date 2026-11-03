@@ -102,9 +102,10 @@ private:
     // An event's GS data: the transfers one after another, `ends` where each ends.
     struct Event {
         bool vif1=false;std::vector<std::uint32_t> words;std::vector<std::uint8_t> output;std::vector<std::size_t> ends;
-        // The list's unpacks, walked when first needed (as the newer frame, then kept for its turn as the older).
-        mutable bool walked=false;mutable std::optional<std::vector<Vif1Unpack>> unpacks;
-        const std::vector<Vif1Unpack>* walk() const {if(!walked) {unpacks=vif1Unpacks(words);walked=true;}return unpacks?&*unpacks:nullptr;}
+        // The list's unpacks and DIRECT blocks, walked when first needed (as the newer frame, then kept for its turn
+        // as the older).
+        mutable bool walked=false;mutable std::optional<Vif1Walk> blocks;
+        const Vif1Walk* walk() const {if(!walked) {blocks=walkVif1(words);walked=true;}return blocks?&*blocks:nullptr;}
         template<class Each> void eachOutput(Each each) const {
             std::size_t from=0;
             for(const auto end:ends) {each(std::span<const std::uint8_t>(output.data()+from,end-from));from=end;}

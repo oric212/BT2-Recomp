@@ -30,10 +30,16 @@ struct Vif1Unpack {std::size_t start=0,words=0;unsigned format=0;std::uint32_t c
 // The data of each UNPACK of a list, in order; nullopt when the list cannot be walked (a code this does
 // not size, or data past the end).
 std::optional<std::vector<Vif1Unpack>> vif1Unpacks(std::span<const std::uint32_t> words);
+// A list's unpacks and its DIRECT and DIRECTHL blocks (format 0: the GS packets the game builds itself), in one walk;
+// nullopt as for vif1Unpacks.
+struct Vif1Walk {std::vector<Vif1Unpack> unpacks,directs;};
+std::optional<Vif1Walk> walkVif1(std::span<const std::uint32_t> words);
 
 // Two lists' unpacks (vif1Unpacks) and their aligned pairs (index pairs into them), found once for
 // cameraTurn and blendVif1; nullopt when the two differ by more than `max_edits` unpacks (not the same scene).
-struct Vif1Pairing {const std::vector<Vif1Unpack>* older=nullptr;const std::vector<Vif1Unpack>* newer=nullptr;std::vector<std::pair<std::size_t,std::size_t>> pairs;};
+// `older_directs` and `newer_directs`: the lists' DIRECT blocks when walked already (else found by blendVif1).
+struct Vif1Pairing {const std::vector<Vif1Unpack>* older=nullptr;const std::vector<Vif1Unpack>* newer=nullptr;std::vector<std::pair<std::size_t,std::size_t>> pairs;
+                    const std::vector<Vif1Unpack>* older_directs=nullptr;const std::vector<Vif1Unpack>* newer_directs=nullptr;};
 std::optional<Vif1Pairing> pairVif1(const std::vector<Vif1Unpack>& older,const std::vector<Vif1Unpack>& newer,std::size_t max_edits=1024);
 
 // `newer` with its transforms blended at t (above). `blended` counts the words changed, `unmatched`

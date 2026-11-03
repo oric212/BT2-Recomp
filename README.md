@@ -15,7 +15,9 @@
   <a href="#credits--license">Credits &amp; license</a>
 </p>
 
-BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**. Versus battles are playable with a controller at the original's speed, and every mode (story, Ultimate Battle Z, the Tournament, the training lessons) runs through without stopping. HD textures, super-sampling, widescreen and 60 fps battles are available as settings. Saving is in progress.
+BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C++ with PS2Recomp and runs on a small native layer instead of an emulator. Target: the North American release, **SLUS-21441**.
+
+Every mode runs through: versus battles are playable with a controller at the original's speed, and the story, Ultimate Battle Z, the tournaments and the training lessons run without stopping. The enemy AI computes exactly what it does in PCSX2 at the calls compared. Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles and fast loading. Saving to a memory card is not yet confirmed.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
@@ -25,69 +27,40 @@ BT2 Recomp is a native Windows port of the PS2 game: its code is recompiled to C
 
 | Milestone | Status |
 | --- | --- |
-| Startup | ✅ Verified — boot, modules answered natively, frame loop; key states match captures of the original |
+| Startup | ✅ Verified — boot to the frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
-| Films | 🟢 Operational — logo and opening films with sound, also after a skip |
-| Title and menus | 🟢 Operational — title, New Game and all ten main-menu screens; all 15 Ultimate Battle Z courses, Dragon Tournaments and the 21 Ultimate Training lessons run without input |
-| Versus battle | 🟢 Operational — 1P vs COM with a controller; CPU vs CPU for characters 0 to 129 on all 16 stages (sampled) |
-| Story mode | 🟢 Operational — all 200 parts to their battle's end and all 73 towns without input; not yet played through by the user |
-| Audio | 🟢 Operational — music, voices and effects, balanced in both ears; confirmed by the user's listening (the left-only speech fix of 2026-10-20 not yet) |
-| Saves | 🔧 Incomplete — the user's save loads; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures (PCSX2 names), super-sampling, widescreen and 60 fps battles in the launcher; 60 fps flicker and glitches fixed 2026-10-25 (not yet seen by the user); HD and 60 fps together at 16x since 2026-10-26 (30 flips per second, 83 to 91% of the in-between pictures shown); HD textures streamed, and the fighters' relit bodies drawn with the pack's nearest lit variant (2026-10-26); the replacements' full detail at a 4x scanout and the game's effects at the super-sampled resolution (2026-10-26, not yet seen by the user); the ink outline at the super-sampled resolution as a native pass inside paraLLEl-GS, on by default with the look the user chose and a toggle in the menus (2026-10-27; exact at 1x); the super attack's glow as a native pass, shaded once per pixel with super-sampling (2026-10-27: 16.4 to 10.0 ms of the GPU's shading at the beam's peak; the super attack at 29.97 flips per second in the window with every enhancement and 60 fps, was 29.04); with 60 fps the fighters drawn by the GPU's rasterizer (2026-11-02); the flashing line across the ground at 16x fixed and a light depth of field as a setting (2026-11-02, pictures checked by the user, not yet in play) |
+| Films | 🟢 Operational — logo and opening films with sound |
+| Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
+| Versus battle | 🟢 Operational — playable with a controller; CPU vs CPU sampled over all 130 fighters and 16 stages; the enemy AI matches PCSX2 exactly at the calls compared |
+| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
+| Audio | 🟢 Operational — music, voices and effects; confirmed by listening (the speech-balance fix of 2026-10-20 not yet) |
+| Saves | 🔧 Incomplete — loading confirmed; saving not yet tried in the game |
+| Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them on the test PC |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached.
 
-**Next:** sharper picture (the blur some players see in text and on fighters' edges), FSR 1 scaling, the final battle sweep. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-10.md)
+**Now:** smoother, lighter 60 fps battles. **Then:** an edge filter, play-testing of saves and enhancements, the final battle sweep. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
 
 ## Enhancements
 
-Optional improvements on top of the original game, all off by default.
+All optional, set on the **Enhancements** screen of the launcher or the in-game menu (Escape or the PS button); they apply from the next start. **Gameplay never changes:** fights run at the original speed with the same physics, and an enhancement the PC cannot keep up with gives way instead of slowing the game.
 
-- **Where:** on the **Enhancements** screen, in the launcher's main menu or in the in-game menu (Escape or the PS button). They apply from the next start. The window settings under **Display** apply at once.
-- **Gameplay is never changed:** fights run at the original speed, with the same physics and results. An enhancement the computer cannot keep up with gives way instead of slowing the game.
-
-### HD textures
-Replaces the game's textures with sharp, high-resolution versions from a PCSX2 texture pack. Menus, the HUD, stages, portraits and text look crisp. Textures are found by the same names PCSX2 uses, so a pack works as it does there.
-
-- **Fighters' bodies:** the game relights the fighters all the time, and a pack only holds a few lightings of each body. Where PCSX2 shows a body in HD only when its lighting matches one of those exactly, the port draws the pack's closest lighting, so the bodies stay HD through a fight.
-- **Coverage with the supported pack:** the menus are almost entirely HD (98% of what they draw). In fights about half of what is drawn is HD. The rest is mostly full-screen effects the game makes while it draws, which no pack can replace.
-- **Supported pack:** [Sal9im's AI-upscaled texture pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included).
-- **Setup:** put the pack's folder (the one holding `replacements`) into `data/textures`, then turn on **HD textures**.
-- **Button art:** the pack's PlayStation buttons (default) or its Xbox buttons.
-- Textures are loaded in the background as the game needs them. The port keeps up to half of the graphics card's free memory for them; a fight uses well under 100 MB.
-
-### Super-sampling
-Smooths jagged edges and adds fine detail by drawing every pixel several times (2x to 16x). From 4x on, the picture is drawn at twice the PS2's resolution (1280 × 896). 16x looks best; 4x suits weaker graphics cards.
-
-### Widescreen
-Shows the game in 16:9: fights, cut-scenes and the story map show more to the sides, at the right proportions. Menus and the HUD are stretched to fit.
-
-### Display options
-- **Integer scaling:** each game pixel becomes a sharp block of whole screen pixels.
-- **Scaling off:** a smooth stretch to the window or the screen.
-- **Window size and fullscreen.**
-
-### 60 fps battles
-Smoother fights: a picture is drawn between each two of the game's 30 frames per second, from the game's own drawing commands with the camera and the characters halfway. The fight itself still runs exactly as on the PS2, and no delay is added. Something that appears in a frame (a hit flash, smoke) can show one picture early.
-
-On a slower processor an in-between picture that is not ready in time is left out. If the processor keeps falling behind, 60 fps turns itself off until the next start, so the game's speed never suffers.
-
-### Fast forward
-Hold **Tab** (or a controller button of your choice) to speed up films, menus and fights.
-
-### Coming next
-- **Sharper scaling:** FSR 1 upscaling with sharpening.
-- **Edge smoothing:** a light filter (FXAA or SMAA) for graphics cards that can't afford super-sampling.
+| Enhancement | What it does |
+| --- | --- |
+| **HD textures** | Draws the game with a PCSX2 texture pack's replacements, found by PCSX2's names. Menus are almost all HD; in fights the fighters' bodies stay HD through the game's relighting. Supported pack: [Sal9im's AI-upscaled pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included); put its folder into `data/textures`. |
+| **Super-sampling** | 2x to 16x samples per pixel; from 4x the picture is twice the PS2's resolution. 4x suits weaker graphics cards. |
+| **Widescreen** | 16:9 fights, cut-scenes and story map; menus and the HUD stretched. |
+| **60 fps battles** | A picture drawn between each two of the game's 30 frames; the fight itself runs as on the PS2. Turns itself off if the processor falls behind. Being refined: it adds some delay to the picture. |
+| **Fast loading** | Shorter loading screens; on by default. |
+| **Beam struggles by buttons** | Push in a beam struggle by pressing Square instead of turning the stick; on by default. |
+| **Display** | Integer scaling or a smooth stretch, window size, fullscreen. **Tab** (or a controller button) fast-forwards. |
 
 ## System requirements
 
-Measured on one PC (Intel Core i9-10900K, AMD Radeon RX 6800 XT). Other processors were stood in for by limiting the game to some of that processor's cores; the graphics cards below are estimates scaled from its timings, not tested.
-
-- **Processor:** with every enhancement on, a fight holds the game's 30 frames per second on 4 cores with 8 threads, and also on 2 cores with 4 threads. The game's main thread needs about 18 ms of each 33 ms frame. So the speed of one core matters most: about 60% of a Core i9-10900K's per-core speed is enough. That is most desktop processors from 2017 on.
-- **Graphics card:** the picture takes about 6 ms of the 33 ms frame without enhancements, and 9 to 10 ms with HD textures at 16x super-sampling. 60 fps battles draw a second picture per frame, so they roughly double the card's work. Super-sampling is the setting to lower on a weaker card.
+Estimates from one PC (Intel Core i9-10900K, AMD Radeon RX 6800 XT): other processors were stood in for by limiting the game's cores, and other graphics cards scaled from its timings, not tested. One core's speed matters most; super-sampling is the setting to lower on a weaker graphics card.
 
 | | Minimum (original picture) | Recommended (every enhancement: 16x super-sampling, HD textures, widescreen, 60 fps battles) |
 | --- | --- | --- |

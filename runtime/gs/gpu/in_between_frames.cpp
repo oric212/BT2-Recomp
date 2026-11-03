@@ -212,7 +212,8 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
         bool mid=false; // The list blended into blended_.
         if(stream_.paired && older) {
             const auto* x=older->walk();const auto* y=e->walk();
-            const auto pairing=x && y?pairVif1(*x,*y):std::nullopt;
+            auto pairing=x && y?pairVif1(x->unpacks,y->unpacks):std::nullopt;
+            if(pairing) {pairing->older_directs=&x->directs;pairing->newer_directs=&y->directs;}
             if(!pairing)stream_.paired=false;
             else if(cameraTurn(*pairing,older->words,e->words)<0.906f) {++camera_cuts;stream_.paired=false;}
             else {

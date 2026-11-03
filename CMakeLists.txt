@@ -76,7 +76,8 @@ set(BT2_EE_HOT_SOURCES
     runtime/ee/ee_interpreter.cpp
     runtime/ee/state_hash.cpp
     runtime/ee/game_patches.cpp
-    runtime/vu/vif1_blend.cpp)
+    runtime/vu/vif1_blend.cpp
+    runtime/vu/gs_packet_blend.cpp)
 
 # XXH3 for PCSX2-compatible texture names (docs/plans/graphics/HD_TEXTURES_PLAN.md); fetch it with
 # tools/graphics/textures/fetch_xxhash.py.
@@ -176,7 +177,7 @@ if(BT2_BUILD_GENERATED_PROBE)
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/struggle-buttons" "$<TARGET_FILE_DIR:${bt2_player_program}>/assets/struggle-buttons")
     endforeach()
     target_compile_definitions(bt2-launcher PRIVATE BT2_LAUNCHER_ALWAYS=1)
-    add_executable(bt2-vif1-blend-tests runtime/tests/vif1_blend_tests.cpp runtime/vu/vif1_blend.cpp)
+    add_executable(bt2-vif1-blend-tests runtime/tests/vif1_blend_tests.cpp runtime/vu/vif1_blend.cpp runtime/vu/gs_packet_blend.cpp)
     bt2_target_defaults(bt2-vif1-blend-tests)
     add_test(NAME vif1-blend COMMAND bt2-vif1-blend-tests)
     add_executable(bt2-fpu-tests runtime/tests/fpu_tests.cpp runtime/ee/ps2_fpu.cpp)
