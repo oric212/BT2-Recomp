@@ -21,7 +21,7 @@ Open, in order:
 
 1. Done: the user's match with the fighters pass off "did feel smooth" (7.5 ms flip to panel, 96.9% within 1 ms); in-between pictures are no longer drawn while the game runs free.
 2. Frames without an in-between picture by design, if the user still feels them: looked at 2026-11-03 ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Frames without an in-between picture"): cuts, scene changes and lists that change by thousands of unpacks; 7 of 43 in 3,000 flips are just over the pairing limit, which a cheaper alignment could take.
-3. Done 2026-11-03: the bones "left at the newer pose" are 95% data VU1 never reads (proven by pictures); the rounding helpers 30% faster, bit-identical; the pacer spins only the last 6 ms of a wait (the game's thread 0.67 of a core instead of 0.98). Next: the online battle investigation.
+3. Done 2026-11-03: the bones "left at the newer pose" are 95% data VU1 never reads (proven by pictures); the rounding helpers 30% faster, bit-identical; the pacer spins only the last 6 ms of a wait (the game's thread 0.67 of a core instead of 0.98). Next: the online battle investigation ([online battle plan](../plans/online/ONLINE_BATTLE_PLAN.md)): written 2026-11-03, the user's decisions pending.
 
 ## How the user runs things
 
