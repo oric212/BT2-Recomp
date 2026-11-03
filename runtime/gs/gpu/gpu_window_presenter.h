@@ -5,7 +5,8 @@
 // desktop compositor has taken the last picture (about 4 ms on average with 60 pictures a second,
 // measured 2026-10-26), and Granite holds the device's lock meanwhile, so the caller only hands the
 // picture over and goes on. A picture handed over while the one before still waits replaces it; a picture
-// scheduled ahead (presentAt) waits on the thread for its time, and the next one queues behind it.
+// scheduled ahead (presentAt, showPicture) is prepared first and waits on the thread for its time, so only
+// its present comes at that time; the next one queues behind it.
 // Built only with BT2_GPU_GS; used by gpu_gs_backend.cpp.
 #pragma once
 #include "host/window_presenter.h"
@@ -33,6 +34,9 @@ public:
     void show(void* window,const DisplayFrame* frame,Rect at,unsigned client_width,unsigned client_height,bool smooth,
               const DisplayFrame& status,Rect status_at) override;
     void presentAt(std::chrono::steady_clock::time_point at) override {std::lock_guard guard(lock_);next_at_=at;}
+    // From any thread: `picture` shown with the window's layout as last shown, `after` the picture before it was
+    // presented. False before any picture was shown (no layout yet).
+    bool showPicture(Vulkan::ImageHandle picture,std::chrono::steady_clock::duration after);
     static constexpr unsigned thread_index=2; // The thread's command pools (gpu_gs_backend.h).
 private:
     struct Request {
@@ -40,6 +44,7 @@ private:
         unsigned client_width=0,client_height=0;bool smooth=false;DisplayFrame status;Rect status_at;
         long long queued_us=0; // When it was handed over (the steady clock), for the latency log.
         std::chrono::steady_clock::time_point present_at{}; // Presented no earlier (presentAt).
+        std::optional<std::chrono::steady_clock::duration> after_last; // Presented this long after the last (showPicture).
     };
     // BT2_LATENCY_LOG=<path>: <path>.presents gets each present (its DXGI present count, when it was handed
     // over and when presented) and each present the display has shown since (its count and the refresh's
@@ -60,5 +65,7 @@ private:
     // it); a further one replaces the newer.
     std::deque<Request> pending_;bool stop_=false;std::exception_ptr failure_;
     std::optional<std::chrono::steady_clock::time_point> next_at_;
+    std::optional<Request> layout_; // The last picture's window and placement (show), for showPicture.
+    std::chrono::steady_clock::time_point last_present_{}; // On the thread: when the last picture was presented.
     std::thread thread_; // Last: it starts in the constructor.
 };

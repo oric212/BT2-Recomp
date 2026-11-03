@@ -14,11 +14,13 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <cstdlib>
 #include <windows.h>
 #include <mmsystem.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <thread>
 
 class FramePacer {
 public:
@@ -94,6 +96,14 @@ private:
         const auto begin=Clock::now();
         for(auto now=begin;now<target;now=Clock::now()) {
             const auto left=target-now;
+            // With 8 logical processors or more the wait keeps the game's core awake, spinning instead of sleeping. A core
+            // that sleeps between the game's bursts (Windows' Balanced plan) starts the next one slowly: in a 60 fps fight
+            // 12% of the flips came late in their field, the same VIF1 work taking 13 ms instead of 3, and every picture
+            // was held for them (docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md, 2026-11-03). It does not yield the core
+            // (a yield can lose it for a whole time slice, past the deadline); fewer processors keep the sleeping wait,
+            // which leaves the core to the port's other threads. BT2_PACER_SLEEP=1: the sleeping wait everywhere.
+            static const bool spins=!std::getenv("BT2_PACER_SLEEP") && std::thread::hardware_concurrency()>=8;
+            if(spins) {YieldProcessor();continue;}
             if(timer_ && left>std::chrono::microseconds(300)) {
                 LARGE_INTEGER due;due.QuadPart=-std::chrono::duration_cast<std::chrono::nanoseconds>(left-std::chrono::microseconds(200)).count()/100;
                 if(SetWaitableTimer(timer_,&due,0,nullptr,nullptr,FALSE))WaitForSingleObject(timer_,INFINITE);

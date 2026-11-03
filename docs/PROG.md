@@ -25,7 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 ## Current work
 
 - **60 fps battles, lighter on the processor** ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)): the fighters are drawn by the GPU's rasterizer and their vertices skip the per-vertex work of the second renderer; an in-between picture went from 18–19 to 13.5 ms in fullscreen with HD, and 60 fps fights are no longer shown a field late. Left: the in-between thread's VIF1/VU1 rerun and the hand-over of its GS data.
-- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Measured since: no added delay (30 fps fights the same); the 144 Hz display makes pictures uneven, so "Variable refresh rate" is a setting for VRR displays. Open: late flips in heavy frames, bones left at the newer pose.
+- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Since: the pacer keeps the game's core awake (late flips came from a sleeping core) and the in-between picture goes out from its own thread exactly a field after the flip's: pictures a field apart within 1 ms (97%), flip to screen 11 ms instead of 25; "Variable refresh rate" as a setting for VRR displays. Open: bones left at the newer pose.
 - **Done 2026-11-03:** the enemy AI checked against PCSX2 ([plan](plans/ee/AI_VERIFICATION_PLAN.md)): exact at three calls after four floating-point rounding fixes that apply to the whole game; beam struggles by one button; "Return to the title screen" in the in-game menu; fast loading on by default.
 
 ## Waiting for the user's play
@@ -41,7 +41,7 @@ One PC (Core i9-10900K, Radeon RX 6800 XT), Release, a versus or story fight at 
 | Fight | 29.97 flips per second, super attacks included; 98% of in-between pictures shown, 13.5 ms each |
 | Game thread | 10 to 14 ms of a 33 ms frame in a fight |
 | Graphics card | 6 ms a frame plain, about 8 to 10 with 16x, HD and widescreen |
-| Latency (flip to screen) | 10 ms at 30 fps, 24.5 ms in a 60 fps fight |
+| Latency (flip to screen) | 10 ms in menus, 11.3 ms in a 60 fps fight in fullscreen (24.5 before 2026-11-03); with VRR pictures a field apart within 1 ms (97%) |
 | Memory | 0.7 GB (0.85 GB with every enhancement); 0.8 to 1.2 GB of video memory |
 
 ## Subsystems

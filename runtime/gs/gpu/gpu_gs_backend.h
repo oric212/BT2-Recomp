@@ -1,6 +1,7 @@
 // GS rendering on the GPU through paraLLEl-GS (docs/plans/graphics/GPU_RENDERING_PLAN.md).
 // Built only with BT2_GPU_GS; Vulkan and Granite stay behind this interface.
 #pragma once
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -38,6 +39,9 @@ public:
     static constexpr unsigned held_slots=4;
     void holdPicture(unsigned slot);
     void showHeld(const GpuGsBackend* source,int slot);
+    // From `source`'s own thread: its last picture shown in this renderer's window `after` the picture before it
+    // was presented (GpuWindowPresenter::showPicture; the window's layout as last shown). False without a window.
+    bool presentPictureOf(const GpuGsBackend& source,std::chrono::steady_clock::duration after);
     // GIF data in 128-bit units, as the GIF receives it on PATH3.
     void transfer(std::span<const std::uint8_t> data);
     // Completes queued work and returns GS memory (4 MB, GS address order) for comparison.

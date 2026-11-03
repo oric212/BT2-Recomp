@@ -28,10 +28,13 @@
 #include "vu/vif1.h"
 #include "vu/vif1_blend.h"
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <exception>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <memory>
 #include <optional>
@@ -70,6 +73,8 @@ public:
     void keepPace();
     // Whether the frame is done (without waiting) and its in-between picture is ready.
     bool ready();
+    // When the last picture became ready (meaningful while ready()).
+    std::chrono::steady_clock::time_point readyAt() {std::lock_guard<std::mutex> hold(lock_);return ready_at_;}
     bool busy(); // Whether the frame is still to be drawn (without waiting).
     // Whether to show a picture that is `ready` at its field: only while the in-between pictures keep up
     // (at least 29 of the last 32 were ready). Shown now and then they would make an uneven cadence that
@@ -87,7 +92,10 @@ public:
     // For checks: the "in-between" picture is drawn all the way to the newer frame (blend 1), so it must
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
-    unsigned drawn=0,unpaired=0,not_fights=0,shown=0,camera_cuts=0,scene_changes=0,late=0; // shown and late: counted by the caller.
+    unsigned drawn=0,unpaired=0,not_fights=0,camera_cuts=0,scene_changes=0,late=0; // late: counted by the caller.
+    std::atomic<unsigned> shown{0}; // Counted by whoever shows them (the caller, or on_picture on the thread).
+    // Called on the thread as soon as a fight's in-between picture is drawn (its job id), to show it from there.
+    std::function<void(std::uint64_t job)> on_picture;
     std::uint64_t refused_pairs=0,blended_words=0; // Changed unpack pairs left as they are, words blended (vu/vif1_blend.h).
     double waited_seconds=0; // The game's thread waiting for the frame.
     unsigned paced_waits=0; // Flips at which keepPace waited (more than 2 ms).
@@ -124,7 +132,7 @@ private:
     struct Held {std::uint64_t job=~0ull;bool ready=false;std::pair<unsigned,unsigned> size{};};
     std::array<Held,GpuGsBackend::held_slots> held_; // By job % held_slots (under lock_).
     // Jobs in order (the thread takes the front one with its task); `started` and `finished` count them.
-    std::deque<Job> jobs_;std::uint64_t started_=0,finished_=0;bool ready_=false;std::exception_ptr failure_;
+    std::deque<Job> jobs_;std::uint64_t started_=0,finished_=0;bool ready_=false;std::chrono::steady_clock::time_point ready_at_{};std::exception_ptr failure_;
     std::uint64_t recent_waits_=0; // keepPace: whether each of the last 64 flips waited (newest in bit 0).
     std::mutex lock_;std::condition_variable done_;
     void run(); // The task: finishes job_.

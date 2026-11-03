@@ -12,7 +12,7 @@ All figures are from one PC (Core i9-10900K, Radeon RX 6800 XT), Release builds.
 | 60 fps fights | 98% of in-between pictures shown (4,690 to 4,692 of 4,782), 2 to 4 not ready in time | story fight, user's settings, fullscreen, 5,000 flips |
 | An in-between picture | 11.0 to 12.4 ms to draw (13.5 that morning, 18 to 19 the day before) | the same |
 | Flip to screen, menus and 30 fps fights | 10 ms median in fullscreen, 17 ms in a window | the gate's path at 1x |
-| Flip to screen, 60 fps fights | 24.5 ms median in fullscreen (26.5 to 27.3 that morning, 49 the day before) | story fight, user's settings |
+| Flip to screen, 60 fps fights | 11.3 ms median in fullscreen (24.5 before 2026-11-03's pacer and in-between timing); with VRR each picture a field after the last within 1 ms (97%) | story fight, user's settings |
 | The game's thread | about 0.7 ms of a field's 16.7 on the gate's path; 10 to 14 ms per 33 ms flip in a 60 fps fight with HD | headless and fullscreen |
 | Graphics card | about 7 ms a picture at 16x with every enhancement, 3 ms at 4x | headless, `BT2_GPU_TIMESTAMPS` |
 | Hitches | four fields at screen changes take 22 to 47 ms (loading work landing in one field); none in fights | the gate's path, headless |

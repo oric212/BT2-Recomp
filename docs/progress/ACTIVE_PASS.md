@@ -10,12 +10,14 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 
 - **Feel measured (later the same day):** 60 fps adds no delay (30 fps fights measure the same, about 25 ms flip to screen). The user's display runs at 144 Hz, where 59.94 pictures a second cannot be even (2 or 3 refreshes each): **the setting "Variable refresh rate"** (Display, off by default) presents pictures at once for VRR displays; the user's display has VRR. Not yet seen by the user.
 
+- **Even 60 fps (later):** late flips came from the game's core sleeping between bursts (the pacer now spins), and the in-between picture now goes out from its own thread exactly a field after the flip's: 97% of picture intervals within 1 ms of a field with VRR, flip to screen 11 ms instead of 25. Not yet seen by the user.
+
 Open, in order:
 
-1. The user's look in play: the aura fix, and "Variable refresh rate" on (with FreeSync on in the AMD driver).
-2. Late flips: 12 to 15% of a 60 fps fight's flips come more than 4 ms into their field (2 to 3% at 30 fps), so the pacer holds every picture about 15 ms. Before one, a VIF1 transfer takes 13 ms instead of 3 for the same data; not the GS threads, the recorder's copy, a shared core or the thread's priority (measured; [60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "How 60 fps feels"). Next: find what stalls that transfer (timing inside VU1's kicks per transfer, the system's view of the thread's states).
+1. The user's look in play with "Variable refresh rate" on: the aura fix and the even pictures.
+2. 40 of 2,826 in-between pictures left out (1.4%): the reason (ready after the next flip's picture, or not keeping up).
 3. Bones left at the newer pose: 10% a picture, most without a counterpart.
-4. Load: the AI pass's rounding helpers (about 8% of the game thread); then [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
+4. Load: the pacer's spin keeps one core busy while the game waits (the user's go-ahead for more hardware, 2026-11-03); the AI pass's rounding helpers (about 8% of the game thread); then [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
 
 ## How the user runs things
 

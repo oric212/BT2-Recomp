@@ -54,7 +54,7 @@ void InBetweenFrames::run() {
     try {ready=draw(std::move(job.frame),job);}
     catch(...) {failure=std::current_exception();}
     {
-        std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(failure && !failure_)failure_=failure;++finished_;
+        std::lock_guard<std::mutex> hold(lock_);ready_=ready;if(ready)ready_at_=std::chrono::steady_clock::now();if(failure && !failure_)failure_=failure;++finished_;
         held_[job.id%held_.size()]=Held{job.id,ready && !failure,picture_};
     }
     done_.notify_all();
@@ -248,6 +248,7 @@ bool InBetweenFrames::draw(Frame finished,const Job& job) {
             picture_=mirror_.vsync(job.privileged,job.crt_mode,job.field);
             ready=picture_.first!=0;
             if(ready)mirror_.holdPicture(unsigned(job.id%GpuGsBackend::held_slots)); // Shown a field later in delayed fights.
+            if(ready && on_picture)on_picture(job.id);
         }
         if(ready) {
             ++drawn;

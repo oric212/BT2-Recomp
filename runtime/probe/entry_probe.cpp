@@ -48,6 +48,31 @@
 // and the fight's 30 fps waits counted per frame (a frame that waited is a fight frame).
 namespace sixty_fps {
 std::function<void()> field_picture; // Called at each field's end before its deadline is waited for.
+unsigned main_flip = 0; // The last flip whose own picture was handed to the window (its in-between picture goes a field later).
+// The in-between picture shown from its own thread the moment it is drawn (on_picture), a field after its flip's picture:
+// the game's thread is busy with the next field's work then and handed it over 7 ms late. `direct`: that way is on;
+// `shown_main_flip`: the flip whose own picture went out last; `job_flip`: the flip each recent job belongs to;
+// `keeping_up`: the in-between pictures keep up (InBetweenFrames::keepsUp); `direct_shown`: one went out since the
+// game's thread last looked.
+std::atomic<bool> direct{false}, keeping_up{true}, direct_shown{false};
+std::atomic<unsigned> shown_main_flip{0};
+std::array<std::atomic<unsigned>, 16> job_flip{};
+// How long after its flip each recent in-between picture was ready: it is drawn from the next frame's commands, which the
+// game sends during the field after the flip, so the flip's own picture waits until its partner can follow a field later.
+std::chrono::steady_clock::time_point main_flipped{};
+std::array<std::chrono::steady_clock::duration, 120> partner_ready{};
+std::size_t partner_count = 0, partner_next = 0;
+inline void notePartnerReady(std::chrono::steady_clock::time_point ready_at) {
+    partner_ready[partner_next++ % partner_ready.size()] = ready_at - main_flipped;
+    partner_count = std::min(partner_count + 1, partner_ready.size());
+}
+// When 99% of recent in-between pictures were ready after their flip, plus a millisecond (zero before any).
+inline std::chrono::steady_clock::duration partnerReadyAfterFlip() {
+    if (!partner_count) return std::chrono::steady_clock::duration::zero();
+    auto recent = partner_ready;
+    std::sort(recent.begin(), recent.begin() + partner_count);
+    return recent[std::min(partner_count - 1, partner_count * 99 / 100)] + std::chrono::milliseconds(1);
+}
 unsigned fight_waits = 0;
 bool counting = false;
 }
@@ -538,32 +563,46 @@ int main(int argc, char** argv) {
                         return;
                     }
                     if (!in_between || !in_between_started) return;
-                    // The flip's own picture is shown at the end of the field it happens in (its deadline); the next
-                    // field's end is halfway to the next flip's picture: the in-between picture goes there.
+                    // The in-between picture goes out exactly a field after the flip's own: with a variable refresh display
+                    // each picture then stays a field, with a fixed one the two stay a field apart. It is drawn from the next
+                    // frame's commands, about 17 ms after the flip, while the game's thread works on the next field: so it is
+                    // shown from its own thread as soon as it is drawn (sixty_fps::direct, on_picture), timed on the
+                    // presenter's thread a field after the flip's picture was presented. Here, at the next field's end (its
+                    // deadline), the game's thread only does the bookkeeping. Without that way (delayed fights, checks,
+                    // pictures at the deadline) the picture is handed over here, at the moment the flips' pictures go out.
+                    static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
                     if (runtime.vblank_deliveries != in_between_vblank + 2) {
                         if (runtime.vblank_deliveries > in_between_vblank + 2) in_between_started = false; // A flip came first.
                         return;
                     }
                     in_between_started = false;
                     if (!viewer_mode || !viewer.gpuPresented() || (pacer && pacer->freeRun()) || in_between->replay_only || in_between->scan_replay) return;
-                    // The picture has until the field's deadline, never beyond it: a picture not ready is left out, so the
-                    // game keeps its pace. A ready one goes out ahead of the deadline at the moment the flips' pictures
-                    // do (FramePacer::waitToShow, which learns when both kinds are usually ready), so the two stay a
-                    // field apart; the deadline is waited for after it, at the field's end.
-                    static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
-                    if (pacer && !at_deadline) {
-                        while (!in_between->ready() && in_between->busy() && std::chrono::steady_clock::now() < pacer->deadline()) Sleep(0);
-                        pacer->waitToShow();
-                    } else if (pacer) pacer->wait();
+                    const bool direct = sixty_fps::direct && sixty_fps::main_flip == in_between_flip;
+                    if (pacer) while (!in_between->ready() && in_between->busy() && std::chrono::steady_clock::now() < pacer->deadline()) Sleep(0);
+                    if (pacer && !direct) {if (at_deadline) pacer->wait(); else pacer->waitToShow();}
                     const bool ready = in_between->ready();
                     if (!ready && in_between->busy()) ++in_between->late;
-                    if (!in_between->keepsUp(ready)) return; // Not ready, or they have not been keeping up: a steady 30.
+                    sixty_fps::keeping_up = in_between->keepsUp(ready);
+                    if (!sixty_fps::keeping_up) return; // Not ready, or they have not been keeping up: a steady 30.
+                    if (direct) {
+                        sixty_fps::notePartnerReady(in_between->readyAt());
+                        if (player && sixty_fps::direct_shown.exchange(false)) player->shown();
+                        return;
+                    }
                     gpu_mirror.showPictureOf(&in_between->renderer());
                     const auto size = in_between->pictureSize();
                     viewer.presentRenderer(size.first, size.second, runtime.gs_display_flips);
                     gpu_mirror.showPictureOf(nullptr);
                     ++in_between->shown;
                     if (player) player->shown();
+                };
+                // On the in-between thread: its picture to the presenter a field after its flip's own, unless a later flip's
+                // picture went out first (never out of order) or they do not keep up.
+                in_between->on_picture = [](std::uint64_t job) {
+                    if (!sixty_fps::direct || !sixty_fps::keeping_up) return;
+                    if (sixty_fps::shown_main_flip != sixty_fps::job_flip[job % sixty_fps::job_flip.size()]) return;
+                    const auto field = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(FramePacer::field_seconds));
+                    if (gpu_mirror.presentPictureOf(in_between->renderer(), field)) {++in_between->shown;sixty_fps::direct_shown = true;}
                 };
                 std::cerr << "60 fps battles: in-between pictures on" << (in_between->replay_only ? " (replay check)" : "") << std::endl;
             }
@@ -626,6 +665,7 @@ int main(int argc, char** argv) {
                         try {
                             in_between->start(sixty_fps::fight_waits > 0, runtime.vif1, display, runtime.gs_crt_request[1], flip, flip % GpuGsBackend::kept_slots);
                             in_between_started = true;in_between_vblank = runtime.vblank_deliveries;in_between_flip = flip;
+                            sixty_fps::job_flip[in_between->lastJob() % sixty_fps::job_flip.size()] = flip;
                         } catch (const std::exception& e) {stop_in_between(e);}
                         sixty_fps::fight_waits = 0;
                     }
@@ -704,6 +744,12 @@ int main(int argc, char** argv) {
                         while (!in_between->readyFor(job) && in_between->busy() && Clock::now() < pacer->deadline()) Sleep(0);
                     }
                     shown_at = pacer->waitToShow(Clock::now());
+                } else if (ahead && in_between && sixty_fps::fight_waits > 0) {
+                    // A 60 fps fight: the flip's picture no earlier than its in-between partner can follow a field later.
+                    sixty_fps::main_flipped = t0;
+                    const auto partner = t0 + sixty_fps::partnerReadyAfterFlip() - pacer->period();
+                    pacer->waitToShow(std::max(Clock::now(), partner));
+                    while (Clock::now() < partner) YieldProcessor(); // A millisecond or two at most.
                 } else if (ahead) pacer->waitToShow(); else if (pacer) pacer->wait();
                 const auto t_shown = Clock::now();
                 // The flip's own picture with 60 fps ahead: a field after the in-between picture.
@@ -745,6 +791,10 @@ int main(int argc, char** argv) {
                     delayed_main.pending = false;
                     if (player) player->shown(on_gpu ? nullptr : &frame);
                     if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
+                    sixty_fps::main_flip = flip;sixty_fps::shown_main_flip = flip;
+                    static const bool at_deadline_direct = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
+                    sixty_fps::direct = in_between && viewer_mode && viewer.gpuPresented() && pacer && !pacer->freeRun() && !delay_fights && !at_deadline_direct
+                                        && !in_between->replay_only && !in_between->scan_replay;
                 }
                 if (stats) {
                     const auto t2 = Clock::now();

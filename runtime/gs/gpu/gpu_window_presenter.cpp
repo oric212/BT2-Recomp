@@ -80,12 +80,26 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
     {
         std::lock_guard guard(lock_);
         if(failure_) {auto failure=failure_;failure_=nullptr;std::rethrow_exception(failure);}
+        layout_.emplace();layout_->window=window;layout_->at=at;layout_->client_width=client_width;layout_->client_height=client_height;layout_->smooth=smooth;
         if(next_at_) {request.present_at=*next_at_;next_at_.reset();}
         const auto due=std::max(std::chrono::steady_clock::now(),request.present_at);
         request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(due.time_since_epoch()).count();
         if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
     }
     changed_.notify_all();
+}
+
+bool GpuWindowPresenter::showPicture(Vulkan::ImageHandle picture,std::chrono::steady_clock::duration after) {
+    {
+        std::lock_guard guard(lock_);
+        if(!layout_ || failure_)return false;
+        Request request=*layout_;
+        request.picture=std::move(picture);request.after_last=after;
+        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
+    }
+    changed_.notify_all();
+    return true;
 }
 
 void GpuWindowPresenter::run() {
@@ -96,17 +110,28 @@ void GpuWindowPresenter::run() {
             std::unique_lock guard(lock_);
             changed_.wait(guard,[this]{return !pending_.empty() || stop_;});
             if(pending_.empty())return;
-            // A picture scheduled ahead waits for its time (a newer picture handed over meanwhile queues behind it).
-            while(!stop_ && std::chrono::steady_clock::now()<pending_.front().present_at)
-                changed_.wait_until(guard,pending_.front().present_at);
-            if(stop_)return;
             request=std::move(pending_.front());pending_.pop_front();
         }
         try {
             bool presenting=false;
             around_frame_([&]{presenting=present(request);});
-            if(presenting && !state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
-            if(presenting)logPresent(request.queued_us);
+            if(!presenting)continue;
+            // A picture scheduled ahead is ready now (copied, its frame ended) and waits for its time, so only its
+            // present comes then (a newer picture handed over meanwhile queues behind it).
+            const auto at=request.after_last?last_present_+*request.after_last:request.present_at;
+            {
+                // A wait's wake-up on Windows is late by up to the system's timer tick (about 0.9 ms measured, the
+                // in-between picture then 17.6 instead of 16.7 ms after the flip's): the last millisecond is waited
+                // for by yielding, as the frame pacer does.
+                std::unique_lock guard(lock_);
+                const auto early=at-std::chrono::milliseconds(1);
+                while(!stop_ && std::chrono::steady_clock::now()<early)changed_.wait_until(guard,early);
+                if(stop_)return;
+            }
+            while(std::chrono::steady_clock::now()<at)YieldProcessor();
+            last_present_=std::chrono::steady_clock::now();
+            if(!state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
+            logPresent(request.queued_us);
         }
         catch(...) {std::lock_guard guard(lock_);if(!failure_)failure_=std::current_exception();}
     }

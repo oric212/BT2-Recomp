@@ -441,6 +441,10 @@ WindowPresenter& GpuGsBackend::windowPresenter(std::function<void(const std::fun
 
 void GpuGsBackend::closeWindowPresenter() {state_->presenter.reset();}
 
+bool GpuGsBackend::presentPictureOf(const GpuGsBackend& source,std::chrono::steady_clock::duration after) {
+    return state_->presenter && source.state_->picture && state_->presenter->showPicture(source.state_->picture,after);
+}
+
 void GpuGsBackend::enableHdTextures(const std::filesystem::path& folder,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons,
                                     const std::filesystem::path& overrides) {
     if(!budget_bytes) {
