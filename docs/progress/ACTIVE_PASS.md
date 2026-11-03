@@ -20,7 +20,7 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 Open, in order:
 
 1. The user's look and feel in play with the fighters pass off.
-2. Frames without an in-between picture by design (about one every 2 s in the user's play: unpaired lists, scene changes), if still felt.
+2. Frames without an in-between picture by design, if the user still feels them: looked at 2026-11-03 ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Frames without an in-between picture"): cuts, scene changes and lists that change by thousands of unpacks; 7 of 43 in 3,000 flips are just over the pairing limit, which a cheaper alignment could take.
 3. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread).
 
 ## How the user runs things

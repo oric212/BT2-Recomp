@@ -104,7 +104,8 @@ int main() {
         std::vector<std::uint8_t> data(16);
         for(unsigned n=0;n<20000;++n)thread.push(data,false);
         thread.pushTask([]{}); // Hands the last chunk.
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        // Until the thread is taking (not a fixed sleep: under the gate's load it may not have started yet).
+        for(unsigned n=0;n<2000 && !taken;++n)std::this_thread::sleep_for(std::chrono::milliseconds(1));
         bool at_pause_on_thread=false;unsigned during=0,after=0;
         thread.whilePaused([&]{at_pause_on_thread=self->onThread();},[&] {
             during=taken;
