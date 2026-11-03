@@ -19,7 +19,7 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 
 Open, in order:
 
-1. The user's look and feel in play with the fighters pass off.
+1. The user's feel with the fighters pass off: their recorded match measures 7.5 ms flip to panel (16.7 before) and 96.9% of intervals within 1 ms; how it feels not said yet. In-between pictures are drawn while the game runs free (724 in that session) and never shown: load to take away.
 2. Frames without an in-between picture by design, if the user still feels them: looked at 2026-11-03 ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Frames without an in-between picture"): cuts, scene changes and lists that change by thousands of unpacks; 7 of 43 in 3,000 flips are just over the pairing limit, which a cheaper alignment could take.
 3. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread).
 
