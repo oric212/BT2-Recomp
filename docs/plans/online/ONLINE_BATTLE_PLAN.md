@@ -53,8 +53,16 @@ Nothing is transferred: each machine keeps its own game patches, enhancements an
 3. **Getting through home routers.** Direct UDP needs the host's port forwarded. UPnP port mapping on the host, or a relay server, is a later step.
 4. **Rollback.** Save states of the whole game (guest memory, fibers' stacks, every native service's state), taken every field and restored to re-run with the right input. It hides the input delay over long distances; it is large work, after lockstep has proven the game stays in step.
 
+## Next: the lockstep transport (designed 2026-11-03, not built; the pass ended at the user's request)
+
+- **Where:** `runtime/host/net_lockstep.*` (Winsock UDP), driven by the probe: `BT2_NET=host:<port>` or `join:<address>:<port>`, `BT2_NET_DELAY=<fields>` (2 to start; 16.7 ms each). A session implies the fresh start into Dueling (`BT2_START_SCREEN=30`), `BT2_UNLOCK_ROSTER=1`, `BT2_ONLINE_VIEW` = the local player (host 1, joiner 2), no card, fast forward and fast loading off.
+- **Connecting:** the host waits on its port; the joiner sends a hello every 200 ms until answered. The hello carries a hash of the running program, so two different builds refuse each other by name. Direct address and port (the user's choice): the host forwards the port on their router.
+- **Each field:** the pad service asks port 2 then port 1 once per VBlank (`EeRuntime::on_pad2_input`, `on_pad_input`, `services/pad_service.cpp`). The first call of a field does the exchange: the local controller's input (the player's `PlayerSession::padInput`, or a pad script in tests) is recorded for field + delay and sent with the last 8 inputs repeated; then the peer's input for this field is awaited (resending while waiting; a silence of a few seconds stops the session with a clear message). Port 1 is the host's input, port 2 the joiner's; fields before the delay have neutral input. The field number is `vblank_deliveries`, the same on both machines.
+- **Drift check:** every 60 fields both send a hash of every native service request so far (`EeRuntime::callNativeService` in `services/sif_rpc.cpp`: the requests' bytes); settings and patches do not change them (measured: the fight's audio is identical across them). A mismatch stops the session by name; the whole-memory state hash cannot be used (it differs by settings by design).
+- **Checks:** two probes on this PC over loopback with scripted inputs and different settings: both reach the same fight with byte-identical audio; packets dropped and delayed by a test transport; a forced difference caught by the hash; then the launcher's Host and Join (a text entry for the address, which the menu does not have yet) and the user's two machines.
+
 ## Decisions for the user
 
 - **Decided by the user (2026-11-03):** no save or patches transferred; the game's own Dueling and select screens, entered fresh on both machines; every fighter unlocked in online matches.
-- **Decision: how players connect.** Direct address and port (proposed first), UPnP, or a relay server someone has to run.
+- **Decided by the user (2026-11-03): direct address and port first** (the host forwards a port); UPnP or a relay later if wanted.
 - **Decision: rollback** after lockstep, or lockstep only.
