@@ -10,6 +10,8 @@
 !/assets/launcher/logo.png
 # The port's own beam struggle prompt art (tools/graphics/textures/make_struggle_button_art.py).
 !/assets/struggle-buttons/
+# The programs' icons, drawn by tools/build/make_icons.py (no game artwork).
+!/assets/icons/
 *.iso
 *.ISO
 *.cue
