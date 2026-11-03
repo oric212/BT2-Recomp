@@ -12,13 +12,15 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 
 - **Even 60 fps (later):** late flips came from the game's core sleeping between bursts (the pacer now spins), and the in-between picture now goes out from its own thread exactly a field after the flip's: 97% of picture intervals within 1 ms of a field with VRR, flip to screen 11 ms instead of 25. Not yet seen by the user.
 
+- **End of the pass (the user's request):** the steady judder the user still feels is GPU completion, not the pictures or the present calls: a main picture completes on the GPU 8.5 ms after it is presented, an in-between picture 1.4 ms after, so a VRR panel shows them about 10 and 24 ms apart. A 60 fps video of the pictures (`work/frames/sixty-video/fight-60fps.mp4`) looks smooth to the user. The code is at the last gated commit; the tried fence wait was reverted.
+
 Open, in order:
 
-1. The user's look in play with "Variable refresh rate" on: the aura fix and the even pictures.
-2. Done (later): the keep-up check no longer turns 60 fps off after frames that have no in-between picture by design (the user's session: runs of up to 1.5 s at 30 fps); `work/scripts/play-with-stats.cmd` records `user/latency.log` for reading a real session.
-3. The frames without an in-between picture by design, about one every 2 seconds in the user's play (unpaired lists and scene changes most): fewer of them, if the user still feels them.
-4. Bones left at the newer pose: 10% a picture, most without a counterpart.
-5. Load: the pacer's spin keeps one core busy while the game waits (the user's go-ahead for more hardware, 2026-11-03); the AI pass's rounding helpers (about 8% of the game thread); then [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
+1. **Time both kinds of picture by GPU completion** ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "The steady judder ... GPU completion", next step): the presenter waits for each picture's copy fence; the main picture's moment learned from when main pictures complete; the in-between picture a field after the main one as presented. Check with the user's recorded session (`work/scripts/play-with-stats.cmd`, `user/latency.log`) and their eyes.
+2. Then latency: less GPU time per main picture at the user's settings (16x, HD, native passes), since the main picture reaches the panel about 9 ms after the flip.
+3. Fast forward: the user called it bugged; the fix of `5a9e398` (no direct in-between pictures in fast forward) not yet confirmed, symptoms not described yet.
+4. Frames without an in-between picture by design (about one every 2 s in the user's play: unpaired lists, scene changes), if still felt.
+5. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread); [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
 
 ## How the user runs things
 
