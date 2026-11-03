@@ -15,6 +15,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace {
 // Granite's WSI asks its platform for the surface and its size; here that is the viewer's window.
@@ -150,8 +151,13 @@ bool GpuWindowPresenter::present(const Request& request) {
             throw std::runtime_error("GPU presenter: no swapchain for the window");
         // On Windows the picture goes out through a DXGI flip-model swapchain (granite_dxgi_copy_target.patch),
         // presented on D3D12's queue without holding the Vulkan device: it is shown at the display's refresh,
-        // without tearing.
-        if(s.wsi->uses_dxgi())s.wsi->set_present_mode(Vulkan::PresentMode::SyncToVBlank);
+        // without tearing. With the setting "Variable refresh rate" (BT2_VARIABLE_REFRESH=1) it is presented at
+        // once, tearing allowed: a VRR display then refreshes when the picture comes, so each picture stays exactly
+        // its time. A fixed refresh rounds it to whole refreshes instead (at 144 Hz a field's picture stays 2 or 3
+        // refreshes, 13.9 or 20.8 ms: uneven motion) and queues it behind the last (docs/plans/graphics/
+        // HIGH_FRAME_RATE_PLAN.md, the user's report of 2026-11-03).
+        static const bool variable_refresh=std::getenv("BT2_VARIABLE_REFRESH") && std::string_view(std::getenv("BT2_VARIABLE_REFRESH"))=="1";
+        if(s.wsi->uses_dxgi() && !variable_refresh)s.wsi->set_present_mode(Vulkan::PresentMode::SyncToVBlank);
     }
     s.platform->size(client_width,client_height);
     auto& device=*device_;

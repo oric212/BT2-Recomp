@@ -56,7 +56,7 @@ All optional, set on the **Enhancements** screen of the launcher or the in-game 
 | **60 fps battles** | A picture drawn between each two of the game's 30 frames; the fight itself runs as on the PS2. Turns itself off if the processor falls behind. Being refined: it adds some delay to the picture. |
 | **Fast loading** | Shorter loading screens; on by default. |
 | **Beam struggles by buttons** | Push in a beam struggle by pressing Square instead of turning the stick; on by default. |
-| **Display** | Integer scaling or a smooth stretch, window size, fullscreen. **Tab** (or a controller button) fast-forwards. |
+| **Display** | Integer scaling or a smooth stretch, window size, fullscreen; **Variable refresh rate** for FreeSync, G-Sync or VRR displays (each picture shown for exactly its time). **Tab** (or a controller button) fast-forwards. |
 
 ## System requirements
 

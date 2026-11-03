@@ -25,12 +25,12 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 ## Current work
 
 - **60 fps battles, lighter on the processor** ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)): the fighters are drawn by the GPU's rasterizer and their vertices skip the per-vertex work of the second renderer; an in-between picture went from 18–19 to 13.5 ms in fullscreen with HD, and 60 fps fights are no longer shown a field late. Left: the in-between thread's VIF1/VU1 rerun and the hand-over of its GS data.
-- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Open: the one-field delay of the method, unevenness in play, bones left at the newer pose.
+- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Measured since: no added delay (30 fps fights the same); the 144 Hz display makes pictures uneven, so "Variable refresh rate" is a setting for VRR displays. Open: late flips in heavy frames, bones left at the newer pose.
 - **Done 2026-11-03:** the enemy AI checked against PCSX2 ([plan](plans/ee/AI_VERIFICATION_PLAN.md)): exact at three calls after four floating-point rounding fixes that apply to the whole game; beam struggles by one button; "Return to the title screen" in the in-game menu; fast loading on by default.
 
 ## Waiting for the user's play
 
-Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; 60 fps with the fighters pass; saving to a card. Open reports: a texture glitch in the first fight with HD (not reproduced headless).
+Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; 60 fps with the fighters pass; saving to a card. Open reports: a texture glitch in the first fight with HD (not reproduced headless).
 
 ## Measurements
 

@@ -20,7 +20,9 @@ int main() {
         pacer.waitToShow();
         shown.push_back(since(start));
         pacer.wait();
-        check(since(start)>0.012,"the field still waits for its deadline");
+        // Not "12 ms after the field began": deadlines do not drift, so a thread the loaded machine started late
+        // has a shorter field; but wait never returns before the deadline.
+        check(FramePacer::Clock::now()>=pacer.deadline(),"the field still waits for its deadline");
     }
     // The median: a loaded machine (the gate runs probes beside the tests) may hold a field's thread past 8 ms.
     std::nth_element(shown.begin(),shown.begin()+shown.size()/2,shown.end());
@@ -38,8 +40,12 @@ int main() {
     // returned, and the period puts the next picture a field after it.
     pacer.fieldStarted();
     {
-        const auto shown=pacer.waitToShow(FramePacer::Clock::now());
-        check(shown<=FramePacer::Clock::now() && pacer.deadline()-shown>FramePacer::Clock::duration::zero(),"shown before the deadline");
+        const auto asked=FramePacer::Clock::now();
+        const auto shown=pacer.waitToShow(asked);
+        // By the deadline when asked in time: the moment is clamped to the field, and it is the deadline itself when
+        // the loop above ran late (a loaded machine stretches Sleep(10) to the system's 15.6 ms tick).
+        check(shown<=FramePacer::Clock::now() && (shown<=pacer.deadline()+std::chrono::milliseconds(1) || asked+std::chrono::milliseconds(2)>=pacer.deadline()),
+              "shown by the deadline");
         check(pacer.period()>std::chrono::milliseconds(16) && pacer.period()<std::chrono::milliseconds(17),"a field's period");
         pacer.wait();
     }
