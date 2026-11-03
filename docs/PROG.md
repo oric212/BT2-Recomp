@@ -24,13 +24,13 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Current work
 
-- **60 fps battles, lighter on the processor** ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)): the fighters are drawn by the GPU's rasterizer and their vertices skip the per-vertex work of the second renderer; an in-between picture went from 18–19 to 13.5 ms in fullscreen with HD, and 60 fps fights are no longer shown a field late. Left: the in-between thread's VIF1/VU1 rerun and the hand-over of its GS data.
-- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Since: the pacer keeps the game's core awake (late flips came from a sleeping core) and the in-between picture goes out from its own thread exactly a field after the flip's: pictures a field apart within 1 ms (97%), flip to screen 11 ms instead of 25; "Variable refresh rate" as a setting for VRR displays. The steady judder the user still felt came from GPU completion (a VRR panel shows a picture when its GPU work ends: main pictures 8.5 ms after their present, in-between ones 1.4): pictures are now presented by it, 97% a field apart on the panel; the user: "it feels smoother". Open: the main picture's GPU time (it now reaches the panel 16.6 ms after its flip); bones left at the newer pose.
+- **60 fps battles, lighter on the processor** ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)): an in-between picture went from 18–19 to 13.5 ms in fullscreen with HD, and 60 fps fights are no longer shown a field late. Left: the in-between thread's VIF1/VU1 rerun and the hand-over of its GS data. The native fighters pass is off by default since 2026-11-03 (the user's decision): it kept the in-between renderer on the GPU's only graphics queue, ahead of the main pictures (10 ms of latency for 1 ms of GPU time).
+- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Since: the pacer keeps the game's core awake (late flips came from a sleeping core) and the in-between picture goes out from its own thread exactly a field after the flip's: pictures a field apart within 1 ms (97%), flip to screen 11 ms instead of 25; "Variable refresh rate" as a setting for VRR displays. The steady judder the user still felt came from GPU completion (a VRR panel shows a picture when its GPU work ends: main pictures 8.5 ms after their present, in-between ones 1.4): pictures are now presented by it, 97% a field apart on the panel; the user: "it feels smoother". With the fighters pass off a main picture reaches the panel 6.9 ms after its flip (16.7 with it). Open: bones left at the newer pose.
 - **Done 2026-11-03:** the enemy AI checked against PCSX2 ([plan](plans/ee/AI_VERIFICATION_PLAN.md)): exact at three calls after four floating-point rounding fixes that apply to the whole game; beam struggles by one button; "Return to the title screen" in the in-game menu; fast loading on by default.
 
 ## Waiting for the user's play
 
-Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; 60 fps with the fighters pass; saving to a card. Open reports: a texture glitch in the first fight with HD (not reproduced headless).
+Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; 60 fps with the fighters pass off; saving to a card. Open reports: a texture glitch in the first fight with HD (not reproduced headless).
 
 ## Measurements
 
@@ -41,7 +41,7 @@ One PC (Core i9-10900K, Radeon RX 6800 XT), Release, a versus or story fight at 
 | Fight | 29.97 flips per second, super attacks included; 98% of in-between pictures shown, 13.5 ms each |
 | Game thread | 10 to 14 ms of a 33 ms frame in a fight |
 | Graphics card | 6 ms a frame plain, about 8 to 10 with 16x, HD and widescreen |
-| Latency (flip to screen) | 10 ms in menus; in a 60 fps fight in fullscreen with VRR a main picture on the panel 16.6 ms after its flip, pictures a field apart within 1 ms (97%), timed by their GPU work's end |
+| Latency (flip to screen) | 10 ms in menus; in a 60 fps fight in fullscreen with VRR a main picture on the panel 6.9 ms after its flip, pictures a field apart within 1 ms (96%), timed by their GPU work's end |
 | Memory | 0.7 GB (0.85 GB with every enhancement); 0.8 to 1.2 GB of video memory |
 
 ## Subsystems

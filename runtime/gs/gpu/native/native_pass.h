@@ -20,9 +20,8 @@ struct NativeContext {
 
 struct NativePass {
     const char* name;
-    // WithSixtyFps: on when 60 fps battles are (BT2_SIXTY_FPS); WithLighterDof: when the depth of field is set lighter
-    // (BT2_DOF_STRENGTH below 100).
-    enum Default {Off,On,WithSixtyFps,WithLighterDof} on_by_default;
+    // WithLighterDof: on when the depth of field is set lighter (BT2_DOF_STRENGTH below 100).
+    enum Default {Off,On,WithLighterDof} on_by_default;
     bool (*draws)(const ParallelGS::RegisterState& registers);
     bool (*run)(const NativeRenderPass& pass,NativeContext& context);
 };

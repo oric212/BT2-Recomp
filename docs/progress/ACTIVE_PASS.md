@@ -15,12 +15,13 @@ The user played a story fight with 60 fps at their settings: flicker in fast mov
 - **GPU completion (found at the end of the last pass):** a VRR panel shows a picture when its GPU work is done; main pictures were done 8.5 ms after their present, in-between pictures 1.4 ms, so the panel showed them about 10 and 24 ms apart, the steady judder the user felt.
 - **Built:** the presenter waits for each picture's GPU work; a flip's picture goes out a steady time after its handover that covers 99% of recent ones, the in-between picture a field after it. 97.1% of intervals within 1 ms of a field as the panel shows them, all in-between pictures shown; a main picture on the panel 16.6 ms after its flip (10.4 before, unevenly). **The user: "it feels smoother"** (their recording: 97.2% within 1 ms in the 60 fps stretches). Pictures of fast loading or fast forward are no longer learned from (they held the menus after a load).
 
+- **Latency (later):** the native fighters pass kept the in-between renderer on the GPU's only graphics queue, ahead of every main picture's work. Off by default now (the user's decision): a main picture on the panel 6.9 ms after its flip instead of 16.7, the in-between renderer's GS thread 1 ms less a frame, the same pictures shown. Fast forward: confirmed working by the user. Not yet seen by the user.
+
 Open, in order:
 
-1. Latency: less GPU time per main picture, and less spread, at the user's settings (16x, HD, native passes); the main picture's hold follows its slowest 1%.
-2. Fast forward: the user called it bugged; the fix of `5a9e398` (no direct in-between pictures in fast forward) not yet confirmed, symptoms not described yet.
-3. Frames without an in-between picture by design (about one every 2 s in the user's play: unpaired lists, scene changes), if still felt.
-4. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread); [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)'s remaining load work.
+1. The user's look and feel in play with the fighters pass off.
+2. Frames without an in-between picture by design (about one every 2 s in the user's play: unpaired lists, scene changes), if still felt.
+3. Bones left at the newer pose (10% a picture); load (the pacer's spin keeps one core busy; the AI pass's rounding helpers about 8% of the game thread).
 
 ## How the user runs things
 
