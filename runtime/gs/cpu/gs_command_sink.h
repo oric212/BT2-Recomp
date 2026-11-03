@@ -60,6 +60,10 @@ public:
     // Optional (BT2_TEXTURE_NAMES): sees every register write and the image data, to name the textures
     // drawn as PCSX2 does (gs/textures/gs_texture_names.h); PACKED data is then decoded.
     GsTextureNames* texture_names=nullptr;
+    // Online battles (ee/online_view.h): the other player's view mark (1 or 2; 0 none). A SCISSOR set through A+D
+    // whose top row is that mark is made empty in a copy of its transfer, which is what is checked and handed on,
+    // so that view draws nothing here; the game's own data is never changed.
+    unsigned hidden_view=0;
     // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {
         unsigned bx=(x%64)/8,by=(y%32)/8;
@@ -95,6 +99,10 @@ public:
         return ((std::size_t(bp)+std::size_t(page)*32+block)*64*4+b)%(std::size_t(1024)*1024*4);
     }
 private:
+    // hidden_view: whether `data` sets the hidden view's scissor; then `copy` holds it with that scissor empty.
+    // `image_left`: IMAGE quadwords the transfer starts with (left from the last), updated for the next.
+    bool hideView(std::span<const std::uint8_t> data,std::vector<std::uint8_t>& copy,unsigned& image_left) const;
+    std::vector<std::vector<std::uint8_t>> view_copies_;std::vector<std::span<const std::uint8_t>> view_group_;
     void run(std::span<const std::uint8_t> data,bool apply);
     // Texture names' lockstep (transferAll): the transfer being run, how much of it went on to the
     // renderer, and where the qword being run starts.

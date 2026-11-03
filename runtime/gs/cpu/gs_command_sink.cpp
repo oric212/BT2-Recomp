@@ -12,6 +12,15 @@
 void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> group) {
     if(on_input)for(const auto& data:group)on_input(data);
     for(const auto& data:group)if(data.empty() || data.size()%16)throw std::runtime_error("Unsupported GIF transfer size");
+    if(hidden_view) {
+        // The transfers that set the hidden view's scissor are replaced by copies (hideView), checked and handed on
+        // in their place.
+        view_copies_.resize(group.size());view_group_.assign(group.begin(),group.end());
+        bool any=false;unsigned image_left=state.image_qwords_left;
+        for(std::size_t n=0;n<group.size();++n)
+            if(hideView(group[n],view_copies_[n],image_left)) {view_group_[n]=view_copies_[n];any=true;}
+        if(any)group=view_group_;
+    }
     // Rollback: the register state and the counters are copied.
     const auto saved_state=state;
     const std::array<unsigned,2> saved_counts{transfers,register_writes};
@@ -33,6 +42,34 @@ void GsCommandSink::transferAll(std::span<const std::span<const std::uint8_t>> g
     }
     if(lockstep)return;
     if(const auto& accepted=on_accepted_transfer?on_accepted_transfer:on_accepted)for(const auto& data:group)accepted(data);
+}
+
+bool GsCommandSink::hideView(std::span<const std::uint8_t> data,std::vector<std::uint8_t>& copy,unsigned& image_left) const {
+    auto read=[&](std::size_t offset) {std::uint64_t v;std::memcpy(&v,data.data()+offset,8);return v;};
+    // An empty scissor: x0 above x1 and y0 above y1.
+    constexpr std::uint64_t empty=0x7FFull|(0x7FFull<<32);
+    bool changed=false;
+    std::size_t at=std::min<std::size_t>(std::size_t(image_left)*16,data.size());
+    image_left-=unsigned(at/16);
+    while(at+16<=data.size()) {
+        const auto tag=read(at),regs=read(at+8);at+=16;
+        const unsigned nloop=unsigned(tag&0x7FFF),flg=unsigned((tag>>58)&3);
+        const unsigned nreg=unsigned((tag>>60)&15)?unsigned((tag>>60)&15):16;
+        if(flg==0) {
+            for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg && at+16<=data.size();++r,at+=16) {
+                if(((regs>>(4*r))&15)!=0xE)continue;
+                const unsigned reg=unsigned(read(at+8)&0xFF);
+                if((reg!=0x40 && reg!=0x41) || ((read(at)>>32)&0x7FF)!=hidden_view)continue;
+                if(!changed) {copy.assign(data.begin(),data.end());changed=true;}
+                std::memcpy(copy.data()+at,&empty,8);
+            }
+        } else if(flg==1) at+=((std::size_t(nloop)*nreg+1)/2)*16;
+        else {
+            const std::size_t take=std::min<std::size_t>(nloop,(data.size()-at)/16);
+            at+=take*16;image_left=nloop-unsigned(take);
+        }
+    }
+    return changed;
 }
 
 void GsCommandSink::forwardBefore(std::size_t at) {

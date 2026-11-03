@@ -220,5 +220,23 @@ int main() {
         GsCommandSink bare;bare.transfer(build(false));
         check(bare.state.regs[0x4C]==fast.state.regs[0x4C] && bare.state.regs[0x06]==fast.state.regs[0x06] && bare.register_writes==5);
     }
+    {
+        // Online view: a SCISSOR_1 set through A+D with the hidden view's mark (top row 2) reaches the renderer empty, in a
+        // copy; the game's data is unchanged, and another view's scissor passes as it is.
+        auto packet=[](std::uint64_t scissor) {
+            std::vector<std::uint8_t> p(32);
+            const std::uint64_t tag=0x1000000000008001ULL,regs=0xE,address=0x40;
+            std::memcpy(p.data(),&tag,8);std::memcpy(p.data()+8,&regs,8);std::memcpy(p.data()+16,&scissor,8);std::memcpy(p.data()+24,&address,8);
+            return p;
+        };
+        const std::uint64_t hidden=0x01BF0002'01FF0000ULL,shown=0x01BF0001'01FF0000ULL;
+        GsCommandSink sink;sink.hidden_view=2;
+        std::vector<std::uint64_t> forwarded;
+        sink.on_accepted=[&](std::span<const std::uint8_t> d){std::uint64_t v;std::memcpy(&v,d.data()+16,8);forwarded.push_back(v);};
+        const auto game=packet(hidden);sink.transfer(game);sink.transfer(packet(shown));
+        std::uint64_t kept;std::memcpy(&kept,game.data()+16,8);
+        check(forwarded.size()==2 && forwarded[0]==(0x7FFull|(0x7FFull<<32)) && forwarded[1]==shown && kept==hidden);
+        check(sink.state.regs[0x40]==shown);
+    }
     std::cout<<"GS scoped command tests passed\n";
 }

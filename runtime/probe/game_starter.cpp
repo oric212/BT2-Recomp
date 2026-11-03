@@ -97,6 +97,17 @@ void loadSave(std::uint8_t* rdram,EeRuntime& runtime) {
     save_loaded=true;
 }
 
+// BT2_UNLOCK_ROSTER=1 (online sessions, docs/plans/online/ONLINE_BATTLE_PLAN.md): every fighter selectable. The save
+// data's 152 records of four bytes at +0x25A8 are the roster: a new game has (3,1) for the fighters it starts with and
+// (0,0) for the others, a completed save (1,1) for all; with these records alone a new game's character select is the
+// completed save's on every row (pictures of all 19 rows compared, 2026-11-03).
+constexpr std::uint32_t roster_records=0x25A8,roster_count=152;
+void unlockRoster(std::uint8_t* rdram) {
+    if(!std::getenv("BT2_UNLOCK_ROSTER"))return;
+    const std::uint32_t save=read32(rdram,save_pointer);
+    for(std::uint32_t n=0;n<roster_count;++n)write32(rdram,save+roster_records+n*4,0x00010001u);
+}
+
 // Of the entry's first-run work, the second archive is mounted and the common files (the character
 // table among them) are loaded; the memory card check, the logos and the films are left out. Then
 // the save data is a new game's, as after the title's New Game.
@@ -108,6 +119,7 @@ void firstRun(std::uint8_t* rdram,R5900Context* context,PS2Runtime* runtime) {
     call(rdram,context,runtime,common_files);
     newGame(rdram,context,runtime,progress);
     loadSave(rdram,*static_cast<EeRuntime*>(runtime));
+    unlockRoster(rdram);
     write32(rdram,progress+progress_flags,read32(rdram,progress+progress_flags)&~first_run_flag);
 }
 

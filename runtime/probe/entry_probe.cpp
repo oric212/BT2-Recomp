@@ -22,6 +22,7 @@
 #include "ee/game_patches.h"
 #include "ee/struggle_buttons.h"
 #include "ee/native_functions.h"
+#include "ee/online_view.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
 #include <algorithm>
@@ -544,6 +545,7 @@ int main(int argc, char** argv) {
                                                                std::getenv("BT2_HD_TEXTURES") != nullptr || std::getenv("BT2_TEXTURE_OVERRIDES") != nullptr,
                                                                std::string_view(sixty) == "replay");
                 in_between->scan_replay = std::string_view(sixty) == "check"; // "In-between" pictures drawn all the way to the newer frame.
+                if (const char* view = std::getenv("BT2_ONLINE_VIEW")) in_between->hideView(3 - unsigned(std::atoi(view))); // As the main renderer (below).
                 runtime.take_vif1_transfer = [](std::vector<std::uint32_t>& words) { return in_between->takeVif1Transfer(words); };
                 runtime.gs_sink.on_input = [&runtime](std::span<const std::uint8_t> data) { in_between->gsInput(data, runtime.vif1_running); };
                 sixty_fps::counting = true;
@@ -899,6 +901,13 @@ int main(int argc, char** argv) {
         registerKernelPayloads(runtime);
         // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
         if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
+        // BT2_ONLINE_VIEW=1|2 (online battles): the local player, whose view alone is shown full screen (ee/online_view.h).
+        if (const char* view = std::getenv("BT2_ONLINE_VIEW")) {
+            const unsigned player = unsigned(std::atoi(view));
+            if (player != 1 && player != 2) throw std::runtime_error("BT2_ONLINE_VIEW is 1 or 2");
+            if (!registerOnlineView(runtime)) throw std::runtime_error("BT2_ONLINE_VIEW: the game's view setup is not the expected code");
+            runtime.gs_sink.hidden_view = 3 - player;
+        }
         // BT2_REPLAY_CALL (docs/plans/ee/AI_VERIFICATION_PLAN.md): one function on a RAM captured from PCSX2, then exit.
         if (const char* replay = std::getenv("BT2_REPLAY_CALL")) {replayCall(runtime, context, replay);std::exit(0);}
         // BT2_QUICK_TITLE=1 (the in-game menu's "Return to the title screen"): the startup (logos, films) runs in fast

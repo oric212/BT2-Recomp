@@ -95,6 +95,8 @@ public:
     // For checks: the "in-between" picture is drawn all the way to the newer frame (blend 1), so it must
     // equal the main renderer's picture of that frame.
     bool scan_replay=false;
+    // Online battles: the other player's view left out here as in the main renderer (GsCommandSink::hidden_view).
+    void hideView(unsigned mark) {sink_.hidden_view=mark;}
     unsigned drawn=0,unpaired=0,not_fights=0,camera_cuts=0,scene_changes=0,late=0; // late: counted by the caller.
     std::atomic<unsigned> shown{0}; // Counted by whoever shows them (the caller, or on_picture on the thread).
     // Called on the thread as soon as a fight's in-between picture is drawn (its job id), to show it from there.
