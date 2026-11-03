@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <span>
 
 struct InputMapping {
     // Per PS2 button, in the order of `PadScript::names`: select, l3, r3, start, up, right, down,
@@ -36,5 +37,16 @@ inline PadInput mapInput(const InputMapping& mapping,const GamepadState& pad,con
         return std::uint8_t(scaled<0?0:scaled>0xFF?0xFF:scaled);
     };
     if(pad.connected)out.sticks={axis(pad.rx),axis(pad.ry),axis(pad.lx),axis(pad.ly)};
+    return out;
+}
+
+// Two players (the setting "Player 2 controller"): the connected gamepads in order, the first player's
+// and the second's. With two gamepads or more the first plays port 1 with the keyboard and the second port 2;
+// with one, it plays port 1 and the keyboard port 2; with none, the keyboard plays port 1.
+struct PlayerPads {GamepadState one,two;bool keyboard_two=false;};
+inline PlayerPads assignPlayers(std::span<const GamepadState> pads) {
+    PlayerPads out;
+    if(!pads.empty())out.one=pads[0];
+    if(pads.size()>=2)out.two=pads[1];else out.keyboard_two=pads.size()==1;
     return out;
 }

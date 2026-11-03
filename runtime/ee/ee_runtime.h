@@ -552,7 +552,7 @@ public:
     bool vif1_running=false; // While a VIF1 transfer runs: what reaches the GS sink is VU1's and VIF1's output.
     std::function<void()> on_field_end; // At each VBLANK, before anything of the next field runs (state hash); never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
-    std::function<PadInput()> on_pad2_input; // Tool runs: live input of a controller in port 2 (none: port 2 empty, or BT2_PAD2_SCRIPT).
+    std::function<PadInput()> on_pad2_input; // Live input of a controller in port 2, asked before on_pad_input (none: port 2 empty, or BT2_PAD2_SCRIPT).
     std::function<void(unsigned field,const PadInput& input)> on_pad2_change; // Port 2's live input that changed, as on_pad_change.
     bool padButtonsHeld() const; // A button of the controller in port 1 is held now (live or scripted).
     std::function<void(unsigned field,const PadInput& input)> on_pad_change; // Live input whose buttons or sticks changed, with the pad script's field number.

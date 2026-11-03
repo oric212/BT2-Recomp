@@ -85,5 +85,12 @@ int main() {
     check(PadScript::parse(PadScript::step(7,step)).at(7)==step,"a written step reads back");
     bool refused=false;try {PadScript::parse("1:lx=0g");} catch(const std::runtime_error&) {refused=true;}
     check(refused,"a stick position is two hex digits");
+    // Two players: the second gamepad plays port 2; with one gamepad the keyboard does; with none, nobody.
+    GamepadState first,second;first.connected=second.connected=true;first.buttons=1u<<GamepadState::South;second.buttons=1u<<GamepadState::East;
+    const std::array<GamepadState,2> both{first,second};
+    const auto two=assignPlayers(both),one=assignPlayers(std::span(both).first(1)),nobody=assignPlayers({});
+    check(two.one==first && two.two==second && !two.keyboard_two,"two gamepads: one each");
+    check(one.one==first && !one.two.connected && one.keyboard_two,"one gamepad: the keyboard plays port 2");
+    check(!nobody.one.connected && !nobody.two.connected && !nobody.keyboard_two,"no gamepad: the keyboard stays with port 1");
     std::cout<<"Host input checks passed.\n";
 }

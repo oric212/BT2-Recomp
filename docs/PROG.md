@@ -31,7 +31,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Waiting for the user's play
 
-Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; saving to a card. Open reports: a texture glitch in the first fight with HD (not reproduced headless).
+Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; saving to a card; a second controller ("Player 2 controller"). Open reports: a texture glitch in the first fight with HD (not reproduced headless).
 
 ## Measurements
 

@@ -15,8 +15,8 @@
 //   0x1038002) or 1 (query 0x101800C); port 1 is unchanged. Word 35 is the result.
 // - port requests (services 0x8000131E/F) {port, ...}: echo; word 35 is the result.
 // Results: 1 for the connected port 0, -23 for the empty port 1.
-// Tool runs only: with BT2_PAD2_SCRIPT or live input for port 2 (BT2_PAD2_LIVE), port 1 (the game's port 2)
-// answers as connected too, and its slot's buffers get that controller's blocks.
+// With BT2_PAD2_SCRIPT or live input for port 2 (the player's setting "Player 2 controller", or BT2_PAD2_LIVE in
+// tool runs), port 1 (the game's port 2) answers as connected too, and its slot's buffers get that controller's blocks.
 // Each VBlank, once slot 0 is open and DBCMAN's detection has run (27 fields), the pad state is
 // written to the slot's two buffers alternately: a 128-byte block in the DualShock 2 report layout.
 
@@ -24,7 +24,7 @@ struct NativePadState {
     DualShock2 pad;
     std::array<std::uint32_t,2> buffers{};std::uint32_t table=0;bool open=false;
     unsigned fields_open=0,transfers=0;
-    // Tool runs: a second DualShock 2 in port 2 (slot 1), scripted (BT2_PAD2_SCRIPT) or live (on_pad2_input).
+    // A second DualShock 2 in port 2 (slot 1), scripted (BT2_PAD2_SCRIPT) or live (on_pad2_input).
     bool second=false;DualShock2 pad2;
     std::array<std::uint32_t,2> buffers2{};bool open2=false;unsigned transfers2=0;
 };

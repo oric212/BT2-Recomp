@@ -48,7 +48,9 @@ public:
             std::fprintf(stderr,"Pause test: menu shown at field %u over a picture of %u x %u\n",fields_,picture_.width,picture_.height);
         }
         if(!window_.focused()) {fast_switch_.stop();setFast(false);return {};}
-        const auto pad=input_.gamepad();
+        const auto players=assignPlayers(input_.gamepads());
+        const auto& pad=players.one;
+        const bool keyboard=!(settings.second_controller && players.keyboard_two); // The keyboard plays port 2 then.
         if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
             setFast(false);
             takePicture();
@@ -59,10 +61,18 @@ public:
         }
         const bool fast_button=settings.fast_forward_button<GamepadState::Count && pad.connected && pad.held(GamepadState::Button(settings.fast_forward_button));
         setFast(fast_switch_.update((settings.fast_forward_key && HostInput::keyDown(std::uint8_t(settings.fast_forward_key))) || fast_button,settings.fast_forward_toggle));
-        auto mapped=mapInput(settings.mapping,masked(pad),&HostInput::keyDown);
+        auto mapped=mapInput(settings.mapping,masked(pad),[keyboard](std::uint8_t key){return keyboard && HostInput::keyDown(key);});
         // What was held when the menu closed (the button that confirmed Resume) reaches the game only after its release.
         if(swallow_) {if(mapped.pressed)mapped.pressed=0;else swallow_=false;}
         return mapped;
+    }
+    // Once per field with "Player 2 controller" (asked before padInput): port 2's controller state, the second
+    // gamepad's or, with one gamepad, the keyboard's (assignPlayers). The in-game menu and fast forward stay player 1's.
+    PadInput pad2Input() {
+        if(!window_.focused())return {};
+        const auto players=assignPlayers(input_.gamepads());
+        if(players.keyboard_two)return mapInput(settings.mapping,GamepadState{},&HostInput::keyDown);
+        return mapInput(settings.mapping,players.two,[](std::uint8_t){return false;});
     }
     // Each picture shown: counted for the frame rate display; a picture given here is kept for the
     // in-game menu's background (when there is no picture_source).

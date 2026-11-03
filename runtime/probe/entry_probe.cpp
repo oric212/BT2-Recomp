@@ -438,6 +438,7 @@ int main(int argc, char** argv) {
             if (const char* settings_path = std::getenv("BT2_PLAYER_SETTINGS")) {
                 player = std::make_unique<PlayerSession>(settings_path, viewer, *host_input, runtime.audio_mixer, pacer.get());
                 runtime.on_pad_input = [] { return player->padInput(); };
+                if (player->settings.second_controller) runtime.on_pad2_input = [] { return player->pad2Input(); }; // Port 2 connected.
             }
             if (const char* path = std::getenv("BT2_PAD_RECORD")) {
                 pad_record.open(path);

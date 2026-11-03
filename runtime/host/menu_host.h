@@ -224,6 +224,7 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
     screen.entries.push_back(number("Stick sensitivity",s.mapping.stick_sensitivity,50,200,10,"%",changed,"How far the game sees the sticks pushed. 100%: as they are."));
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
+    screen.entries.push_back(toggle("Player 2 controller",s.second_controller,changed,"A second controller for 1P vs 2P: the second gamepad, or the keyboard when only one gamepad is connected. From the next start."));
     return screen;
 }
 }

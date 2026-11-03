@@ -36,6 +36,9 @@ struct Settings {
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
     bool overlay_start_select=false;
+    // Port 2 connected: a second gamepad, or the keyboard when there is one gamepad, plays as player 2
+    // (host/input_mapping.h, assignPlayers). From the next start (the game finds its controllers as it boots).
+    bool second_controller=false;
     // The card in slot 1: a folder name in the saves folder; empty: none (the game program then makes one).
     std::string memory_card;
     static constexpr unsigned max_window_scale=16;
@@ -47,7 +50,7 @@ struct Settings {
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nvariable_refresh = "<<variable_refresh<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nstruggle_buttons = "<<struggle_buttons
-           <<"\noverlay_start_select = "<<overlay_start_select<<"\nmemory_card = "<<memory_card<<"\n";
+           <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -101,6 +104,7 @@ struct Settings {
             else if(key=="fast_loading")s.fast_loading=number(0,1);
             else if(key=="struggle_buttons")s.struggle_buttons=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
+            else if(key=="second_controller")s.second_controller=number(0,1);
             else if(key=="memory_card") {
                 // One folder name. A full path (a card elsewhere, from an older file) is dropped; the
                 // launcher or the game program then uses a card of the saves folder.

@@ -97,6 +97,12 @@ class HostInput {
 public:
     // The first connected XInput pad, otherwise the DualSense, otherwise a disconnected state.
     GamepadState gamepad() {
+        const auto pads=gamepads();
+        return pads.empty()?GamepadState{}:pads.front();
+    }
+    // Every connected gamepad: the XInput pads in their slots' order, then the DualSense.
+    std::vector<GamepadState> gamepads() {
+        std::vector<GamepadState> pads;
         for(DWORD user=0;user<XUSER_MAX_COUNT;++user) {
             XINPUT_STATE x{};
             if(XInputGetState(user,&x)!=ERROR_SUCCESS)continue;
@@ -113,9 +119,10 @@ public:
             // XInput axes are signed with up positive; the neutral form is 0..255 with up at 0.
             const auto axis=[](int v){return std::uint8_t((v+32768)>>8);};
             s.lx=axis(g.sThumbLX);s.ly=axis(-1-g.sThumbLY);s.rx=axis(g.sThumbRX);s.ry=axis(-1-g.sThumbRY);
-            return s;
+            pads.push_back(s);
         }
-        return dualsense_.state();
+        if(const auto dualsense=dualsense_.state();dualsense.connected)pads.push_back(dualsense);
+        return pads;
     }
     // Whether a key (virtual-key code) is down right now.
     static bool keyDown(std::uint8_t key) {return (GetAsyncKeyState(key)&0x8000)!=0;}
