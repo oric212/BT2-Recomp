@@ -83,7 +83,7 @@ void GpuWindowPresenter::show(void* window,const DisplayFrame* frame,Rect at,uns
         layout_.emplace();layout_->window=window;layout_->at=at;layout_->client_width=client_width;layout_->client_height=client_height;layout_->smooth=smooth;
         layout_->status=status;layout_->status_at=status_at; // The status line (frame rate, fast forward) on every picture.
         if(next_at_) {request.present_at=*next_at_;next_at_.reset();}
-        request.due=std::max(std::chrono::steady_clock::now(),request.present_at);
+        request.due=std::max(std::chrono::steady_clock::now(),request.present_at);request.free_run=free_run_;
         request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(request.due.time_since_epoch()).count();
         if(pending_.size()==2)pending_.back()=std::move(request);else pending_.push_back(std::move(request));
     }
@@ -126,7 +126,9 @@ void GpuWindowPresenter::run() {
             // otherwise count its wait, and hold the pictures after it longer, and they would keep waiting.
             if(copied)copied->wait();
             const auto done=std::chrono::steady_clock::now();
-            const auto at=request.after_last?last_present_+*request.after_last:request.due+usualCompletion(done-started);
+            // A free run's pictures (fast loading saturates the GPU: about 60 ms each) would hold the paced ones after
+            // it for 120 pictures; they are presented when done.
+            const auto at=request.after_last?last_present_+*request.after_last:request.free_run?done:request.due+usualCompletion(done-started);
             {
                 // A wait's wake-up on Windows is late by up to the system's timer tick (about 0.9 ms measured, the
                 // in-between picture then 17.6 instead of 16.7 ms after the flip's): the last millisecond is waited

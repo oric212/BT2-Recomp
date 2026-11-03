@@ -723,6 +723,7 @@ int main(int argc, char** argv) {
                     std::cerr << "Snapshot: flip " << flip << " at field " << runtime.vblank_deliveries << std::endl;
                 }
                 if (!show || !width) return;
+                viewer.setFreeRun(pacer && pacer->freeRun());
                 const double waited_before = pacer ? pacer->waited_seconds : 0;
                 const bool delayed = on_gpu && in_between && delay_fights && sixty_fps::fight_waits > 0 && !(pacer && pacer->freeRun())
                                      && !in_between->replay_only && !in_between->scan_replay;

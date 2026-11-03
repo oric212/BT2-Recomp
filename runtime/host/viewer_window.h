@@ -58,6 +58,8 @@ public:
         showOnGpu(nullptr,width,height);
         pump();
     }
+    // Fast forward or fast loading (WindowPresenter::freeRun).
+    void setFreeRun(bool free_run) {if(presenter_)presenter_->freeRun(free_run);}
     void setPresenter(WindowPresenter* presenter) {presenter_=presenter;}
     bool gpuPresented() const {return presenter_!=nullptr;}
     void setScaling(Scaling scaling) {scaling_=scaling;}

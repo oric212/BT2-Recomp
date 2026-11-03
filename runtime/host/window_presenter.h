@@ -18,4 +18,7 @@ public:
     // The next picture shown is presented no earlier than `at` (a picture scheduled a field ahead, while the
     // game goes on). Presenters that show at once ignore it.
     virtual void presentAt(std::chrono::steady_clock::time_point) {}
+    // The pictures shown from now on come from a run not held at the game's pace (fast forward, fast loading):
+    // presented as soon as they are ready, with nothing about their timing kept for the paced ones.
+    virtual void freeRun(bool) {}
 };

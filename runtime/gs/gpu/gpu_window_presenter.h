@@ -41,6 +41,7 @@ public:
     void show(void* window,const DisplayFrame* frame,Rect at,unsigned client_width,unsigned client_height,bool smooth,
               const DisplayFrame& status,Rect status_at) override;
     void presentAt(std::chrono::steady_clock::time_point at) override {std::lock_guard guard(lock_);next_at_=at;}
+    void freeRun(bool free_run) override {std::lock_guard guard(lock_);free_run_=free_run;}
     // From any thread: `picture` shown with the window's layout as last shown, `after` the picture before it was
     // presented. False before any picture was shown (no layout yet).
     bool showPicture(Vulkan::ImageHandle picture,std::chrono::steady_clock::duration after);
@@ -51,6 +52,7 @@ private:
         unsigned client_width=0,client_height=0;bool smooth=false;DisplayFrame status;Rect status_at;
         long long queued_us=0; // When it was handed over (the steady clock), for the latency log.
         std::chrono::steady_clock::time_point due{}; // When it was handed over, or its presentAt time if later.
+        bool free_run=false; // Handed over in a free run (freeRun): presented when done, not counted in usualCompletion.
         std::chrono::steady_clock::time_point present_at{}; // Presented no earlier (presentAt).
         std::optional<std::chrono::steady_clock::duration> after_last; // Presented this long after the last (showPicture).
     };
@@ -75,7 +77,7 @@ private:
     // Pictures handed over and not yet taken: at most two (a picture and the one scheduled a field after
     // it); a further one replaces the newer.
     std::deque<Request> pending_;bool stop_=false;std::exception_ptr failure_;
-    std::optional<std::chrono::steady_clock::time_point> next_at_;
+    std::optional<std::chrono::steady_clock::time_point> next_at_;bool free_run_=false;
     std::optional<Request> layout_; // The last picture's window, placement and status line (show), for showPicture.
     std::chrono::steady_clock::time_point last_present_{}; // On the thread: when the last picture was presented.
     std::array<std::chrono::steady_clock::duration,120> completion_{};std::size_t completion_next_=0,completion_count_=0; // usualCompletion.
