@@ -190,6 +190,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-loading-skip-tests runtime/tests/loading_skip_tests.cpp)
     bt2_target_defaults(bt2-loading-skip-tests)
     add_test(NAME loading-skip COMMAND bt2-loading-skip-tests)
+    add_executable(bt2-net-lockstep-tests runtime/tests/net_lockstep_tests.cpp runtime/host/net_lockstep.cpp)
+    bt2_target_defaults(bt2-net-lockstep-tests)
+    add_test(NAME net-lockstep COMMAND bt2-net-lockstep-tests)
     add_executable(bt2-game-patches-tests runtime/tests/game_patches_tests.cpp runtime/ee/game_patches.cpp)
     bt2_target_defaults(bt2-game-patches-tests)
     add_test(NAME game-patches COMMAND bt2-game-patches-tests)
@@ -263,6 +266,7 @@ if(BT2_BUILD_GENERATED_PROBE)
         runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
         runtime/probe/selected_bindings.cpp runtime/probe/overlay_bindings.cpp
         runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/game_starter.cpp runtime/probe/call_replay.cpp
+        runtime/probe/online_session.cpp runtime/host/net_lockstep.cpp
         runtime/game/bt2_game.rc # The game window's icon.
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00338520_0x338520.cpp"

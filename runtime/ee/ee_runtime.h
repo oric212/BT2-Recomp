@@ -556,6 +556,9 @@ public:
     std::function<void(unsigned field,const PadInput& input)> on_pad2_change; // Port 2's live input that changed, as on_pad_change.
     bool padButtonsHeld() const; // A button of the controller in port 1 is held now (live or scripted).
     std::function<void(unsigned field,const PadInput& input)> on_pad_change; // Live input whose buttons or sticks changed, with the pad script's field number.
+    // Online sessions' drift check (host/net_lockstep.h): each native service request's server, function and sent
+    // bytes, hashed in order; alike on two machines while their games go alike, whatever their settings and patches.
+    bool hash_service_requests=false;std::uint64_t service_request_hash=0xCBF29CE484222325ull;
     unsigned graph_startup_phase=0;
     // Main's display re-initialization after the first archive load. The startup clear routine
     // (0x100624 -> 0x100258) runs again: 0 CSR reset, 1 CSR read, 2 IMR, 3 VSync handler removed,

@@ -41,6 +41,12 @@ public:
 
     // The next key or gamepad button pressed goes to `done`; Escape cancels.
     void capture(std::string prompt,std::function<void(Captured)> done) {prompt_=std::move(prompt);capture_=std::move(done);snapshot();}
+    // Typed text: the keyboard's characters among `allowed` (digits, lower-case letters, '.' and '-' can be), at most
+    // `length` of them, starting from `text`; Backspace removes one, Enter gives the text to `done`, Escape cancels.
+    void type(std::string prompt,std::string text,std::string allowed,std::size_t length,std::function<void(std::string)> done) {
+        typing_={std::move(prompt),std::move(text),std::move(allowed),length,std::move(done)};
+        prompt_=typing_.prompt+": "+typing_.text+"_";snapshot();
+    }
 
     // Returns false when the window was closed.
     bool run(const std::string& title,const DisplayFrame* backdrop=nullptr) {
@@ -55,6 +61,7 @@ public:
             if(window_.closed())return false;
             if(window_.focused() || !window_.opened()) {
                 if(capture_)captureStep();
+                else if(typing_.done)typeStep();
                 else for(const MenuKey key:steps_.step(held(),now_))menu.press(key);
                 if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
             }
@@ -83,10 +90,20 @@ public:
         if(scan && GetKeyNameTextA(LONG(scan<<16),name,sizeof name)>0)return name;
         return "key "+std::to_string(key);
     }
+    // The character a key types: digits (also the number pad's), letters in lower case, '.' and '-'; 0 for others.
+    static char typedCharacter(unsigned key) {
+        if(key>='0' && key<='9')return char(key);
+        if(key>=VK_NUMPAD0 && key<=VK_NUMPAD9)return char('0'+key-VK_NUMPAD0);
+        if(key>='A' && key<='Z')return char(key-'A'+'a');
+        if(key==VK_OEM_PERIOD || key==VK_DECIMAL)return '.';
+        if(key==VK_OEM_MINUS || key==VK_SUBTRACT)return '-';
+        return 0;
+    }
 
 private:
     ViewerWindow& window_;HostInput& input_;MenuRenderer renderer_;MenuInput steps_;std::function<void()> later_;
     std::function<void(Captured)> capture_;std::string prompt_;
+    struct Typing {std::string prompt,text,allowed;std::size_t length=0;std::function<void(std::string)> done;} typing_;
     std::function<void()> tick_;unsigned tick_ms_=0;std::uint64_t next_tick_=0;
     std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;
 
@@ -119,6 +136,25 @@ private:
         if(!cancelled && !got.key && got.button==GamepadState::Count)return;
         const auto done=std::move(capture_);capture_=nullptr;prompt_.clear();
         if(!cancelled)done(got);
+        steps_.swallow(~0u,now_); // Whatever is held now is not a menu press.
+    }
+    void typeStep() {
+        bool enter=false,cancel=false;
+        for(unsigned key=8;key<255;++key) {
+            const bool down=HostInput::keyDown(std::uint8_t(key));
+            if(down && !keys_[key]) {
+                if(key==VK_RETURN)enter=true;
+                else if(key==VK_ESCAPE)cancel=true;
+                else if(key==VK_BACK) {if(!typing_.text.empty())typing_.text.pop_back();}
+                else if(const char c=typedCharacter(key);c && typing_.allowed.find(c)!=std::string::npos && typing_.text.size()<typing_.length)typing_.text+=c;
+            }
+            keys_[key]=down;
+        }
+        prompt_=typing_.prompt+": "+typing_.text+"_";
+        if(!enter && !cancel)return;
+        const auto done=std::move(typing_.done);const auto text=typing_.text;
+        typing_={};prompt_.clear();
+        if(enter)done(text);
         steps_.swallow(~0u,now_); // Whatever is held now is not a menu press.
     }
 };

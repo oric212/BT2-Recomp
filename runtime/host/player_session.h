@@ -17,6 +17,9 @@ public:
     static constexpr int launcher_exit_code=2; // The player chose "Quit to the launcher".
     static constexpr int title_exit_code=3;    // The player chose "Return to the title screen": the game program starts the game again.
     Settings settings;
+    // An online battle (BT2_NET): the game cannot stand still or run fast on one side only, so there is no fast
+    // forward, and the in-game menu's keys leave the battle for the launcher.
+    bool online=false;
 
     PlayerSession(std::string path,ViewerWindow& window,HostInput& input,AudioMixer& mixer,FramePacer* pacer)
         :path_(std::move(path)),window_(window),input_(input),mixer_(mixer),pacer_(pacer) {
@@ -52,6 +55,7 @@ public:
         const auto& pad=players.one;
         const bool keyboard=!(settings.second_controller && players.keyboard_two); // The keyboard plays port 2 then.
         if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
+            if(online)std::exit(launcher_exit_code); // The session tells the other player as it ends.
             setFast(false);
             takePicture();
             const auto result=runOverlay(settings,path_,window_,input_,picture_,[this]{apply();});
@@ -60,7 +64,7 @@ public:
             return {};
         }
         const bool fast_button=settings.fast_forward_button<GamepadState::Count && pad.connected && pad.held(GamepadState::Button(settings.fast_forward_button));
-        setFast(fast_switch_.update((settings.fast_forward_key && HostInput::keyDown(std::uint8_t(settings.fast_forward_key))) || fast_button,settings.fast_forward_toggle));
+        if(!online)setFast(fast_switch_.update((settings.fast_forward_key && HostInput::keyDown(std::uint8_t(settings.fast_forward_key))) || fast_button,settings.fast_forward_toggle));
         auto mapped=mapInput(settings.mapping,masked(pad),[keyboard](std::uint8_t key){return keyboard && HostInput::keyDown(key);});
         // What was held when the menu closed (the button that confirmed Resume) reaches the game only after its release.
         if(swallow_) {if(mapped.pressed)mapped.pressed=0;else swallow_=false;}

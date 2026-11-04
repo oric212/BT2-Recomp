@@ -41,7 +41,13 @@ struct Settings {
     bool second_controller=false;
     // The card in slot 1: a folder name in the saves folder; empty: none (the game program then makes one).
     std::string memory_card;
+    // Online battles (docs/plans/online/ONLINE_BATTLE_PLAN.md): the UDP port hosted or joined, the host's address last
+    // joined (digits, letters, '.' and '-'), and the input delay in fields the host plays with.
+    unsigned online_port=7411;
+    std::string online_address;
+    unsigned online_delay=2;
     static constexpr unsigned max_window_scale=16;
+    static constexpr const char* online_address_characters="0123456789abcdefghijklmnopqrstuvwxyz.-";
     bool operator==(const Settings&) const=default;
 
     std::string text() const {
@@ -50,7 +56,8 @@ struct Settings {
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nvariable_refresh = "<<variable_refresh<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nstruggle_buttons = "<<struggle_buttons
-           <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card<<"\n";
+           <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card
+           <<"\nonline_port = "<<online_port<<"\nonline_address = "<<online_address<<"\nonline_delay = "<<online_delay<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -66,7 +73,7 @@ struct Settings {
             if(at==std::string::npos)throw std::runtime_error("Settings line is not \"key = value\": "+line);
             const std::string key=line.substr(0,at),value=line.substr(at+3);
             const auto number=[&](unsigned low,unsigned high) {
-                if(value.empty() || value.size()>4 || value.find_first_not_of("0123456789")!=std::string::npos)throw std::runtime_error("Setting "+key+" is not a number: "+value);
+                if(value.empty() || value.size()>5 || value.find_first_not_of("0123456789")!=std::string::npos)throw std::runtime_error("Setting "+key+" is not a number: "+value);
                 const unsigned v=unsigned(std::stoul(value));
                 if(v<low || v>high)throw std::runtime_error("Setting "+key+" is out of range: "+value);
                 return v;
@@ -105,6 +112,12 @@ struct Settings {
             else if(key=="struggle_buttons")s.struggle_buttons=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
             else if(key=="second_controller")s.second_controller=number(0,1);
+            else if(key=="online_port")s.online_port=number(1,65535);
+            else if(key=="online_delay")s.online_delay=number(0,8);
+            else if(key=="online_address") {
+                if(value.size()>253 || value.find_first_not_of(online_address_characters)!=std::string::npos)throw std::runtime_error("Setting online_address is not an address: "+value);
+                s.online_address=value;
+            }
             else if(key=="memory_card") {
                 // One folder name. A full path (a card elsewhere, from an older file) is dropped; the
                 // launcher or the game program then uses a card of the saves folder.

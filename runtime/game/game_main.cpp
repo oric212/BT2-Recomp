@@ -40,7 +40,8 @@ fs::path findRoot(fs::path from) {
 std::string inQuotes(const fs::path& path) {return "\""+path.string()+"\"";}
 
 // Runs the game; returns the runtime's exit code. Its messages go to `log`.
-DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log) {
+// `online`: BT2_NET for an online battle (probe/online_session.h), empty for a game of one's own.
+DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log,const std::string& online) {
     const fs::path runtime=programFolder()/"bt2-entry-probe.exe",inputs=root/"work"/"bt2-generation";
     std::error_code error;
     if(!fs::is_regular_file(runtime,error))throw std::runtime_error("The runtime program is missing: "+runtime.string());
@@ -55,6 +56,8 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     for(const char* name:{"BT2_VIEWER","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})SetEnvironmentVariableA(name,"1");
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());
+    SetEnvironmentVariableA("BT2_NET",online.empty()?nullptr:online.c_str());
+    SetEnvironmentVariableA("BT2_NET_DELAY",online.empty()?nullptr:std::to_string(settings.online_delay).c_str());
     // The picture settings the renderer takes at its start: HD textures (when a pack is there) and super-sampling.
     const fs::path pack=settings.hd_textures?folders.texturePack():fs::path{};
     SetEnvironmentVariableW(L"BT2_HD_TEXTURES",pack.empty()?nullptr:pack.wstring().c_str());
@@ -97,6 +100,13 @@ std::string lastLines(const fs::path& log,unsigned count) {
     for(std::size_t n=lines.size()>count?lines.size()-count:0;n<lines.size();++n)text+=lines[n]+"\n";
     return text;
 }
+// Why an online battle ended: the runtime's "Online session: ..." stop, without its prefix; empty for other stops.
+std::string onlineReason(const fs::path& log) {
+    std::ifstream in(log);std::string line,reason;
+    while(std::getline(in,line))if(const auto at=line.find("failed: Online session: ");at!=std::string::npos)reason=line.substr(at+24);
+    if(!reason.empty())reason[0]=char(std::toupper(static_cast<unsigned char>(reason[0])));
+    return reason.empty()?reason:"The online battle ended: "+reason+".";
+}
 // How many places of untranslated code the session ran through the interpreter (its log lines).
 unsigned interpretedPlaces(const fs::path& log) {
     std::ifstream in(log);std::string line;unsigned count=0;
@@ -133,11 +143,13 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
         std::error_code error;
         bool launcher=!fs::is_regular_file(settings_path,error) || !folders.configured(settings);
 #endif
+        LauncherResult chosen=LauncherResult::Start; // Host or Join: the next run is an online battle.
         for(;;) {
             if(launcher) {
                 ViewerWindow window;HostInput input;
                 settings.save(settings_path.string());
-                if(runLauncher(settings,settings_path.string(),folders,window,input)!=LauncherResult::Start)return 0;
+                chosen=runLauncher(settings,settings_path.string(),folders,window,input);
+                if(chosen==LauncherResult::Quit)return 0;
             }
             if(!folders.configured(settings)) {launcher=true;continue;} // No disc image of the data folder: choose one.
             if(folders.card(settings).empty()) {
@@ -146,10 +158,21 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
                 const auto cards=folders.cards();
                 settings.memory_card=cards.empty()?folders.newCard():cards.front();settings.save(settings_path.string());
             }
-            const DWORD code=runGame(root,settings_path,settings,folders,log);
+            const bool online=chosen==LauncherResult::Host || chosen==LauncherResult::Join;
+            const std::string net=chosen==LauncherResult::Host?"host:"+std::to_string(settings.online_port)
+                :chosen==LauncherResult::Join?"join:"+settings.online_address+":"+std::to_string(settings.online_port):std::string();
+            chosen=LauncherResult::Start;
+            const DWORD code=runGame(root,settings_path,settings,folders,log,net);
             SetEnvironmentVariableA("BT2_QUICK_TITLE",nullptr);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
             if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
+            if(online) { // Back to the launcher after an online battle; why it ended, when it did not end here.
+                if(code!=0) {
+                    const std::string reason=onlineReason(log);
+                    MessageBoxA(nullptr,(reason.empty()?"The game stopped.\n\n"+lastLines(log,6)+"\nThe full messages are in "+log.string():reason).c_str(),"BT2 Recomp - online battle",MB_OK|MB_ICONINFORMATION);
+                }
+                launcher=true;continue;
+            }
             // "Return to the title screen": the game again, its startup in fast forward up to the title.
             if(code==DWORD(PlayerSession::title_exit_code)) {launcher=false;SetEnvironmentVariableA("BT2_QUICK_TITLE","1");continue;}
             // Code that was never translated ran interpreted (slower), or stopped the game: the discovery

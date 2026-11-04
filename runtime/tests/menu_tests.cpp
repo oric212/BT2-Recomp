@@ -43,6 +43,7 @@ int main() {
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.fast_loading=false;s.struggle_buttons=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
         s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;s.variable_refresh=true;s.second_controller=true;
+        s.online_port=65000;s.online_address="my-host.example.net";s.online_delay=4;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings{}.hd_outline && Settings::parse("disc =\n").hd_outline,"the HD outline is on by default, also in older files");
         check(!Settings{}.light_depth_of_field && !Settings::parse("disc =\n").light_depth_of_field,"the game's own depth of field by default");
@@ -71,6 +72,9 @@ int main() {
         check(Settings::parse("window_scale = 4\r\ndisc =\r\n").window_scale==4,"a short file with CRLF lines and an empty value");
         check(Settings::parse("fast_forward_button = none\n").fast_forward_button==GamepadState::Count,"no fast forward button");
         check(refused([]{Settings::parse("speed = 2\n");}),"an unknown key is refused");
+        check(Settings{}.online_port==7411 && Settings{}.online_delay==2 && Settings::parse("disc =\n").online_address.empty(),"online defaults, also in older files");
+        check(refused([]{Settings::parse("online_port = 0\n");}) && refused([]{Settings::parse("online_port = 65536\n");}),"the online port is 1 to 65535");
+        check(refused([]{Settings::parse("online_address = 1.2.3.4:80\n");}) && refused([]{Settings::parse("online_delay = 9\n");}),"an address without a port; a delay of 0 to 8");
         check(refused([]{Settings::parse("window_scale = 17\n");}),"a value out of range is refused");
         check(refused([]{Settings::parse("master_volume = loud\n");}),"a value that is not a number is refused");
         check(refused([]{Settings::parse("button_cross = elbow\n");}),"an unknown gamepad button is refused");
@@ -212,7 +216,8 @@ int main() {
         host.setLogo(fs::path(BT2_SOURCE_DIR)/"assets"/"launcher"/"logo.png");
         Launcher launcher(settings,settings_path,folders,host);
         launcher.open();
-        check(labels(host.menu.screen())==std::vector<std::string>{"Start game","Game disc","Memory card","Controls","Display","Enhancements","Sound","Quit"},"the first screen");
+        check(labels(host.menu.screen())==std::vector<std::string>{"Start game","Game disc","Memory card","Controls","Display","Enhancements","Sound","Online battle","Quit"},"the first screen");
+        check(!host.menu.screen().entries[7].usable(),"no online battle without a disc");
         check(host.menu.screen().entries[0].value()=="No game disc in the data folder","Start says what is missing");
         picture(host,"1-first-start");
         check(discArea(host)<60,"no disc: no disc mark");
@@ -253,6 +258,21 @@ int main() {
         check(host.finished && launcher.result==LauncherResult::Start,"Start game with a disc");
         for(int n=0;n<4;++n)host.menu.press(MenuKey::Down);
         host.menu.press(MenuKey::Confirm);host.settle();picture(host,"6-display");
+        // Online battles: Join needs the host's address; Host and Join end the launcher with their result.
+        host.menu.press(MenuKey::Back);host.finished=false;
+        for(int n=0;n<3;++n)host.menu.press(MenuKey::Down);
+        host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.menu.screen().title=="Online battle" && labels(host.menu.screen())==std::vector<std::string>{"Host a battle","Join a battle","Host's address","Port","Input delay"},"the online screen");
+        check(!host.menu.screen().entries[1].usable() && host.menu.screen().entries[2].value()=="none" && host.menu.screen().entries[3].value()=="7411","no address yet: no joining");
+        picture(host,"7-online");
+        settings.online_address="192.168.1.20";
+        check(host.menu.screen().entries[1].usable(),"with an address, Join");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
+        check(settings.online_delay==3 && Settings::load(settings_path)->online_delay==3,"the input delay is changed and saved");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.finished && launcher.result==LauncherResult::Join,"Join a battle");
+        check(MenuHost::typedCharacter('7')=='7' && MenuHost::typedCharacter(VK_NUMPAD3)=='3' && MenuHost::typedCharacter('Q')=='q' && MenuHost::typedCharacter(VK_OEM_PERIOD)=='.'
+              && MenuHost::typedCharacter(VK_SUBTRACT)=='-' && !MenuHost::typedCharacter(VK_SPACE),"the characters keys type");
         fs::remove_all(program);
     }
     std::cout<<"Menu checks passed.\n";

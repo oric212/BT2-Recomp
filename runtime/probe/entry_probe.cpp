@@ -8,6 +8,7 @@
 #include "gs/textures/gs_texture_names.h"
 #include "probe_state.h"
 #include "game_starter.h"
+#include "online_session.h"
 #include "host/audio_device.h"
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
 #endif
     stopPowerThrottling();
     try {
+        prepareOnlineSession(); // BT2_NET: before anything reads the switches a session sets.
         if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT KERNEL_SNAPSHOT TIMER3_MODE TIMER2_MODE INTC_MASK TIMER2_READBACK OSD_CONFIG OSD_READBACK DMA_STATUS DMA5_CONTROL SIF_COMMAND SIF_DMA SIF_RPC_STATE SIF_BIND CD_INIT SCMD_BIND HEAP_BIND HEAP_ALLOCATION TEXTURE_STARTUP EE_THREAD_START DISC_BIND DISC_IMAGE NCMD_BIND");
         std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
         if (!input || input.tellg() != static_cast<std::streamoff>(EeRuntime::ram_size))
@@ -438,6 +440,7 @@ int main(int argc, char** argv) {
             // BT2_PLAYER_SETTINGS=<settings file>: a player's run (host/player_session.h). Set by the game program only.
             if (const char* settings_path = std::getenv("BT2_PLAYER_SETTINGS")) {
                 player = std::make_unique<PlayerSession>(settings_path, viewer, *host_input, runtime.audio_mixer, pacer.get());
+                player->online = std::getenv("BT2_NET") != nullptr;
                 runtime.on_pad_input = [] { return player->padInput(); };
                 if (player->settings.second_controller) runtime.on_pad2_input = [] { return player->pad2Input(); }; // Port 2 connected.
             }
@@ -462,6 +465,9 @@ int main(int argc, char** argv) {
                 }
             }
         }
+#endif
+#ifdef _WIN32
+        startOnlineSession(runtime, player ? &viewer : nullptr, host_input.get()); // BT2_NET: connects; both ports then play the session's input (online_session.h).
 #endif
         // BT2_TEXTURE_NAMES=<path>: name each texture drawn as PCSX2's texture replacement does and write
         // the names with how often each was named, and what the names' copy of GS memory did not follow,
@@ -929,7 +935,7 @@ int main(int argc, char** argv) {
         {
             const char* battle = std::getenv("BT2_START_BATTLE");
             const char* screen = std::getenv("BT2_START_SCREEN");
-            if ((battle || screen) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN are for tool runs, not a player's session");
+            if ((battle || (screen && !std::getenv("BT2_NET"))) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_START_BATTLE and BT2_START_SCREEN are for tool runs, not a player's session");
             if ((std::getenv("BT2_PAD2_SCRIPT") || std::getenv("BT2_PAD2_LIVE")) && std::getenv("BT2_PLAYER_SETTINGS")) throw std::runtime_error("BT2_PAD2_SCRIPT and BT2_PAD2_LIVE are for tool runs, not a player's session");
             const char* episode = std::getenv("BT2_START_EPISODE");
             if ((battle != nullptr) + (screen != nullptr) + (episode != nullptr) > 1) throw std::runtime_error("BT2_START_BATTLE, BT2_START_SCREEN and BT2_START_EPISODE exclude each other");

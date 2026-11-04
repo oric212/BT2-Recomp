@@ -111,6 +111,12 @@ unsigned& EeRuntime::nativeBindCounter(const NativeServer& server) {
 
 // Returns false for a request the native service does not own yet; it then stays on its emulated route.
 bool EeRuntime::callNativeService(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
+    if(hash_service_requests) { // 64-bit FNV-1a, as host/net_lockstep.h.
+        const auto add=[&](std::uint8_t byte){service_request_hash=(service_request_hash^byte)*0x100000001B3ull;};
+        const auto add32=[&](std::uint32_t word){for(unsigned n=0;n<4;++n)add(std::uint8_t(word>>(8*n)));};
+        add32(server.id);add32(r.rpc_number);add32(r.send_size);
+        if(r.send_source)for(std::uint32_t n=0;n<r.send_size;++n)add(read8(rdram,r.send_source+n));
+    }
     // A refused request names itself: server, function number, sizes and the first send words.
     try {
         switch(server.id) {

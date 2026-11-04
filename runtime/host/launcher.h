@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-enum class LauncherResult {Start,Quit};
+enum class LauncherResult {Start,Host,Join,Quit}; // Host and Join: an online battle (docs/plans/online/ONLINE_BATTLE_PLAN.md).
 
 // What the launcher reads from the folders and keeps in step with them.
 class Launcher {
@@ -94,8 +94,42 @@ private:
         main.entries.push_back(menuAction("Display",[this,apply]{host_.menu.open(menu_screens::display(host_,settings_,apply));},"Window size, fullscreen, scaling, frame rate."));
         main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply));},"HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
         main.entries.push_back(menuAction("Sound",[this,apply]{host_.menu.open(menu_screens::sound(settings_,apply));},"Master, music and effects volume."));
+        main.entries.push_back(menuAction("Online battle",[this]{host_.menu.open(onlineScreen());},"1P vs 2P with a player on another PC: host, or join a host's address."));
+        main.entries.back().available=[this]{return discReady();};
         main.entries.push_back(menuAction("Quit",[this]{result=LauncherResult::Quit;host_.finished=true;}));
         return main;
+    }
+    // Both PCs start fresh into the game's Dueling screen with every fighter unlocked; no save is used, and each player
+    // keeps their own picture settings and enhancements.
+    MenuScreen onlineScreen() {
+        MenuScreen screen;screen.title="Online battle";
+        const auto start=[this](LauncherResult how){if(discReady()) {result=how;host_.finished=true;}};
+        screen.entries.push_back(menuAction("Host a battle",[start]{start(LauncherResult::Host);},
+            "Waits on the port below, which your router must forward to this PC (UDP). Escape leaves the battle."));
+        MenuEntry join=menuAction("Join a battle",[start]{start(LauncherResult::Join);},"Connects to the host's address and port. Escape leaves the battle.");
+        join.available=[this]{return !settings_.online_address.empty();};
+        screen.entries.push_back(join);
+        MenuEntry address;address.label="Host's address";
+        address.value=[this]{return settings_.online_address.empty()?std::string("none"):settings_.online_address;};
+        address.confirm=[this] {
+            host_.type("The host's address (Enter accepts, Escape cancels)",settings_.online_address,Settings::online_address_characters,253,
+                [this](std::string text){settings_.online_address=std::move(text);changed();});
+        };
+        address.note="For joining: the host's IP address (or name), as the host tells you. Confirm, then type it.";
+        screen.entries.push_back(address);
+        MenuEntry port;port.label="Port";
+        port.value=[this]{return std::to_string(settings_.online_port);};
+        port.confirm=[this] {
+            host_.type("The UDP port, 1 to 65535 (Enter accepts, Escape cancels)",std::to_string(settings_.online_port),"0123456789",5,[this](std::string text) {
+                const unsigned value=text.empty()?0u:unsigned(std::stoul(text));
+                if(value>=1 && value<=65535) {settings_.online_port=value;changed();}
+            });
+        };
+        port.note="The same on both PCs, which need the same build of the game. Confirm, then type it.";
+        screen.entries.push_back(port);
+        screen.entries.push_back(menu_screens::number("Input delay",settings_.online_delay,0,8,1," fields",[this]{changed();},
+            "The host's choice: fields between a press and the game playing it (60 a second). 2 at home; more over the internet if the game halts often."));
+        return screen;
     }
     MenuScreen discScreen() {
         MenuScreen screen;screen.title=disc_title;screen.browser=true;

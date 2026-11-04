@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-11-03. Earlier work: [November history](2026-11.md).
+Updated: 2026-11-04. Earlier work: [November history](2026-11.md).
 
 ## Current work: 60 fps as the user plays it
 
@@ -21,7 +21,8 @@ Open, in order:
 
 1. Done: the user's match with the fighters pass off "did feel smooth" (7.5 ms flip to panel, 96.9% within 1 ms); in-between pictures are no longer drawn while the game runs free.
 2. Frames without an in-between picture by design, if the user still feels them: looked at 2026-11-03 ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Frames without an in-between picture"): cuts, scene changes and lists that change by thousands of unpacks; 7 of 43 in 3,000 flips are just over the pairing limit, which a cheaper alignment could take.
-3. Done 2026-11-03: the bones "left at the newer pose" are 95% data VU1 never reads (proven by pictures); the rounding helpers 30% faster, bit-identical; the pacer spins only the last 6 ms of a wait (the game's thread 0.67 of a core instead of 0.98). Online battle ([plan](../plans/online/ONLINE_BATTLE_PLAN.md), the user's choices: each player's own patches and save, the game's own Dueling screens entered fresh on both machines, every fighter unlocked, no split screen, no radars, direct address and port): built: local two-player ("Player 2 controller"), the roster unlock (`BT2_UNLOCK_ROSTER`), each player full screen without radars (`BT2_ONLINE_VIEW`), all measured (the fight's audio identical across settings). Not yet seen by the user: two-player, the icons. **Next: the lockstep transport as designed in the plan ("Next: the lockstep transport"), then Host and Join in the launcher.**
+3. Done 2026-11-03: the bones "left at the newer pose" are 95% data VU1 never reads (proven by pictures); the rounding helpers 30% faster, bit-identical; the pacer spins only the last 6 ms of a wait (the game's thread 0.67 of a core instead of 0.98). Online battle ([plan](../plans/online/ONLINE_BATTLE_PLAN.md), the user's choices: each player's own patches and save, the game's own Dueling screens entered fresh on both machines, every fighter unlocked, no split screen, no radars, direct address and port): built: local two-player ("Player 2 controller"), the roster unlock (`BT2_UNLOCK_ROSTER`), each player full screen without radars (`BT2_ONLINE_VIEW`), all measured (the fight's audio identical across settings). Not yet seen by the user: two-player, the icons.
+4. Done 2026-11-04: the lockstep transport (`BT2_NET`, `host/net_lockstep.*`, `probe/online_session.*`) and the launcher's "Online battle" screen (Host, Join, the address and port typed, the input delay; a waiting screen with Cancel; Escape leaves a battle). Measured over loopback with two probes at different settings: a played fight with 84 drift checks alike and byte-identical audio; a forced difference stopped both by name ([plan](../plans/online/ONLINE_BATTLE_PLAN.md), "The lockstep transport"). **Next: the user's two machines** (the host forwards the UDP port, 7411 by default); then rollback if the user wants it (their decision).
 
 ## How the user runs things
 
@@ -33,6 +34,7 @@ Open, in order:
 - **Gate:** `python tools/gate/run_gate.py --disc <iso>` (the Release battle run against `7f996c1524a22bea`).
 - **Feel in fullscreen at the user's settings:** the story fight with `--viewer --frames 3000`, `BT2_VIEWER_FULLSCREEN=1 BT2_VIEWER_SCALE=4 BT2_VIEWER_CLOSE=1 BT2_LATENCY_LOG=<file>` and the picture settings below (on the user's screen); `latency_report.py`.
 - **The CPU fight at the 60 fps settings, headless:** `BT2_START_BATTLE=0,1,0 BT2_SUPER_SAMPLING=16 BT2_SCANOUT_QUAD=1 BT2_HD_TEXTURES="<pack subfolder>" BT2_GAME_PATCHES=widescreen BT2_SIXTY_FPS=1 BT2_DOF_STRENGTH=25` with `run_startup_probe.py --config Release --frames 2000 --pad-script ""`; the run's 60 fps line splits the in-between thread's time. A story fight: `BT2_START_EPISODE=0,0,marker:14`.
+- **Online over loopback:** the host with `BT2_NET=host:7411`, then the joiner with `BT2_NET=join:127.0.0.1:7411`, each `run_startup_probe.py --config Release` with its own `--report` and `--pad-script` (the local player's input); the last line of each log counts the drift checks found alike. Two runs at once are needed here (the one exception besides sweeps).
 - **Pictures:** `BT2_GPU_GS_SNAPSHOT="<flip>:<absolute path>.ppm;…"`; in-between: `BT2_SIXTY_FPS_SNAPSHOT` (flip F is the picture between main F and F + 1); `BT2_SIXTY_FPS=check` must equal main F + 1 exactly.
 - **Tools** (GS and VIF1 dumps, sampling, frame timing): [TOOLS.md](../guides/TOOLS.md); the in-between thread is `BT2_SAMPLE_GS_THREADS`'s `-1`.
 
