@@ -43,6 +43,8 @@ SLUS_21441.*
 /research/
 /scratch/
 /work/
+# Release packages (tools/build/package.py): they hold game-derived files.
+/dist/
 /temp/
 /tmp/
 *.i64

@@ -5,6 +5,7 @@
 #include "host/menu_input.h"
 #include "host/menu_model.h"
 #include "host/settings.h"
+#include "host/online_screens.h"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -43,7 +44,7 @@ int main() {
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.fast_loading=false;s.struggle_buttons=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
         s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;s.variable_refresh=true;s.second_controller=true;
-        s.online_port=65000;s.online_address="my-host.example.net";s.online_delay=4;
+        s.online_port=65000;s.online_address="my-host.example.net";s.online_delay=4;s.online_upnp=false;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings{}.hd_outline && Settings::parse("disc =\n").hd_outline,"the HD outline is on by default, also in older files");
         check(!Settings{}.light_depth_of_field && !Settings::parse("disc =\n").light_depth_of_field,"the game's own depth of field by default");
@@ -72,7 +73,7 @@ int main() {
         check(Settings::parse("window_scale = 4\r\ndisc =\r\n").window_scale==4,"a short file with CRLF lines and an empty value");
         check(Settings::parse("fast_forward_button = none\n").fast_forward_button==GamepadState::Count,"no fast forward button");
         check(refused([]{Settings::parse("speed = 2\n");}),"an unknown key is refused");
-        check(Settings{}.online_port==7411 && Settings{}.online_delay==2 && Settings::parse("disc =\n").online_address.empty(),"online defaults, also in older files");
+        check(Settings{}.online_port==7411 && Settings{}.online_delay==0 && Settings{}.online_upnp && Settings::parse("disc =\n").online_address.empty(),"online defaults (the delay chosen, UPnP on), also in older files");
         check(refused([]{Settings::parse("online_port = 0\n");}) && refused([]{Settings::parse("online_port = 65536\n");}),"the online port is 1 to 65535");
         check(refused([]{Settings::parse("online_address = 1.2.3.4:80\n");}) && refused([]{Settings::parse("online_delay = 9\n");}),"an address without a port; a delay of 0 to 8");
         check(refused([]{Settings::parse("window_scale = 17\n");}),"a value out of range is refused");
@@ -258,19 +259,54 @@ int main() {
         check(host.finished && launcher.result==LauncherResult::Start,"Start game with a disc");
         for(int n=0;n<4;++n)host.menu.press(MenuKey::Down);
         host.menu.press(MenuKey::Confirm);host.settle();picture(host,"6-display");
-        // Online battles: Join needs the host's address; Host and Join end the launcher with their result.
+        // Online battles: three entries. Joining is one press, the code, and Enter; an empty code joins nothing; the
+        // rest is under Options.
         host.menu.press(MenuKey::Back);host.finished=false;
         for(int n=0;n<3;++n)host.menu.press(MenuKey::Down);
         host.menu.press(MenuKey::Confirm);host.settle();
-        check(host.menu.screen().title=="Online battle" && labels(host.menu.screen())==std::vector<std::string>{"Host a battle","Join a battle","Host's address","Port","Input delay"},"the online screen");
-        check(!host.menu.screen().entries[1].usable() && host.menu.screen().entries[2].value()=="none" && host.menu.screen().entries[3].value()=="7411","no address yet: no joining");
+        check(host.menu.screen().title=="Online battle" && labels(host.menu.screen())==std::vector<std::string>{"Host a battle","Join with a code","Options"},"the online screen");
         picture(host,"7-online");
-        settings.online_address="192.168.1.20";
-        check(host.menu.screen().entries[1].usable(),"with an address, Join");
-        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
-        check(settings.online_delay==3 && Settings::load(settings_path)->online_delay==3,"the input delay is changed and saved");
-        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
-        check(host.finished && launcher.result==LauncherResult::Join,"Join a battle");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.typing(),"Join asks for the code at once");
+        host.typed("");
+        check(!host.finished && settings.online_address.empty(),"an empty code joins nothing");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.menu.screen().title=="Online battle options" && labels(host.menu.screen())==std::vector<std::string>{"Port","Input delay","Open the port by UPnP"},"the options");
+        check(host.menu.screen().entries[0].value()=="7411" && host.menu.screen().entries[1].value()=="Auto","the usual port, the delay chosen by default");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
+        check(settings.online_delay==1 && Settings::load(settings_path)->online_delay==1 && host.menu.screen().entries[1].value()=="1 field","the input delay is changed and saved");
+        host.menu.press(MenuKey::Left);check(settings.online_delay==0,"and back to Auto");
+        host.menu.press(MenuKey::Left);check(settings.online_delay==0,"which is the lowest");
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
+        check(!settings.online_upnp && !Settings::load(settings_path)->online_upnp,"UPnP switched off and saved");
+        host.menu.press(MenuKey::Back);
+        check(host.menu.screen().title=="Online battle" && host.menu.screen().highlighted==2,"back to the online screen");
+        host.menu.press(MenuKey::Up);host.menu.press(MenuKey::Confirm);host.settle();
+        host.typed("sc07-3zky");
+        check(host.finished && launcher.result==LauncherResult::Join && settings.online_address=="sc07-3zky" && Settings::load(settings_path)->online_address=="sc07-3zky","a code entered joins at once, and is kept");
+        check(host.menu.screen().entries[1].value()=="last: sc07-3zky","the last code is shown");
+        // The screens while an online battle connects: the router's three answers, and a joiner without an answer.
+        {
+            const std::string home=*connection_code::make("192.168.100.105",7411),internet=*connection_code::make("203.0.113.254",7411);
+            std::string copied;const auto copy=[&copied](const std::string& code){copied=code;};
+            online_screens::Hosting h;h.port=7411;h.home_address="192.168.100.105";h.router=online_screens::RouterPort::Asking;
+            host.menu.open(online_screens::hosting(h,[]{},copy));
+            check(labels(host.menu.screen())==std::vector<std::string>{"Waiting for the other player","Code: when the router answers","Home code: "+home,"Port 7411: asking the router","Cancel"},"hosting, asking the router");
+            picture(host,"8-hosting-asking");
+            h.router=online_screens::RouterPort::Opened;h.internet_address="203.0.113.254";
+            host.menu.replace(online_screens::hosting(h,[]{},copy));
+            check(labels(host.menu.screen())[1]=="Code: "+internet && labels(host.menu.screen())[3]=="Port 7411: opened","hosting, the port opened");
+            host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);
+            check(copied==internet,"confirming the code copies it");
+            picture(host,"9-hosting-opened");
+            h.router=online_screens::RouterPort::ByHand;h.internet_address.clear();h.router_note="(UPnP: no answer from the router)";
+            host.menu.replace(online_screens::hosting(h,[]{},copy));
+            host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);
+            check(host.menu.screen().entries[3].label=="Port 7411: forward it by hand" && host.menu.screen().highlighted==3,"hosting, the port by hand");
+            picture(host,"10-hosting-by-hand");
+            host.menu.replace(online_screens::joining("203.0.113.254",7411,true,[]{}));
+            picture(host,"11-joining-late");
+        }
         check(MenuHost::typedCharacter('7')=='7' && MenuHost::typedCharacter(VK_NUMPAD3)=='3' && MenuHost::typedCharacter('Q')=='q' && MenuHost::typedCharacter(VK_OEM_PERIOD)=='.'
               && MenuHost::typedCharacter(VK_SUBTRACT)=='-' && !MenuHost::typedCharacter(VK_SPACE),"the characters keys type");
         fs::remove_all(program);

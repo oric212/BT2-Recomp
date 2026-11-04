@@ -45,6 +45,14 @@ public:
         stack_.push_back(std::move(screen));
     }
     void close() {if(stack_.size()>1)stack_.pop_back();else if(on_leave_root)on_leave_root();}
+    // The top screen built again (what it shows changed), the same entry highlighted where it still can be.
+    void replace(MenuScreen screen) {
+        if(stack_.empty())return open(std::move(screen));
+        const unsigned at=stack_.back().highlighted;
+        stack_.pop_back();open(std::move(screen));
+        auto& s=stack_.back();
+        if(at<s.entries.size() && s.entries[at].usable())s.highlighted=at;
+    }
     bool empty() const {return stack_.empty();}
     std::size_t depth() const {return stack_.size();}
     const MenuScreen& screen() const {return stack_.back();}

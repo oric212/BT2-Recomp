@@ -69,6 +69,12 @@ public:
         if(hwnd_)applyLayout();
     }
     void setStatus(std::string text) {status_=std::move(text);} // Drawn in the top left corner; empty for none.
+    // The status line changed while no picture comes (the game waits): shown at once over the last picture.
+    void showStatusNow(std::string text) {
+        status_=std::move(text);
+        if(presenter_ && hwnd_) {status_drawn_=status_;status_image_=drawStatus(status_);presenter_->showAgain(status_image_);}
+        pump();
+    }
     // The multiple of 640 x 448 nearest to the screen the window is on (the main screen before it
     // exists): the largest that fits, or one more when that is closer, which cuts a little off the
     // picture's edges.

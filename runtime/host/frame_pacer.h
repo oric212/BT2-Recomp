@@ -41,6 +41,11 @@ public:
     FramePacer& operator=(const FramePacer&)=delete;
     ~FramePacer() {if(timer_)CloseHandle(timer_);timeEndPeriod(1);}
 
+    // The field just waited for something outside the game (an online battle's other player): the deadlines from the
+    // next field on move later by `shift`, so the fields keep their pace instead of hurrying to make up the wait (which
+    // would only bring the next wait sooner). A shift of the wait and a little more puts the next arrivals ahead of
+    // their need, so their spread no longer reaches the pictures.
+    void delayBy(Clock::duration shift) {if(started_)deadline_+=shift;}
     // A new field begins: its deadline is one period after the last one. `factor` scales the period
     // (within 1%).
     void fieldStarted(double factor=1.0) {

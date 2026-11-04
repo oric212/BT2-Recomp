@@ -16,7 +16,8 @@ PS2Runtime::RecompiledFunction generated_view_setup=nullptr;
 // store watch on the radar's GS packet in the display list; skipping it leaves the fight's audio byte-identical.
 constexpr std::uint32_t radars=0x1172C8,radars_size=0x1BC;
 constexpr std::uint64_t radars_hash=0x0CBCEBA35F6139BEull;
-void noRadars(std::uint8_t*,R5900Context* ctx,PS2Runtime*) {ctx->pc=GPR_U32(ctx,31);}
+std::uint64_t fight_frames=0; // The radars' calls: one per fight frame.
+void noRadars(std::uint8_t*,R5900Context* ctx,PS2Runtime*) {++fight_frames;ctx->pc=GPR_U32(ctx,31);}
 
 // view_setup(a0 view object, a1 mode): a half is set up as the full screen (the split flag cleared for the call), then
 // marked by its player in the scissor's top row.
@@ -32,6 +33,8 @@ void onlineViewSetup(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
     std::memcpy(rdram+view+scissor_y0,&player,4);
 }
 }
+
+std::uint64_t onlineFightFrames() {return fight_frames;}
 
 bool registerOnlineView(EeRuntime& runtime) {
     const auto ram=runtime.memory();

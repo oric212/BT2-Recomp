@@ -104,6 +104,20 @@ bool GpuWindowPresenter::showPicture(Vulkan::ImageHandle picture,std::chrono::st
     return true;
 }
 
+bool GpuWindowPresenter::showAgain(const DisplayFrame& status) {
+    {
+        std::lock_guard guard(lock_);
+        if(!last_shown_ || failure_ || !pending_.empty())return false;
+        Request request=*last_shown_;
+        request.status=status;request.status_at={request.at.x+6,request.at.y+4,int(status.width),int(status.height)};
+        request.due=std::chrono::steady_clock::now();request.present_at={};request.after_last.reset();request.free_run=true;
+        request.queued_us=std::chrono::duration_cast<std::chrono::microseconds>(request.due.time_since_epoch()).count();
+        pending_.push_back(std::move(request));
+    }
+    changed_.notify_all();
+    return true;
+}
+
 void GpuWindowPresenter::run() {
     Util::register_thread_index(thread_index);
     for(;;) {
@@ -142,6 +156,7 @@ void GpuWindowPresenter::run() {
             last_present_=std::chrono::steady_clock::now();
             if(!state_->wsi->end_frame())throw std::runtime_error("GPU presenter: presenting failed");
             logPresent(request.queued_us,done);
+            std::lock_guard guard(lock_);last_shown_=std::move(request);
         }
         catch(...) {std::lock_guard guard(lock_);if(!failure_)failure_=std::current_exception();}
     }

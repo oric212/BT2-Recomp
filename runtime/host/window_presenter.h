@@ -21,4 +21,7 @@ public:
     // The pictures shown from now on come from a run not held at the game's pace (fast forward, fast loading):
     // presented as soon as they are ready, with nothing about their timing kept for the paced ones.
     virtual void freeRun(bool) {}
+    // The last picture presented again with another status line (the game stands still and the line says why).
+    // False when there is none or a newer picture is on its way.
+    virtual bool showAgain(const DisplayFrame& /*status*/) {return false;}
 };

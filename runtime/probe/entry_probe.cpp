@@ -169,6 +169,8 @@ int main(int argc, char** argv) {
             speaker.device = std::make_unique<AudioDevice>(AudioMixer::rate, 2, AudioMixer::rate / 4);
             speaker.device->fillTo(AudioMixer::rate / 20); // The queue starts at its target level.
         }
+        // BT2_MASTER_VOLUME=<percent> (tool runs): the mix's volume, as the setting (0: the device paces the run in silence).
+        if (const char* volume = std::getenv("BT2_MASTER_VOLUME")) runtime.audio_mixer.master_percent = static_cast<unsigned>(std::stoul(volume));
         if (viewer_mode || speaker.device) pacer = std::make_unique<FramePacer>();
         // BT2_FAST_FORWARD: the whole run in fast forward, as when its key is held (to measure it).
         if (pacer && std::getenv("BT2_FAST_FORWARD")) pacer->free_run = true;
@@ -467,7 +469,7 @@ int main(int argc, char** argv) {
         }
 #endif
 #ifdef _WIN32
-        startOnlineSession(runtime, player ? &viewer : nullptr, host_input.get()); // BT2_NET: connects; both ports then play the session's input (online_session.h).
+        startOnlineSession(runtime, player ? &viewer : nullptr, host_input.get(), player.get(), pacer.get()); // BT2_NET: connects; both ports then play the session's input (online_session.h).
 #endif
         // BT2_TEXTURE_NAMES=<path>: name each texture drawn as PCSX2's texture replacement does and write
         // the names with how often each was named, and what the names' copy of GS memory did not follow,

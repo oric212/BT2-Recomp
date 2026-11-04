@@ -87,15 +87,25 @@ public:
         const double seconds=std::chrono::duration<double>(now-window_start_).count();
         if(seconds>=0.5) {
             char text[48];std::snprintf(text,sizeof text,"%.1f fps%s",pictures_/seconds,fast_?"  >>":"");
-            window_.setStatus(settings.show_frame_rate || fast_?text:"");
+            frame_rate_=settings.show_frame_rate || fast_?text:"";
+            window_.setStatus(statusLine());
             pictures_=0;window_start_=now;
         }
+    }
+    // An online battle's line beside the frame rate (the connection, or a wait for the other player); `now`: shown at
+    // once over the last picture, for a game that stands still meanwhile.
+    void onlineStatus(std::string text,bool now) {
+        if(text==online_status_ && !now)return;
+        online_status_=std::move(text);
+        if(now)window_.showStatusNow(statusLine());else window_.setStatus(statusLine());
     }
 
 private:
     std::string path_;ViewerWindow& window_;HostInput& input_;AudioMixer& mixer_;FramePacer* pacer_;
     OverlayTrigger trigger_;FastForward fast_switch_;bool fast_=false,swallow_=false;
     unsigned pause_test_field_=0,pause_test_ms_=0,fields_=0;std::string pause_test_picture_;
+    std::string frame_rate_,online_status_;
+    std::string statusLine() const {return frame_rate_.empty() || online_status_.empty()?frame_rate_+online_status_:frame_rate_+"   "+online_status_;}
     DisplayFrame picture_;unsigned pictures_=0;std::chrono::steady_clock::time_point window_start_=std::chrono::steady_clock::now();
 
     void takePicture() {if(picture_source)picture_=picture_source();}
@@ -103,12 +113,12 @@ private:
         window_.setScaling(settings.integer_scaling?ViewerWindow::Scaling::Integer:ViewerWindow::Scaling::Stretch);
         window_.setLayout(settings.window_scale,settings.fullscreen);
         mixer_.master_percent=settings.master_volume;mixer_.stream_percent=settings.music_volume;mixer_.extra_percent=settings.effects_volume;
-        if(!settings.show_frame_rate && !fast_)window_.setStatus("");
+        if(!settings.show_frame_rate && !fast_){frame_rate_.clear();window_.setStatus(statusLine());}
     }
     void setFast(bool on) {
         if(on==fast_)return;
         fast_=on;if(pacer_)pacer_->free_run=on;
-        if(!on && !settings.show_frame_rate)window_.setStatus(""); // The fast forward mark goes at once.
+        if(!on && !settings.show_frame_rate){frame_rate_.clear();window_.setStatus(statusLine());} // The fast forward mark goes at once.
     }
     // The fast forward button does not reach the game.
     GamepadState masked(GamepadState pad) const {

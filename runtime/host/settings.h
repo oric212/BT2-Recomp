@@ -2,6 +2,7 @@
 // one "key = value" per line. A file with an unknown key or a value out of range is refused by name;
 // a missing key keeps its default, so older files stay readable.
 #pragma once
+#include "host/connection_code.h"
 #include "host/input_mapping.h"
 #include <fstream>
 #include <optional>
@@ -41,11 +42,13 @@ struct Settings {
     bool second_controller=false;
     // The card in slot 1: a folder name in the saves folder; empty: none (the game program then makes one).
     std::string memory_card;
-    // Online battles (docs/plans/online/ONLINE_BATTLE_PLAN.md): the UDP port hosted or joined, the host's address last
-    // joined (digits, letters, '.' and '-'), and the input delay in fields the host plays with.
-    unsigned online_port=7411;
+    // Online battles (docs/plans/online/ONLINE_BATTLE_PLAN.md): the UDP port hosted or joined, the host's code or address
+    // last joined (host/connection_code.h; digits, letters, '.' and '-'), the input delay in fields the host plays with (0: chosen from the round
+    // trip), and whether the host opens its port on the router by UPnP.
+    unsigned online_port=connection_code::usual_port;
     std::string online_address;
-    unsigned online_delay=2;
+    unsigned online_delay=0;
+    bool online_upnp=true;
     static constexpr unsigned max_window_scale=16;
     static constexpr const char* online_address_characters="0123456789abcdefghijklmnopqrstuvwxyz.-";
     bool operator==(const Settings&) const=default;
@@ -57,7 +60,7 @@ struct Settings {
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nstruggle_buttons = "<<struggle_buttons
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card
-           <<"\nonline_port = "<<online_port<<"\nonline_address = "<<online_address<<"\nonline_delay = "<<online_delay<<"\n";
+           <<"\nonline_port = "<<online_port<<"\nonline_address = "<<online_address<<"\nonline_delay = "<<online_delay<<"\nonline_upnp = "<<online_upnp<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
         for(unsigned n=0;n<16;++n)out<<"button_"<<PadScript::names[n]<<" = "<<buttonName(mapping.buttons[n])<<"\n";
         return out.str();
@@ -114,6 +117,7 @@ struct Settings {
             else if(key=="second_controller")s.second_controller=number(0,1);
             else if(key=="online_port")s.online_port=number(1,65535);
             else if(key=="online_delay")s.online_delay=number(0,8);
+            else if(key=="online_upnp")s.online_upnp=number(0,1);
             else if(key=="online_address") {
                 if(value.size()>253 || value.find_first_not_of(online_address_characters)!=std::string::npos)throw std::runtime_error("Setting online_address is not an address: "+value);
                 s.online_address=value;

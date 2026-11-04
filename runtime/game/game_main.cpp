@@ -57,7 +57,8 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());
     SetEnvironmentVariableA("BT2_NET",online.empty()?nullptr:online.c_str());
-    SetEnvironmentVariableA("BT2_NET_DELAY",online.empty()?nullptr:std::to_string(settings.online_delay).c_str());
+    SetEnvironmentVariableA("BT2_NET_DELAY",online.empty()?nullptr:std::to_string(settings.online_delay).c_str()); // 0: chosen from the round trip.
+    SetEnvironmentVariableA("BT2_NET_UPNP",online.empty() || !settings.online_upnp?nullptr:"1");
     // The picture settings the renderer takes at its start: HD textures (when a pack is there) and super-sampling.
     const fs::path pack=settings.hd_textures?folders.texturePack():fs::path{};
     SetEnvironmentVariableW(L"BT2_HD_TEXTURES",pack.empty()?nullptr:pack.wstring().c_str());
@@ -159,8 +160,11 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
                 settings.memory_card=cards.empty()?folders.newCard():cards.front();settings.save(settings_path.string());
             }
             const bool online=chosen==LauncherResult::Host || chosen==LauncherResult::Join;
+            // Joining: the host's code (host/connection_code.h) gives the address and port, else the address and the port setting.
+            const auto host_code=connection_code::read(settings.online_address);
             const std::string net=chosen==LauncherResult::Host?"host:"+std::to_string(settings.online_port)
-                :chosen==LauncherResult::Join?"join:"+settings.online_address+":"+std::to_string(settings.online_port):std::string();
+                :chosen!=LauncherResult::Join?std::string()
+                :host_code?"join:"+host_code->address+":"+std::to_string(host_code->port):"join:"+settings.online_address+":"+std::to_string(settings.online_port);
             chosen=LauncherResult::Start;
             const DWORD code=runGame(root,settings_path,settings,folders,log,net);
             SetEnvironmentVariableA("BT2_QUICK_TITLE",nullptr);

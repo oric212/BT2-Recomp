@@ -100,23 +100,27 @@ private:
         return main;
     }
     // Both PCs start fresh into the game's Dueling screen with every fighter unlocked; no save is used, and each player
-    // keeps their own picture settings and enhancements.
+    // keeps their own picture settings and enhancements. Hosting is one press; joining is one press, the code pasted or
+    // typed, and Enter (the user asked for simple navigation, 2026-11-04); the rest waits under Options.
     MenuScreen onlineScreen() {
         MenuScreen screen;screen.title="Online battle";
         const auto start=[this](LauncherResult how){if(discReady()) {result=how;host_.finished=true;}};
         screen.entries.push_back(menuAction("Host a battle",[start]{start(LauncherResult::Host);},
-            "Waits on the port below, which your router must forward to this PC (UDP). Escape leaves the battle."));
-        MenuEntry join=menuAction("Join a battle",[start]{start(LauncherResult::Join);},"Connects to the host's address and port. Escape leaves the battle.");
-        join.available=[this]{return !settings_.online_address.empty();};
-        screen.entries.push_back(join);
-        MenuEntry address;address.label="Host's address";
-        address.value=[this]{return settings_.online_address.empty()?std::string("none"):settings_.online_address;};
-        address.confirm=[this] {
-            host_.type("The host's address (Enter accepts, Escape cancels)",settings_.online_address,Settings::online_address_characters,253,
-                [this](std::string text){settings_.online_address=std::move(text);changed();});
-        };
-        address.note="For joining: the host's IP address (or name), as the host tells you. Confirm, then type it.";
-        screen.entries.push_back(address);
+            "Shows a code to give the other player, then waits for them. Escape leaves the battle."));
+        screen.entries.push_back(menuAction("Join with a code",[this,start] {
+            host_.type("The host's code: type it or paste it (Ctrl+V), then Enter",settings_.online_address,Settings::online_address_characters,253,
+                [this,start](std::string text) {
+                    if(text.empty())return;
+                    settings_.online_address=std::move(text);changed();
+                    start(LauncherResult::Join);
+                });
+        },"The code on the host's screen. An address works too (with the port under Options). Escape leaves the battle."));
+        screen.entries.back().value=[this]{return settings_.online_address.empty()?std::string():"last: "+settings_.online_address;};
+        screen.entries.push_back(menuAction("Options",[this]{host_.menu.open(onlineOptions());},"The port, the input delay and the router (UPnP)."));
+        return screen;
+    }
+    MenuScreen onlineOptions() {
+        MenuScreen screen;screen.title="Online battle options";
         MenuEntry port;port.label="Port";
         port.value=[this]{return std::to_string(settings_.online_port);};
         port.confirm=[this] {
@@ -125,10 +129,14 @@ private:
                 if(value>=1 && value<=65535) {settings_.online_port=value;changed();}
             });
         };
-        port.note="The same on both PCs, which need the same build of the game. Confirm, then type it.";
+        port.note="The port hosted (codes carry it); joining by address, the host's port. Confirm, then type it.";
         screen.entries.push_back(port);
-        screen.entries.push_back(menu_screens::number("Input delay",settings_.online_delay,0,8,1," fields",[this]{changed();},
-            "The host's choice: fields between a press and the game playing it (60 a second). 2 at home; more over the internet if the game halts often."));
+        MenuEntry delay=menu_screens::number("Input delay",settings_.online_delay,0,8,1,"",[this]{changed();},
+            "The host's: fields from a press to the game playing it (60 a second). Auto: chosen from the connection. Raise it if the game halts often.");
+        delay.value=[this]{const unsigned d=settings_.online_delay;return d?std::to_string(d)+(d==1?" field":" fields"):std::string("Auto");};
+        screen.entries.push_back(delay);
+        screen.entries.push_back(menu_screens::toggle("Open the port by UPnP",settings_.online_upnp,[this]{changed();},
+            "When hosting: asks the router to open the port. Off, or a router without UPnP: forward the UDP port to this PC by hand."));
         return screen;
     }
     MenuScreen discScreen() {

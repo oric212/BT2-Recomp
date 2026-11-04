@@ -12,6 +12,7 @@
 #include "host/viewer_window.h"
 #include <array>
 #include <chrono>
+#include <cstring>
 #include <functional>
 #include <string>
 
@@ -43,6 +44,12 @@ public:
     void capture(std::string prompt,std::function<void(Captured)> done) {prompt_=std::move(prompt);capture_=std::move(done);snapshot();}
     // Typed text: the keyboard's characters among `allowed` (digits, lower-case letters, '.' and '-' can be), at most
     // `length` of them, starting from `text`; Backspace removes one, Enter gives the text to `done`, Escape cancels.
+    bool typing() const {return bool(typing_.done);}
+    // Ends the typing as Enter would, with `text` as typed (tests, which press no keys).
+    void typed(std::string text) {
+        const auto done=std::move(typing_.done);typing_={};prompt_.clear();
+        if(done)done(std::move(text));
+    }
     void type(std::string prompt,std::string text,std::string allowed,std::size_t length,std::function<void(std::string)> done) {
         typing_={std::move(prompt),std::move(text),std::move(allowed),length,std::move(done)};
         prompt_=typing_.prompt+": "+typing_.text+"_";snapshot();
@@ -89,6 +96,34 @@ public:
         if(key>=0x21 && key<=0x2E)scan|=0x100;
         if(scan && GetKeyNameTextA(LONG(scan<<16),name,sizeof name)>0)return name;
         return "key "+std::to_string(key);
+    }
+    // `text` with the clipboard's text added: up to a ':' (an address with its port gives the address), letters in
+    // lower case, without what `allowed` leaves out, at most `length` in all.
+    static std::string pasted(std::string text,const std::string& allowed,std::size_t length) {
+        if(!OpenClipboard(nullptr))return text;
+        if(const HANDLE data=GetClipboardData(CF_TEXT)) {
+            if(const char* clip=static_cast<const char*>(GlobalLock(data))) {
+                for(const char* c=clip;*c && *c!=':' && text.size()<length;++c) {
+                    const char lower=*c>='A' && *c<='Z'?char(*c-'A'+'a'):*c;
+                    if(allowed.find(lower)!=std::string::npos)text+=lower;
+                }
+                GlobalUnlock(data);
+            }
+        }
+        CloseClipboard();
+        return text;
+    }
+    // `text` on the clipboard (a connection code to paste into a chat).
+    static void copy(const std::string& text) {
+        if(!OpenClipboard(nullptr))return;
+        EmptyClipboard();
+        if(const HGLOBAL data=GlobalAlloc(GMEM_MOVEABLE,text.size()+1)) {
+            if(char* bytes=static_cast<char*>(GlobalLock(data))) {
+                std::memcpy(bytes,text.c_str(),text.size()+1);GlobalUnlock(data);
+                if(!SetClipboardData(CF_TEXT,data))GlobalFree(data);
+            } else GlobalFree(data);
+        }
+        CloseClipboard();
     }
     // The character a key types: digits (also the number pad's), letters in lower case, '.' and '-'; 0 for others.
     static char typedCharacter(unsigned key) {
@@ -146,6 +181,8 @@ private:
                 if(key==VK_RETURN)enter=true;
                 else if(key==VK_ESCAPE)cancel=true;
                 else if(key==VK_BACK) {if(!typing_.text.empty())typing_.text.pop_back();}
+                else if(key=='V' && HostInput::keyDown(VK_CONTROL))typing_.text=pasted(typing_.text,typing_.allowed,typing_.length);
+                else if(HostInput::keyDown(VK_CONTROL)) {}
                 else if(const char c=typedCharacter(key);c && typing_.allowed.find(c)!=std::string::npos && typing_.text.size()<typing_.length)typing_.text+=c;
             }
             keys_[key]=down;

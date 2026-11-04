@@ -45,6 +45,7 @@ public:
     // From any thread: `picture` shown with the window's layout as last shown, `after` the picture before it was
     // presented. False before any picture was shown (no layout yet).
     bool showPicture(Vulkan::ImageHandle picture,std::chrono::steady_clock::duration after);
+    bool showAgain(const DisplayFrame& status) override;
     static constexpr unsigned thread_index=2; // The thread's command pools (gpu_gs_backend.h).
 private:
     struct Request {
@@ -79,6 +80,7 @@ private:
     std::deque<Request> pending_;bool stop_=false;std::exception_ptr failure_;
     std::optional<std::chrono::steady_clock::time_point> next_at_;bool free_run_=false;
     std::optional<Request> layout_; // The last picture's window, placement and status line (show), for showPicture.
+    std::optional<Request> last_shown_; // The last picture presented, for showAgain.
     std::chrono::steady_clock::time_point last_present_{}; // On the thread: when the last picture was presented.
     std::array<std::chrono::steady_clock::duration,120> completion_{};std::size_t completion_next_=0,completion_count_=0; // usualCompletion.
     std::thread thread_; // Last: it starts in the constructor.

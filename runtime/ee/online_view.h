@@ -7,8 +7,11 @@
 // The fights' radars, which stay where the halves had them, are left out on both machines.
 // Installed only when the guest code hashes as expected, as the native functions are (ee/native_functions.h).
 #pragma once
+#include <cstdint>
 
 class EeRuntime;
 
 // Returns whether the view setup was replaced.
 bool registerOnlineView(EeRuntime& runtime);
+// Fight frames so far (the radars' calls): it grows while a fight runs, and stands still in the menus.
+std::uint64_t onlineFightFrames();
