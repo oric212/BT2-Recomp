@@ -29,7 +29,9 @@ The widescreen patch's words (`runtime/ee/game_patches.cpp`, `config/game_patche
 
 Review staged files before every commit; ignore rules help prevent accidental inclusion.
 
-The generated-code probe adapter is authored project code and links no upstream runtime. The local translated source and the resulting executable contain retail-derived code and remain ignored. Do not publish or commit either as part of the project foundation.
+The generated-code probe adapter is authored project code and links no upstream runtime. The local translated source contains retail-derived code: it stays ignored and is never committed or published.
+
+**Releases (the user's decision of 2026-11-04, BT3-Recomp's model; [release plan](../plans/launcher/RELEASE_PLAN.md)):** a release may ship the compiled runtime program, which contains code compiled from the game's executable, as BT3-Recomp's releases do; the user carries that choice. A release ships no game data (no disc image, executable, extracted file, texture, sound or film: the player's own disc image is read at run time) and nothing taken from the console (no BIOS, no kernel or IOP memory captures, no code copied from them). Until the release plan's steps remove the remaining console captures, the package `tools/build/package.py` makes is private.
 
 ## Installed analysis tools
 

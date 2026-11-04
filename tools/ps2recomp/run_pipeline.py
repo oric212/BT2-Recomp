@@ -520,7 +520,7 @@ def main():
     entry_stop = None
     if result.returncode == 0:
         # The evidence files the probe reads (the list is kept in the order of its arguments).
-        entry_command = [str(build / "Debug/bt2-entry-probe.exe"), str(folder / "guest-memory.bin"), str(folder / "entry-stop.json")]
+        entry_command = [str(build / "Debug/bt2-entry-probe.exe"), "disc", str(folder / "entry-stop.json")]  # The memory is made from the disc image.
         if args.kernel_snapshot:
             entry_command.append(str(args.kernel_snapshot.resolve()))
         if timer_capture:

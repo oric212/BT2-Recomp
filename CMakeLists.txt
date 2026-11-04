@@ -34,6 +34,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/services/sif_system.cpp
     runtime/ee/native_functions.cpp
     runtime/ee/online_view.cpp
+    runtime/ee/guest_image.cpp
     runtime/ee/struggle_buttons.cpp
     runtime/services/disc_service.cpp
     runtime/services/fileio_service.cpp
@@ -193,6 +194,10 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-net-lockstep-tests runtime/tests/net_lockstep_tests.cpp runtime/host/net_lockstep.cpp)
     bt2_target_defaults(bt2-net-lockstep-tests)
     add_test(NAME net-lockstep COMMAND bt2-net-lockstep-tests)
+    add_executable(bt2-guest-image-tests runtime/tests/guest_image_tests.cpp runtime/ee/guest_image.cpp)
+    bt2_target_defaults(bt2-guest-image-tests)
+    target_compile_definitions(bt2-guest-image-tests PRIVATE "BT2_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+    add_test(NAME guest-image COMMAND bt2-guest-image-tests)
     add_executable(bt2-game-patches-tests runtime/tests/game_patches_tests.cpp runtime/ee/game_patches.cpp)
     bt2_target_defaults(bt2-game-patches-tests)
     add_test(NAME game-patches COMMAND bt2-game-patches-tests)

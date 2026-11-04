@@ -8,9 +8,9 @@ programs), the launcher's pictures, empty data folders with a note each (the pla
 the runtime's startup inputs (work/bt2-generation), the release readme and online setup guide, the license, the
 third-party notices and where the source is. No disc image, game executable, texture pack, save or setting goes in.
 
-Not for publishing as it is (docs/project/LEGAL.md): the runtime program contains code compiled from the game's
-executable, and the startup inputs hold a memory image built from that executable and captures of the console's
-kernel and IOP memory (docs/plans/launcher/RELEASE_PLAN.md).
+Releases follow BT3-Recomp's model (docs/project/LEGAL.md): the runtime ships with the game's code compiled in, the
+game's data stays on the player's disc. Private for now: the startup inputs still hold captures of the console's
+kernel and IOP memory, which the release plan replaces natively (docs/plans/launcher/RELEASE_PLAN.md).
 """
 import argparse,json,re,shutil,subprocess,sys,zipfile
 from pathlib import Path
@@ -88,6 +88,6 @@ def main():
             if path.is_file():z.write(path,Path(name)/path.relative_to(folder))
     size=sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
     print(f'{folder} ({len(files)+len(extra)} files, {size/2**20:.0f} MB)\n{zipped} ({zipped.stat().st_size/2**20:.0f} MB)')
-    print('Private: the runtime holds code compiled from the game and the startup inputs are game-derived; not for publishing (docs/project/LEGAL.md).')
+    print('Private: the startup inputs still hold console captures; not for publishing until the release plan replaces them (docs/plans/launcher/RELEASE_PLAN.md).')
 
 if __name__=='__main__':main()

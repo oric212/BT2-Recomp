@@ -5,14 +5,15 @@ ROOT=Path(__file__).resolve().parents[2]
 # Default controller input for the measured checkpoint (logical IOP fields): with no memory card the
 # game asks "Continue anyway?" (shown by field 373); select Yes and confirm. Repeatable by construction.
 DEFAULT_PAD_SCRIPT='400:left,408:-,420:cross,428:-'
-INPUTS=('guest-memory.bin','kernel-snapshot.bin','timer3-mode.bin','timer2-mode.bin','intc-mask.bin','timer2-readback.bin','osd-config.bin','osd-readback.bin','dma-status.bin','dma5-control.bin','sif-command.bin','sif-dma.bin','sif-rpc-state.bin','sif-bind.bin','cd-init.bin','scmd-bind.bin','heap-bind.bin','heap-allocation.bin','texture-startup.bin','ee-thread-start.bin','disc-bind.bin','ncmd-bind.bin')
+# The game's memory is made from the disc image by the runtime (runtime/ee/guest_image.h): its first argument is "disc".
+INPUTS=('kernel-snapshot.bin','timer3-mode.bin','timer2-mode.bin','intc-mask.bin','timer2-readback.bin','osd-config.bin','osd-readback.bin','dma-status.bin','dma5-control.bin','sif-command.bin','sif-dma.bin','sif-rpc-state.bin','sif-bind.bin','cd-init.bin','scmd-bind.bin','heap-bind.bin','heap-allocation.bin','texture-startup.bin','ee-thread-start.bin','disc-bind.bin','ncmd-bind.bin')
 def command(root,disc,config='Debug'):
     folder=root/'work/bt2-generation';binary=root/'build/probe'/config/'bt2-entry-probe.exe'
     paths=[binary,disc,*[folder/name for name in INPUTS]]
     missing=[str(p) for p in paths if not p.is_file()]
     if missing:raise ValueError('Missing local startup inputs: '+', '.join(missing))
-    # Existing C++ CLI places report after memory and disc before the final bind bundle.
-    return [str(binary),str(folder/INPUTS[0]),str(folder/'entry-stop.json'),*[str(folder/name) for name in INPUTS[1:-1]],str(disc),str(folder/INPUTS[-1])]
+    # The C++ CLI: "disc", the report, the inputs, and the disc image before the final bind bundle.
+    return [str(binary),'disc',str(folder/'entry-stop.json'),*[str(folder/name) for name in INPUTS[:-1]],str(disc),str(folder/INPUTS[-1])]
 def summary(report):
     for key in ('distinct_ee_entered','distinct_ee_completed','distinct_kernel_entered','distinct_kernel_completed'):
         if key not in report:raise ValueError('Probe needs rebuilding with distinct-entry reporting')

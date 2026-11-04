@@ -15,7 +15,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             targets=[target for _,target in package.plan(*self.fake(Path(folder)))]
             for name in ('bt2-game.exe','bt2-launcher.exe','bt2-entry-probe.exe','vcruntime140.dll','assets/logo.png','assets/struggle-buttons/xbox/a.dds',
-                         'work/bt2-generation/guest-memory.bin','README.txt','ONLINE-SETUP.txt','LICENSE.txt','data/PUT YOUR GAME HERE.txt'):
+                         'work/bt2-generation/kernel-snapshot.bin','README.txt','ONLINE-SETUP.txt','LICENSE.txt','data/PUT YOUR GAME HERE.txt'):
                 self.assertIn(name,targets)
             self.assertEqual(len(targets),len(set(targets)))
             self.assertFalse([t for t in targets if t.startswith(('user/','saves/')) or t.endswith(('.iso','.pdb'))])

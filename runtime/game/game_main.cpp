@@ -20,7 +20,8 @@ namespace fs=std::filesystem;
 
 // The runtime's startup inputs, in its argument order (tools/ps2recomp/run_startup_probe.py holds
 // the same list; tools/ps2recomp/test_game_inputs.py compares them).
-constexpr const char* startup_inputs[]={"guest-memory.bin","kernel-snapshot.bin","timer3-mode.bin","timer2-mode.bin","intc-mask.bin","timer2-readback.bin",
+// The game's memory is made from the disc image by the runtime (ee/guest_image.h).
+constexpr const char* startup_inputs[]={"kernel-snapshot.bin","timer3-mode.bin","timer2-mode.bin","intc-mask.bin","timer2-readback.bin",
     "osd-config.bin","osd-readback.bin","dma-status.bin","dma5-control.bin","sif-command.bin","sif-dma.bin","sif-rpc-state.bin","sif-bind.bin","cd-init.bin",
     "scmd-bind.bin","heap-bind.bin","heap-allocation.bin","texture-startup.bin","ee-thread-start.bin","disc-bind.bin","ncmd-bind.bin"};
 
@@ -45,10 +46,10 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     const fs::path runtime=programFolder()/"bt2-entry-probe.exe",inputs=root/"work"/"bt2-generation";
     std::error_code error;
     if(!fs::is_regular_file(runtime,error))throw std::runtime_error("The runtime program is missing: "+runtime.string());
-    // MEMORY_IMAGE STOP_REPORT inputs... DISC last-input, as the runtime's command line is defined.
+    // "disc" STOP_REPORT inputs... DISC last-input, as the runtime's command line is defined.
     const std::size_t count=std::size(startup_inputs);
-    std::string command=inQuotes(runtime)+" "+inQuotes(inputs/startup_inputs[0])+" "+inQuotes(root/"user"/"last-run.json");
-    for(std::size_t n=1;n<count;++n) {
+    std::string command=inQuotes(runtime)+" disc "+inQuotes(root/"user"/"last-run.json");
+    for(std::size_t n=0;n<count;++n) {
         if(!fs::is_regular_file(inputs/startup_inputs[n],error))throw std::runtime_error(std::string("A startup input is missing: ")+startup_inputs[n]);
         if(n==count-1)command+=" "+inQuotes(folders.disc(settings));
         command+=" "+inQuotes(inputs/startup_inputs[n]);

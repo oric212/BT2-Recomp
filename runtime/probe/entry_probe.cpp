@@ -21,6 +21,7 @@
 #include "vu/vu1_program.h"
 #include "ee/ee_runtime.h"
 #include "ee/game_patches.h"
+#include "ee/guest_image.h"
 #include "ee/struggle_buttons.h"
 #include "ee/native_functions.h"
 #include "ee/online_view.h"
@@ -88,14 +89,11 @@ int main(int argc, char** argv) {
     stopPowerThrottling();
     try {
         prepareOnlineSession(); // BT2_NET: before anything reads the switches a session sets.
-        if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe MEMORY_IMAGE STOP_REPORT KERNEL_SNAPSHOT TIMER3_MODE TIMER2_MODE INTC_MASK TIMER2_READBACK OSD_CONFIG OSD_READBACK DMA_STATUS DMA5_CONTROL SIF_COMMAND SIF_DMA SIF_RPC_STATE SIF_BIND CD_INIT SCMD_BIND HEAP_BIND HEAP_ALLOCATION TEXTURE_STARTUP EE_THREAD_START DISC_BIND DISC_IMAGE NCMD_BIND");
-        std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
-        if (!input || input.tellg() != static_cast<std::streamoff>(EeRuntime::ram_size))
-            throw std::runtime_error("Invalid prepared guest image size");
-        std::vector<std::uint8_t> image(EeRuntime::ram_size);
-        input.seekg(0);
-        if (!input.read(reinterpret_cast<char*>(image.data()), static_cast<std::streamsize>(image.size())))
-            throw std::runtime_error("Could not read guest image");
+        if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe disc STOP_REPORT KERNEL_SNAPSHOT TIMER3_MODE TIMER2_MODE INTC_MASK TIMER2_READBACK OSD_CONFIG OSD_READBACK DMA_STATUS DMA5_CONTROL SIF_COMMAND SIF_DMA SIF_RPC_STATE SIF_BIND CD_INIT SCMD_BIND HEAP_BIND HEAP_ALLOCATION TEXTURE_STARTUP EE_THREAD_START DISC_BIND DISC_IMAGE NCMD_BIND");
+        // The game's memory at its start, made from the player's disc image (ee/guest_image.h); the first argument is
+        // the word "disc" where a prepared image file once was.
+        if (std::string_view(argv[1]) != "disc") throw std::runtime_error("The first argument is \"disc\": the game's memory is made from DISC_IMAGE");
+        const std::vector<std::uint8_t> image = guestImage(gameExecutableFromDisc(argv[23]));
         EeRuntime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;

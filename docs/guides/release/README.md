@@ -8,7 +8,8 @@ Requirements
 ------------
 - Windows 10 or 11, 64-bit
 - A graphics card with up-to-date drivers (Vulkan)
-- Your own disc image of the game (USA release, SLUS-21441), as an .iso file
+- Your own disc image of the game (USA release, SLUS-21441), as an .iso file.
+  Other regions and revisions do not work: the game says so when it starts.
 
 Getting started
 ---------------
@@ -45,4 +46,6 @@ Files in this folder
 - user                             your settings and the last run's messages (made on first start)
 - LICENSE.txt, THIRD-PARTY-NOTICES.txt, SOURCE.txt
 
-If the game stops, user\last-run.log has the messages.
+If the game stops, user\last-run.log has the messages. "This disc image is not
+Dragon Ball Z: Budokai Tenkaichi 2 (USA, SLUS-21441)" means another region or
+revision, or a damaged image.
