@@ -106,7 +106,7 @@ private:
         MenuScreen screen;screen.title="Online battle";
         const auto start=[this](LauncherResult how){if(discReady()) {result=how;host_.finished=true;}};
         screen.entries.push_back(menuAction("Host a battle",[start]{start(LauncherResult::Host);},
-            "Your code is copied by itself: paste it into a chat to the other player, then wait."));
+            "Your code is copied by itself: paste it into a chat, then copy the reply code they send back."));
         screen.entries.push_back(menuAction("Join with a code",[this,start] {
             // A code already on the clipboard (copied from the chat) is filled in; Ctrl+V pastes one.
             const auto clip=host_.clipboardText();
@@ -119,7 +119,7 @@ private:
                     settings_.online_address=std::move(text);changed();
                     start(LauncherResult::Join);
                 });
-        },"Copy the host's code first: it is filled in, and Enter joins. An address works too."));
+        },"Copy the host's code first: it is filled in, and Enter joins. Then send back the reply code shown."));
         screen.entries.back().value=[this]{return settings_.online_address.empty()?std::string():"last: "+settings_.online_address;};
         screen.entries.push_back(menuAction("Options",[this]{host_.menu.open(onlineOptions());},"Only if needed: the port, the input delay, the router (UPnP)."));
         return screen;

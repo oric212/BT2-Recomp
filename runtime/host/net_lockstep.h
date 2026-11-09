@@ -17,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "host/connection_code.h"
 #include "services/devices/pad_input.h"
 
 // Datagrams to and from the other player.
@@ -26,11 +27,18 @@ public:
     virtual void send(std::span<const std::uint8_t> packet)=0;
     // The next packet from the other player, or nothing once `timeout` has passed.
     virtual std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout)=0;
+    // This side as the internet sees it (STUN), once known; nothing before, or without STUN.
+    virtual std::optional<connection_code::Address> publicAddress() const {return std::nullopt;}
+    // Host: sends to the joiner's public address until the joiner is heard, so the host's router and firewall let the
+    // joiner's packets in (hole punching; the joiner's reply code gives the address).
+    virtual void punch(const connection_code::Address&) {}
 };
 
 // UDP over Winsock. The host listens on `port` and answers whoever greets it first; the joiner sends to the host.
-std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port);
-std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port);
+// `stun`: the socket asks public STUN servers for its address as the internet sees it (publicAddress), for the codes
+// the players exchange when no port is open (docs/plans/online/ONLINE_BATTLE_PLAN.md, "Without an open port").
+std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun=false);
+std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun=false);
 
 // A worse network in front of a transport, for measuring on one PC (BT2_NET_SIM): each packet received arrives
 // `latency` later, give or take up to `jitter` (in order, as most links keep it), and one in `loss_every` is lost

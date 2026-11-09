@@ -1,5 +1,6 @@
 #include "host/net_lockstep.h"
 #include "host/connection_code.h"
+#include "host/stun.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -318,6 +319,8 @@ class SimulatedNetwork final : public LockstepTransport {
 public:
     SimulatedNetwork(std::unique_ptr<LockstepTransport> inner,const NetworkSimulation& simulation):inner_(std::move(inner)),simulation_(simulation) {}
     void send(std::span<const std::uint8_t> packet) override {inner_->send(packet);}
+    std::optional<connection_code::Address> publicAddress() const override {return inner_->publicAddress();}
+    void punch(const connection_code::Address& to) override {inner_->punch(to);}
     std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout) override {
         const auto deadline=Clock::now()+timeout;
         while(true) {
@@ -352,7 +355,7 @@ std::unique_ptr<LockstepTransport> simulateNetwork(std::unique_ptr<LockstepTrans
 namespace {
 class UdpTransport final : public LockstepTransport {
 public:
-    UdpTransport(bool host,const std::string& address,std::uint16_t port):host_(host) {
+    UdpTransport(bool host,const std::string& address,std::uint16_t port,bool stun):host_(host) {
         WSADATA data;
         if(WSAStartup(MAKEWORD(2,2),&data))throw std::runtime_error("Online session: Winsock did not start");
         started_=true;
@@ -364,11 +367,18 @@ public:
         sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(INADDR_ANY);local.sin_port=htons(host?port:0);
         if(::bind(socket_,reinterpret_cast<sockaddr*>(&local),sizeof local))throw error("port "+std::to_string(port)+" cannot be opened (another program may use it)");
         if(!host) {
-            addrinfo hints{};hints.ai_family=AF_INET;hints.ai_socktype=SOCK_DGRAM;
-            addrinfo* found=nullptr;
-            if(getaddrinfo(address.c_str(),std::to_string(port).c_str(),&hints,&found) || !found)throw error("the address "+address+" is not found");
-            std::memcpy(&peer_,found->ai_addr,sizeof peer_);freeaddrinfo(found);
+            if(!resolve(address,port,peer_))throw error("the address "+address+" is not found");
             has_peer_=true;
+        }
+        // Two public STUN servers, so one being down does not matter; asked from this socket, so the answer is the
+        // mapping the session's packets use.
+        if(stun) {
+            for(const auto& [name,server_port]:{std::pair<const char*,std::uint16_t>{"stun.l.google.com",19302},{"stun.cloudflare.com",3478}}) {
+                sockaddr_in server{};
+                if(resolve(name,server_port,server))stun_servers_.push_back(server);
+            }
+            std::random_device random;
+            for(auto& byte:transaction_)byte=std::uint8_t(random());
         }
     }
     ~UdpTransport() override {
@@ -377,40 +387,86 @@ public:
     }
     void send(std::span<const std::uint8_t> packet) override {
         if(!has_peer_)return; // The host answers once someone greeted it.
-        ::sendto(socket_,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&peer_),sizeof peer_);
+        sendTo(peer_,packet);
+    }
+    std::optional<connection_code::Address> publicAddress() const override {return public_;}
+    void punch(const connection_code::Address& to) override {
+        sockaddr_in at{};
+        if(!resolve(to.address,to.port,at))return;
+        punch_=at;last_punch_={};
     }
     std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout) override {
         const auto deadline=Clock::now()+timeout;
         while(true) {
-            const auto left=std::chrono::duration_cast<std::chrono::microseconds>(std::max(deadline-Clock::now(),Clock::duration::zero()));
+            tend();
+            // Waits in short slices, so STUN requests and punch packets keep going while a field or the connection waits.
+            const auto left=std::chrono::duration_cast<std::chrono::microseconds>(std::max(std::min(deadline-Clock::now(),
+                Clock::duration(std::chrono::milliseconds(50))),Clock::duration::zero()));
             fd_set set;FD_ZERO(&set);FD_SET(socket_,&set);
             timeval wait{long(left.count()/1000000),long(left.count()%1000000)};
-            if(::select(0,&set,nullptr,nullptr,&wait)<=0)return std::nullopt;
+            if(::select(0,&set,nullptr,nullptr,&wait)<=0) {
+                if(Clock::now()>=deadline)return std::nullopt;
+                continue;
+            }
             std::vector<std::uint8_t> packet(1500);
             sockaddr_in from{};int from_size=sizeof from;
             const int size=::recvfrom(socket_,reinterpret_cast<char*>(packet.data()),int(packet.size()),0,reinterpret_cast<sockaddr*>(&from),&from_size);
             if(size<0)continue;
-            const bool ours=size>=5 && std::equal(magic.begin(),magic.end(),packet.begin());
+            packet.resize(std::size_t(size));
+            if(stun::isStun(packet)) {
+                if(const auto m=stun::mapped(packet,transaction_);m && !public_) {
+                    in_addr ip{};ip.s_addr=htonl(m->ip);
+                    char text[INET_ADDRSTRLEN]{};
+                    if(inet_ntop(AF_INET,&ip,text,sizeof text))public_=connection_code::Address{text,m->port};
+                }
+                continue;
+            }
+            if(packet.size()>=4 && std::equal(punch_magic.begin(),punch_magic.end(),packet.begin()))continue; // Only opens the way.
+            const bool ours=packet.size()>=5 && std::equal(magic.begin(),magic.end(),packet.begin());
             const bool same=has_peer_ && from.sin_addr.s_addr==peer_.sin_addr.s_addr && from.sin_port==peer_.sin_port;
             // The host's other player: the first to greet, or a new greeting once the last one has been silent for a
             // second (a joiner that started again comes from another port).
             if(!same) {
                 if(!host_ || !ours || packet[4]!=Hello || (has_peer_ && Clock::now()-heard_<std::chrono::seconds(1)))continue;
-                peer_=from;has_peer_=true;
+                peer_=from;has_peer_=true;punch_.reset(); // Heard: the way is open.
             }
             heard_=Clock::now();
-            packet.resize(std::size_t(size));
             return packet;
         }
     }
 private:
+    static constexpr std::array<std::uint8_t,4> punch_magic{'B','T','2','P'};
     std::runtime_error error(const std::string& what) {return std::runtime_error("Online session: "+what+" (Winsock error "+std::to_string(WSAGetLastError())+")");}
+    static bool resolve(const std::string& address,std::uint16_t port,sockaddr_in& out) {
+        addrinfo hints{};hints.ai_family=AF_INET;hints.ai_socktype=SOCK_DGRAM;
+        addrinfo* found=nullptr;
+        if(getaddrinfo(address.c_str(),std::to_string(port).c_str(),&hints,&found) || !found)return false;
+        std::memcpy(&out,found->ai_addr,sizeof out);freeaddrinfo(found);
+        return true;
+    }
+    void sendTo(const sockaddr_in& to,std::span<const std::uint8_t> packet) {
+        ::sendto(socket_,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&to),sizeof to);
+    }
+    // STUN every half second until a server answers (at most 20 times); punch packets every 100 ms until the joiner
+    // is heard.
+    void tend() {
+        const auto now=Clock::now();
+        if(!public_ && !stun_servers_.empty() && stun_asked_<20 && now-last_stun_>=std::chrono::milliseconds(500)) {
+            const auto request=stun::request(transaction_);
+            for(const auto& server:stun_servers_)sendTo(server,request);
+            ++stun_asked_;last_stun_=now;
+        }
+        if(punch_ && now-last_punch_>=std::chrono::milliseconds(100)) {sendTo(*punch_,punch_magic);last_punch_=now;}
+    }
     bool host_,started_=false,has_peer_=false;
     SOCKET socket_=INVALID_SOCKET;
     sockaddr_in peer_{};Clock::time_point heard_{};
+    std::vector<sockaddr_in> stun_servers_;stun::Transaction transaction_{};unsigned stun_asked_=0;Clock::time_point last_stun_{};
+    std::optional<connection_code::Address> public_;
+    std::optional<sockaddr_in> punch_;Clock::time_point last_punch_{};
 };
 }
 
-std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port) {return std::make_unique<UdpTransport>(true,std::string(),port);}
-std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port) {return std::make_unique<UdpTransport>(false,address,port);}
+std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun) {return std::make_unique<UdpTransport>(true,std::string(),port,stun);}
+std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun) {return std::make_unique<UdpTransport>(false,address,port,stun);}
 #endif

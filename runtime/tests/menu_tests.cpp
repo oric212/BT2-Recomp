@@ -286,37 +286,49 @@ int main() {
         host.typed("sc07-3zky");
         check(host.finished && launcher.result==LauncherResult::Join && settings.online_address=="sc07-3zky" && Settings::load(settings_path)->online_address=="sc07-3zky","a code entered joins at once, and is kept");
         check(host.menu.screen().entries[1].value()=="last: sc07-3zky","the last code is shown");
-        // The screens while an online battle connects (as short as BT3-Recomp's): the code to give, the home code when it
-        // is another, Cancel; the router's three answers; a joiner without an answer.
+        // The screens while an online battle connects (as short as BT3-Recomp's; no port to open): the host's code, then
+        // the line asking for the joiner's reply code; the joiner's reply code; the home code when it is another.
         {
             const std::string home=*connection_code::make("192.168.100.105",7411),internet=*connection_code::make("203.0.113.254",7411);
             std::string copied;const auto copy=[&copied](const std::string& code){copied=code;};
-            online_screens::Hosting h;h.port=7411;h.home_address="192.168.100.105";h.router=online_screens::RouterPort::Asking;
+            online_screens::Hosting h;h.port=7411;h.home_address="192.168.100.105";h.finding=true;
             host.menu.open(online_screens::hosting(h,[]{},copy));
-            check(labels(host.menu.screen())==std::vector<std::string>{"Code: one moment","Home code: "+home,"Cancel"},"hosting, asking the router");
-            check(!online_screens::codeToGive(h),"no code copied by itself while the router is asked");
-            picture(host,"8-hosting-asking");
-            h.router=online_screens::RouterPort::Opened;h.internet_address="203.0.113.254";h.copied=internet;
+            check(labels(host.menu.screen())==std::vector<std::string>{"Code: one moment","Cancel"},"hosting, the internet address being found");
+            check(!online_screens::codeToGive(h),"no code copied by itself while it is found");
+            picture(host,"8-hosting-finding");
+            h.finding=false;h.internet_address="203.0.113.254";h.internet_port=7411;h.copied=internet;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
-            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+internet+"  (copied)","Home code: "+home,"Cancel"},"hosting, the port opened, the code on the clipboard marked");
+            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+internet+"  (copied)","Then copy their reply code","Home code: "+home,"Cancel"},
+                  "hosting: the code copied, the reply asked for, the home code");
             check(online_screens::codeToGive(h)==internet,"the internet code is the one to give");
-            picture(host,"9-hosting-opened");
-            host.menu.press(MenuKey::Confirm);
-            check(copied==internet,"confirming the code copies it again");
-            host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);
-            check(copied==home,"confirming the home code copies it");
-            h.router=online_screens::RouterPort::ByHand;h.internet_address.clear();h.copied=home;
+            picture(host,"9-hosting-code");
+            host.menu.press(MenuKey::Confirm);check(copied==internet,"confirming the code copies it again");
+            h.internet_port=50123;
+            check(online_screens::codeToGive(h)==*connection_code::make("203.0.113.254",50123),"the code carries the port the internet sees");
+            h.internet_port=7411;h.replied=true;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
-            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+home+"  (copied)","Cancel"},"hosting without UPnP: the home code, once");
-            check(host.menu.screen().entries[0].note.find("forward UDP port 7411 to 192.168.100.105,")!=std::string::npos,"the note says which port to forward where");
-            check(online_screens::codeToGive(h)==home,"without UPnP the home code is the one to give");
-            host.menu.press(MenuKey::Up);picture(host,"10-hosting-by-hand");
+            check(labels(host.menu.screen())[1]=="Reply code received","the reply received");
+            h.internet_address.clear();h.replied=false;h.copied=home;
+            host.menu.replace(online_screens::hosting(h,[]{},copy));
+            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+home+"  (copied)","Cancel"},"no internet address: the home code, once");
+            check(host.menu.screen().entries[0].note.find("Home network only")!=std::string::npos && online_screens::codeToGive(h)==home,"and says so");
+            picture(host,"10-hosting-home");
             h.internet_address="100.72.1.9";
-            check(online_screens::codeToGive(h)==home && online_screens::hosting(h,[]{},copy).entries[0].note.find("shares your internet address")!=std::string::npos,
-                  "a shared (carrier NAT) address gives no internet code, and says so");
-            host.menu.replace(online_screens::joining("203.0.113.254",7411,true,[]{}));
-            check(labels(host.menu.screen())==std::vector<std::string>{"Host: 203.0.113.254 : 7411","Cancel"},"joining");
-            picture(host,"11-joining-late");
+            check(online_screens::codeToGive(h)==home,"a shared (carrier NAT) address gives no internet code");
+            // The joiner: a host on the internet gets a reply code; one on the home network does not.
+            const std::string reply=*connection_code::make("198.51.100.7",61002);
+            online_screens::Joining j;j.address="203.0.113.254";j.port=7411;j.finding=true;
+            host.menu.replace(online_screens::joining(j,[]{},copy));
+            check(labels(host.menu.screen())==std::vector<std::string>{"Reply: one moment","Host: 203.0.113.254 : 7411","Cancel"},"joining, the reply code being found");
+            j.finding=false;j.reply=reply;j.copied=reply;
+            host.menu.replace(online_screens::joining(j,[]{},copy));
+            check(labels(host.menu.screen())==std::vector<std::string>{"Reply: "+reply+"  (copied)","Host: 203.0.113.254 : 7411","Cancel"},"joining: the reply code copied");
+            check(host.menu.screen().entries[0].note.find("paste it")!=std::string::npos,"the note says to send it");
+            picture(host,"11-joining-reply");
+            j.late=true;host.menu.replace(online_screens::joining(j,[]{},copy));
+            check(host.menu.screen().entries[1].note.find("copied your reply code")!=std::string::npos,"late: check the host copied the reply");
+            online_screens::Joining lan;lan.address="192.168.100.105";lan.port=7411;lan.late=true;
+            check(labels(online_screens::joining(lan,[]{},copy))==std::vector<std::string>{"Host: 192.168.100.105 : 7411","Cancel"},"a home-network host needs no reply code");
         }
         // Pasting (host/clipboard.h): a code found in a chat line replaces the field; other text is added as typed.
         {

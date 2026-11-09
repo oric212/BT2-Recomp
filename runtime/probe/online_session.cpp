@@ -1,6 +1,7 @@
 #include "online_session.h"
 #include "ee/ee_runtime.h"
 #include "ee/online_view.h"
+#include "host/connection_code.h"
 #include "host/frame_pacer.h"
 #include "host/menu_host.h"
 #include "host/net_lockstep.h"
@@ -44,49 +45,77 @@ void setSwitch(const char* name,const char* value) {
         throw std::runtime_error(std::string("Online session: cannot set ")+name);
 }
 
-// What the host's waiting screen shows of the router (host/online_screens.h).
-online_screens::Hosting hosting(unsigned port,const std::string& home) {
-    online_screens::Hosting h;h.port=port;h.home_address=home;
-    if(!online.upnp)return h;
-    switch(online.upnp->state()) {
-    case UpnpPort::State::Asking: h.router=online_screens::RouterPort::Asking;break;
-    case UpnpPort::State::Opened: h.router=online_screens::RouterPort::Opened;h.internet_address=online.upnp->externalAddress();break;
-    case UpnpPort::State::Failed: break;
-    }
-    return h;
+// This side as the internet sees it: STUN on the session's socket; the router's UPnP answer when STUN found nothing.
+std::optional<connection_code::Address> internetAddress(unsigned port) {
+    if(auto found=online.transport->publicAddress())return found;
+    if(online.upnp && online.upnp->state()==UpnpPort::State::Opened && !online.upnp->externalAddress().empty())
+        return connection_code::Address{online.upnp->externalAddress(),std::uint16_t(port)};
+    return std::nullopt;
 }
 
-// A player's window while connecting: what is awaited, and Cancel (or Back) to return to the launcher.
+// A player's window while connecting (host/online_screens.h): what is awaited, and Cancel (or Back) to return to the
+// launcher. No port has to be open: the host's code is copied by itself (the user: make the code copyable), the
+// joiner's reply code too, and the host's game watches the clipboard for that reply, then sends to the joiner's address
+// until the joiner is heard (hole punching: the host's router and firewall then let the joiner in). Confirm on a code,
+// or Ctrl+C, copies it again.
 void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& address) {
+    using namespace std::chrono_literals;
     MenuHost host(window,input);
     const auto start=std::chrono::steady_clock::now();
     const auto cancel=[&host]{host.finished=true;};
     const std::string home=address.host?UpnpPort::localAddress():std::string();
-    // The host's code goes on the clipboard by itself once it is known (the user: make the code copyable); Confirm on
-    // a code, or Ctrl+C for the one to give, copies again. The screen marks the code on the clipboard.
-    std::string copied,auto_copied;
+    std::string copied,auto_copied,punched;
+    bool connected=false,late=false;
+    const auto finding=[&]{return std::chrono::steady_clock::now()-start<10s;}; // STUN is asked for 10 s.
+    const auto hosting=[&] {
+        online_screens::Hosting h;h.port=address.port;h.home_address=home;h.replied=!punched.empty();h.copied=copied;
+        if(const auto found=internetAddress(address.port)) {h.internet_address=found->address;h.internet_port=found->port;}
+        else h.finding=finding();
+        return h;
+    };
+    const auto joining=[&] {
+        online_screens::Joining j;j.address=address.address;j.port=address.port;j.late=late;j.copied=copied;
+        if(const auto found=internetAddress(address.port))j.reply=connection_code::make(found->address,found->port).value_or("");
+        else j.finding=finding();
+        return j;
+    };
+    // The code this side gives: the host's code, or the joiner's reply code when the host is on the internet.
+    const auto toGive=[&]()->std::optional<std::string> {
+        if(address.host)return online_screens::codeToGive(hosting());
+        const auto j=joining();
+        if(!online_screens::needsReply(j) || j.reply.empty())return std::nullopt;
+        return j.reply;
+    };
     std::function<bool(const std::string&)> copy;
-    const auto screen=[&]{auto h=hosting(address.port,home);h.copied=copied;return online_screens::hosting(h,cancel,copy);};
+    const auto screen=[&]{return address.host?online_screens::hosting(hosting(),cancel,copy):online_screens::joining(joining(),cancel,copy);};
+    const auto shown=[](const MenuScreen& s){std::string text=s.title;for(const auto& e:s.entries)text+="|"+e.label+"|"+e.note;return text;};
+    std::string showing;
+    const auto refresh=[&]{auto next=screen();if(const auto text=shown(next);text!=showing) {showing=text;host.menu.replace(std::move(next));}};
     copy=[&](const std::string& code) {
         if(!host.copy(code))return false;
-        copied=code;host.later([&]{host.menu.replace(screen());});return true;
+        copied=code;host.later(refresh);return true;
     };
-    if(address.host)host.on_copy=[&]{if(const auto code=online_screens::codeToGive(hosting(address.port,home)))copy(*code);};
-    host.menu.open(address.host?screen():online_screens::joining(address.address,address.port,false,cancel));
+    host.on_copy=[&]{if(const auto code=toGive())copy(*code);};
+    {auto first=screen();showing=shown(first);host.menu.open(std::move(first));}
     host.menu.on_leave_root=cancel;
-    bool connected=false,late=false;
-    auto shown=online.upnp?online.upnp->state():UpnpPort::State::Failed;
+    unsigned ticks=0;
     host.every(50,[&] {
-        if(online.session->connect(std::chrono::milliseconds(30))) {connected=true;host.finished=true;return;}
-        if(address.host)
-            if(const auto code=online_screens::codeToGive(hosting(address.port,home));code && *code!=auto_copied && copy(*code))auto_copied=*code;
-        if(address.host && online.upnp && online.upnp->state()!=shown) {
-            shown=online.upnp->state();host.menu.replace(screen());
-            if(shown==UpnpPort::State::Failed)std::cerr<<"Online session: UPnP: "<<online.upnp->failure()<<std::endl;
-        }
-        if(!address.host && !late && std::chrono::steady_clock::now()-start>=std::chrono::seconds(10)) {
-            late=true;host.menu.replace(online_screens::joining(address.address,address.port,true,cancel));
-        }
+        if(online.session->connect(30ms)) {connected=true;host.finished=true;return;}
+        if(const auto code=toGive();code && *code!=auto_copied && copy(*code))auto_copied=*code;
+        // Host: a reply code on the clipboard (copied from the chat), checked twice a second; another one later replaces it.
+        if(address.host && ++ticks%10==0)
+            if(const auto found=clipboard::codeIn(host.clipboardText()))
+                if(const auto reply=connection_code::read(*found);reply && connection_code::reachable(reply->address)) {
+                    const auto own=internetAddress(address.port);
+                    const std::string at=reply->address+":"+std::to_string(reply->port);
+                    if(at!=punched && !(own && own->address==reply->address && own->port==reply->port)) {
+                        online.transport->punch(*reply);punched=at;
+                        std::cerr<<"Online session: reply code received, opening the way to "<<at<<std::endl;
+                    }
+                }
+        // The joiner: after a while without an answer, the note says what to check (the host needs time to copy the reply).
+        if(!address.host && !late && std::chrono::steady_clock::now()-start>=(online_screens::needsReply(joining())?45s:10s))late=true;
+        refresh();
     });
     if(!host.run(address.host?"BT2 Recomp - hosting an online battle":"BT2 Recomp - joining an online battle") || !connected)std::exit(PlayerSession::launcher_exit_code);
 }
@@ -181,7 +210,9 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
         if(window->closed())std::exit(0);
     };
     online.player=player;online.pacer=pacer;
-    online.transport=address.host?hostUdp(address.port):joinUdp(address.address,address.port);
+    // STUN in a player's game (its codes need the internet address), or with BT2_NET_STUN=1 in a tool run.
+    const bool stun=(window && input) || (std::getenv("BT2_NET_STUN") && std::string_view(std::getenv("BT2_NET_STUN"))=="1");
+    online.transport=address.host?hostUdp(address.port,stun):joinUdp(address.address,address.port,stun);
     // BT2_NET_SIM=latency=<ms>,jitter=<ms>,loss=<percent>: a worse network on this side's receiving end (tests on one PC).
     if(const char* simulation=std::getenv("BT2_NET_SIM"))online.transport=simulateNetwork(std::move(online.transport),parseNetworkSimulation(simulation));
     if(address.host && std::getenv("BT2_NET_UPNP") && std::string_view(std::getenv("BT2_NET_UPNP"))=="1")online.upnp=std::make_unique<UpnpPort>(address.port);

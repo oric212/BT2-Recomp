@@ -3,6 +3,7 @@
 // say why.
 #include "host/connection_code.h"
 #include "host/net_lockstep.h"
+#include "host/stun.h"
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
@@ -12,6 +13,12 @@
 #include <mutex>
 #include <source_location>
 #include <thread>
+#ifdef _WIN32
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib,"ws2_32.lib")
+#endif
 
 namespace {
 void check(bool ok,std::source_location at=std::source_location::current()) {
@@ -195,6 +202,63 @@ int main() {
             check(refused);
         }
     }
+    {   // STUN (host/stun.h): a binding request, and the address its answer reports (XOR-MAPPED-ADDRESS, or the older
+        // MAPPED-ADDRESS); an answer to another transaction, an error answer or a damaged one gives nothing.
+        stun::Transaction id{};for(unsigned n=0;n<12;++n)id[n]=std::uint8_t(n*7+1);
+        const auto request=stun::request(id);
+        check(request.size()==20 && request[1]==1 && stun::isStun(request) && !stun::isStun(std::vector<std::uint8_t>{'B','T','2','L',1}));
+        const auto answer=[&](std::uint16_t type,bool xored,std::uint32_t ip,std::uint16_t port) {
+            std::vector<std::uint8_t> out{0x01,0x01,0x00,0x0C,0x21,0x12,0xA4,0x42};
+            out.insert(out.end(),id.begin(),id.end());
+            const std::uint16_t p=xored?std::uint16_t(port^0x2112):port;const std::uint32_t a=xored?ip^stun::cookie:ip;
+            for(const std::uint8_t b:{std::uint8_t(type>>8),std::uint8_t(type),std::uint8_t(0),std::uint8_t(8),std::uint8_t(0),std::uint8_t(1),
+                                       std::uint8_t(p>>8),std::uint8_t(p),std::uint8_t(a>>24),std::uint8_t(a>>16),std::uint8_t(a>>8),std::uint8_t(a)})out.push_back(b);
+            return out;
+        };
+        const std::uint32_t ip=203u<<24|113u<<8|254u;
+        const auto xored=stun::mapped(answer(0x0020,true,ip,61002),id),plain=stun::mapped(answer(0x0001,false,ip,7411),id);
+        check(xored && xored->ip==ip && xored->port==61002 && plain && plain->ip==ip && plain->port==7411);
+        auto other=answer(0x0020,true,ip,1);other[8]^=1;check(!stun::mapped(other,id));
+        auto failed=answer(0x0020,true,ip,1);failed[1]=0x11;check(!stun::mapped(failed,id));
+        auto cut=answer(0x0020,true,ip,1);cut.resize(26);check(!stun::mapped(cut,id));
+    }
+#ifdef _WIN32
+    {   // Hole punching over UDP on this PC: the host's punch packets go to the address given, and a joiner's transport
+        // drops them (and STUN messages) instead of handing them to the lockstep; the host's own packets still come.
+        WSADATA data;check(!WSAStartup(MAKEWORD(2,2),&data));
+        const SOCKET raw=::socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
+        sockaddr_in at{};at.sin_family=AF_INET;at.sin_port=htons(47415);inet_pton(AF_INET,"127.0.0.1",&at.sin_addr);
+        check(raw!=INVALID_SOCKET && !::bind(raw,reinterpret_cast<sockaddr*>(&at),sizeof at));
+        DWORD wait_ms=500;setsockopt(raw,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&wait_ms),sizeof wait_ms);
+        auto host_end=hostUdp(47416);
+        host_end->punch({"127.0.0.1",47415});
+        check(!host_end->receive(std::chrono::milliseconds(250))); // Nobody greets; the punches go out meanwhile.
+        char got[64];sockaddr_in from{};int from_size=sizeof from;
+        const int size=::recvfrom(raw,got,sizeof got,0,reinterpret_cast<sockaddr*>(&from),&from_size);
+        check(size==4 && std::string(got,4)=="BT2P" && ntohs(from.sin_port)==47416);
+        // The raw socket as a host: a joiner's transport sends to it, then gets a punch, a STUN answer and a game packet back.
+        auto joiner_end=joinUdp("127.0.0.1",47415);
+        host_end.reset(); // No more punches; the ones still queued at the raw socket are skipped.
+        const std::uint8_t hello[]{'B','T','2','L',1};joiner_end->send(hello);
+        int greeting=0;
+        for(int n=0;n<20 && greeting!=5;++n)greeting=::recvfrom(raw,got,sizeof got,0,reinterpret_cast<sockaddr*>(&from),&from_size);
+        check(greeting==5);
+        stun::Transaction none{};const auto stray=stun::request(none);
+        for(const auto& packet:{std::vector<std::uint8_t>{'B','T','2','P'},stray,std::vector<std::uint8_t>{'B','T','2','L',3}})
+            ::sendto(raw,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&from),from_size);
+        const auto first=joiner_end->receive(std::chrono::milliseconds(500));
+        check(first && first->size()==5 && (*first)[4]==3 && !joiner_end->publicAddress());
+        closesocket(raw);WSACleanup();
+    }
+    // BT2_TEST_STUN=1 (needs the internet, so not in the gate): the transport learns this PC's address from the public
+    // STUN servers within a few seconds.
+    if(const char* internet=std::getenv("BT2_TEST_STUN");internet && std::string(internet)=="1") {
+        auto end=hostUdp(47417,true);
+        for(int n=0;n<40 && !end->publicAddress();++n)end->receive(std::chrono::milliseconds(100));
+        check(end->publicAddress().has_value() && connection_code::reachable(end->publicAddress()->address));
+        std::cout<<"STUN: this PC is reachable at port "<<end->publicAddress()->port<<" of its internet address\n";
+    }
+#endif
     {   // Connection codes: eight characters for the usual port, twelve for another; read back in any case, with or
         // without dashes; I, L and O read as 1, 1 and 0; a code with any one character changed is refused.
         const auto code=*connection_code::make("203.0.113.254",connection_code::usual_port);

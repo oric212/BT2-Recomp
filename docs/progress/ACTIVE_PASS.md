@@ -4,11 +4,11 @@ Updated: 2026-11-09. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Done today: saves verified (byte-identical to the original's in PCSX2, written to the launcher's card only), the HD faces fixed (lit-variant choice), the RX 9070 XT's striped fade worked around, the online setup simplified. Next: the user's play, then the final validation ([PROG.md](../PROG.md), "Next").
+No pass is open. Next after online: the user's report that a DualSense feels less responsive than an Xbox Series controller (not yet looked into). Done today: saves verified (byte-identical to the original's in PCSX2, written to the launcher's card only), the HD faces fixed (lit-variant choice), the RX 9070 XT's striped fade worked around, the online setup simplified. Next: the user's play, then the final validation ([PROG.md](../PROG.md), "Next").
 
 ## Waiting for the user
 
-- **Online on two PCs** with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): UPnP or the port by hand, a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
+- **Online on two PCs** with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
 - **In play:** the HD faces and the fade on the RX 9070 XT, the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline, the second controller, the icons. A texture glitch in the first HD fight is reported but not reproduced headless.
 
 ## How the user runs things
