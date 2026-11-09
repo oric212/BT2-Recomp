@@ -237,16 +237,17 @@ std::uint32_t EeRuntime::read32(std::uint8_t* rdram, std::uint32_t address) {
     // D_STAT: the channel status bits and masks; SIF0's CHCR (services/sif_system.cpp).
     if (address == 0x1000E010) { checkMemory(rdram, 0, 0); ++dma_status_reads; return dma_cis | dmac_mask; }
     if (address == 0x1000C000) { checkMemory(rdram, 0, 0); ++dma5_control_reads; return sif0_chcr; }
-    // Read-only KSEG0 view of locally supplied kernel bytes; no fabricated kernel.
-    if (address >= 0x80000000 && address < 0x80000000 + kernel_snapshot_size) {
+    // The kernel's memory as the game reads it (kernel_memory_size in ee_runtime.h): read-only, the syscall table the
+    // game's SetSyscall calls filled, its own patches, zero elsewhere.
+    if (address >= 0x80000000 && address < 0x80000000 + kernel_memory_size) {
         const auto offset = address - 0x80000000;
-        if (kernel_snapshot_.empty() || memory_.empty() || rdram != memory_.data()
-            || offset % 4 || offset > kernel_snapshot_.size() - 4)
+        if (memory_.empty() || rdram != memory_.data() || offset % 4 || offset > kernel_memory_size - 4)
             throw UnsupportedGuestMemory(address, 4);
         if (const auto patched = kernel_patch_words_.find(offset); patched != kernel_patch_words_.end())
             return patched->second;
-        std::uint32_t value;
-        std::memcpy(&value, kernel_snapshot_.data() + offset, 4);
+        const std::uint32_t value = offset >= syscall_table && offset < syscall_table + 4 * syscall_handlers.size()
+            ? syscall_handlers[(offset - syscall_table) / 4] : 0;
+        if (kernel_word_reads) (*kernel_word_reads)[offset] = value;
         return value;
     }
     checkMemory(rdram, address, 4);

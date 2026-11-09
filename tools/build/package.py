@@ -5,26 +5,23 @@
 The folder holds what a player needs besides their own game: the game program, the launcher and the runtime
 (build/probe/<config>), the MSVC runtime DLLs they load (Visual Studio's redistributable files, shipped next to the
 programs), the launcher's pictures, empty data folders with a note each (the player's disc image, HD texture packs),
-the runtime's startup inputs (work/bt2-generation), the release readme and online setup guide, the license, the
-third-party notices and where the source is. No disc image, game executable, texture pack, save or setting goes in.
+the release readme and online setup guide, the license, the third-party notices and where the source is. No disc
+image, game executable, texture pack, save, setting or capture of the console goes in.
 
-Releases follow BT3-Recomp's model (docs/project/LEGAL.md): the runtime ships with the game's code compiled in, the
-game's data stays on the player's disc. Private for now: the startup inputs still hold captures of the console's
-kernel and IOP memory, which the release plan replaces natively (docs/plans/launcher/RELEASE_PLAN.md).
+Releases follow BT3-Recomp's model (docs/project/LEGAL.md, docs/plans/launcher/RELEASE_PLAN.md): the runtime ships
+with the game's code compiled in; the game's data stays on the player's disc.
 """
 import argparse,json,re,shutil,subprocess,sys,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools/build'));sys.path.insert(0,str(ROOT/'tools/ps2recomp'))
 PROGRAMS=('bt2-game.exe','bt2-launcher.exe','bt2-entry-probe.exe')
+# Left out: the launcher's logo is the game's own title logo (the publishers' artwork); without it the launcher shows its title.
+LEFT_OUT={'logo.png'}
 CRT=('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') # What the programs import (dumpbin /dependents), beyond Windows' own.
-FORBIDDEN=re.compile(r'(\.(iso|cue|chd|img|mdf|mds|nrg|bin\.bak|pdb|ilk|map)$)|(^SLUS[_-]?214\.?41)',re.I)
+FORBIDDEN=re.compile(r'(\.(iso|cue|chd|img|mdf|mds|nrg|bin|pdb|ilk|map)$)|(^SLUS[_-]?214\.?41)',re.I) # .bin: captures, dumps.
 DATA_NOTE='Put your own disc image of the game here (Dragon Ball Z: Budokai Tenkaichi 2, USA, SLUS-21441), as an .iso file.\nThe launcher finds it here.\n'
 TEXTURE_NOTE='HD textures (optional): put a PCSX2 texture pack for the game here, in a folder of its own:\n  data\\textures\\<pack name>\\replacements\\...\nThen switch on "HD textures" under Enhancements in the launcher.\n'
-
-def startup_inputs():
-    from run_startup_probe import INPUTS
-    return INPUTS
 
 def redistributable(vs_root):
     """The x64 C runtime folder of Visual Studio's redistributable files (the newest version)."""
@@ -52,11 +49,10 @@ def notices(dependencies):
 
 def git(*args):return subprocess.run(['git',*args],cwd=ROOT,capture_output=True,text=True,check=True).stdout.strip()
 
-def plan(build,generation,crt):
+def plan(build,crt):
     """(source, path in the package) for every file; text files as (str contents, path)."""
     files=[(build/name,name) for name in PROGRAMS]+[(crt/name,name) for name in CRT]
-    files+=[(path,'assets/'+path.relative_to(build/'assets').as_posix()) for path in sorted((build/'assets').rglob('*')) if path.is_file()]
-    files+=[(generation/name,'work/bt2-generation/'+name) for name in startup_inputs()]
+    files+=[(path,'assets/'+path.relative_to(build/'assets').as_posix()) for path in sorted((build/'assets').rglob('*')) if path.is_file() and path.name not in LEFT_OUT]
     files+=[(ROOT/'docs/guides/release/README.md','README.txt'),(ROOT/'docs/guides/release/ONLINE_SETUP.md','ONLINE-SETUP.txt'),(ROOT/'LICENSE','LICENSE.txt')]
     files+=[(DATA_NOTE,'data/PUT YOUR GAME HERE.txt'),(TEXTURE_NOTE,'data/textures/PUT HD TEXTURE PACKS HERE.txt')]
     for source,target in files:
@@ -72,7 +68,7 @@ def main():
     version=git('describe','--tags','--always','--dirty')
     name=f'BT2-Recomp-{version}'
     folder=a.out/name;zipped=a.out/(name+'.zip')
-    files=plan(ROOT/'build/probe'/a.config,ROOT/'work/bt2-generation',redistributable(installation()))
+    files=plan(ROOT/'build/probe'/a.config,redistributable(installation()))
     extra=[(notices(ROOT/'work/dependencies'),'THIRD-PARTY-NOTICES.txt'),
            (f"Source code: {git('remote','get-url','origin').removesuffix('.git')} at commit {git('rev-parse','HEAD')} (GPL-3.0, LICENSE.txt).\n"
             "paraLLEl-GS (LGPL-3.0) is built from its repository at the revision in config/parallel_gs.lock.json with the patches in\n"
@@ -88,6 +84,5 @@ def main():
             if path.is_file():z.write(path,Path(name)/path.relative_to(folder))
     size=sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
     print(f'{folder} ({len(files)+len(extra)} files, {size/2**20:.0f} MB)\n{zipped} ({zipped.stat().st_size/2**20:.0f} MB)')
-    print('Private: the startup inputs still hold console captures; not for publishing until the release plan replaces them (docs/plans/launcher/RELEASE_PLAN.md).')
 
 if __name__=='__main__':main()

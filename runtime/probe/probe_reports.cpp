@@ -64,7 +64,7 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
     const auto stop_target=stop.target;
     const auto stop_source=stop.source;
     const auto stop_resume=stop.resume;
-    std::ofstream report(argv[2]);
+    std::ofstream report(argv[1]);
     if (!report) throw std::runtime_error("Could not write SCMD report");
     report << "{\"status\":\"blocked at checked runtime boundary\",\"entry_executed\":true,\"game_booted\":false,\"pc\":" << context.pc
         << ",\"selector\":" << stop_selector << ",\"target\":" << stop_target << ",\"source_pc\":" << stop_source
@@ -251,12 +251,12 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
 void writeEvidenceDumps(EeRuntime& runtime,char** argv) {
     if(runtime.heap_calls) {
         if(runtime.ncmd_read_calls) { // After the first disc read.
-            std::ofstream ee_dump(std::string(argv[2])+".ee.bin",std::ios::binary);
+            std::ofstream ee_dump(std::string(argv[1])+".ee.bin",std::ios::binary);
             ee_dump.write(reinterpret_cast<const char*>(runtime.memory().data()),runtime.memory().size());
             if(!ee_dump)throw std::runtime_error("EE evidence dump failed");
         }
         const auto& iop=runtime.nativeIopMemory(); // Native IOP memory store (uploaded data).
-        std::ofstream dump(std::string(argv[2])+".iop.bin",std::ios::binary);
+        std::ofstream dump(std::string(argv[1])+".iop.bin",std::ios::binary);
         if(!dump.write(reinterpret_cast<const char*>(iop.data()),iop.size()))throw std::runtime_error("IOP checkpoint write failed");
     }
 }

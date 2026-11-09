@@ -59,6 +59,7 @@ def main():
     env = dict(os.environ, BT2_VU1_VERIFY='1', BT2_VU1_KICK_HASH='1')
     for name in ('BT2_CARD_FOLDER', 'BT2_PLAYER_SETTINGS', 'BT2_VU1_INTERPRET', 'BT2_VU1_NO_HAND_WRITTEN', 'BT2_GPU_GS_SNAPSHOT'):
         env.pop(name, None)
+    args.report.unlink(missing_ok=True)  # A failed run leaves no report, never the last run's.
     done = subprocess.run([sys.executable, str(ROOT / 'tools/ps2recomp/run_startup_probe.py'), '--disc', str(args.disc), '--config', 'Release',
                            '--frames', str(FRAMES), '--pad-script', script, '--report', str(args.report)],
                           cwd=ROOT, env=env, capture_output=True, text=True, errors='replace')

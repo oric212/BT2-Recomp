@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools/ps2recomp'))
-from run_startup_probe import command  # noqa: E402
+from run_startup_probe import REPORT, command  # noqa: E402
 
 FUNCTIONS = {'input': 0x1214F8, 'think': 0x11E988} # capture_ai_call.py's sites.
 STUB = (0x01D00000, 0x400) # The capture stub's segment (capture_ai_call.py).
@@ -55,7 +55,7 @@ def main():
     for name in ('BT2_START_BATTLE', 'BT2_PAD_SCRIPT', 'BT2_GPU_GS', 'BT2_VIEWER'):
         env.pop(name, None)
     cmd = command(ROOT, args.disc.resolve(), args.config)
-    cmd[2] = str(ROOT / 'work/logs/ai-replay-report.json')
+    cmd[REPORT] = str(ROOT / 'work/logs/ai-replay-report.json')
     done = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, errors='replace')
     line = next((l for l in done.stdout.splitlines() if l.startswith('Replayed call: v0 ')), None)
     if done.returncode != 0 or line is None:

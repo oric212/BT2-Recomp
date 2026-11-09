@@ -52,7 +52,7 @@ Next, in order (the user, 2026-10-20 and 2026-10-25):
 4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md); native passes inside paraLLEl-GS for the HD outline and heavy effects: [hybrid rendering plan](../plans/graphics/HYBRID_RENDERING_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
 5. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
 6. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
-7. **A release the player completes with their own game** ([release plan](../plans/launcher/RELEASE_PLAN.md); the user's decision of 2026-11-04: BT3-Recomp's model, the compiled runtime ships and the game's data stays on the player's disc): the private package is built and the game's starting memory is made from the player's disc; next the console captures replaced natively (the kernel, the IOP, the small inputs).
+7. **A release the player completes with their own game** ([release plan](../plans/launcher/RELEASE_PLAN.md); the user's decision of 2026-11-04: BT3-Recomp's model, the compiled runtime ships and the game's data stays on the player's disc): done 2026-11-04: the game's starting memory from the player's disc, the console's state native, the package with nothing of the game or the console; publishing is the user's call.
 8. **Done 2026-10-27 (the user moved it forward):** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)); two items left with their reason there.
 
 ## Working method

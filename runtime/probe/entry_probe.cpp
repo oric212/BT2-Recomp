@@ -89,11 +89,9 @@ int main(int argc, char** argv) {
     stopPowerThrottling();
     try {
         prepareOnlineSession(); // BT2_NET: before anything reads the switches a session sets.
-        if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe disc STOP_REPORT KERNEL_SNAPSHOT TIMER3_MODE TIMER2_MODE INTC_MASK TIMER2_READBACK OSD_CONFIG OSD_READBACK DMA_STATUS DMA5_CONTROL SIF_COMMAND SIF_DMA SIF_RPC_STATE SIF_BIND CD_INIT SCMD_BIND HEAP_BIND HEAP_ALLOCATION TEXTURE_STARTUP EE_THREAD_START DISC_BIND DISC_IMAGE NCMD_BIND");
-        // The game's memory at its start, made from the player's disc image (ee/guest_image.h); the first argument is
-        // the word "disc" where a prepared image file once was.
-        if (std::string_view(argv[1]) != "disc") throw std::runtime_error("The first argument is \"disc\": the game's memory is made from DISC_IMAGE");
-        const std::vector<std::uint8_t> image = guestImage(gameExecutableFromDisc(argv[23]));
+        if (argc != probe_argument_count) throw std::runtime_error("Usage: bt2-entry-probe STOP_REPORT DISC_IMAGE");
+        // The game's memory at its start, made from the player's disc image (ee/guest_image.h).
+        const std::vector<std::uint8_t> image = guestImage(gameExecutableFromDisc(argv[2]));
         EeRuntime runtime;
         runtime.ee_sound_dispatch_probe = std::getenv("BT2_EE_SOUND_DISPATCH_PROBE") != nullptr;
         runtime.ee_queued_sound_rpc = !runtime.ee_sound_dispatch_probe;
@@ -467,6 +465,13 @@ int main(int argc, char** argv) {
         }
 #endif
 #ifdef _WIN32
+        // BT2_KERNEL_READS=<path> (docs/plans/launcher/RELEASE_PLAN.md): each kernel word the run read from the snapshot,
+        // "offset value" in hex, written at the end.
+        static struct KernelReads {
+            std::map<std::uint32_t, std::uint32_t> words;std::string path;
+            ~KernelReads() {if (path.empty()) return;std::ofstream out(path);for (const auto& [offset, value] : words) out << std::hex << offset << ' ' << value << '\n';}
+        } kernel_reads;
+        if (const char* path = std::getenv("BT2_KERNEL_READS")) {kernel_reads.path = path;runtime.kernel_word_reads = &kernel_reads.words;}
         startOnlineSession(runtime, player ? &viewer : nullptr, host_input.get(), player.get(), pacer.get()); // BT2_NET: connects; both ports then play the session's input (online_session.h).
 #endif
         // BT2_TEXTURE_NAMES=<path>: name each texture drawn as PCSX2's texture replacement does and write
@@ -902,7 +907,6 @@ int main(int argc, char** argv) {
         // A user thread runs with IE set (the kernel enters it so; the captured Status at the sound thread's
         // start is 0x70030C11); EI and DI change EIE.
         context.cop0_status = 1;
-        loadContinuationEvidence(runtime,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime);
         // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
@@ -983,7 +987,6 @@ int main(int argc, char** argv) {
             if (mode != "off") runtime.setInterpreterHandlers({ee_interpreter_handler_parts, ee_interpreter_handler_part_count});
             runtime.interpret_all = mode == "all";
         }
-        loadScmdEvidence(runtime,argv);
         bool stopped = false,execution_budget_exhausted=false;
         std::uint32_t stop_address = 0;
         std::size_t stop_size = 0;

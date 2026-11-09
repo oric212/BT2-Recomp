@@ -5,8 +5,7 @@
 // Next to the programs: `data` (the disc image) and `saves` (the memory cards), made on the first start
 // and never emptied (host/game_folders.h), and `assets` (the launcher's logo, from the build).
 // Both then run the runtime program (bt2-entry-probe, next to this one) as a player's run: window,
-// sound, live input, the GPU renderer, the settings file. The runtime still starts from the local
-// startup inputs in work/bt2-generation, so these programs run from a prepared repository only.
+// sound, live input, the GPU renderer, the settings file. It needs only the player's disc image.
 // When the player chooses "Quit to the launcher" in the game, the launcher comes back.
 #include "host/game_folders.h"
 #include "host/launcher.h"
@@ -18,42 +17,31 @@
 namespace {
 namespace fs=std::filesystem;
 
-// The runtime's startup inputs, in its argument order (tools/ps2recomp/run_startup_probe.py holds
-// the same list; tools/ps2recomp/test_game_inputs.py compares them).
-// The game's memory is made from the disc image by the runtime (ee/guest_image.h).
-constexpr const char* startup_inputs[]={"kernel-snapshot.bin","timer3-mode.bin","timer2-mode.bin","intc-mask.bin","timer2-readback.bin",
-    "osd-config.bin","osd-readback.bin","dma-status.bin","dma5-control.bin","sif-command.bin","sif-dma.bin","sif-rpc-state.bin","sif-bind.bin","cd-init.bin",
-    "scmd-bind.bin","heap-bind.bin","heap-allocation.bin","texture-startup.bin","ee-thread-start.bin","disc-bind.bin","ncmd-bind.bin"};
-
 fs::path programFolder() {
     char path[MAX_PATH]{};GetModuleFileNameA(nullptr,path,MAX_PATH);
     return fs::path(path).parent_path();
 }
-// The repository root: the first folder above the program that holds the startup inputs.
-fs::path findRoot(fs::path from) {
+// Where `user` (settings, the last run's messages) lives and the runtime runs: a developer's repository above the
+// program (it has work/bt2-generation), else the program's own folder (a release).
+fs::path findRoot(const fs::path& program) {
+    fs::path from=program;
     for(unsigned up=0;up<8;++up,from=from.parent_path()) {
         std::error_code error;
-        if(fs::is_regular_file(from/"work"/"bt2-generation"/startup_inputs[0],error))return from;
+        if(fs::is_directory(from/"work"/"bt2-generation",error))return from;
         if(!from.has_parent_path() || from.parent_path()==from)break;
     }
-    throw std::runtime_error("The game's local startup inputs (work/bt2-generation) were not found above the program's folder.");
+    return program;
 }
 std::string inQuotes(const fs::path& path) {return "\""+path.string()+"\"";}
 
 // Runs the game; returns the runtime's exit code. Its messages go to `log`.
 // `online`: BT2_NET for an online battle (probe/online_session.h), empty for a game of one's own.
 DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log,const std::string& online) {
-    const fs::path runtime=programFolder()/"bt2-entry-probe.exe",inputs=root/"work"/"bt2-generation";
+    const fs::path runtime=programFolder()/"bt2-entry-probe.exe";
     std::error_code error;
     if(!fs::is_regular_file(runtime,error))throw std::runtime_error("The runtime program is missing: "+runtime.string());
-    // "disc" STOP_REPORT inputs... DISC last-input, as the runtime's command line is defined.
-    const std::size_t count=std::size(startup_inputs);
-    std::string command=inQuotes(runtime)+" disc "+inQuotes(root/"user"/"last-run.json");
-    for(std::size_t n=0;n<count;++n) {
-        if(!fs::is_regular_file(inputs/startup_inputs[n],error))throw std::runtime_error(std::string("A startup input is missing: ")+startup_inputs[n]);
-        if(n==count-1)command+=" "+inQuotes(folders.disc(settings));
-        command+=" "+inQuotes(inputs/startup_inputs[n]);
-    }
+    // STOP_REPORT DISC_IMAGE, as the runtime's command line is defined.
+    const std::string command=inQuotes(runtime)+" "+inQuotes(root/"user"/"last-run.json")+" "+inQuotes(folders.disc(settings));
     for(const char* name:{"BT2_VIEWER","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})SetEnvironmentVariableA(name,"1");
     SetEnvironmentVariableA("BT2_GPU_GS","on");
     SetEnvironmentVariableA("BT2_PLAYER_SETTINGS",settings_path.string().c_str());

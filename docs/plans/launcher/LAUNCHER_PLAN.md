@@ -54,7 +54,7 @@ Three executables (state of 2026-10-13):
 
 Automated runs (the gate, the discovery loop, pad scripts) never set `BT2_PLAYER_SETTINGS`: they show no launcher and no in-game menu and do not read `user/`.
 
-**Limit today:** the runtime still starts from the captured startup inputs in `work/bt2-generation`, so the programs run from a prepared repository only (they look for that folder above their own). `bt2-launcher --preview-paused` shows the in-game menu over a stand-in picture without starting the game.
+Since 2026-11-04 the runtime needs only the player's disc image ([release plan](RELEASE_PLAN.md)): a release runs from its own folder, a developer's build from the repository above it. `bt2-launcher --preview-paused` shows the in-game menu over a stand-in picture without starting the game.
 
 ### Style
 

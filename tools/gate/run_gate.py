@@ -56,6 +56,8 @@ def main():
     # The map holds everything the programs name or build, and every address inside a function has a label.
     steps.append(('map closure',[sys.executable,str(ROOT/'tools/ps2recomp/map_gaps.py'),'--check'],env))
     steps+=[(f'python: {s}',[sys.executable,'-m','unittest','discover','-s',f'tools/{s}'],env) for s in SUITES]
+    # The comparisons read the probe runs' reports: a run that fails leaves none, never the last gate's.
+    for old in [WORK/'entry-stop.json',*[WORK/f'phase-{ph}/entry-stop.json' for ph in PHASES]]:old.unlink(missing_ok=True)
     with ThreadPoolExecutor(a.jobs) as pool:
         report(pool.map(lambda s:run(*s),steps))
         native=WORK/'entry-stop.json'

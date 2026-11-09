@@ -42,7 +42,6 @@ Files in this folder
 - bt2-launcher.exe, bt2-game.exe   the programs you start
 - bt2-entry-probe.exe              the game itself (started by the two above)
 - data, saves, assets              your disc and textures, your cards, the launcher's pictures
-- work                             files the game needs to start; leave them as they are
 - user                             your settings and the last run's messages (made on first start)
 - LICENSE.txt, THIRD-PARTY-NOTICES.txt, SOURCE.txt
 

@@ -71,7 +71,7 @@ def run_case(case,disc,out,frames,stall,pictures=(),switch='BT2_START_BATTLE',la
     the frame budget reached)."""
     label=label or name(case)
     report=out/(label+'.json');log=out/(label+'.log')
-    cmd=run_startup_probe.command(ROOT,disc,'Release');cmd[2]=str(report)
+    cmd=run_startup_probe.command(ROOT,disc,'Release');cmd[run_startup_probe.REPORT]=str(report)
     env=dict(os.environ)
     for key in ('BT2_VIEWER','BT2_AUDIO_DEVICE','BT2_HOST_INPUT','BT2_PAD_RECORD','BT2_PAD_SCRIPT','BT2_PLAYER_SETTINGS',
                 'BT2_START_BATTLE','BT2_START_SCREEN','BT2_START_EPISODE'):env.pop(key,None)

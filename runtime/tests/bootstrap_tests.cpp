@@ -580,11 +580,8 @@ int main() {
             require(sif_context.r[2].low == 0x80000000 && sif_context.r[2].high == 0xB6);
             SET_GPR_ZE32(&sif_context, 0, 1);
             require(GPR_U32(&sif_context, 0) == 0 && SUB32(0, 1) == UINT32_MAX);
-            std::vector<std::uint8_t> iop_fixture(EeRuntime::sif_iop_size, 0xA5);
-            const std::array<std::uint32_t, 3> iop_table{0x19600, 0x19680, 0x93640};
-            std::memcpy(iop_fixture.data() + 0x196C0, iop_table.data(), 12);
-            reject([&] { sif.supplySifDma(iop_fixture, 0x702); });
-            sif.supplySifDma(iop_fixture, 0x701);
+            sif.supplySifDma();
+            require(sif.sif_ee_receive_address == 0x93640); // The SIF as the boot leaves it.
             reject([&] { sif.supplySifRpcState(0); });
             sif.supplySifRpcState(1);
             reject([&] { sif.supplySifRpcState(1); });
@@ -592,7 +589,7 @@ int main() {
             sif.handleSyscall(sif_ram, &sif_context, 0);
             require(sif_context.r[2].low == 1); // RPC initialized, as the BIOS's IOP left it.
             require(sif.read32(sif_ram, 0x20000200) == sif.read32(sif_ram, 0x200)); // The uncached alias.
-            reject([&] { sif.supplySifDma(iop_fixture, 0x701); });
+            reject([&] { sif.supplySifDma(); });
             const std::array<std::uint32_t, 4> descriptor{0x3A9580, 0x19600, 20, 0x44};
             const std::array<std::uint32_t, 5> packet{20, 0, 0x80000000, 0, 0x3A94C0};
             for (unsigned index = 0; index < descriptor.size(); ++index) sif.write32(sif_ram, 0x200 + index * 4, descriptor[index]);
@@ -604,7 +601,7 @@ int main() {
             sif_context.r[5].low = 1;
             sif.write32(sif_ram, 0x3A9588, 0x80000009);
             reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); });
-            require(std::equal(iop_fixture.begin(), iop_fixture.end(), sif.sifIopMemory().begin()) && sif.sif_dma_submissions == 0);
+            require(sif.sif_dma_submissions == 0);
             sif.write32(sif_ram, 0x3A9588, 0x80000000);
             const std::vector<std::uint8_t> ee_before_dma(sif.memory().begin(), sif.memory().end());
             sif.handleSyscall(sif_ram, &sif_context, 0); // CHANGE_SADDR into the BIOS's SIFCMD buffer.
@@ -628,23 +625,8 @@ int main() {
             require(sif.uncached_byte_accesses == 2 && sif.data_cache_lines == 2);
             // Authored hostile callback fixture checks interruption isolation,
             // not the generated callback's implementation.
-            std::vector<std::uint8_t> bind_bundle(EeRuntime::sif_iop_size + 96);
-            auto put = [&](std::size_t offset, std::uint32_t value) {
-                std::memcpy(bind_bundle.data() + offset, &value, 4);
-            };
-            const std::array<std::uint32_t, 16> reply{0, 0, 0x80000008, 0, 0, 0x203A97C0, 0,
-                0x3A87A8, 0x80000009, 0x3F570, 0x3FB20, 0, 0, 0, 0, 0};
-            std::memcpy(bind_bundle.data() + EeRuntime::sif_iop_size, reply.data(), 64);
-            put(EeRuntime::sif_iop_size + 64, 0x801);
-            put(0x3F570, 0x80000592); put(0x3F578, 0x3FB20);
-            put(0x3F5B0, 0x3F558); put(0x3F560, 0x3F570);
-            const std::array<std::uint32_t, 7> call_sema{0, 1, 0, 0, 0, 0x3838E8, 3};
-            std::memcpy(bind_bundle.data() + EeRuntime::sif_iop_size + 68, call_sema.data(), 28);
-            put(0x3F560, 0);
-            reject([&] { sif.supplySifBind(bind_bundle); });
-            put(0x3F560, 0x3F570);
-            sif.supplySifBind(bind_bundle);
-            reject([&] { sif.supplySifBind(bind_bundle); });
+            sif.supplySifBind();
+            reject([&] { sif.supplySifBind(); });
             sif.initial_sp = 0x1FFED60;
             const auto frame = sif.initial_sp - 464;
             const std::array<std::uint32_t, 4> bind_descriptor{0x203A97C0, 0x19600, 64, 0x44};
@@ -667,10 +649,8 @@ int main() {
             sif_context.pc = 0x32F028;
             const auto cpu_before = sif_context;
             std::fill_n(sif_ram + frame - 64, 64, 0xA7);
-            const auto iop_before = std::vector<std::uint8_t>(sif.sifIopMemory().begin(), sif.sifIopMemory().end());
             reject([&] { sif.handleSyscall(sif_ram, &sif_context, 0); }); // Missing compiled handler.
-            require(sif.sif_bind_callbacks == 0 && sif.semaphores[3].count == 0
-                    && std::equal(iop_before.begin(), iop_before.end(), sif.sifIopMemory().begin()));
+            require(sif.sif_bind_callbacks == 0 && sif.semaphores[3].count == 0);
             sif.registerFunction(0x3322E8, clobber_rpc_callback);
             sif.registerFunction(0x332258, return_leaf); sif.registerFunction(0x32EC90, return_leaf);
             sif.handleSyscall(sif_ram, &sif_context, 0);
@@ -1033,16 +1013,12 @@ int main() {
         EeRuntime patched;
         patched.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         auto* patch_ram = patched.memory().data();
-        reject([&] { patched.enableKernelPatch(0x80076000, 8); });
-        const std::vector<std::uint8_t> baseline(EeRuntime::kernel_snapshot_size, 0x5A);
-        patched.loadKernelSnapshot(baseline);
         reject([&] { patched.enableKernelPatch(0x80076001, 8); });
         reject([&] { patched.enableKernelPatch(0x80076000, 0); });
         reject([&] { patched.enableKernelPatch(0x8007FFFC, 8); });
         reject([&] { patched.enableKernelPatch(0x80076000, UINT32_MAX); });
         patched.enableKernelPatch(0x80076000, 8);
         reject([&] { patched.enableKernelPatch(0x80076000, 8); });
-        reject([&] { patched.loadKernelSnapshot(baseline); });
         patched.write32(patch_ram, 0x80076000, 0x12345678);
         patched.write32(patch_ram, 0x80076004, 0xABCDEF01);
         require(patched.read32(patch_ram, 0x80076000) == 0x12345678
@@ -1052,9 +1028,8 @@ int main() {
         reject([&] { patched.write32(patch_ram, 0x80076002, 0); });
         reject([&] { patched.write32(nullptr, 0x80076000, 0); });
         reject([&] { patched.write32(patch_ram, 0xA0076000, 0); });
-        require(std::equal(baseline.begin(), baseline.end(), patched.kernelBaseline().begin()));
         require(patched.kernel_word_writes == 2 && patched.word_writes == 2
-                && patched.read32(patch_ram, 0x80076008) == 0x5A5A5A5A);
+                && patched.read32(patch_ram, 0x80076008) == 0); // Unwritten kernel words read as zero.
         R5900Context registration{};
         registration.r[3].low = 0x74;
         registration.r[4].low = 0x5B;
@@ -1066,7 +1041,6 @@ int main() {
         }
         EeRuntime unwritten;
         unwritten.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
-        unwritten.loadKernelSnapshot(baseline);
         unwritten.enableKernelPatch(0x80076000, 8);
         registration.r[5].low = 0x80076000;
         reject([&] { unwritten.handleSyscall(unwritten.memory().data(), &registration, 0); });
@@ -1316,7 +1290,6 @@ int main() {
         second_overlay.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
         const std::vector<std::uint8_t> payload(0x330, 0xC3);
         reject([&] { second_overlay.enableStartupKernelPayload(payload); });
-        second_overlay.loadKernelSnapshot(baseline);
         second_overlay.enableKernelPatch(0x80076000, 8);
         reject([&] { second_overlay.enableStartupKernelPayload(std::span<const std::uint8_t>(payload).first(4)); });
         second_overlay.enableStartupKernelPayload(payload);
@@ -1342,8 +1315,10 @@ int main() {
         require(second_overlay.syscall_handlers[0x5B] == 0x80075000
                 && second_overlay.startup_kernel_word_writes == 204 && second_overlay.kernel_word_writes == 204
                 && second_overlay.word_writes == 204 && second_overlay.read32(overlay_ram, 0x8007532C) == 0xC3C3C3C3
-                && second_overlay.read32(overlay_ram, 0x80075330) == 0x5A5A5A5A
-                && std::equal(baseline.begin(), baseline.end(), second_overlay.kernelBaseline().begin()));
+                && second_overlay.read32(overlay_ram, 0x80075330) == 0
+                // The syscall table shows the registration; the rest of the kernel reads as zero.
+                && second_overlay.read32(overlay_ram, 0x80014D00 + 0x5B * 4) == 0x80075000
+                && second_overlay.read32(overlay_ram, 0x80014D00 + 0x5A * 4) == 0);
         overlay_registration.r[5].low = 0x80075004;
         reject([&] { second_overlay.handleSyscall(overlay_ram, &overlay_registration, 0); });
         reject([&] { second_overlay.registerKernelFunction(0x80075000, return_leaf, std::span<const std::uint8_t>(payload).first(4)); });
@@ -1360,7 +1335,6 @@ int main() {
         require(second_overlay.kernel_dispatch_validations == 1 && second_overlay.returns == 1);
         EeRuntime incomplete_binding;
         incomplete_binding.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
-        incomplete_binding.loadKernelSnapshot(baseline);
         incomplete_binding.enableKernelPatch(0x80076000, 8);
         incomplete_binding.enableStartupKernelPayload(payload);
         incomplete_binding.registerKernelFunction(0x80075000, return_leaf, payload);
@@ -1369,7 +1343,6 @@ int main() {
         require(incomplete_binding.kernel_dispatch_validations == 0 && incomplete_binding.guest_calls == 0);
         EeRuntime table_registration;
         table_registration.loadMemory(std::vector<std::uint8_t>(EeRuntime::ram_size));
-        table_registration.loadKernelSnapshot(baseline);
         table_registration.enableKernelPatch(0x80076000, 8);
         auto table_payload = payload;
         const std::array<std::uint32_t, 4> test_pairs{0x55, 0x80075038, 0x56, 0x800750C8};

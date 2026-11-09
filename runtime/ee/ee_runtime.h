@@ -363,15 +363,16 @@ public:
         return value;
     }
 
-    static constexpr std::size_t kernel_snapshot_size = 0x80004;
-    void loadKernelSnapshot(std::span<const std::uint8_t> bytes) {
-        if (bytes.size() != kernel_snapshot_size) throw std::runtime_error("Kernel snapshot must cover physical [0, 0x80004)");
-        if (kernel_patch_end_) throw std::runtime_error("Cannot replace a kernel baseline with enabled patches");
-        kernel_snapshot_.assign(bytes.begin(), bytes.end());
-    }
+    // The kernel's memory as the game reads it (0x80000000 to 0x80080004, read32): the syscall table at 0x80014D00 holds
+    // the handlers the game registered with SetSyscall, the game's own kernel patches what it wrote, the rest is zero.
+    // The game reads the kernel only to find its own handlers in that table (FindAddress, syscall 0x83, at its start:
+    // slots 0x5A and 0x83; every kernel read of a boot, a fight, a story episode and a two-player fight recorded,
+    // 2026-11-04, docs/plans/launcher/RELEASE_PLAN.md), so the console's kernel itself is not needed.
+    static constexpr std::size_t kernel_memory_size = 0x80004;
+    static constexpr std::uint32_t syscall_table = 0x14D00;
 
     void enableStartupKernelPayload(std::span<const std::uint8_t> expected) {
-        if (!kernel_patch_end_ || kernel_snapshot_.empty() || !startup_kernel_payload_.empty() || expected.size() != 0x330)
+        if (!kernel_patch_end_ || !startup_kernel_payload_.empty() || expected.size() != 0x330)
             throw std::runtime_error("Invalid startup kernel payload capability");
         if (kernel_patch_start_ < 0x80075330 && 0x80075000 < kernel_patch_end_)
             throw std::runtime_error("Startup kernel payload overlaps existing patch");
@@ -380,13 +381,13 @@ public:
     unsigned startup_kernel_word_writes = 0;
 
     void enableKernelPatch(std::uint32_t start, std::uint32_t size) {
-        if (kernel_snapshot_.empty() || kernel_patch_end_ || !size || start % 4 || size % 4
+        if (kernel_patch_end_ || !size || start % 4 || size % 4
                 || start < 0x80000000 || start >= 0x80080000 || size > 0x80080000 - start)
             throw std::runtime_error("Invalid bounded kernel patch range");
         kernel_patch_start_ = start;
         kernel_patch_end_ = start + size;
     }
-    std::span<const std::uint8_t> kernelBaseline() const { return kernel_snapshot_; }
+    std::map<std::uint32_t, std::uint32_t>* kernel_word_reads = nullptr; // Diagnostics (BT2_KERNEL_READS): each kernel word read (not the game's patches).
 
     // The boot's OSD configuration word (a capture), and the word the original read back after the game's
     // first SetOsdConfigParam (checked: the game sets its language field only).
@@ -452,17 +453,21 @@ public:
     unsigned indexed_cache_operations=0, indexed_cache_tag_reads=0;
     bool indexed_cache_tag_ready=false;
     unsigned data_cache_lines = 0;
-    static constexpr std::size_t sif_iop_size = 2 * 1024 * 1024;
     void supplySifRpcState(std::uint32_t word) {
-        if (sif_iop_.empty() || sif_rpc_supplied_ || word != 1)
+        if (!sif_dma_supplied_ || sif_rpc_supplied_ || word != 1)
             throw std::runtime_error("SIF RPC state checkpoint differs or was already supplied");
         sif_sregs[2] = word; // RPC initialized, as the BIOS's IOP left it.
         sif_rpc_supplied_ = true;
     }
-    void supplySifDma(std::span<const std::uint8_t> before, std::uint32_t result);
-    void supplySifBind(std::span<const std::uint8_t> bundle);
-    void supplyCdInit(std::span<const std::uint8_t> bundle);
-    void supplyScmdBind(std::span<const std::uint8_t> bundle);
+    // The SIF as the boot leaves it: the IOP's command buffers at 0x19600 and 0x19680, the EE's receive buffer at 0x93640.
+    void supplySifDma();
+    // The RPC bind of the disc service and its call semaphore, as the boot leaves them.
+    void supplySifBind();
+    // The console's state when the game starts, as the boot leaves it (timers, interrupts, DMA, SIF, the IOP services'
+    // first binds and replies), set before the game's first instruction. The values were observed on the original once
+    // (PCSX2 captures of 2026-10, each compared there with what the native services answer) and are kept here as facts;
+    // the captures are gone (docs/plans/launcher/RELEASE_PLAN.md).
+    void bootState();
     bool iop_reset_pending=false, prior_iop_services_valid=true;
     GsCommandSink gs_sink; // Every GIF transfer, VIF1 DIRECT and VU1 XGKICK reaches the GS through it.
     PostResetSif post_sif;
@@ -642,7 +647,6 @@ public:
     unsigned semaphore_deletions = 0;
     unsigned rpc_call_semaphores = 0;
     std::uint32_t rpc_call_sema_attributes = 0;
-    std::span<const std::uint8_t> sifIopMemory() const { return sif_iop_; }
     unsigned sif_dma_submissions = 0;
     // sceSifSetDma's transfer id, for every transfer: the kernel numbers the transfers, the low byte is the
     // descriptor count. The BIOS's boot made six before the game's first (captures: the first CHANGE_SADDR
@@ -775,18 +779,7 @@ public:
     unsigned cri_rpc_binds=0,cri_rpc_calls=0;
     unsigned ncmd_bind_semaphores=0,ncmd_rpc_binds=0,ncmd_ready_calls=0,ncmd_read_calls=0;
     bool ncmd_bind_supplied=false;
-    void supplyNcmdBind(std::span<const std::uint8_t> b) {
-        const std::array<unsigned,16> expected={0,0,0x80000008,0,0,0x203A97C0,0,0x369590,0x80000009,0x43418,0x43DB8,0,0,0,0,0};
-        if(ncmd_bind_supplied || b.size()!=sizeof(expected) || std::memcmp(b.data(),expected.data(),sizeof(expected)))throw std::runtime_error("Invalid command bind evidence");
-        ncmd_bind_supplied=true;
-    }
     bool disc_bind_supplied=false;
-    void supplyDiscBind(std::span<const std::uint8_t> bundle) {
-        const std::array<std::uint32_t,16> reply={0,0,0x80000008,0,0,0x203A97C0,0,0x3A8780,0x80000009,0x433D0,0x441C8,0,0,0,0,0};
-        if(disc_bind_supplied || bundle.size()!=sizeof(reply) || std::memcmp(bundle.data(),reply.data(),sizeof(reply)))
-            throw std::runtime_error("Invalid disc-search bind evidence");
-        disc_bind_supplied=true;
-    }
     struct Semaphore { std::uint32_t count, maximum, option; bool deleted = false; };
     // Bounded bootstrap objects; no wait queues or scheduling implementation.
     std::vector<Semaphore> semaphores;
@@ -919,7 +912,7 @@ private:
     bool cd_init_supplied_ = false, cd_semaphores_supplied_ = false;
     bool sif_call_sema_supplied_ = false, sif_bind_supplied_ = false;
 
-    std::vector<std::uint8_t> sif_iop_;
+    bool sif_dma_supplied_ = false;
     bool sif_rpc_supplied_ = false;
     bool rpc_end_callback_active_ = false;
     bool sif_command_supplied_ = false;
@@ -962,7 +955,7 @@ private:
     void runInterpretedInstruction(std::uint8_t* rdram, R5900Context* context, std::uint32_t pc, std::uint32_t word, bool& vu_flags_reported);
     bool interpretControl(std::uint8_t* rdram, R5900Context* context, std::uint32_t pc, std::uint32_t word,
                           std::uint32_t start, std::uint32_t end, bool& vu_flags_reported);
-    std::vector<std::uint8_t> memory_, kernel_snapshot_, startup_kernel_payload_;
+    std::vector<std::uint8_t> memory_, startup_kernel_payload_;
     std::vector<std::uint8_t> scratchpad_ = std::vector<std::uint8_t>(scratchpad_size);
     std::unordered_map<std::uint32_t, std::uint32_t> kernel_patch_words_;
     std::uint32_t kernel_patch_start_ = 0, kernel_patch_end_ = 0;

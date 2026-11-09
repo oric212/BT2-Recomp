@@ -519,62 +519,6 @@ def main():
                  folder / "integration-build.log", check=False)
     entry_stop = None
     if result.returncode == 0:
-        # The evidence files the probe reads (the list is kept in the order of its arguments).
-        entry_command = [str(build / "Debug/bt2-entry-probe.exe"), "disc", str(folder / "entry-stop.json")]  # The memory is made from the disc image.
-        if args.kernel_snapshot:
-            entry_command.append(str(args.kernel_snapshot.resolve()))
-        if timer_capture:
-            timer_word = folder / 'timer3-mode.bin'
-            timer_word.write_bytes(struct.pack('<I', timer_capture[0]))
-            entry_command.append(str(timer_word))
-        if timer2_capture:
-            timer2_word = folder / 'timer2-mode.bin'
-            timer2_word.write_bytes(struct.pack('<I', timer2_capture[0]))
-            entry_command.append(str(timer2_word))
-        if intc_capture:
-            intc_word = folder / 'intc-mask.bin'
-            intc_word.write_bytes(struct.pack('<I', intc_capture[0]))
-            entry_command.append(str(intc_word))
-        if readback_capture:
-            readback_word = folder / 'timer2-readback.bin'
-            readback_word.write_bytes(struct.pack('<I', readback_capture[0]))
-            entry_command.append(str(readback_word))
-        if osd_capture:
-            osd_word = folder / 'osd-config.bin'
-            osd_word.write_bytes(struct.pack('<I', osd_capture[0]))
-            entry_command.append(str(osd_word))
-        if osd_readback:
-            osd_readback_word = folder / 'osd-readback.bin'
-            osd_readback_word.write_bytes(struct.pack('<I', osd_readback[0]))
-            entry_command.append(str(osd_readback_word))
-        for checkpoint, name in ((dma_status, 'dma-status'), (dma5_control, 'dma5-control'), (sif_command, 'sif-command')):
-            if checkpoint:
-                word_path = folder / (name + '.bin')
-                word_path.write_bytes(struct.pack('<I', checkpoint[0]))
-                entry_command.append(str(word_path))
-        if sif_dma:
-            bundle = folder / 'sif-dma.bin'
-            bundle.write_bytes(sif_dma[0])
-            entry_command.append(str(bundle))
-        if sif_rpc:
-            word_path = folder / 'sif-rpc-state.bin'
-            word_path.write_bytes(struct.pack('<I', sif_rpc[0]))
-            entry_command.append(str(word_path))
-        if sif_bind:
-            bundle = folder / 'sif-bind.bin'
-            bundle.write_bytes(sif_bind[0])
-            entry_command.append(str(bundle))
-        if cd_init:
-            bundle = folder / 'cd-init.bin'
-            bundle.write_bytes(cd_init[0])
-            entry_command.append(str(bundle))
-        if scmd_bind:
-            bundle = folder / 'scmd-bind.bin'
-            bundle.write_bytes(scmd_bind[0])
-            entry_command.append(str(bundle))
-        if heap_bundle:entry_command.append(str(heap_bundle))
-        if heap_allocation_bundle:entry_command.append(str(heap_allocation_bundle))
-        if texture_bundle:entry_command.append(str(texture_bundle))
         # The probe runs with every startup input and the disc (run_startup_probe.py); without a disc the
         # pipeline stops after preparing the inputs.
         if args.heap_disc:
