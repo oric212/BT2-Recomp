@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-11-03 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-11-09 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -16,41 +16,46 @@
 <circle cx="709" cy="59" r="4" fill="#8793a5"/>
 <text x="721" y="63" font-size="12" fill="#475569">Not Reached</text>
 <text x="24" y="92" font-size="15" font-weight="600" fill="#334155">Game flow</text>
-<line x1="84.0" y1="128" x2="876.0" y2="128" stroke="#cbd5e1" stroke-width="2"/>
+<line x1="75.8" y1="128" x2="884.2" y2="128" stroke="#cbd5e1" stroke-width="2"/>
 <g><title>Startup: Verified. Boot to frame loop</title>
-<rect x="24.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
-<text x="84.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
-<text x="84.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Boot to frame loop</text>
+<rect x="24.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="75.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
+<text x="75.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Boot to frame loop</text>
 </g>
 <g><title>Pad &amp; card check: Verified. Native services</title>
-<rect x="156.0" y="106" width="120.0" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
-<text x="216.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Pad &amp; card check</text>
-<text x="216.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native services</text>
+<rect x="139.5" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="191.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Pad &amp; card check</text>
+<text x="191.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native services</text>
 </g>
 <g><title>Films: Operational. Play with sound</title>
-<rect x="288.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
-<text x="348.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Films</text>
-<text x="348.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">Play with sound</text>
+<rect x="255.0" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<text x="306.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Films</text>
+<text x="306.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Play with sound</text>
 </g>
 <g><title>Title &amp; menus: Operational. All modes run</title>
-<rect x="420.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
-<text x="480.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title &amp; menus</text>
-<text x="480.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">All modes run</text>
+<rect x="370.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<text x="422.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title &amp; menus</text>
+<text x="422.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">All modes run</text>
 </g>
 <g><title>Versus battle: Operational. 130 fighters</title>
-<rect x="552.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
-<text x="612.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
-<text x="612.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">130 fighters</text>
+<rect x="486.0" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<text x="537.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
+<text x="537.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">130 fighters</text>
 </g>
 <g><title>Story mode: Operational. 200 parts, towns</title>
-<rect x="684.0" y="106" width="120.0" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
-<text x="744.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Story mode</text>
-<text x="744.0" y="168" text-anchor="middle" font-size="11" fill="#64748b">200 parts, towns</text>
+<rect x="601.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<text x="653.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Story mode</text>
+<text x="653.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">200 parts, towns</text>
 </g>
-<g><title>Saves: Incomplete. Loading confirmed</title>
-<rect x="816.0" y="106" width="120.0" height="44" rx="22" fill="#fff7e6" stroke="#b77912" stroke-width="2"/>
-<text x="876.0" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Saves</text>
-<text x="876.0" y="168" text-anchor="middle" font-size="11" fill="#b77912">Loading confirmed</text>
+<g><title>Saves: Verified. Same as original</title>
+<rect x="717.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
+<text x="768.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Saves</text>
+<text x="768.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Same as original</text>
+</g>
+<g><title>Online battle: Operational. Two PCs untested</title>
+<rect x="832.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="2"/>
+<text x="884.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Online battle</text>
+<text x="884.2" y="168" text-anchor="middle" font-size="11" fill="#2b78b8">Two PCs untested</text>
 </g>
 <text x="24.0" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
 <g><title>EE CPU and kernel: Operational. Every mapped function native</title>
@@ -77,12 +82,12 @@
 <circle cx="41.0" cy="416" r="3.5" fill="#2b78b8"/>
 <text x="52.0" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
 <text x="37.0" y="438" font-size="11.5" fill="#64748b">Keyboard, XInput, DualSense</text></g>
-<g><title>Memory card: Incomplete. Loads; saving untried</title>
+<g><title>Memory card: Verified. Saves byte-identical</title>
 <rect x="24.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24.0" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="41.0" cy="478" r="3.5" fill="#b77912"/>
+<rect x="24.0" y="467" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41.0" cy="478" r="3.5" fill="#16835d"/>
 <text x="52.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
-<text x="37.0" y="500" font-size="11.5" fill="#64748b">Loads; saving untried</text></g>
+<text x="37.0" y="500" font-size="11.5" fill="#64748b">Saves byte-identical</text></g>
 <text x="256.5" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and sound</text>
 <g><title>GS and display: Operational. GPU renderer, own threads</title>
 <rect x="256.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
@@ -170,10 +175,10 @@
 <circle cx="738.5" cy="416" r="3.5" fill="#16835d"/>
 <text x="749.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
 <text x="734.5" y="438" font-size="11.5" fill="#64748b">Unit tests, Python suites pass</text></g>
-<g><title>Original comparisons: Incomplete. 31/31 pass, AI exact; no 3D</title>
+<g><title>Original comparisons: Incomplete. 31/31, AI, saves; no 3D</title>
 <rect x="721.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="721.5" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="738.5" cy="478" r="3.5" fill="#b77912"/>
 <text x="749.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Original comparisons</text>
-<text x="734.5" y="500" font-size="11.5" fill="#64748b">31/31 pass, AI exact; no 3D</text></g>
+<text x="734.5" y="500" font-size="11.5" fill="#64748b">31/31, AI, saves; no 3D</text></g>
 </g></svg>

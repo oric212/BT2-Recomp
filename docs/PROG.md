@@ -1,6 +1,6 @@
 # Current progress
 
-Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 port: recompiled game code on a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md)). How each part was checked: [VALIDATION.md](progress/VALIDATION.md). Dated detail: the [November](progress/2026-11.md) and [October](progress/2026-10.md) histories.
+*Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441) as a native Windows x64 port: recompiled game code on a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md)). How each part was checked: [VALIDATION.md](progress/VALIDATION.md). Dated detail: [November](progress/2026-11.md), [October](progress/2026-10.md).
 
 <!-- progress-summary:start -->
 ![BT2 port status](progress/dashboard.svg)
@@ -11,63 +11,64 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441), a native Windows x64 
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
-| Versus battle | 🟢 Operational — playable with a controller; CPU vs CPU sampled over all 130 fighters and 16 stages; the enemy AI matches PCSX2 exactly at the calls compared |
+| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the enemy AI matches PCSX2 exactly at the calls compared |
 | Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
-| Audio | 🟢 Operational — music, voices and effects; confirmed by listening (the speech-balance fix of 2026-10-20 not yet) |
-| Saves | 🔧 Incomplete — loading confirmed; saving not yet tried in the game |
-| Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them on the test PC |
+| Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
+| Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
+| Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
+| Online battle | 🟢 Operational — lockstep over UDP with connection codes; checked on one PC, not yet between two |
 
-**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; the gate's runs and the story sweep interpret nothing · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
+**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; nothing interpreted in the gate's runs · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
 
-## Current work
+## Latest (2026-11-09)
 
-- **60 fps battles, lighter on the processor** ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)): an in-between picture went from 18–19 to 6.3 ms in fullscreen with HD (the user's match, 2026-11-03), and 60 fps fights are no longer shown a field late. Left: the in-between thread's VIF1/VU1 rerun and the hand-over of its GS data. The native fighters pass is off by default since 2026-11-03 (the user's decision): it kept the in-between renderer on the GPU's only graphics queue, ahead of the main pictures (10 ms of latency for 1 ms of GPU time).
-- **60 fps as the user played it (2026-11-03):** a Super Saiyan aura covered the body in every in-between picture (the game's own effects stayed a frame ahead); the game-built effects, dust, sky and radar are now blended too ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)). Since: the pacer keeps the game's core awake (late flips came from a sleeping core) and the in-between picture goes out from its own thread exactly a field after the flip's: pictures a field apart within 1 ms (97%), flip to screen 11 ms instead of 25; "Variable refresh rate" as a setting for VRR displays. The steady judder the user still felt came from GPU completion (a VRR panel shows a picture when its GPU work ends: main pictures 8.5 ms after their present, in-between ones 1.4): pictures are now presented by it, 97% a field apart on the panel; the user: "it feels smoother". With the fighters pass off a main picture reaches the panel 7.5 ms after its flip in the user's match (16.7 with it); the user: "the match did feel smooth". The bones once counted as left at the newer pose are data VU1 never reads.
-- **Online battle** ([plan](plans/online/ONLINE_BATTLE_PLAN.md)): the port is deterministic field by field with sound, pacing and every enhancement (graphics settings change only the GS readback buffers), so lockstep over UDP fits, as the BT3 port's netplay does; each player's own patches and save give the same fight when both start directly into the battle; local two-player built; every fighter unlocked and each player's own full-screen view without radars built and measured; the lockstep transport over UDP and the launcher's Host and Join built 2026-11-04, then polished: connection codes, UPnP, the delay chosen from the round trip, each player's side and the connection shown in the game, the setup cut to BT3-Recomp's shape on 2026-11-09 (the host's code copied by itself, the joiner's filled in from the clipboard: Join and Enter) (a scripted fight over a simulated 60 ms round trip: 84 drift checks alike, the audio byte-identical across settings; late host pictures at 80 ms with jitter 1 in 999); next the user's two machines.
-- **Done 2026-11-03:** the enemy AI checked against PCSX2 ([plan](plans/ee/AI_VERIFICATION_PLAN.md)): exact at three calls after four floating-point rounding fixes that apply to the whole game; beam struggles by one button; "Return to the title screen" in the in-game menu; fast loading on by default.
+- **Saves verified** ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)): a new game's save, and one written over the 100% save, are byte-identical to the original's save in PCSX2; read back at the next start; the save goes to the launcher's card only.
+- **HD faces fixed** ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md), step 9): plain-skin lit variants had replaced faces and muscle lines; the colour match now counts each cell's spread. Not a card fault.
+- **The RX 9070 XT's striped fade fixed** (an AMD driver fault worked around, [GPU compatibility](plans/graphics/GPU_COMPATIBILITY.md)).
+- **Online setup simplified** ([plan](plans/online/ONLINE_BATTLE_PLAN.md)): the host's code is copied by itself, Join fills it in from the clipboard.
 
 ## Waiting for the user's play
 
-Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; saving to a card; a second controller ("Player 2 controller"); the programs' icons; online battles on two machines (Host and Join in the launcher); the release package (fit to publish since 2026-11-04: only the player's disc image needed, nothing of the game or the console shipped; not published). Open reports: a texture glitch in the first fight with HD (not reproduced headless); HD faces and muscle lines missing on the user's RX 9070 XT. Fixed, not yet seen in play: the striped fade into every fight on that card (paraLLEl-GS's 24-bit upload, [GPU compatibility](plans/graphics/GPU_COMPATIBILITY.md)).
+Built and measured, not yet seen in play: online battles on two PCs (the release package, `dist/`); the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline and dialogue shadow, the light depth of field, the second controller, the programs' icons; on the RX 9070 XT the fade fix and the HD faces. Open report: a texture glitch in the first fight with HD (not reproduced headless).
 
 ## Measurements
 
-One PC (Core i9-10900K, Radeon RX 6800 XT; since 2026-11-09 an RX 9070 XT, about the same GPU time a picture), Release, a versus or story fight at every enhancement (16x, HD, widescreen, 60 fps), in fullscreen or a window ([performance findings](reference/PERFORMANCE_FINDINGS.md)).
+One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with about the same GPU time), Release, a fight with every enhancement ([performance findings](reference/PERFORMANCE_FINDINGS.md)).
 
 | Item | Value |
 | --- | --- |
-| Fight | 29.97 flips per second, super attacks included; in the user's match every fight flip but a few with its in-between picture, 6.3 ms each (the longest 24) |
-| Game thread | 10 to 14 ms of a 33 ms frame in a fight |
-| Graphics card | 6 ms a frame plain, about 8 to 10 with 16x, HD and widescreen |
-| Latency (flip to screen) | 10 ms in menus; in a 60 fps fight in fullscreen with VRR a main picture on the panel 7.5 ms after its flip (the user's match), pictures a field apart within 1 ms (97%), timed by their GPU work's end |
-| Memory | 0.7 GB (0.85 GB with every enhancement); 0.8 to 1.2 GB of video memory |
+| Fight | 29.97 flips a second, super attacks included; an in-between picture for nearly every flip, 6.3 ms each |
+| Game thread | 10 to 14 ms of a 33 ms frame |
+| Graphics card | 6 ms a frame plain, 8 to 10 with 16x, HD and widescreen |
+| Latency | 10 ms flip to screen in menus; 7.5 ms in a 60 fps fight with VRR, 97% of pictures a field apart within 1 ms |
+| Memory | 0.7 to 0.85 GB; 0.8 to 1.2 GB of video memory |
 
 ## Subsystems
 
 | Subsystem | Status | Scope |
 | --- | --- | --- |
-| EE CPU and kernel | 🟢 Operational | Every mapped function compiled; floating point rounded as the EE does it; threads, semaphores, interrupts |
+| EE CPU and kernel | 🟢 Operational | Every mapped function compiled; EE floating-point rounding; threads, semaphores, interrupts |
 | IOP services | 🟢 Operational | Native disc, file, controller, memory card, sound and CRI services; no IOP code runs ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
-| GS and display | 🟢 Operational | paraLLEl-GS on its own threads, with native passes for the outline, glow and depth of field (the fighters pass off by default) |
+| GS and display | 🟢 Operational | paraLLEl-GS on its own threads, native passes for the outline, glow and depth of field |
 | GIF / VIF / VU | 🟢 Operational | DMA as the game uses it; VU1 programs native, checked in the gate |
 | IPU / video | 🟢 Operational | Both films decode through the game's Sofdec library |
 | Audio | 🟢 Operational | ADX streams and a native effects sampler, 48 kHz stereo ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)) |
 | Input | 🟢 Operational | Keyboard, XInput and DualSense; mapping in the launcher and the in-game menu |
-| Memory card | 🔧 Incomplete | A host folder per card; loading confirmed, saving untried ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
+| Memory card | ✅ Verified | A host folder per card; saves byte-identical to the original's ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
 | Disc / filesystem | ✅ Verified | ISO reads; archive table and overlay byte-identical to the original |
 
 ## Next
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. 60 fps: the user's look after the aura fix, the open items above, the load work; then the [responsiveness plan](plans/ee/RESPONSIVENESS_PLAN.md)'s remaining steps.
-2. Picture: an edge filter; FSR 1 on hold ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)).
-3. The user's play-testing: saving, the enhancements, the items above.
-4. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
+1. The user's play: online on two PCs, then the items above.
+2. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
+3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
+4. The user's decisions: a matchmaking server and rollback for online; publishing the release.
 
-**Not compared with the original yet:** memory card replies, GS readback pixels, 3D frames, VU1 memory.
+**Not compared with the original yet:** GS readback pixels, 3D frames, VU1 memory.
 
-[Active handoff](progress/ACTIVE_PASS.md) · [latest.json](progress/latest.json) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md) · [reverse-engineering evidence](reference/REVERSE_ENGINEERING.md)
+[Active handoff](progress/ACTIVE_PASS.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)

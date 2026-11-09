@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-03",
+  "updated": "2026-11-09",
   "flow": [
     {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
     {"name": "Pad & card check", "status": "verified", "note": "Native services"},
@@ -7,7 +7,8 @@
     {"name": "Title & menus", "status": "working", "note": "All modes run"},
     {"name": "Versus battle", "status": "working", "note": "130 fighters"},
     {"name": "Story mode", "status": "working", "note": "200 parts, towns"},
-    {"name": "Saves", "status": "incomplete", "note": "Loading confirmed", "current": true}
+    {"name": "Saves", "status": "verified", "note": "Same as original"},
+    {"name": "Online battle", "status": "working", "note": "Two PCs untested", "current": true}
   ],
   "groups": [
     {
@@ -17,7 +18,7 @@
         {"name": "IOP services", "status": "working", "note": "Native; no IOP code runs"},
         {"name": "Disc / filesystem", "status": "verified", "note": "Reads byte-identical"},
         {"name": "Input", "status": "working", "note": "Keyboard, XInput, DualSense"},
-        {"name": "Memory card", "status": "incomplete", "note": "Loads; saving untried"}
+        {"name": "Memory card", "status": "verified", "note": "Saves byte-identical"}
       ]
     },
     {
@@ -47,7 +48,7 @@
         {"name": "Code generation", "status": "verified", "note": "11,139 + 494 functions"},
         {"name": "Game coverage", "status": "working", "note": "All modes; final sweep left"},
         {"name": "Tests", "status": "verified", "note": "Unit tests, Python suites pass"},
-        {"name": "Original comparisons", "status": "incomplete", "note": "31/31 pass, AI exact; no 3D"}
+        {"name": "Original comparisons", "status": "incomplete", "note": "31/31, AI, saves; no 3D"}
       ]
     }
   ]
