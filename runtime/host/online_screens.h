@@ -25,6 +25,7 @@ struct Hosting {
     bool finding=false;                             // Still asking for it.
     std::string home_address;                       // This PC on the home network; empty without one.
     bool replied=false;                             // The joiner's reply code was taken: connecting to it.
+    unsigned replied_seconds=0;                     // Since then, without an answer.
     bool no_reply=false;                            // A paste found no reply code on the clipboard.
     std::string copied;                             // The code on the clipboard, put there by this screen.
 };
@@ -57,10 +58,14 @@ inline MenuScreen hosting(const Hosting& h,std::function<void()> cancel,std::fun
     if(internet) {
         screen.entries.push_back(codeEntry("Code: ",*internet,h.copied,copy,h.copied==*internet?"Copied: paste it (Ctrl+V) into a chat to the other player."
                                                                                                   :"Confirm copies it, to paste into a chat to the other player."));
-        screen.entries.push_back(h.replied?line("Reply code received","Connecting to the other player.")
-            :menuAction("Then paste their reply code (Ctrl+V)",paste?paste:[]{},h.no_reply
-                ?"No reply code on the clipboard: copy it from the chat first, then Ctrl+V here."
-                :"Their screen shows it after they join. Copy it from the chat, then Ctrl+V here."));
+        // After the paste the line says what happens; a long wait means the other player's network does not let the two
+        // meet this way. Confirm or Ctrl+V takes a newer reply.
+        const std::function<void()> take=paste?paste:[]{};
+        if(h.replied)screen.entries.push_back(menuAction(h.replied_seconds<20?"Reply pasted: connecting...":"Reply pasted: no answer",take,
+            h.replied_seconds<20?"Waiting for the other player's game to answer.":"Their network does not let this way in: swap roles (they host, you join)."));
+        else screen.entries.push_back(menuAction("Then paste their reply code (Ctrl+V)",take,h.no_reply
+            ?"No reply code on the clipboard: copy it from the chat first, then Ctrl+V here."
+            :"Their screen shows it after they join. Copy it from the chat, then Ctrl+V here."));
     }
     else if(h.finding)screen.entries.push_back(line("Code: one moment","Finding your internet address."));
     else if(home)screen.entries.push_back(codeEntry("Code: ",*home,h.copied,copy,"Home network only: your internet address was not found."));
@@ -90,7 +95,7 @@ inline MenuScreen joining(const Joining& j,std::function<void()> cancel,std::fun
     const std::string host=j.host.empty()?std::string("?"):j.host[0].address.find(':')!=std::string::npos?"(IPv6)":j.host[0].address+" : "+std::to_string(j.host[0].port);
     screen.entries.push_back(line("Host: "+host,
         !j.late?"The battle starts when the host answers."
-        :needsReply(j)?"No answer yet: check that the host copied your reply code.":"No answer yet: check the code, and that the host is waiting."));
+        :needsReply(j)?"No answer yet: check that the host pasted your reply code (Ctrl+V).":"No answer yet: check the code, and that the host is waiting."));
     screen.entries.push_back(menuAction("Cancel",std::move(cancel),"Back to the launcher."));
     return screen;
 }

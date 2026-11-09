@@ -12,7 +12,8 @@ folder. Nothing to set up on your router.
    "Join with a code", Enter. A reply code is shown and copied by itself:
    paste it into the chat.
 3. Host: copy the reply code from the chat (select it, Ctrl+C), then press
-   Ctrl+V in the game's window. The battle starts by itself.
+   Ctrl+V in the game's window: a "reply code" box opens with it pasted in.
+   Press Enter. The battle starts by itself.
 
 The first time, Windows may ask whether bt2-entry-probe.exe may use the
 network: allow it.

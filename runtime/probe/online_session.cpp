@@ -7,6 +7,7 @@
 #include "host/net_lockstep.h"
 #include "host/online_screens.h"
 #include "host/player_session.h"
+#include "host/settings.h"
 #include "host/upnp_port.h"
 #include "services/devices/pad_script.h"
 #include <algorithm>
@@ -67,10 +68,11 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
     const auto start=std::chrono::steady_clock::now();
     const auto cancel=[&host]{host.finished=true;};
     const std::string home=address.host?UpnpPort::localAddress():std::string();
-    std::string copied,auto_copied,punched;
+    std::string copied,auto_copied,punched;std::chrono::steady_clock::time_point punched_at{};
     bool connected=false,late=false,no_reply=false;
     const auto hosting=[&] {
-        online_screens::Hosting h;h.port=address.port;h.home_address=home;h.replied=!punched.empty();h.copied=copied;h.no_reply=no_reply;
+        online_screens::Hosting h;h.port=address.port;h.home_address=home;h.replied=!punched.empty();h.copied=copied;
+        h.replied_seconds=unsigned(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now()-punched_at).count());h.no_reply=no_reply;
         h.internet=internetAddresses(address.port);h.finding=online.transport->findingAddresses();
         return h;
     };
@@ -88,24 +90,39 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
         return j.reply;
     };
     std::function<bool(const std::string&)> copy;
-    // Host: a reply code on the clipboard (copied from the chat, in any chat program's text) starts the punch; a later
-    // one replaces it. Checked by itself twice a second, and at once on Ctrl+V or Confirm (`asked`: then the screen says
-    // when there is none). This side's own code, still on the clipboard, is not a reply.
-    const auto takeReply=[&](bool asked) {
-        const auto found=clipboard::codeIn(host.clipboardText());
-        auto reply=found?online_screens::reachableOnly(connection_code::readAll(*found)):std::vector<connection_code::Address>{};
+    // Host: the joiner's reply code starts the punch; a later one replaces it. It comes from the reply field (Ctrl+V on the
+    // screen, or Confirm on its line, opens it with the clipboard's code pasted in; Enter takes it), or by itself from
+    // the clipboard, checked twice a second. `asked`: the player gave it, so the screen says when it is no reply code.
+    // This side's own code (still on the clipboard) is not a reply.
+    const auto replyIn=[&](const std::string& text)->std::optional<std::pair<std::string,std::vector<connection_code::Address>>> {
+        const auto found=clipboard::codeIn(text);
+        if(!found)return std::nullopt;
+        auto reply=online_screens::reachableOnly(connection_code::readAll(*found));
         const auto own=internetAddresses(address.port);
         const bool mine=std::any_of(reply.begin(),reply.end(),[&](const auto& r){
             return std::any_of(own.begin(),own.end(),[&](const auto& o){return o.address==r.address && o.port==r.port;});});
-        if(reply.empty() || mine) {if(asked)no_reply=true;return;}
+        if(reply.empty() || mine)return std::nullopt;
+        return std::make_pair(*found,std::move(reply));
+    };
+    const auto takeReply=[&](const std::string& text,bool asked) {
+        const auto reply=replyIn(text);
+        if(!reply) {if(asked)no_reply=true;return;}
         no_reply=false;
-        if(*found==punched)return;
-        online.transport->punch(reply);punched=*found;
+        if(reply->first==punched)return;
+        online.transport->punch(reply->second);punched=reply->first;punched_at=std::chrono::steady_clock::now();
         std::cerr<<"Online session: reply code received:";
-        for(const auto& a:reply)std::cerr<<' '<<a.address<<" port "<<a.port;
+        for(const auto& a:reply->second)std::cerr<<' '<<a.address<<" port "<<a.port;
         std::cerr<<std::endl;
     };
-    const auto paste=[&]{takeReply(true);};
+    const auto paste=[&] {
+        if(host.typing())return;
+        const auto clip=host.clipboardText();
+        const auto ready=replyIn(clip);
+        host.type("Their reply code: paste it (Ctrl+V), then Enter",ready?clipboard::pastedInto("",clip,Settings::online_address_characters,253):std::string(),
+                  Settings::online_address_characters,253,[&](std::string text) {
+            if(!text.empty())takeReply(text,true); // The screen shows the result at its next refresh.
+        });
+    };
     const auto screen=[&]{return address.host?online_screens::hosting(hosting(),cancel,copy,paste):online_screens::joining(joining(),cancel,copy);};
     const auto shown=[](const MenuScreen& s){std::string text=s.title;for(const auto& e:s.entries)text+="|"+e.label+"|"+e.note;return text;};
     std::string showing;
@@ -122,7 +139,7 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
     host.every(50,[&] {
         if(online.session->connect(30ms)) {connected=true;host.finished=true;return;}
         if(const auto code=toGive();code && *code!=auto_copied && copy(*code))auto_copied=*code;
-        if(address.host && ++ticks%10==0)takeReply(false);
+        if(address.host && !host.typing() && ++ticks%10==0)takeReply(host.clipboardText(),false);
         // The joiner: after a while without an answer, the note says what to check (the host needs time to copy the reply).
         if(!address.host && !late && std::chrono::steady_clock::now()-start>=(online_screens::needsReply(joining())?45s:10s))late=true;
         refresh();

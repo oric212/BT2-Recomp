@@ -314,7 +314,8 @@ int main() {
             check(online_screens::hosting(h,[]{},copy).entries[1].note.find("No reply code on the clipboard")!=std::string::npos,"and says when there is none");
             h.no_reply=false;h.replied=true;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
-            check(labels(host.menu.screen())[1]=="Reply code received","the reply received");
+            check(labels(host.menu.screen())[1]=="Reply pasted: connecting...","the reply pasted");
+            h.replied_seconds=25;check(labels(online_screens::hosting(h,[]{},copy))[1]=="Reply pasted: no answer","a long wait says so");h.replied_seconds=0;
             h.internet.clear();h.replied=false;h.copied=home;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
             check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+home+"  (copied)","Cancel"},"no internet address: the home code, once");
@@ -333,7 +334,7 @@ int main() {
             check(host.menu.screen().entries[0].note.find("paste it")!=std::string::npos,"the note says to send it");
             picture(host,"11-joining-reply");
             j.late=true;host.menu.replace(online_screens::joining(j,[]{},copy));
-            check(host.menu.screen().entries[1].note.find("copied your reply code")!=std::string::npos,"late: check the host copied the reply");
+            check(host.menu.screen().entries[1].note.find("pasted your reply code")!=std::string::npos,"late: check the host copied the reply");
             online_screens::Joining lan;lan.host={{"192.168.100.105",7411}};lan.late=true;
             check(labels(online_screens::joining(lan,[]{},copy))==std::vector<std::string>{"Host: 192.168.100.105 : 7411","Cancel"},"a home-network host needs no reply code");
         }
