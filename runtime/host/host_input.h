@@ -18,8 +18,11 @@ extern "C" {
 }
 #include "host/dualsense_report.h"
 #include "host/gamepad.h"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <mutex>
 #include <thread>
@@ -36,6 +39,11 @@ public:
         thread_.join();
     }
     GamepadState state() {std::lock_guard lock(mutex_);return state_;}
+    // BT2_PAD_TIMING=1 (a diagnostic): how old the newest report is when the game reads it, and whether reports waited
+    // in Windows' queue before the reader took them (each read that returns at once was waiting).
+    struct Timing {unsigned reports=0,waited=0;double longest_gap_ms=0;};
+    Timing timing() {std::lock_guard lock(mutex_);return timing_;}
+    std::chrono::steady_clock::time_point received() {std::lock_guard lock(mutex_);return received_;}
 
 private:
     // Opens the first present DualSense (Sony 054C: 0CE6, or the Edge 0DF2).
@@ -79,16 +87,26 @@ private:
             }
             {std::lock_guard lock(mutex_);device_=device;}
             std::vector<std::uint8_t> report(report_bytes);
+            auto last=std::chrono::steady_clock::now();
             while(!stop_) {
                 DWORD read=0;
+                const auto asked=std::chrono::steady_clock::now();
                 if(!ReadFile(device,report.data(),DWORD(report.size()),&read,nullptr))break; // Unplugged, or cancelled at shutdown.
-                if(const auto parsed=parseDualSenseReport(std::span<const std::uint8_t>(report.data(),read),bluetooth)) {std::lock_guard lock(mutex_);state_=*parsed;}
+                const auto now=std::chrono::steady_clock::now();
+                if(const auto parsed=parseDualSenseReport(std::span<const std::uint8_t>(report.data(),read),bluetooth)) {
+                    std::lock_guard lock(mutex_);state_=*parsed;received_=now;
+                    ++timing_.reports;
+                    if(now-asked<std::chrono::microseconds(500))++timing_.waited;
+                    timing_.longest_gap_ms=std::max(timing_.longest_gap_ms,std::chrono::duration<double,std::milli>(now-last).count());
+                    last=now;
+                }
             }
             {std::lock_guard lock(mutex_);device_=INVALID_HANDLE_VALUE;state_={};}
             CloseHandle(device);
         }
     }
     std::mutex mutex_;GamepadState state_;HANDLE device_=INVALID_HANDLE_VALUE;
+    std::chrono::steady_clock::time_point received_{};Timing timing_;
     std::atomic<bool> stop_{false};
     std::thread thread_; // Last member: it starts in the constructor and uses the others.
 };
@@ -121,13 +139,27 @@ public:
             s.lx=axis(g.sThumbLX);s.ly=axis(-1-g.sThumbLY);s.rx=axis(g.sThumbRX);s.ry=axis(-1-g.sThumbRY);
             pads.push_back(s);
         }
-        if(const auto dualsense=dualsense_.state();dualsense.connected)pads.push_back(dualsense);
+        if(const auto dualsense=dualsense_.state();dualsense.connected) {
+            pads.push_back(dualsense);
+            if(timing_) {
+                const double age=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-dualsense_.received()).count();
+                ++reads_;age_sum_+=age;age_max_=std::max(age_max_,age);if(age>8)++old_reads_;
+            }
+        }
         return pads;
+    }
+    ~HostInput() {
+        if(!timing_ || !reads_)return;
+        const auto t=dualsense_.timing();
+        std::fprintf(stderr,"DualSense timing: %u reports, %u had waited in the queue, longest gap %.1f ms; %u game reads, newest report %.2f ms old on average, %.1f ms at most, %u over 8 ms\n",
+                     t.reports,t.waited,t.longest_gap_ms,reads_,age_sum_/reads_,age_max_,old_reads_);
     }
     // Whether a key (virtual-key code) is down right now.
     static bool keyDown(std::uint8_t key) {return (GetAsyncKeyState(key)&0x8000)!=0;}
 
 private:
     DualSenseReader dualsense_;
+    const bool timing_=std::getenv("BT2_PAD_TIMING")!=nullptr;
+    unsigned reads_=0,old_reads_=0;double age_sum_=0,age_max_=0;
 };
 #endif

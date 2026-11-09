@@ -27,18 +27,23 @@ public:
     virtual void send(std::span<const std::uint8_t> packet)=0;
     // The next packet from the other player, or nothing once `timeout` has passed.
     virtual std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout)=0;
-    // This side as the internet sees it (STUN), once known; nothing before, or without STUN.
-    virtual std::optional<connection_code::Address> publicAddress() const {return std::nullopt;}
-    // Host: sends to the joiner's public address until the joiner is heard, so the host's router and firewall let the
-    // joiner's packets in (hole punching; the joiner's reply code gives the address).
-    virtual void punch(const connection_code::Address&) {}
+    // This side as the internet sees it: its IPv4 address and port from STUN, and its IPv6 address with the socket's
+    // port (IPv6 has no address translation); empty without STUN. `findingAddresses`: STUN is still being asked.
+    virtual std::vector<connection_code::Address> publicAddresses() const {return {};}
+    virtual bool findingAddresses() const {return false;}
+    // Host: sends to the joiner's addresses until the joiner is heard, so the host's router and firewall let the joiner's
+    // packets in (hole punching; the joiner's reply code gives the addresses). An IPv4 port is punched with the ports
+    // around it, for routers that give each destination a new port.
+    virtual void punch(const std::vector<connection_code::Address>&) {}
 };
 
 // UDP over Winsock. The host listens on `port` and answers whoever greets it first; the joiner sends to the host.
 // `stun`: the socket asks public STUN servers for its address as the internet sees it (publicAddress), for the codes
 // the players exchange when no port is open (docs/plans/online/ONLINE_BATTLE_PLAN.md, "Without an open port").
+// IPv4 and IPv6 on one socket; the joiner greets every address of the host's code until one answers.
 std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun=false);
-std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun=false);
+std::unique_ptr<LockstepTransport> joinUdp(const std::vector<connection_code::Address>& host,bool stun=false);
+inline std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun=false) {return joinUdp({{address,port}},stun);}
 
 // A worse network in front of a transport, for measuring on one PC (BT2_NET_SIM): each packet received arrives
 // `latency` later, give or take up to `jitter` (in order, as most links keep it), and one in `loss_every` is lost
@@ -117,5 +122,6 @@ inline std::uint64_t lockstepHash(std::uint64_t hash,std::span<const std::uint8_
 constexpr std::uint64_t lockstep_hash_start=0xCBF29CE484222325ull;
 
 // "host:<port>", "join:<address>:<port>" or "join:<code>" (host/connection_code.h) (BT2_NET); throws on other text.
-struct LockstepAddress {bool host=true;std::string address;std::uint16_t port=0;};
+// The joiner's `targets`: every address of the host's code (address and port: the first, for messages).
+struct LockstepAddress {bool host=true;std::string address;std::uint16_t port=0;std::vector<connection_code::Address> targets;};
 LockstepAddress parseLockstepAddress(std::string_view text);

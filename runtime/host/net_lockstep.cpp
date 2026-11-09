@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <deque>
+#include <iostream>
 #include <random>
 #include <thread>
 #ifdef _WIN32
@@ -283,10 +284,15 @@ LockstepAddress parseLockstepAddress(std::string_view text) {
     if(text.starts_with("host:")) {address.port=port(text.substr(5));return address;}
     if(text.starts_with("join:")) {
         const auto rest=text.substr(5);const auto colon=rest.rfind(':');
+        address.host=false;
         if(colon==std::string_view::npos)
-            if(const auto code=connection_code::read(rest)) {address.host=false;address.address=code->address;address.port=code->port;return address;}
+            if(auto targets=connection_code::readAll(rest);!targets.empty()) {
+                address.address=targets[0].address;address.port=targets[0].port;address.targets=std::move(targets);
+                return address;
+            }
         if(colon==std::string_view::npos || !colon)throw std::runtime_error("BT2_NET: join:<address>:<port>: "+std::string(text));
-        address.host=false;address.address=std::string(rest.substr(0,colon));address.port=port(rest.substr(colon+1));
+        address.address=std::string(rest.substr(0,colon));address.port=port(rest.substr(colon+1));
+        address.targets={{address.address,address.port}};
         return address;
     }
     throw std::runtime_error("BT2_NET is host:<port>, join:<address>:<port> or join:<code>: "+std::string(text));
@@ -319,8 +325,9 @@ class SimulatedNetwork final : public LockstepTransport {
 public:
     SimulatedNetwork(std::unique_ptr<LockstepTransport> inner,const NetworkSimulation& simulation):inner_(std::move(inner)),simulation_(simulation) {}
     void send(std::span<const std::uint8_t> packet) override {inner_->send(packet);}
-    std::optional<connection_code::Address> publicAddress() const override {return inner_->publicAddress();}
-    void punch(const connection_code::Address& to) override {inner_->punch(to);}
+    std::vector<connection_code::Address> publicAddresses() const override {return inner_->publicAddresses();}
+    bool findingAddresses() const override {return inner_->findingAddresses();}
+    void punch(const std::vector<connection_code::Address>& to) override {inner_->punch(to);}
     std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout) override {
         const auto deadline=Clock::now()+timeout;
         while(true) {
@@ -355,30 +362,36 @@ std::unique_ptr<LockstepTransport> simulateNetwork(std::unique_ptr<LockstepTrans
 namespace {
 class UdpTransport final : public LockstepTransport {
 public:
-    UdpTransport(bool host,const std::string& address,std::uint16_t port,bool stun):host_(host) {
+    // One IPv6 socket that also carries IPv4 (as ::ffff:a.b.c.d), so both kinds of address work without a second port.
+    UdpTransport(bool host,const std::vector<connection_code::Address>& targets,std::uint16_t port,bool stun):host_(host),made_(Clock::now()) {
         WSADATA data;
         if(WSAStartup(MAKEWORD(2,2),&data))throw std::runtime_error("Online session: Winsock did not start");
         started_=true;
-        socket_=::socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
+        socket_=::socket(AF_INET6,SOCK_DGRAM,IPPROTO_UDP);
         if(socket_==INVALID_SOCKET)throw error("no UDP socket");
+        DWORD v6_only=0;setsockopt(socket_,IPPROTO_IPV6,IPV6_V6ONLY,reinterpret_cast<const char*>(&v6_only),sizeof v6_only);
         // A datagram to a port nobody listens on would make the next receive fail; it is only a lost packet.
         BOOL report=FALSE;DWORD returned=0;
         WSAIoctl(socket_,SIO_UDP_CONNRESET,&report,sizeof report,nullptr,0,&returned,nullptr,nullptr);
-        sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(INADDR_ANY);local.sin_port=htons(host?port:0);
+        sockaddr_in6 local{};local.sin6_family=AF_INET6;local.sin6_addr=in6addr_any;local.sin6_port=htons(host?port:0);
         if(::bind(socket_,reinterpret_cast<sockaddr*>(&local),sizeof local))throw error("port "+std::to_string(port)+" cannot be opened (another program may use it)");
-        if(!host) {
-            if(!resolve(address,port,peer_))throw error("the address "+address+" is not found");
-            has_peer_=true;
+        int size=sizeof local;getsockname(socket_,reinterpret_cast<sockaddr*>(&local),&size);
+        port_=ntohs(local.sin6_port);
+        for(const auto& t:targets) {
+            sockaddr_in6 at{};
+            if(resolve(t.address,t.port,at))targets_.push_back(at);
         }
-        // Two public STUN servers, so one being down does not matter; asked from this socket, so the answer is the
-        // mapping the session's packets use.
+        if(!host && targets_.empty())throw error("the host's address is not found");
         if(stun) {
+            // Two public STUN servers: the port each saw tells whether the router keeps one port for every destination.
             for(const auto& [name,server_port]:{std::pair<const char*,std::uint16_t>{"stun.l.google.com",19302},{"stun.cloudflare.com",3478}}) {
-                sockaddr_in server{};
-                if(resolve(name,server_port,server))stun_servers_.push_back(server);
+                sockaddr_in6 server{};
+                if(resolve(name,server_port,server,AF_INET))stun_servers_.push_back(server);
             }
+            stun_ports_.assign(stun_servers_.size(),0);
             std::random_device random;
             for(auto& byte:transaction_)byte=std::uint8_t(random());
+            ipv6_=globalIpv6();
         }
     }
     ~UdpTransport() override {
@@ -386,14 +399,34 @@ public:
         if(started_)WSACleanup();
     }
     void send(std::span<const std::uint8_t> packet) override {
-        if(!has_peer_)return; // The host answers once someone greeted it.
-        sendTo(peer_,packet);
+        if(has_peer_) {sendTo(peer_,packet);return;}
+        // The joiner greets every address of the host's code; while STUN is asked (at most 2 s) it waits, so its
+        // router's port for the host comes after the STUN servers' and the prediction in its reply code holds.
+        if(host_ || (stunAsking() && Clock::now()-made_<std::chrono::seconds(2)))return;
+        for(const auto& target:targets_)sendTo(target,packet);
     }
-    std::optional<connection_code::Address> publicAddress() const override {return public_;}
-    void punch(const connection_code::Address& to) override {
-        sockaddr_in at{};
-        if(!resolve(to.address,to.port,at))return;
-        punch_=at;last_punch_={};
+    std::vector<connection_code::Address> publicAddresses() const override {
+        std::vector<connection_code::Address> out;
+        if(v4_)out.push_back(*v4_);
+        if(!ipv6_.empty())out.push_back({ipv6_,port_});
+        return out;
+    }
+    bool findingAddresses() const override {return stunAsking();}
+    void punch(const std::vector<connection_code::Address>& to) override {
+        punch_.clear();
+        for(const auto& a:to) {
+            const bool v6=a.address.find(':')!=std::string::npos;
+            // IPv4: the ports around the given one too (a router that gives each destination a new port usually counts
+            // up from the last); IPv6: exactly that port.
+            for(int d=v6?0:-8;d<=(v6?0:56);++d) {
+                const int p=int(a.port)+d;
+                if(p<1 || p>65535)continue;
+                sockaddr_in6 at{};
+                if(resolve(a.address,std::uint16_t(p),at))punch_.push_back(at);
+            }
+        }
+        last_punch_={};
+        std::cerr<<"Online session: punching "<<punch_.size()<<" addresses toward the reply code's"<<std::endl;
     }
     std::optional<std::vector<std::uint8_t>> receive(std::chrono::milliseconds timeout) override {
         const auto deadline=Clock::now()+timeout;
@@ -409,26 +442,24 @@ public:
                 continue;
             }
             std::vector<std::uint8_t> packet(1500);
-            sockaddr_in from{};int from_size=sizeof from;
+            sockaddr_in6 from{};int from_size=sizeof from;
             const int size=::recvfrom(socket_,reinterpret_cast<char*>(packet.data()),int(packet.size()),0,reinterpret_cast<sockaddr*>(&from),&from_size);
             if(size<0)continue;
             packet.resize(std::size_t(size));
-            if(stun::isStun(packet)) {
-                if(const auto m=stun::mapped(packet,transaction_);m && !public_) {
-                    in_addr ip{};ip.s_addr=htonl(m->ip);
-                    char text[INET_ADDRSTRLEN]{};
-                    if(inet_ntop(AF_INET,&ip,text,sizeof text))public_=connection_code::Address{text,m->port};
-                }
-                continue;
-            }
+            if(stun::isStun(packet)) {stunAnswer(packet,from);continue;}
             if(packet.size()>=4 && std::equal(punch_magic.begin(),punch_magic.end(),packet.begin()))continue; // Only opens the way.
             const bool ours=packet.size()>=5 && std::equal(magic.begin(),magic.end(),packet.begin());
-            const bool same=has_peer_ && from.sin_addr.s_addr==peer_.sin_addr.s_addr && from.sin_port==peer_.sin_port;
+            bool same=has_peer_ && sameEndpoint(from,peer_);
+            // The joiner: the first of the host's addresses to answer is the one used from then on.
+            if(!same && !host_ && !has_peer_ && ours)
+                for(const auto& target:targets_)
+                    if(sameEndpoint(from,target)) {peer_=from;has_peer_=true;same=true;std::cerr<<"Online session: the host answered at "<<text(from)<<std::endl;break;}
             // The host's other player: the first to greet, or a new greeting once the last one has been silent for a
             // second (a joiner that started again comes from another port).
             if(!same) {
                 if(!host_ || !ours || packet[4]!=Hello || (has_peer_ && Clock::now()-heard_<std::chrono::seconds(1)))continue;
-                peer_=from;has_peer_=true;punch_.reset(); // Heard: the way is open.
+                peer_=from;has_peer_=true;punch_.clear(); // Heard: the way is open.
+                std::cerr<<"Online session: the other player greeted from "<<text(from)<<std::endl;
             }
             heard_=Clock::now();
             return packet;
@@ -437,36 +468,101 @@ public:
 private:
     static constexpr std::array<std::uint8_t,4> punch_magic{'B','T','2','P'};
     std::runtime_error error(const std::string& what) {return std::runtime_error("Online session: "+what+" (Winsock error "+std::to_string(WSAGetLastError())+")");}
-    static bool resolve(const std::string& address,std::uint16_t port,sockaddr_in& out) {
-        addrinfo hints{};hints.ai_family=AF_INET;hints.ai_socktype=SOCK_DGRAM;
+    // An address of either kind as the dual socket uses it (IPv4 as ::ffff:a.b.c.d).
+    static bool resolve(const std::string& address,std::uint16_t port,sockaddr_in6& out,int family=AF_UNSPEC) {
+        addrinfo hints{};hints.ai_family=family;hints.ai_socktype=SOCK_DGRAM;
         addrinfo* found=nullptr;
         if(getaddrinfo(address.c_str(),std::to_string(port).c_str(),&hints,&found) || !found)return false;
-        std::memcpy(&out,found->ai_addr,sizeof out);freeaddrinfo(found);
+        out={};out.sin6_family=AF_INET6;out.sin6_port=htons(port);
+        if(found->ai_family==AF_INET6)std::memcpy(&out,found->ai_addr,sizeof out);
+        else {
+            const auto* v4=reinterpret_cast<const sockaddr_in*>(found->ai_addr);
+            out.sin6_addr.u.Byte[10]=0xFF;out.sin6_addr.u.Byte[11]=0xFF;std::memcpy(&out.sin6_addr.u.Byte[12],&v4->sin_addr,4);
+        }
+        freeaddrinfo(found);
         return true;
     }
-    void sendTo(const sockaddr_in& to,std::span<const std::uint8_t> packet) {
+    static bool sameEndpoint(const sockaddr_in6& a,const sockaddr_in6& b) {
+        return a.sin6_port==b.sin6_port && !std::memcmp(&a.sin6_addr,&b.sin6_addr,sizeof a.sin6_addr);
+    }
+    static std::string text(const sockaddr_in6& a) {
+        char out[INET6_ADDRSTRLEN]{};
+        if(IN6_IS_ADDR_V4MAPPED(&a.sin6_addr))inet_ntop(AF_INET,&a.sin6_addr.u.Byte[12],out,sizeof out);
+        else inet_ntop(AF_INET6,&a.sin6_addr,out,sizeof out);
+        return std::string(out)+":"+std::to_string(ntohs(a.sin6_port));
+    }
+    // This PC's global IPv6 address (2000::/3), the one it sends from; empty without one. A UDP socket "connected" to an
+    // internet address sends nothing; it only picks the address a packet would leave from.
+    static std::string globalIpv6() {
+        const SOCKET probe=::socket(AF_INET6,SOCK_DGRAM,IPPROTO_UDP);
+        if(probe==INVALID_SOCKET)return {};
+        std::string out;
+        sockaddr_in6 to{};to.sin6_family=AF_INET6;to.sin6_port=htons(53);inet_pton(AF_INET6,"2001:4860:4860::8888",&to.sin6_addr);
+        sockaddr_in6 local{};int size=sizeof local;
+        if(!::connect(probe,reinterpret_cast<sockaddr*>(&to),sizeof to) && !getsockname(probe,reinterpret_cast<sockaddr*>(&local),&size)
+           && (local.sin6_addr.u.Byte[0]&0xE0)==0x20) {
+            char found[INET6_ADDRSTRLEN]{};
+            if(inet_ntop(AF_INET6,&local.sin6_addr,found,sizeof found))out=found;
+        }
+        closesocket(probe);
+        return out;
+    }
+    void sendTo(const sockaddr_in6& to,std::span<const std::uint8_t> packet) {
         ::sendto(socket_,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&to),sizeof to);
     }
-    // STUN every half second until a server answers (at most 20 times); punch packets every 100 ms until the joiner
-    // is heard.
+    bool stunAsking() const {return !stun_servers_.empty() && !stun_settled_;}
+    // A STUN server's answer: the port it saw. Once both answered (or 2 s after the first), the IPv4 address is settled:
+    // the same port from both, or a router that gives each destination a new port, whose next one is predicted.
+    void stunAnswer(std::span<const std::uint8_t> packet,const sockaddr_in6& from) {
+        const auto m=stun::mapped(packet,transaction_);
+        if(!m || stun_settled_)return;
+        for(std::size_t n=0;n<stun_servers_.size();++n)
+            if(sameEndpoint(from,stun_servers_[n]))stun_ports_[n]=m->port;
+        in_addr ip{};ip.s_addr=htonl(m->ip);
+        char found[INET_ADDRSTRLEN]{};
+        if(inet_ntop(AF_INET,&ip,found,sizeof found))stun_ip_=found;
+        if(!first_answer_)first_answer_=Clock::now();
+        if(std::all_of(stun_ports_.begin(),stun_ports_.end(),[](unsigned p){return p!=0;}))settle();
+    }
+    void settle() {
+        stun_settled_=true;
+        std::vector<unsigned> seen;for(const unsigned p:stun_ports_)if(p)seen.push_back(p);
+        if(seen.empty() || stun_ip_.empty()) {std::cerr<<"Online session: STUN: no answer"<<(ipv6_.empty()?"; no IPv6":"; IPv6 only")<<std::endl;return;}
+        unsigned port=seen.back();
+        const bool changes=seen.size()==2 && seen[0]!=seen[1];
+        if(changes)port=unsigned(std::clamp(int(seen[1])+(int(seen[1])-int(seen[0])),1,65535)); // The next port it gives.
+        v4_=connection_code::Address{stun_ip_,std::uint16_t(port)};
+        std::cerr<<"Online session: STUN: ports seen";
+        for(const unsigned p:stun_ports_)std::cerr<<' '<<p;
+        std::cerr<<" (local "<<port_<<"): "<<(changes?"the router gives each destination a new port; predicted ":"the router keeps the port; ")<<port
+                 <<(ipv6_.empty()?"; no IPv6":"; IPv6 too")<<std::endl;
+    }
+    // STUN every half second until both servers answered (2 s after the first answer, or 10 s without one); punch packets
+    // every 100 ms until the joiner is heard.
     void tend() {
         const auto now=Clock::now();
-        if(!public_ && !stun_servers_.empty() && stun_asked_<20 && now-last_stun_>=std::chrono::milliseconds(500)) {
-            const auto request=stun::request(transaction_);
-            for(const auto& server:stun_servers_)sendTo(server,request);
-            ++stun_asked_;last_stun_=now;
+        if(stunAsking()) {
+            if((first_answer_ && now-*first_answer_>=std::chrono::seconds(2)) || now-made_>=std::chrono::seconds(10))settle();
+            else if(now-last_stun_>=std::chrono::milliseconds(500)) {
+                const auto request=stun::request(transaction_);
+                for(std::size_t n=0;n<stun_servers_.size();++n)if(!stun_ports_[n])sendTo(stun_servers_[n],request);
+                last_stun_=now;
+            }
         }
-        if(punch_ && now-last_punch_>=std::chrono::milliseconds(100)) {sendTo(*punch_,punch_magic);last_punch_=now;}
+        if(!punch_.empty() && now-last_punch_>=std::chrono::milliseconds(100)) {for(const auto& at:punch_)sendTo(at,punch_magic);last_punch_=now;}
     }
     bool host_,started_=false,has_peer_=false;
-    SOCKET socket_=INVALID_SOCKET;
-    sockaddr_in peer_{};Clock::time_point heard_{};
-    std::vector<sockaddr_in> stun_servers_;stun::Transaction transaction_{};unsigned stun_asked_=0;Clock::time_point last_stun_{};
-    std::optional<connection_code::Address> public_;
-    std::optional<sockaddr_in> punch_;Clock::time_point last_punch_{};
+    Clock::time_point made_;
+    SOCKET socket_=INVALID_SOCKET;std::uint16_t port_=0;
+    sockaddr_in6 peer_{};Clock::time_point heard_{};
+    std::vector<sockaddr_in6> targets_; // The joiner's: the host's addresses.
+    std::vector<sockaddr_in6> stun_servers_;std::vector<unsigned> stun_ports_;stun::Transaction transaction_{};
+    Clock::time_point last_stun_{};std::optional<Clock::time_point> first_answer_;bool stun_settled_=false;std::string stun_ip_;
+    std::optional<connection_code::Address> v4_;std::string ipv6_;
+    std::vector<sockaddr_in6> punch_;Clock::time_point last_punch_{};
 };
 }
 
-std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun) {return std::make_unique<UdpTransport>(true,std::string(),port,stun);}
-std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun) {return std::make_unique<UdpTransport>(false,address,port,stun);}
+std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun) {return std::make_unique<UdpTransport>(true,std::vector<connection_code::Address>{},port,stun);}
+std::unique_ptr<LockstepTransport> joinUdp(const std::vector<connection_code::Address>& host,bool stun) {return std::make_unique<UdpTransport>(false,host,0,stun);}
 #endif

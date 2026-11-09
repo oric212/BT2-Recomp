@@ -150,10 +150,10 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
             }
             const bool online=chosen==LauncherResult::Host || chosen==LauncherResult::Join;
             // Joining: the host's code (host/connection_code.h) gives the address and port, else the address and the port setting.
-            const auto host_code=connection_code::read(settings.online_address);
+            const bool host_code=!connection_code::readAll(settings.online_address).empty();
             const std::string net=chosen==LauncherResult::Host?"host:"+std::to_string(settings.online_port)
                 :chosen!=LauncherResult::Join?std::string()
-                :host_code?"join:"+host_code->address+":"+std::to_string(host_code->port):"join:"+settings.online_address+":"+std::to_string(settings.online_port);
+                :host_code?"join:"+settings.online_address:"join:"+settings.online_address+":"+std::to_string(settings.online_port);
             chosen=LauncherResult::Start;
             const DWORD code=runGame(root,settings_path,settings,folders,log,net);
             SetEnvironmentVariableA("BT2_QUICK_TITLE",nullptr);

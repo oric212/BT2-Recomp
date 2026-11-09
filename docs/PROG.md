@@ -28,7 +28,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 - **Saves verified** ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)): a new game's save, and one written over the 100% save, are byte-identical to the original's save in PCSX2; read back at the next start; the save goes to the launcher's card only.
 - **HD faces fixed** ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md), step 9): plain-skin lit variants had replaced faces and muscle lines; the colour match now counts each cell's spread. Not a card fault.
 - **The RX 9070 XT's striped fade fixed** (an AMD driver fault worked around, [GPU compatibility](plans/graphics/GPU_COMPATIBILITY.md)).
-- **Online without an open port** ([plan](plans/online/ONLINE_BATTLE_PLAN.md), "Without an open port"): the user's first try between two homes failed at the router (no UPnP port service). Now the codes come from STUN, the friend sends back a reply code (copied by itself), and the host's game connects once the host copies it (hole punching); no router setup, no server. Not yet tried between two homes.
+- **Online without an open port** ([plan](plans/online/ONLINE_BATTLE_PLAN.md), "Without an open port"): the user's first try between two homes failed at the router (no UPnP port service). Now the codes come from STUN, the friend sends back a reply code (copied by itself), and the host's game connects once the host copies it (hole punching); no router setup, no server. The second try failed too (the friend's router most likely changes ports per destination): the codes now carry IPv6 as well, and the friend's next IPv4 port is predicted. Not yet tried.
 
 ## Waiting for the user's play
 

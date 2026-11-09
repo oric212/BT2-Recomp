@@ -231,7 +231,7 @@ int main() {
         check(raw!=INVALID_SOCKET && !::bind(raw,reinterpret_cast<sockaddr*>(&at),sizeof at));
         DWORD wait_ms=500;setsockopt(raw,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&wait_ms),sizeof wait_ms);
         auto host_end=hostUdp(47416);
-        host_end->punch({"127.0.0.1",47415});
+        host_end->punch({{"127.0.0.1",47415}}); // With the ports around it (here nobody listens there).
         check(!host_end->receive(std::chrono::milliseconds(250))); // Nobody greets; the punches go out meanwhile.
         char got[64];sockaddr_in from{};int from_size=sizeof from;
         const int size=::recvfrom(raw,got,sizeof got,0,reinterpret_cast<sockaddr*>(&from),&from_size);
@@ -247,18 +247,54 @@ int main() {
         for(const auto& packet:{std::vector<std::uint8_t>{'B','T','2','P'},stray,std::vector<std::uint8_t>{'B','T','2','L',3}})
             ::sendto(raw,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&from),from_size);
         const auto first=joiner_end->receive(std::chrono::milliseconds(500));
-        check(first && first->size()==5 && (*first)[4]==3 && !joiner_end->publicAddress());
+        check(first && first->size()==5 && (*first)[4]==3 && joiner_end->publicAddresses().empty());
         closesocket(raw);WSACleanup();
+    }
+    {   // IPv6 on this PC (the same socket carries IPv4): a joiner given the host's addresses greets each of them, and
+        // the one that answers is used; here the IPv4 address is wrong and the IPv6 one (::1) right.
+        auto host_end=hostUdp(47418);
+        auto joiner_end=joinUdp(std::vector<connection_code::Address>{{"127.0.0.2",47419},{"::1",47418}});
+        const std::uint8_t hello[]{'B','T','2','L',1};joiner_end->send(hello);
+        const auto greeted=host_end->receive(std::chrono::milliseconds(500));
+        check(greeted && greeted->size()==5);
+        const std::uint8_t welcome[]{'B','T','2','L',2};host_end->send(welcome);
+        const auto answered=joiner_end->receive(std::chrono::milliseconds(500));
+        check(answered && (*answered)[4]==2);
     }
     // BT2_TEST_STUN=1 (needs the internet, so not in the gate): the transport learns this PC's address from the public
     // STUN servers within a few seconds.
     if(const char* internet=std::getenv("BT2_TEST_STUN");internet && std::string(internet)=="1") {
         auto end=hostUdp(47417,true);
-        for(int n=0;n<40 && !end->publicAddress();++n)end->receive(std::chrono::milliseconds(100));
-        check(end->publicAddress().has_value() && connection_code::reachable(end->publicAddress()->address));
-        std::cout<<"STUN: this PC is reachable at port "<<end->publicAddress()->port<<" of its internet address\n";
+        for(int n=0;n<120 && end->findingAddresses();++n)end->receive(std::chrono::milliseconds(100));
+        const auto found=end->publicAddresses();
+        check(!end->findingAddresses() && !found.empty() && connection_code::reachable(found[0].address));
+        for(const auto& a:found)std::cout<<"STUN: this PC is reachable at port "<<a.port<<(a.address.find(':')!=std::string::npos?" of its IPv6 address\n":" of its IPv4 address\n");
+        check(connection_code::readAll(*connection_code::make(found)).size()==found.size());
     }
 #endif
+    {   // Codes for several addresses (an IPv4 and an IPv6 one): read back whole; one IPv4 address alone keeps the short
+        // code; a changed character is refused; IPv6 text with and without "::".
+        const std::vector<connection_code::Address> both{{"203.0.113.254",61002},{"2a0d:6fc2:66d0:dd00:1:2:3:4",47418}};
+        const auto code=*connection_code::make(both);
+        const auto back=connection_code::readAll(code);
+        check(code.size()>14 && back.size()==2 && back[0].address=="203.0.113.254" && back[0].port==61002
+              && back[1].address=="2a0d:6fc2:66d0:dd00:1:2:3:4" && back[1].port==47418);
+        check(*connection_code::make(std::vector<connection_code::Address>{{"203.0.113.254",7411}})==*connection_code::make("203.0.113.254",7411));
+        check(connection_code::readAll(*connection_code::make("203.0.113.254",7411)).size()==1);
+        unsigned refused=0,changes=0;
+        for(std::size_t at=0;at<code.size();++at) {
+            if(code[at]=='-')continue;
+            auto changed=code;changed[at]=changed[at]=='7'?'8':'7';++changes;
+            refused+=connection_code::readAll(changed).empty();
+        }
+        check(refused*10>=changes*9);
+        check(connection_code::ipv6("::1") && (*connection_code::ipv6("::1"))[15]==1 && connection_code::ipv6("1::")
+              && connection_code::ipv6Text(*connection_code::ipv6("2a0d:6fc2::1"))=="2a0d:6fc2:0:0:0:0:0:1");
+        for(const char* bad:{"1:2:3","1::2::3",":::","12345::","g::1",""})check(!connection_code::ipv6(bad));
+        check(connection_code::reachable("2a0d:6fc2::1") && !connection_code::reachable("fe80::1") && !connection_code::reachable("::1"));
+        const auto joined=parseLockstepAddress("join:"+code);
+        check(!joined.host && joined.targets.size()==2 && joined.address=="203.0.113.254");
+    }
     {   // Connection codes: eight characters for the usual port, twelve for another; read back in any case, with or
         // without dashes; I, L and O read as 1, 1 and 0; a code with any one character changed is refused.
         const auto code=*connection_code::make("203.0.113.254",connection_code::usual_port);

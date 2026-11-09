@@ -27,7 +27,7 @@ inline std::optional<std::string> codeIn(std::string_view text) {
         // A code as the host's screen writes it has a dash, and most have digits: an ordinary long word whose letters
         // happen to pass the check (one in 256) is not taken for one.
         const bool marked=word.find_first_of("-0123456789")!=std::string_view::npos;
-        if(word.size()>=8 && marked && connection_code::read(word))return std::string(word);
+        if(word.size()>=8 && marked && !connection_code::readAll(word).empty())return std::string(word);
         i=end;
     }
     return std::nullopt;
