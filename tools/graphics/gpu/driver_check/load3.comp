@@ -1,0 +1,36 @@
+#version 450
+// One 24-bit pixel a thread, read from a packed 3-byte-a-pixel buffer, written as a 32-bit word.
+// Default: the read paraLLEl-GS's vram_copy.comp does (a u8vec3 at a 3-byte stride, scalar layout, buffer device address).
+// -DBYTES=1: the same read byte by byte (the BT2 Recomp patch). -DDESCRIPTOR=1: the u8vec3 read through a descriptor.
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, buffer_reference_align = 16, scalar) readonly buffer Packed24 { u8vec3 data[]; };
+layout(buffer_reference, buffer_reference_align = 16, std430) readonly buffer Bytes { uint8_t data[]; };
+layout(buffer_reference, buffer_reference_align = 16, std430) writeonly buffer Words { uint data[]; };
+layout(std430, push_constant) uniform Push { uvec2 source; uvec2 dest; uint count; };
+#if DESCRIPTOR
+layout(scalar, set = 0, binding = 0) readonly buffer Packed24Descriptor { u8vec3 data[]; } packed24;
+#endif
+
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= count)
+		return;
+	uint data;
+#if BYTES
+	uint a = i * 3u;
+	data = uint(Bytes(source).data[a]) | (uint(Bytes(source).data[a + 1u]) << 8) | (uint(Bytes(source).data[a + 2u]) << 16);
+#elif DESCRIPTOR
+	uvec3 b = uvec3(packed24.data[i]);
+	data = b.x | (b.y << 8) | (b.z << 16);
+#else
+	uvec3 b = uvec3(Packed24(source).data[i]);
+	data = b.x | (b.y << 8) | (b.z << 16);
+#endif
+	Words(dest).data[i] = data;
+}
