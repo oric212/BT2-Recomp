@@ -24,7 +24,8 @@ struct Hosting {
     std::vector<connection_code::Address> internet; // This side as the internet sees it (STUN, IPv6), empty until known.
     bool finding=false;                             // Still asking for it.
     std::string home_address;                       // This PC on the home network; empty without one.
-    bool replied=false;                             // The joiner's reply code was copied: connecting to it.
+    bool replied=false;                             // The joiner's reply code was taken: connecting to it.
+    bool no_reply=false;                            // A paste found no reply code on the clipboard.
     std::string copied;                             // The code on the clipboard, put there by this screen.
 };
 inline std::optional<std::string> internetCode(const Hosting& h) {
@@ -48,8 +49,8 @@ inline MenuEntry codeEntry(const std::string& label,const std::string& code,cons
     return menuAction(label+shown(code)+(copied==code?"  (copied)":""),[copy,code]{copy(code);},note);
 }
 
-// `copy`: puts a code on the clipboard.
-inline MenuScreen hosting(const Hosting& h,std::function<void()> cancel,std::function<void(const std::string&)> copy) {
+// `copy`: puts a code on the clipboard; `paste`: takes the reply code from it.
+inline MenuScreen hosting(const Hosting& h,std::function<void()> cancel,std::function<void(const std::string&)> copy,std::function<void()> paste={}) {
     MenuScreen screen;screen.title="Waiting for the other player";
     const auto internet=h.finding?std::nullopt:internetCode(h);
     const auto home=homeCode(h);
@@ -57,7 +58,9 @@ inline MenuScreen hosting(const Hosting& h,std::function<void()> cancel,std::fun
         screen.entries.push_back(codeEntry("Code: ",*internet,h.copied,copy,h.copied==*internet?"Copied: paste it (Ctrl+V) into a chat to the other player."
                                                                                                   :"Confirm copies it, to paste into a chat to the other player."));
         screen.entries.push_back(h.replied?line("Reply code received","Connecting to the other player.")
-            :line("Then copy their reply code","Their screen shows it after they join. Copy it from the chat (Ctrl+C): the game connects."));
+            :menuAction("Then paste their reply code (Ctrl+V)",paste?paste:[]{},h.no_reply
+                ?"No reply code on the clipboard: copy it from the chat first, then Ctrl+V here."
+                :"Their screen shows it after they join. Copy it from the chat, then Ctrl+V here."));
     }
     else if(h.finding)screen.entries.push_back(line("Code: one moment","Finding your internet address."));
     else if(home)screen.entries.push_back(codeEntry("Code: ",*home,h.copied,copy,"Home network only: your internet address was not found."));

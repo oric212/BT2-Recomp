@@ -75,6 +75,9 @@ public:
                     const bool copy_down=HostInput::keyDown(VK_CONTROL) && HostInput::keyDown('C');
                     if(copy_down && !copy_held_ && on_copy)on_copy();
                     copy_held_=copy_down;
+                    const bool paste_down=(HostInput::keyDown(VK_CONTROL) && HostInput::keyDown('V')) || (HostInput::keyDown(VK_SHIFT) && HostInput::keyDown(VK_INSERT));
+                    if(paste_down && !paste_held_ && on_paste)on_paste();
+                    paste_held_=paste_down;
                 }
                 if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
             }
@@ -110,6 +113,8 @@ public:
     std::string clipboardText() {return window_.handle()?clipboard::text(window_.handle()):std::string();}
     // Ctrl+C on a screen (not while typing): the host's waiting screen copies its code again.
     std::function<void()> on_copy;
+    // Ctrl+V or Shift+Insert on a screen (not while typing): the host's waiting screen takes the reply code.
+    std::function<void()> on_paste;
     // The character a key types: digits (also the number pad's), letters in lower case, '.' and '-'; 0 for others.
     static char typedCharacter(unsigned key) {
         if(key>='0' && key<='9')return char(key);
@@ -125,7 +130,7 @@ private:
     std::function<void(Captured)> capture_;std::string prompt_;
     struct Typing {std::string prompt,text,allowed;std::size_t length=0;std::function<void(std::string)> done;} typing_;
     std::function<void()> tick_;unsigned tick_ms_=0;std::uint64_t next_tick_=0;
-    std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;bool copy_held_=false;
+    std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;bool copy_held_=false,paste_held_=false;
 
     unsigned held() {
         unsigned mask=menuButtons(input_.gamepad());

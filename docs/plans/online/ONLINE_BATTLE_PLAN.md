@@ -109,6 +109,8 @@ The side ahead is held where the other's input just arrives: without the cushion
 - **Logs:** the ports each STUN server saw and whether IPv6 was found, the reply code's addresses, the punches, and which address answered or greeted.
 Tests: codes with both kinds, IPv6 text, a changed character refused (9 in 10 at least), a joiner given a wrong IPv4 and a right IPv6 address (`::1`) connecting over IPv6; against the real servers this PC keeps its port (47417 seen by both) and has IPv6. Not yet tried between two homes.
 
+**The reply code would not paste (the user, the same evening):** the host's screen said to copy the reply, and Ctrl+V there did nothing. Ctrl+V (or Shift+Insert) on the waiting screen, and Confirm on its line "Then paste their reply code (Ctrl+V)", now take the reply at once and say when the clipboard holds none (`MenuHost::on_paste`); copying alone still works. The clipboard's text also drops the invisible marks chat programs add (a Hebrew chat wraps Latin text in direction marks, which became '?' and spoiled the code; `clipboard::plainText`), for the joiner's paste of the host's code too. Tests: the line and its note, codes inside direction marks.
+
 ## Decisions for the user
 
 - **Decided by the user (2026-11-03):** no save or patches transferred; the game's own Dueling and select screens, entered fresh on both machines; every fighter unlocked in online matches.

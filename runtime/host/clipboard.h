@@ -51,6 +51,21 @@ inline std::string pastedInto(std::string typed,std::string_view clip,const std:
     return typed;
 }
 
+// Text from the clipboard as the codes read it: ASCII kept; the invisible marks chat programs put around text dropped
+// (a Hebrew or Arabic chat wraps Latin text in direction marks; zero-width spaces, the byte order mark); other spaces
+// (no-break, thin) as spaces; any other character as '?'. At most 4,096 characters.
+inline std::string plainText(std::wstring_view wide) {
+    std::string out;
+    for(const wchar_t c:wide) {
+        if(!c || out.size()>=4096)break;
+        if(c<128)out+=char(c);
+        else if((c>=0x200B && c<=0x200F) || (c>=0x202A && c<=0x202E) || (c>=0x2066 && c<=0x2069) || c==0xFEFF || c==0x061C)continue;
+        else if(c==0x00A0 || (c>=0x2000 && c<=0x200A) || c==0x202F || c==0x205F || c==0x3000)out+=' ';
+        else out+='?';
+    }
+    return out;
+}
+
 #ifdef _WIN32
 inline bool open(HWND owner) {
     for(int attempt=0;attempt<25;++attempt) {
@@ -77,13 +92,13 @@ inline bool copy(HWND owner,std::string_view text) {
     CloseClipboard();
     return done;
 }
-// The clipboard's text, its ASCII characters kept and others as '?'; empty when there is none.
+// The clipboard's text (see plainText); empty when there is none.
 inline std::string text(HWND owner) {
     std::string out;
     if(!open(owner))return out;
     if(const HANDLE data=GetClipboardData(CF_UNICODETEXT)) {
         if(const auto* wide=static_cast<const wchar_t*>(GlobalLock(data))) {
-            for(const wchar_t* c=wide;*c && out.size()<4096;++c)out+=*c<128?char(*c):'?';
+            out=plainText(wide);
             GlobalUnlock(data);
         }
     }

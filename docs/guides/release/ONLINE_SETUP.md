@@ -11,8 +11,8 @@ folder. Nothing to set up on your router.
 2. Friend: copy the code from the chat, then "Online battle",
    "Join with a code", Enter. A reply code is shown and copied by itself:
    paste it into the chat.
-3. Host: copy the reply code from the chat (select it, Ctrl+C).
-   The battle starts by itself.
+3. Host: copy the reply code from the chat (select it, Ctrl+C), then press
+   Ctrl+V in the game's window. The battle starts by itself.
 
 The first time, Windows may ask whether bt2-entry-probe.exe may use the
 network: allow it.
@@ -28,7 +28,8 @@ are. Escape leaves the battle.
 
 If it does not connect
 ----------------------
-- Check that the host copied the friend's latest reply code.
+- Check that the host pasted the friend's latest reply code (Ctrl+V in the
+  game's window).
 - "different build" or "gameplay settings differ": both need the same
   version and the same "Beam struggles by buttons" setting (Enhancements).
   Everything else (HD, widescreen, 60 fps) may differ.

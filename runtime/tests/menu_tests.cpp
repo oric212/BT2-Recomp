@@ -298,14 +298,21 @@ int main() {
             picture(host,"8-hosting-finding");
             h.finding=false;h.internet={{"203.0.113.254",7411}};h.copied=internet;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
-            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+internet+"  (copied)","Then copy their reply code","Home code: "+home,"Cancel"},
+            check(labels(host.menu.screen())==std::vector<std::string>{"Code: "+internet+"  (copied)","Then paste their reply code (Ctrl+V)","Home code: "+home,"Cancel"},
                   "hosting: the code copied, the reply asked for, the home code");
             check(online_screens::codeToGive(h)==internet,"the internet code is the one to give");
             picture(host,"9-hosting-code");
             host.menu.press(MenuKey::Confirm);check(copied==internet,"confirming the code copies it again");
             h.internet={{"203.0.113.254",50123}};
             check(online_screens::codeToGive(h)==*connection_code::make("203.0.113.254",50123),"the code carries the port the internet sees");
-            h.internet={{"203.0.113.254",7411}};h.replied=true;
+            h.internet={{"203.0.113.254",7411}};
+            unsigned pasted=0;
+            host.menu.replace(online_screens::hosting(h,[]{},copy,[&pasted]{++pasted;}));
+            host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);
+            check(pasted==1,"confirming the reply line takes the reply code");
+            h.no_reply=true;
+            check(online_screens::hosting(h,[]{},copy).entries[1].note.find("No reply code on the clipboard")!=std::string::npos,"and says when there is none");
+            h.no_reply=false;h.replied=true;
             host.menu.replace(online_screens::hosting(h,[]{},copy));
             check(labels(host.menu.screen())[1]=="Reply code received","the reply received");
             h.internet.clear();h.replied=false;h.copied=home;
@@ -334,6 +341,11 @@ int main() {
         {
             const std::string code=*connection_code::make("203.0.113.254",7411),port_code=*connection_code::make("203.0.113.254",7500);
             std::string lower;for(const char c:code)lower+=char(std::tolower(static_cast<unsigned char>(c)));
+            // A Hebrew chat wraps Latin text in direction marks; no-break spaces; other letters become '?'.
+            check(clipboard::plainText(L"\x200F\x202A"+std::wstring(code.begin(),code.end())+L"\x202C\x200F")==code,"direction marks dropped");
+            check(clipboard::plainText(L"a\x00A0" L"b\x05D0")=="a b?" && clipboard::plainText(std::wstring(5000,L'x')).size()==4096,"spaces kept, other letters marked, at most 4096");
+            const auto long_code=*connection_code::make(std::vector<connection_code::Address>{{"203.0.113.254",61002},{"2a0d:6fc2::1",47418}});
+            check(clipboard::codeIn(clipboard::plainText(L"\x200F"+std::wstring(long_code.begin(),long_code.end())+L"\x200F"))==long_code,"a long code out of a Hebrew chat");
             check(clipboard::codeIn(code)==code && clipboard::codeIn("my code: "+code+".")==code && clipboard::codeIn("\""+port_code+"\"\r\n")==port_code,"a code found in a chat line");
             check(!clipboard::codeIn("hello there") && !clipboard::codeIn("203.0.113.254") && !clipboard::codeIn("SC07-3ZKX"),"no code in other text, nor a mistyped one");
             check(clipboard::pastedInto("old",code,Settings::online_address_characters,253)==lower,"a pasted code replaces the field");
