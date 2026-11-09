@@ -25,7 +25,12 @@ In the battle
 -------------
 Both games open on the Dueling screen with every fighter unlocked: choose
 "1P vs 2P". The host is 1P, the friend 2P; a line at the top says which you
-are. Escape leaves the battle.
+are. The controller works even while the game's window is in the background
+(when you are in the chat); the keyboard only when the game's window is in
+front.
+
+Escape (or the menu button) opens the online menu: Resume, or End online
+battle. Both games wait while it is open.
 
 If it does not connect
 ----------------------

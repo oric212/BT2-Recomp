@@ -17,9 +17,12 @@ public:
     static constexpr int launcher_exit_code=2; // The player chose "Quit to the launcher".
     static constexpr int title_exit_code=3;    // The player chose "Return to the title screen": the game program starts the game again.
     Settings settings;
-    // An online battle (BT2_NET): the game cannot stand still or run fast on one side only, so there is no fast
-    // forward, and the in-game menu's keys leave the battle for the launcher.
+    // An online battle (BT2_NET): the game cannot run fast on one side only, so there is no fast forward; the in-game
+    // menu is the online one (Resume, End online battle), during which `online_keep_alive` keeps the session going.
+    // The controller counts while the window is in the background too (the players switch to a chat to exchange the
+    // codes, and the battle starts meanwhile); the keyboard only while it has the focus.
     bool online=false;
+    std::function<void()> online_keep_alive;
 
     PlayerSession(std::string path,ViewerWindow& window,HostInput& input,AudioMixer& mixer,FramePacer* pacer)
         :path_(std::move(path)),window_(window),input_(input),mixer_(mixer),pacer_(pacer) {
@@ -46,16 +49,23 @@ public:
         if(pause_test_field_ && ++fields_==pause_test_field_) {
             DisplayFrame drawn;
             takePicture();
-            runOverlay(settings,path_,window_,input_,picture_,[this]{apply();},pause_test_ms_,&drawn);
+            if(online)runOnlineOverlay(window_,input_,picture_,online_keep_alive,pause_test_ms_);
+            else runOverlay(settings,path_,window_,input_,picture_,[this]{apply();},pause_test_ms_,&drawn);
             if(!pause_test_picture_.empty() && drawn.width)writePpm(pause_test_picture_,drawn);
             std::fprintf(stderr,"Pause test: menu shown at field %u over a picture of %u x %u\n",fields_,picture_.width,picture_.height);
         }
-        if(!window_.focused()) {fast_switch_.stop();setFast(false);return {};}
+        const bool focused=window_.focused();
+        if(!focused && !online) {fast_switch_.stop();setFast(false);return {};}
         const auto players=assignPlayers(input_.gamepads());
         const auto& pad=players.one;
-        const bool keyboard=!(settings.second_controller && players.keyboard_two); // The keyboard plays port 2 then.
-        if(trigger_.update(pad,HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
-            if(online)std::exit(launcher_exit_code); // The session tells the other player as it ends.
+        const bool keyboard=focused && !(settings.second_controller && players.keyboard_two); // The keyboard plays port 2 then.
+        if(trigger_.update(pad,focused && HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
+            if(online) {
+                takePicture();
+                if(runOnlineOverlay(window_,input_,picture_,online_keep_alive)!=OverlayResult::Resume)std::exit(launcher_exit_code); // The session tells the other player as it ends.
+                trigger_.swallow();swallow_=true;
+                return {};
+            }
             setFast(false);
             takePicture();
             const auto result=runOverlay(settings,path_,window_,input_,picture_,[this]{apply();});

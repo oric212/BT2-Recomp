@@ -112,6 +112,13 @@ public:
     }
     bool closed() const {return closed_;}
     bool focused() const {return hwnd_ && GetForegroundWindow()==hwnd_;} // Input is taken only then.
+    // Brings the window forward where Windows allows it, and flashes it in the taskbar until it has the focus (an online
+    // battle connected while the player was in a chat).
+    void attention() {
+        if(!hwnd_ || focused())return;
+        SetForegroundWindow(hwnd_);
+        FLASHWINFO flash{sizeof flash,hwnd_,FLASHW_ALL|FLASHW_TIMERNOFG,0,0};FlashWindowEx(&flash);
+    }
     bool opened() const {return hwnd_!=nullptr;}
     HWND handle() const {return hwnd_;} // For dialogs that belong to the window.
 private:

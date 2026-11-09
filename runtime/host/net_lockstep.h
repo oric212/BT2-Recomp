@@ -80,6 +80,10 @@ public:
     std::array<PadInput,2> field(const PadInput& local,std::uint64_t check);
     // Tells the other player this side left; the session is over.
     void leave();
+    // While this side stands still (its in-game menu is open): the other player keeps hearing from it (its game waits
+    // and says so instead of ending the session after its silence), and this side takes the other's packets, so it
+    // learns when they leave. Call it every 100 ms or so. Throws as `field` does when the session ends.
+    void keepAlive();
     // The input delay for a round trip and its spread: the other player's input of a field must arrive before the
     // field, with a field to spare for the two games' pacing.
     static unsigned delayFor(double round_trip_ms,double spread_ms);

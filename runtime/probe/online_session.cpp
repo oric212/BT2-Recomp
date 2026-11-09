@@ -239,6 +239,7 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
         if(window->closed())std::exit(0);
     };
     online.player=player;online.pacer=pacer;
+    if(player)player->online_keep_alive=[]{online.session->keepAlive();};
     // STUN in a player's game (its codes need the internet address), or with BT2_NET_STUN=1 in a tool run.
     const bool stun=(window && input) || (std::getenv("BT2_NET_STUN") && std::string_view(std::getenv("BT2_NET_STUN"))=="1");
     online.transport=address.host?hostUdp(address.port,stun):joinUdp(address.targets,stun);
@@ -253,6 +254,7 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
         throw std::runtime_error(address.host?"Online session: no other player joined":"Online session: the host did not answer");
     std::cerr<<"Online session: connected as player "<<(address.host?1:2)<<", input delay "<<online.session->delay()<<" fields, round trip "
              <<int(online.session->roundTripMs())<<" ms"<<(online.upnp?", UPnP: "+std::string(online.upnp->state()==UpnpPort::State::Opened?"opened":online.upnp->failure()):std::string())<<std::endl;
+    if(window)window->attention();
     // Leaving tells the other player before anything else ends (the renderer's ending can take a while).
     std::atexit([]{if(online.session)online.session->leave();});
     // The local controller: the player's (live), or BT2_PAD_SCRIPT counted in fields as DualShock2 counts them.

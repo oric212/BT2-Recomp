@@ -191,6 +191,10 @@ bool GpuWindowPresenter::present(const Request& request,Vulkan::Fence& done) {
     const DisplayFrame* frame=request.frame?&*request.frame:nullptr;
     const DisplayFrame& status=request.status;const Rect status_at=request.status_at;
     auto& s=*state_;
+    // A minimized window has no area to present to (its swapchain cannot be made at its size): the picture is skipped,
+    // and the game goes on; the next picture after the window is restored is shown. The "waiting for the other player"
+    // line of an online battle repeats the last picture at its old size, which once stalled a minimized game.
+    if(IsIconic(static_cast<HWND>(window)))return false;
     if(s.window!=static_cast<HWND>(window)) { // The first picture (or a new window): its swapchain.
         s.wsi.reset();
         s.window=static_cast<HWND>(window);

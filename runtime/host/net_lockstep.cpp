@@ -194,6 +194,14 @@ std::array<PadInput,2> Lockstep::field(const PadInput& local,std::uint64_t check
     return options_.host?std::array<PadInput,2>{mine,theirs}:std::array<PadInput,2>{theirs,mine};
 }
 
+void Lockstep::keepAlive() {
+    if(!connected_ || ended_)return;
+    while(const auto packet=transport_.receive(std::chrono::milliseconds(0)))handle(*packet);
+    if(Clock::now()-heard_>options_.silence)
+        stop("no word from the other player for "+std::to_string(options_.silence.count()/1000)+" s",Left);
+    sendInputs();
+}
+
 void Lockstep::sendWelcome(std::uint32_t echo) {
     Writer welcome(Welcome);welcome.u64(options_.program);welcome.u32(options_.rules);welcome.u8(std::uint8_t(options_.delay));welcome.u32(echo);
     transport_.send(welcome.bytes);
