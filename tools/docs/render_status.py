@@ -1,7 +1,9 @@
 """Render BT2's authored component scopes as a compact status map."""
 import argparse
+import hashlib
 import html
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,12 +86,26 @@ def main():
     source = ROOT / "docs/progress/components.json"
     path = ROOT / "docs/progress/dashboard.svg"
     content = render(json.loads(source.read_text(encoding="utf-8")))
+    # PROG.md links the map with a fingerprint of its content (dashboard.svg?v=...): Markdown previews and GitHub
+    # keep an image by its address, so a changed map gets a new one and is shown fresh. sync_progress.py copies the
+    # link into README.
+    prog = ROOT / "docs/PROG.md"
+    text = prog.read_text(encoding="utf-8")
+    link = f"(progress/dashboard.svg?v={hashlib.sha256(content.encode()).hexdigest()[:8]})"
+    linked, count = re.subn(r"\(progress/dashboard\.svg(\?v=[0-9a-f]+)?\)", lambda _: link, text)
+    if count != 1:
+        raise SystemExit("docs/PROG.md must link the component map once")
     if args.check:
         if path.read_text(encoding="utf-8") != content:
             raise SystemExit("Component map is stale; run python tools/docs/render_status.py")
+        if linked != text:
+            raise SystemExit("docs/PROG.md links an older component map; run python tools/docs/render_status.py")
     else:
         with path.open("w", encoding="utf-8", newline="\n") as output:
             output.write(content)
+        if linked != text:
+            with prog.open("w", encoding="utf-8", newline="\n") as output:
+                output.write(linked)
     print("Component map checked." if args.check else "Component map rendered.")
 
 

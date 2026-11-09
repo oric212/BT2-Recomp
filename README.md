@@ -23,7 +23,7 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 
 ## Progress
 <!-- progress-summary:start -->
-![BT2 port status](docs/progress/dashboard.svg)
+![BT2 port status](docs/progress/dashboard.svg?v=91118962)
 
 | Milestone | Status |
 | --- | --- |

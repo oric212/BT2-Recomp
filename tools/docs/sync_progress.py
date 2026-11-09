@@ -26,7 +26,7 @@ def main():
     readme = path.read_text(encoding="utf-8")
     a, b = bounds(source)
     c, d = bounds(readme)
-    block = source[a:b].replace("(progress/dashboard.svg)", "(docs/progress/dashboard.svg)")
+    block = source[a:b].replace("(progress/dashboard.svg", "(docs/progress/dashboard.svg")  # Keeps the ?v= fingerprint.
     updated = readme[:c] + block + readme[d:]
     if updated == readme:
         print("README progress summary is current.")

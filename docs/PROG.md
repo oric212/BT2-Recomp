@@ -3,7 +3,7 @@
 *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441) as a native Windows x64 port: recompiled game code on a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md)). How each part was checked: [VALIDATION.md](progress/VALIDATION.md). Dated detail: [November](progress/2026-11.md), [October](progress/2026-10.md).
 
 <!-- progress-summary:start -->
-![BT2 port status](progress/dashboard.svg)
+![BT2 port status](progress/dashboard.svg?v=91118962)
 
 | Milestone | Status |
 | --- | --- |
