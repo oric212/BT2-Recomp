@@ -31,7 +31,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Waiting for the user's play
 
-Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; saving to a card; a second controller ("Player 2 controller"); the programs' icons; online battles on two machines (Host and Join in the launcher); the release package (fit to publish since 2026-11-04: only the player's disc image needed, nothing of the game or the console shipped; not published). Open reports: a texture glitch in the first fight with HD (not reproduced headless).
+Built and checked by measurements or pictures, not yet seen in play: the 60 fps aura fix; Variable refresh rate; beam struggles by buttons; the HD outline a game pixel wide (face shimmer fix); the dialogue text's shadow with HD; the light depth of field; saving to a card; a second controller ("Player 2 controller"); the programs' icons; online battles on two machines (Host and Join in the launcher); the release package (fit to publish since 2026-11-04: only the player's disc image needed, nothing of the game or the console shipped; not published). Open reports: a texture glitch in the first fight with HD (not reproduced headless); HD faces and muscle lines missing on the user's RX 9070 XT. Fixed, not yet seen in play: the striped fade into every fight on that card (paraLLEl-GS's 24-bit upload, [GPU compatibility](plans/graphics/GPU_COMPATIBILITY.md)).
 
 ## Measurements
 

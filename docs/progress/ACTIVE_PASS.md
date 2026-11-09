@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-11-04. Earlier work: [November history](2026-11.md).
+Updated: 2026-11-09. Earlier work: [November history](2026-11.md).
 
 ## Current work: 60 fps as the user plays it
 
@@ -24,6 +24,11 @@ Open, in order:
 3. Done 2026-11-03: the bones "left at the newer pose" are 95% data VU1 never reads (proven by pictures); the rounding helpers 30% faster, bit-identical; the pacer spins only the last 6 ms of a wait (the game's thread 0.67 of a core instead of 0.98). Online battle ([plan](../plans/online/ONLINE_BATTLE_PLAN.md), the user's choices: each player's own patches and save, the game's own Dueling screens entered fresh on both machines, every fighter unlocked, no split screen, no radars, direct address and port): built: local two-player ("Player 2 controller"), the roster unlock (`BT2_UNLOCK_ROSTER`), each player full screen without radars (`BT2_ONLINE_VIEW`), all measured (the fight's audio identical across settings). Not yet seen by the user: two-player, the icons.
 4. Done 2026-11-04: the lockstep transport (`BT2_NET`, `host/net_lockstep.*`, `probe/online_session.*`) and the launcher's "Online battle" screen (Host, Join, the address and port typed, the input delay; a waiting screen with Cancel; Escape leaves a battle). Measured over loopback with two probes at different settings: a played fight with 84 drift checks alike and byte-identical audio; a forced difference stopped both by name ([plan](../plans/online/ONLINE_BATTLE_PLAN.md), "The lockstep transport"). Polished the same day at the user's request: Auto input delay, UPnP, connection codes (8 characters), the waiting screens, each player's side shown outside fights, wait and slow-connection lines, the pacer's cushion after waits (late host pictures at 80 ms with jitter: 97 of 999 to 1), a scripted fight over a simulated 60 ms with byte-identical audio. Then the launcher's online screen simplified (Host, Join with a code, Options), the player's readme and online setup guide (`docs/guides/release/`), and a private release package (`python tools/build/package.py`, `dist/`; [release plan](../plans/launcher/RELEASE_PLAN.md)). **Next: the user's two machines with the package** (UPnP or the port forwarded by hand); the user's decisions: a matchmaking server for a short PIN, rollback. Releases follow BT3-Recomp's model (the user's decision): the compiled runtime ships, the game's data stays on the player's disc; the game's starting memory is now made from the disc (`ee/guest_image.*`, byte-identical, gate passed). Then every console capture replaced natively (`EeRuntime::bootState`, the kernel's syscall table view; the runtime's command line `STOP_REPORT DISC_IMAGE`): the package holds nothing of the game or the console, checked from a clean folder; not published (the user decides when).
 
+## GPU compatibility (2026-11-09)
+
+- The fade into a fight striped on the user's RX 9070 XT: paraLLEl-GS's 24-bit upload (`vram_copy.comp`) now reads and writes single bytes ([GPU compatibility](../plans/graphics/GPU_COMPATIBILITY.md)); verified headless, **not yet seen by the user in play**. Open: HD faces and muscle lines missing on that card.
+- The release package rebuilt from this commit (`dist/`, not published).
+
 ## How the user runs things
 
 - **Game folders:** next to `bt2-game.exe` (`build\probe\Release`): `data` (disc image; `data\textures` holds the pack in its own subfolder), `saves` (cards), `user\settings`, `user\last-run.log`.
@@ -31,7 +36,7 @@ Open, in order:
 
 ## How to run (automated)
 
-- **Gate:** `python tools/gate/run_gate.py --disc <iso>` (the Release battle run against `7f996c1524a22bea`).
+- **Gate:** `python tools/gate/run_gate.py --disc <iso>` (the Release battle run against its baseline in `tools/gate/battle_run.py`).
 - **Feel in fullscreen at the user's settings:** the story fight with `--viewer --frames 3000`, `BT2_VIEWER_FULLSCREEN=1 BT2_VIEWER_SCALE=4 BT2_VIEWER_CLOSE=1 BT2_LATENCY_LOG=<file>` and the picture settings below (on the user's screen); `latency_report.py`.
 - **The CPU fight at the 60 fps settings, headless:** `BT2_START_BATTLE=0,1,0 BT2_SUPER_SAMPLING=16 BT2_SCANOUT_QUAD=1 BT2_HD_TEXTURES="<pack subfolder>" BT2_GAME_PATCHES=widescreen BT2_SIXTY_FPS=1 BT2_DOF_STRENGTH=25` with `run_startup_probe.py --config Release --frames 2000 --pad-script ""`; the run's 60 fps line splits the in-between thread's time. A story fight: `BT2_START_EPISODE=0,0,marker:14`.
 - **Online over loopback:** the host with `BT2_NET=host:7411`, then the joiner with `BT2_NET=join:127.0.0.1:7411`, each `run_startup_probe.py --config Release` with its own `--report` and `--pad-script` (the local player's input); the last line of each log counts the drift checks found alike. Two runs at once are needed here (the one exception besides sweeps).

@@ -294,6 +294,9 @@ void GpuGsBackend::takeState(const GpuGsBackend& primary,unsigned slot) {
 void GpuGsBackend::readFifo(std::span<std::uint8_t> out) {
     if(out.size()%16)throw std::runtime_error("GPU GS: FIFO read size is not a multiple of 16");
     state_->gs.read_transfer_fifo(out.data(),std::uint32_t(out.size()/16));
+    // BT2_READBACK_DUMP=<file> (diagnostics): every byte the GS hands back to the game, in order.
+    static std::ofstream dump=[] {const char* p=std::getenv("BT2_READBACK_DUMP");return p?std::ofstream(p,std::ios::binary):std::ofstream();}();
+    if(dump.is_open())dump.write(reinterpret_cast<const char*>(out.data()),std::streamsize(out.size()));
 }
 
 void GpuGsBackend::flush() {endFrame();changeFrame();}
@@ -351,7 +354,9 @@ void GpuGsBackend::copyDrawnPalettes() {
     auto cmd=device.request_command_buffer();
     cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
     cmd->copy_buffer(*copy.buffer,vram,regions.data(),regions.size());
-    cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_HOST_BIT,VK_ACCESS_2_HOST_READ_BIT);
+    // For the host's read, and before later copies: the next upload into GS memory must not overwrite these pages while
+    // this copy still reads them (found by the synchronization validation, 2026-11-09).
+    cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_HOST_BIT|VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_HOST_READ_BIT);
     device.submit(cmd,&copy.fence);
     copy.pages=std::move(pages);copy.pending=true;
 }
