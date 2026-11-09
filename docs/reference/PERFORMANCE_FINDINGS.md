@@ -18,6 +18,19 @@ All figures are from one PC (Core i9-10900K, Radeon RX 6800 XT), Release builds.
 | Hitches | four fields at screen changes take 22 to 47 ms (loading work landing in one field); none in fights | the gate's path, headless |
 | Loading | "Fast loading" (off by default) saves 7.1 of 109 s on the gate's path | window, paced |
 
+## The RX 9070 XT (2026-11-09)
+
+The user's PC now has a Radeon RX 9070 XT (RDNA 4) in place of the RX 6800 XT; the processor is the same. The CPU fight headless, Release, on the current code:
+
+| GPU time a picture | RX 6800 XT (earlier record) | RX 9070 XT |
+| --- | --- | --- |
+| 1x (`BT2_GPU_TIMESTAMPS`, 2,000 flips) | not recorded headless | 1.9 ms |
+| 4x (the same) | about 3 ms (2026-11-02) | 2.9 ms |
+| 16x (the same) | not recorded headless | 5.6 ms |
+| Main renderer at 16x, 4x scanout, HD, widescreen, outline, 60 fps (`BT2_GPU_PASS_TIMES`, flips 1,000 to 1,300) | 7.9 ms (2026-11-01) | 7.7 ms (with Light depth of field) |
+
+So the new card does this work in about the same time: the picture-by-picture GPU work did not get measurably faster. The fight runs at the original's 30 pictures a second (60 with in-between pictures) on both cards, which the game cannot exceed. Not established: why the newer card is not faster (whether this many small render passes leave it at low clocks or waiting between them); the old card's beam measurement could not be repeated, since the AI rounding fixes of 2026-11-03 moved the super attack out of the first 3,500 flips; flip-to-panel latency in fullscreen not yet measured on the new card. The earlier figures in this document are the RX 6800 XT's.
+
 ## Where the time goes
 
 **Threads.** The game's thread runs the recompiled game, VIF1 and VU1 and checks the GS data; the main renderer's GS thread names textures and feeds paraLLEl-GS; with 60 fps an in-between thread blends the fight's VIF1 lists and runs VU1 again, and a second renderer has its own GS thread; a presenter thread shows the pictures.

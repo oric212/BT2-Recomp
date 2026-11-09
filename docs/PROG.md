@@ -35,7 +35,7 @@ Built and checked by measurements or pictures, not yet seen in play: the 60 fps 
 
 ## Measurements
 
-One PC (Core i9-10900K, Radeon RX 6800 XT), Release, a versus or story fight at every enhancement (16x, HD, widescreen, 60 fps), in fullscreen or a window ([performance findings](reference/PERFORMANCE_FINDINGS.md)).
+One PC (Core i9-10900K, Radeon RX 6800 XT; since 2026-11-09 an RX 9070 XT, about the same GPU time a picture), Release, a versus or story fight at every enhancement (16x, HD, widescreen, 60 fps), in fullscreen or a window ([performance findings](reference/PERFORMANCE_FINDINGS.md)).
 
 | Item | Value |
 | --- | --- |
