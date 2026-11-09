@@ -47,11 +47,11 @@ void setSwitch(const char* name,const char* value) {
 // What the host's waiting screen shows of the router (host/online_screens.h).
 online_screens::Hosting hosting(unsigned port,const std::string& home) {
     online_screens::Hosting h;h.port=port;h.home_address=home;
-    if(!online.upnp) {h.router_note="(UPnP is off in the launcher.)";return h;}
+    if(!online.upnp)return h;
     switch(online.upnp->state()) {
     case UpnpPort::State::Asking: h.router=online_screens::RouterPort::Asking;break;
     case UpnpPort::State::Opened: h.router=online_screens::RouterPort::Opened;h.internet_address=online.upnp->externalAddress();break;
-    case UpnpPort::State::Failed: h.router_note="(UPnP: "+online.upnp->failure()+")";break;
+    case UpnpPort::State::Failed: break;
     }
     return h;
 }
@@ -61,15 +61,29 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
     MenuHost host(window,input);
     const auto start=std::chrono::steady_clock::now();
     const auto cancel=[&host]{host.finished=true;};
-    const auto copy=[](const std::string& code){MenuHost::copy(code);};
     const std::string home=address.host?UpnpPort::localAddress():std::string();
-    host.menu.open(address.host?online_screens::hosting(hosting(address.port,home),cancel,copy):online_screens::joining(address.address,address.port,false,cancel));
+    // The host's code goes on the clipboard by itself once it is known (the user: make the code copyable); Confirm on
+    // a code, or Ctrl+C for the one to give, copies again. The screen marks the code on the clipboard.
+    std::string copied,auto_copied;
+    std::function<bool(const std::string&)> copy;
+    const auto screen=[&]{auto h=hosting(address.port,home);h.copied=copied;return online_screens::hosting(h,cancel,copy);};
+    copy=[&](const std::string& code) {
+        if(!host.copy(code))return false;
+        copied=code;host.later([&]{host.menu.replace(screen());});return true;
+    };
+    if(address.host)host.on_copy=[&]{if(const auto code=online_screens::codeToGive(hosting(address.port,home)))copy(*code);};
+    host.menu.open(address.host?screen():online_screens::joining(address.address,address.port,false,cancel));
     host.menu.on_leave_root=cancel;
     bool connected=false,late=false;
     auto shown=online.upnp?online.upnp->state():UpnpPort::State::Failed;
     host.every(50,[&] {
         if(online.session->connect(std::chrono::milliseconds(30))) {connected=true;host.finished=true;return;}
-        if(address.host && online.upnp && online.upnp->state()!=shown) {shown=online.upnp->state();host.menu.replace(online_screens::hosting(hosting(address.port,home),cancel,copy));}
+        if(address.host)
+            if(const auto code=online_screens::codeToGive(hosting(address.port,home));code && *code!=auto_copied && copy(*code))auto_copied=*code;
+        if(address.host && online.upnp && online.upnp->state()!=shown) {
+            shown=online.upnp->state();host.menu.replace(screen());
+            if(shown==UpnpPort::State::Failed)std::cerr<<"Online session: UPnP: "<<online.upnp->failure()<<std::endl;
+        }
         if(!address.host && !late && std::chrono::steady_clock::now()-start>=std::chrono::seconds(10)) {
             late=true;host.menu.replace(online_screens::joining(address.address,address.port,true,cancel));
         }

@@ -94,7 +94,7 @@ private:
         main.entries.push_back(menuAction("Display",[this,apply]{host_.menu.open(menu_screens::display(host_,settings_,apply));},"Window size, fullscreen, scaling, frame rate."));
         main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply));},"HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
         main.entries.push_back(menuAction("Sound",[this,apply]{host_.menu.open(menu_screens::sound(settings_,apply));},"Master, music and effects volume."));
-        main.entries.push_back(menuAction("Online battle",[this]{host_.menu.open(onlineScreen());},"1P vs 2P with a player on another PC: host, or join a host's address."));
+        main.entries.push_back(menuAction("Online battle",[this]{host_.menu.open(onlineScreen());},"1P vs 2P with a player on another PC: one hosts, the other joins with the host's code."));
         main.entries.back().available=[this]{return discReady();};
         main.entries.push_back(menuAction("Quit",[this]{result=LauncherResult::Quit;host_.finished=true;}));
         return main;
@@ -106,17 +106,22 @@ private:
         MenuScreen screen;screen.title="Online battle";
         const auto start=[this](LauncherResult how){if(discReady()) {result=how;host_.finished=true;}};
         screen.entries.push_back(menuAction("Host a battle",[start]{start(LauncherResult::Host);},
-            "Shows a code to give the other player, then waits for them. Escape leaves the battle."));
+            "Your code is copied by itself: paste it into a chat to the other player, then wait."));
         screen.entries.push_back(menuAction("Join with a code",[this,start] {
-            host_.type("The host's code: type it or paste it (Ctrl+V), then Enter",settings_.online_address,Settings::online_address_characters,253,
+            // A code already on the clipboard (copied from the chat) is filled in; Ctrl+V pastes one.
+            const auto clip=host_.clipboardText();
+            const bool has_code=clipboard::codeIn(clip).has_value();
+            host_.type(has_code?"The host's code, pasted from the clipboard: Enter joins":"The host's code: type it or paste it (Ctrl+V), then Enter",
+                       has_code?clipboard::pastedInto("",clip,Settings::online_address_characters,253):settings_.online_address,
+                       Settings::online_address_characters,253,
                 [this,start](std::string text) {
                     if(text.empty())return;
                     settings_.online_address=std::move(text);changed();
                     start(LauncherResult::Join);
                 });
-        },"The code on the host's screen. An address works too (with the port under Options). Escape leaves the battle."));
+        },"Copy the host's code first: it is filled in, and Enter joins. An address works too."));
         screen.entries.back().value=[this]{return settings_.online_address.empty()?std::string():"last: "+settings_.online_address;};
-        screen.entries.push_back(menuAction("Options",[this]{host_.menu.open(onlineOptions());},"The port, the input delay and the router (UPnP)."));
+        screen.entries.push_back(menuAction("Options",[this]{host_.menu.open(onlineOptions());},"Only if needed: the port, the input delay, the router (UPnP)."));
         return screen;
     }
     MenuScreen onlineOptions() {

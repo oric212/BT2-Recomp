@@ -4,6 +4,7 @@
 // both of them show (docs/plans/launcher/LAUNCHER_PLAN.md).
 #pragma once
 #ifdef _WIN32
+#include "host/clipboard.h"
 #include "host/host_input.h"
 #include "host/menu_input.h"
 #include "host/menu_model.h"
@@ -69,7 +70,12 @@ public:
             if(window_.focused() || !window_.opened()) {
                 if(capture_)captureStep();
                 else if(typing_.done)typeStep();
-                else for(const MenuKey key:steps_.step(held(),now_))menu.press(key);
+                else {
+                    for(const MenuKey key:steps_.step(held(),now_))menu.press(key);
+                    const bool copy_down=HostInput::keyDown(VK_CONTROL) && HostInput::keyDown('C');
+                    if(copy_down && !copy_held_ && on_copy)on_copy();
+                    copy_held_=copy_down;
+                }
                 if(later_) {const auto action=std::move(later_);later_=nullptr;action();}
             }
             if(tick_ && now_>=next_tick_) {
@@ -97,34 +103,13 @@ public:
         if(scan && GetKeyNameTextA(LONG(scan<<16),name,sizeof name)>0)return name;
         return "key "+std::to_string(key);
     }
-    // `text` with the clipboard's text added: up to a ':' (an address with its port gives the address), letters in
-    // lower case, without what `allowed` leaves out, at most `length` in all.
-    static std::string pasted(std::string text,const std::string& allowed,std::size_t length) {
-        if(!OpenClipboard(nullptr))return text;
-        if(const HANDLE data=GetClipboardData(CF_TEXT)) {
-            if(const char* clip=static_cast<const char*>(GlobalLock(data))) {
-                for(const char* c=clip;*c && *c!=':' && text.size()<length;++c) {
-                    const char lower=*c>='A' && *c<='Z'?char(*c-'A'+'a'):*c;
-                    if(allowed.find(lower)!=std::string::npos)text+=lower;
-                }
-                GlobalUnlock(data);
-            }
-        }
-        CloseClipboard();
-        return text;
-    }
-    // `text` on the clipboard (a connection code to paste into a chat).
-    static void copy(const std::string& text) {
-        if(!OpenClipboard(nullptr))return;
-        EmptyClipboard();
-        if(const HGLOBAL data=GlobalAlloc(GMEM_MOVEABLE,text.size()+1)) {
-            if(char* bytes=static_cast<char*>(GlobalLock(data))) {
-                std::memcpy(bytes,text.c_str(),text.size()+1);GlobalUnlock(data);
-                if(!SetClipboardData(CF_TEXT,data))GlobalFree(data);
-            } else GlobalFree(data);
-        }
-        CloseClipboard();
-    }
+    // `text` on the clipboard, owned by the window (host/clipboard.h); false when the clipboard stayed busy or the
+    // window is not open yet.
+    bool copy(const std::string& text) {return window_.handle() && clipboard::copy(window_.handle(),text);}
+    // The clipboard's text; empty without an open window (tests, which must not depend on the user's clipboard).
+    std::string clipboardText() {return window_.handle()?clipboard::text(window_.handle()):std::string();}
+    // Ctrl+C on a screen (not while typing): the host's waiting screen copies its code again.
+    std::function<void()> on_copy;
     // The character a key types: digits (also the number pad's), letters in lower case, '.' and '-'; 0 for others.
     static char typedCharacter(unsigned key) {
         if(key>='0' && key<='9')return char(key);
@@ -140,7 +125,7 @@ private:
     std::function<void(Captured)> capture_;std::string prompt_;
     struct Typing {std::string prompt,text,allowed;std::size_t length=0;std::function<void(std::string)> done;} typing_;
     std::function<void()> tick_;unsigned tick_ms_=0;std::uint64_t next_tick_=0;
-    std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;
+    std::array<bool,256> keys_{};std::uint32_t buttons_=0;std::uint64_t now_=0;bool copy_held_=false;
 
     unsigned held() {
         unsigned mask=menuButtons(input_.gamepad());
@@ -181,7 +166,8 @@ private:
                 if(key==VK_RETURN)enter=true;
                 else if(key==VK_ESCAPE)cancel=true;
                 else if(key==VK_BACK) {if(!typing_.text.empty())typing_.text.pop_back();}
-                else if(key=='V' && HostInput::keyDown(VK_CONTROL))typing_.text=pasted(typing_.text,typing_.allowed,typing_.length);
+                else if((key=='V' && HostInput::keyDown(VK_CONTROL)) || (key==VK_INSERT && HostInput::keyDown(VK_SHIFT)))
+                    typing_.text=clipboard::pastedInto(typing_.text,clipboardText(),typing_.allowed,typing_.length);
                 else if(HostInput::keyDown(VK_CONTROL)) {}
                 else if(const char c=typedCharacter(key);c && typing_.allowed.find(c)!=std::string::npos && typing_.text.size()<typing_.length)typing_.text+=c;
             }
