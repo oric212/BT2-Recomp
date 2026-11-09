@@ -64,7 +64,7 @@ One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with a
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. The user's play: online on two PCs, then the items above.
+1. Online: the lock-on (input delay, lost too often) and each player seeing only their own prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
 2. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
 3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
 4. The user's decisions: a matchmaking server and rollback for online; publishing the release.

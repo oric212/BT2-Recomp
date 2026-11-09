@@ -4,7 +4,7 @@ Updated: 2026-11-09. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Next after online: the user's report that a DualSense feels less responsive than an Xbox Series controller (not yet looked into). Done today: saves verified (byte-identical to the original's in PCSX2, written to the launcher's card only), the HD faces fixed (lit-variant choice), the RX 9070 XT's striped fade worked around, the online setup simplified. Next: the user's play, then the final validation ([PROG.md](../PROG.md), "Next").
+No pass is open. Online works between two homes; left for a later pass (the user's choice): the lock-on online (input delay, lost too often) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). The DualSense: measured fast (reports at most 4 ms old when read); the face-button check waits for the user. Done today: saves verified (byte-identical to the original's in PCSX2, written to the launcher's card only), the HD faces fixed (lit-variant choice), the RX 9070 XT's striped fade worked around, the online setup simplified. Next: the user's play, then the final validation ([PROG.md](../PROG.md), "Next").
 
 ## Waiting for the user
 
