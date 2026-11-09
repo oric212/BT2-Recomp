@@ -231,7 +231,7 @@ int main() {
         check(raw!=INVALID_SOCKET && !::bind(raw,reinterpret_cast<sockaddr*>(&at),sizeof at));
         DWORD wait_ms=500;setsockopt(raw,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&wait_ms),sizeof wait_ms);
         auto host_end=hostUdp(47416);
-        host_end->punch({{"127.0.0.1",47415}}); // With the ports around it (here nobody listens there).
+        host_end->punch({{"127.0.0.1",47415}});
         check(!host_end->receive(std::chrono::milliseconds(250))); // Nobody greets; the punches go out meanwhile.
         char got[64];sockaddr_in from{};int from_size=sizeof from;
         const int size=::recvfrom(raw,got,sizeof got,0,reinterpret_cast<sockaddr*>(&from),&from_size);
@@ -261,6 +261,28 @@ int main() {
         const auto answered=joiner_end->receive(std::chrono::milliseconds(500));
         check(answered && (*answered)[4]==2);
     }
+    {   // The birthday technique on this PC (no router here, so only the transports' part): a joiner behind a router that
+        // changes ports greets the host from its 256 opened ports and is answered on one of them; a host behind one is
+        // found by the joiner's random probes, within seconds as the numbers say (256 ports, 250 probes a second).
+        const auto meet=[&](std::unique_ptr<LockstepTransport> host_end,std::unique_ptr<LockstepTransport> joiner_end,bool punch_hard) {
+            if(punch_hard)host_end->punch({{"127.0.0.1",1,true}}); // The joiner's reply code: a router that changes ports.
+            Side host,joiner;
+            const auto began=Clock::now();
+            std::thread a([&]{play(*host_end,0,options(true,0),120+margin,host,same);});
+            std::thread b([&]{play(*joiner_end,1,options(false),120+margin,joiner,same);});
+            a.join();b.join();
+            checkAlike(host,joiner,120,host.delay);
+            return std::chrono::duration<double>(Clock::now()-began).count();
+        };
+        // The joiner's router changes ports: its opened ports greet the host; the host also probes its address.
+        meet(hostUdp(47421),joinUdp(std::vector<connection_code::Address>{{"127.0.0.1",47421}},false,true),true);
+        // The host's: the joiner probes random ports of its address until one of the host's opened ports answers.
+        auto host_end=hostUdp(47422,false,true);
+        host_end->punch({{"127.0.0.1",1}}); // Opens the host's ports toward the joiner (on this PC: toward port 1).
+        const double seconds=meet(std::move(host_end),joinUdp(std::vector<connection_code::Address>{{"127.0.0.1",47422,true}}),false);
+        std::cout<<"Birthday technique on this PC: a host behind a port-changing router found in "<<seconds<<" s\n";
+        check(seconds<30);
+    }
     // BT2_TEST_STUN=1 (needs the internet, so not in the gate): the transport learns this PC's address from the public
     // STUN servers within a few seconds.
     if(const char* internet=std::getenv("BT2_TEST_STUN");internet && std::string(internet)=="1") {
@@ -280,6 +302,9 @@ int main() {
         check(code.size()>14 && back.size()==2 && back[0].address=="203.0.113.254" && back[0].port==61002
               && back[1].address=="2a0d:6fc2:66d0:dd00:1:2:3:4" && back[1].port==47418);
         check(*connection_code::make(std::vector<connection_code::Address>{{"203.0.113.254",7411}})==*connection_code::make("203.0.113.254",7411));
+        // An address behind a router that changes ports keeps that mark, alone too (then never the short code).
+        const auto hard=connection_code::readAll(*connection_code::make(std::vector<connection_code::Address>{{"203.0.113.254",51570,true}}));
+        check(hard.size()==1 && hard[0].changes_port && hard[0].port==51570 && !back[0].changes_port);
         check(connection_code::readAll(*connection_code::make("203.0.113.254",7411)).size()==1);
         unsigned refused=0,changes=0;
         for(std::size_t at=0;at<code.size();++at) {

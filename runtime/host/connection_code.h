@@ -57,7 +57,9 @@ inline bool reachable(std::string_view address) {
     for(++i;i<address.size() && address[i]!='.';)b=b*10+unsigned(address[i++]-'0');
     return !(a==10 || (a==172 && b>=16 && b<32) || (a==192 && b==168) || (a==100 && b>=64 && b<128) || a==127 || a==0);
 }
-struct Address {std::string address;std::uint16_t port=0;};
+// `changes_port`: an IPv4 address behind a router that gives each destination another port (a "hard" NAT); its port
+// then says little, and the other side reaches it by probing ports (host/net_lockstep.cpp).
+struct Address {std::string address;std::uint16_t port=0;bool changes_port=false;};
 // A code in any case, with or without its dashes and spaces; nothing when the text is not a valid code.
 inline std::optional<Address> read(std::string_view text) {
     std::uint64_t value=0,port=0;unsigned count=0;
@@ -118,12 +120,12 @@ inline std::string ipv6Text(const std::array<std::uint8_t,16>& bytes) {
 }
 
 // A code for several addresses (an IPv4 one and an IPv6 one; docs/plans/online/ONLINE_BATTLE_PLAN.md, "Without an open
-// port"): each as a kind byte (4 or 6), its bytes and its port (two bytes, high first), then a check byte over all of it;
+// port"): each as a kind byte (4, 5 for IPv4 behind a router that changes ports, or 6), its bytes and its port (two bytes, high first), then a check byte over all of it;
 // written in the same base32 in groups of four. One IPv4 address alone keeps the short code above. Never eight or twelve
 // characters long, so the two kinds cannot be confused.
 inline std::optional<std::string> make(const std::vector<Address>& addresses) {
     if(addresses.empty())return std::nullopt;
-    if(addresses.size()==1 && addresses[0].address.find(':')==std::string::npos)return make(addresses[0].address,addresses[0].port);
+    if(addresses.size()==1 && addresses[0].address.find(':')==std::string::npos && !addresses[0].changes_port)return make(addresses[0].address,addresses[0].port);
     std::vector<std::uint8_t> bytes;
     for(const auto& a:addresses) {
         if(a.address.find(':')!=std::string::npos) {
@@ -132,7 +134,7 @@ inline std::optional<std::string> make(const std::vector<Address>& addresses) {
             bytes.push_back(6);bytes.insert(bytes.end(),v6->begin(),v6->end());
         } else {
             if(!make(a.address,usual_port))return std::nullopt; // Not IPv4 text.
-            bytes.push_back(4);
+            bytes.push_back(a.changes_port?5:4);
             std::uint32_t ip=0;unsigned part=0;
             for(const char c:a.address+".") {if(c=='.') {ip=ip<<8|part;part=0;} else part=part*10+unsigned(c-'0');}
             for(int shift=24;shift>=0;shift-=8)bytes.push_back(std::uint8_t(ip>>shift));
@@ -172,10 +174,11 @@ inline std::vector<Address> readAll(std::string_view text) {
     if(std::uint8_t(hash)!=bytes.back())return {};
     std::vector<Address> out;
     for(std::size_t at=0;at+1<bytes.size();) {
-        const unsigned kind=bytes[at++];const std::size_t size=kind==4?4:kind==6?16:0;
+        const unsigned kind=bytes[at++];const std::size_t size=kind==4 || kind==5?4:kind==6?16:0;
         if(!size || at+size+2>bytes.size()-1)return {};
         Address a;
-        if(kind==4)a.address=std::to_string(bytes[at])+"."+std::to_string(bytes[at+1])+"."+std::to_string(bytes[at+2])+"."+std::to_string(bytes[at+3]);
+        a.changes_port=kind==5;
+        if(kind!=6)a.address=std::to_string(bytes[at])+"."+std::to_string(bytes[at+1])+"."+std::to_string(bytes[at+2])+"."+std::to_string(bytes[at+3]);
         else {std::array<std::uint8_t,16> v6{};for(unsigned n=0;n<16;++n)v6[n]=bytes[at+n];a.address=ipv6Text(v6);}
         at+=size;
         a.port=std::uint16_t(bytes[at]<<8|bytes[at+1]);at+=2;

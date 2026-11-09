@@ -108,10 +108,12 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
         const auto reply=replyIn(text);
         if(!reply) {if(asked)no_reply=true;return;}
         no_reply=false;
-        if(reply->first==punched)return;
-        online.transport->punch(reply->second);punched=reply->first;punched_at=std::chrono::steady_clock::now();
+        std::string key; // The addresses, not the text (a pasted code may differ in case).
+        for(const auto& r:reply->second)key+=r.address+":"+std::to_string(r.port)+(r.changes_port?"*":"")+" ";
+        if(key==punched)return;
+        online.transport->punch(reply->second);punched=key;punched_at=std::chrono::steady_clock::now();
         std::cerr<<"Online session: reply code received:";
-        for(const auto& a:reply->second)std::cerr<<' '<<a.address<<" port "<<a.port;
+        for(const auto& a:reply->second)std::cerr<<' '<<a.address<<" port "<<a.port<<(a.changes_port?" (its router changes ports)":"");
         std::cerr<<std::endl;
     };
     const auto paste=[&] {

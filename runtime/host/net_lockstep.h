@@ -41,8 +41,9 @@ public:
 // `stun`: the socket asks public STUN servers for its address as the internet sees it (publicAddress), for the codes
 // the players exchange when no port is open (docs/plans/online/ONLINE_BATTLE_PLAN.md, "Without an open port").
 // IPv4 and IPv6 on one socket; the joiner greets every address of the host's code until one answers.
-std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun=false);
-std::unique_ptr<LockstepTransport> joinUdp(const std::vector<connection_code::Address>& host,bool stun=false);
+// `hard` (tests): this side behaves as behind a router that changes ports, without asking STUN.
+std::unique_ptr<LockstepTransport> hostUdp(std::uint16_t port,bool stun=false,bool hard=false);
+std::unique_ptr<LockstepTransport> joinUdp(const std::vector<connection_code::Address>& host,bool stun=false,bool hard=false);
 inline std::unique_ptr<LockstepTransport> joinUdp(const std::string& address,std::uint16_t port,bool stun=false) {return joinUdp({{address,port}},stun);}
 
 // A worse network in front of a transport, for measuring on one PC (BT2_NET_SIM): each packet received arrives
