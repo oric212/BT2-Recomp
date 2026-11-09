@@ -1,16 +1,26 @@
 #include "gs/textures/texture_colours.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
 void TextureColours::add(unsigned cell,float r,float g,float b,float alpha,float count) {
     const float w=alpha*count;
     rgb[cell][0]+=r*w;rgb[cell][1]+=g*w;rgb[cell][2]+=b*w;
+    squares_[cell][0]+=r*r*w;squares_[cell][1]+=g*g*w;squares_[cell][2]+=b*b*w;
     cover[cell]+=w;pixels_[cell]+=count;
 }
 
 void TextureColours::finish() {
     for(unsigned c=0;c<cells;++c) {
-        if(cover[c]>0)for(auto& v:rgb[c])v/=cover[c];
+        if(cover[c]>0) {
+            float deviation=0;
+            for(unsigned k=0;k<3;++k) {
+                rgb[c][k]/=cover[c];
+                deviation+=std::sqrt(std::max(0.0f,squares_[c][k]/cover[c]-rgb[c][k]*rgb[c][k]));
+            }
+            spread[c]=deviation/3;
+        }
+        squares_[c]={};
         cover[c]=pixels_[c]>0?cover[c]/pixels_[c]:0;
         pixels_[c]=0;
     }
@@ -22,6 +32,8 @@ std::optional<float> TextureColours::distance(const TextureColours& a,const Text
     for(unsigned c=0;c<cells;++c) {
         if(a.cover[c]<covered || b.cover[c]<covered)continue;
         for(unsigned k=0;k<3;++k) {const float d=a.rgb[c][k]-b.rgb[c][k];sum+=d*d;}
+        const float s=a.spread[c]-b.spread[c];
+        sum+=3*s*s;
         n+=3;
     }
     if(!n)return std::nullopt;
@@ -51,7 +63,7 @@ std::optional<TextureColours> TextureColours::ofBlocks(unsigned bc,unsigned widt
     if(bc<1 || bc>3 || width<4 || height<4)return std::nullopt;
     const unsigned block_bytes=bc==1?8:16,across=width/4,down=height/4;
     if(blocks.size()<std::size_t(across)*down*block_bytes)return std::nullopt;
-    TextureColours colours;
+    TextureColours colours;colours.width=width;
     std::array<std::array<std::uint8_t,4>,16> pixels;
     for(unsigned by=0;by<down;++by)for(unsigned bx=0;bx<across;++bx) {
         const std::uint8_t* b=blocks.data()+(std::size_t(by)*across+bx)*block_bytes;

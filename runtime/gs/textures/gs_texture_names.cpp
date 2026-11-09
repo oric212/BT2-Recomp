@@ -501,7 +501,7 @@ std::optional<TextureColours> GsTextureNames::colours(std::uint64_t tex0,std::ui
     }
     // CT32 entries: alpha 0x80 is opaque; CT24 ones are opaque.
     const auto entries=paletteEntries(tex0,f->palette);
-    TextureColours colours;
+    TextureColours colours;colours.width=1u<<tw;
     for(const auto& c:counts->second) {
         const std::uint32_t e=entries[c.index];
         const float alpha=cpsm==1?1.0f:std::min(1.0f,float(e>>24)/128.0f);

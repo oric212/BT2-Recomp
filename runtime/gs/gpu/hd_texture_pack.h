@@ -32,7 +32,7 @@ namespace Vulkan {class Device;}
 // - Lit variants (step 9): the game relights the fighters' palettes all the time and the pack holds a
 //   few lit variants of each body texture (files of one texture and format under different palettes).
 //   For a palette it has no file for, closest gives the variant whose colours are nearest; each variant's
-//   colours are read once by the loader, from its smallest level of at least 16 x 16.
+//   colours are read once by the loader, from each level of at least 16 x 16, and compared at the game texture's width.
 // - Budget: when the loaded images exceed it, the least recently used are dropped (the renderer may
 //   still hold one until the game overwrites its texture).
 // find is called by the renderers on their GS threads (gs/gpu/gpu_gs_mirror.h).
@@ -93,13 +93,13 @@ private:
     std::unordered_map<Key,std::filesystem::path,KeyHash> index_;
     // The files with a palette part by texture and format (keys without a palette part).
     std::unordered_map<Key,std::vector<const std::pair<const Key,std::filesystem::path>*>,KeyHash> variants_;
-    struct Colours {bool asked=false,done=false;std::optional<TextureColours> colours;};
+    struct Colours {bool asked=false,done=false;std::vector<TextureColours> levels;}; // Largest level first.
     std::unordered_map<const std::filesystem::path*,Colours> colours_; // Variants' colours, kept (small).
     struct Entry;
     std::unordered_map<const std::filesystem::path*,Entry*> cache_; // By the file in index_ (its nodes stay put).
     struct Job {const std::filesystem::path* file;bool colours;}; // Make the image, or read the colours (and image) of a variant.
     std::deque<Job> wanted_,variants_wanted_; // Files the renderers asked for, then variants; each in the order asked.
-    struct Read {Job job;std::optional<Dds> dds;std::optional<TextureColours> colours;};
+    struct Read {Job job;std::optional<Dds> dds;std::vector<TextureColours> colours;};
     std::deque<Read> read_; // Read by the readers, for the loader.
     std::mutex lock_;std::condition_variable changed_;bool stop_=false,busy_=false;unsigned reading_=0;
     double wait_left_=frame_wait_seconds; // Of this frame's wait for first uses.

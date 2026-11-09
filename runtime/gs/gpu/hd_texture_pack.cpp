@@ -5,6 +5,7 @@
 #include "thread_id.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
@@ -156,8 +157,13 @@ HdTexturePack::Choice HdTexturePack::closest(std::uint64_t texture,std::uint32_t
             if(!c.asked) {c.asked=true;variants_wanted_.push_back({&variant->second,true});changed_.notify_all();}
             loading=true;continue;
         }
-        if(!c.colours)continue;
-        if(const auto d=TextureColours::distance(wanted,*c.colours);d && (!best || *d<nearest)) {best=&variant->first;nearest=*d;}
+        if(c.levels.empty())continue;
+        // The level as wide as the game's texture (the spreads of a cell compare only at one scale), else the
+        // nearest one.
+        const TextureColours* level=&c.levels.front();
+        for(const auto& l:c.levels)
+            if(std::abs(int(l.width)-int(wanted.width))<std::abs(int(level->width)-int(wanted.width)))level=&l;
+        if(const auto d=TextureColours::distance(wanted,*level);d && (!best || *d<nearest)) {best=&variant->first;nearest=*d;}
     }
     if(loading)return {std::nullopt,true};
     if(!best)return {};
@@ -182,15 +188,15 @@ void HdTexturePack::makeImage(const Dds& dds,Entry& entry) {
 }
 
 namespace {
-// A variant's colours: from its smallest level of at least 16 x 16 pixels (enough blocks for the cells'
-// averages; a 4 x 4 level is a single block's two colours), or its largest when it has none.
-std::optional<TextureColours> variantColours(const HdTexturePack::Dds& dds) {
+// A variant's colours at each level of at least 16 x 16 pixels (enough blocks for the cells' averages; a 4 x 4
+// level is a single block's two colours), largest first, or its largest level alone when none is.
+std::vector<TextureColours> variantColours(const HdTexturePack::Dds& dds) {
     const unsigned bc=dds.block_bytes==8?1:dds.format==VK_FORMAT_BC2_UNORM_BLOCK?2:dds.format==VK_FORMAT_BC3_UNORM_BLOCK?3:0;
-    std::size_t chosen=0;unsigned width=dds.width,height=dds.height;
-    for(std::size_t level=1,w=dds.width/2,h=dds.height/2;level<dds.levels.size() && w>=16 && h>=16;++level,w/=2,h/=2) {
-        chosen=level;width=unsigned(w);height=unsigned(h);
-    }
-    return TextureColours::ofBlocks(bc,width,height,dds.levels[chosen]);
+    std::vector<TextureColours> levels;
+    unsigned w=dds.width,h=dds.height;
+    for(std::size_t level=0;level<dds.levels.size() && (level==0 || (w>=16 && h>=16));++level,w/=2,h/=2)
+        if(auto colours=TextureColours::ofBlocks(bc,w,h,dds.levels[level]))levels.push_back(*colours);
+    return levels;
 }
 }
 
@@ -261,7 +267,7 @@ void HdTexturePack::run() {
             resident_bytes+=e.bytes;peak_bytes=std::max(peak_bytes,resident_bytes);
         };
         if(done.job.colours) {
-            auto& c=colours_[done.job.file];c.done=true;c.colours=done.colours;
+            auto& c=colours_[done.job.file];c.done=true;c.levels=std::move(done.colours);
             if(made.image.handle && !cache_.contains(done.job.file)) {
                 auto* entry=new Entry;entry->path=made.path;entry->done=true;keep(*entry);++read_ahead;
                 cache_.emplace(done.job.file,entry);

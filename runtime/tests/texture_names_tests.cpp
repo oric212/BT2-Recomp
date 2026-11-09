@@ -5,6 +5,7 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <source_location>
@@ -259,6 +260,22 @@ int main() {
         const auto none=TextureColours::ofBlocks(3,4,4,std::span<const std::uint8_t>(clear,16));
         require(none && none->cover[0]==0 && !TextureColours::distance(*none,*one));
         require(!TextureColours::ofBlocks(7,4,4,std::span<const std::uint8_t>(clear,16)) && !TextureColours::ofBlocks(1,4,4,{}));
+        require(one->width==4 && quad->width==8 && one->spread[0]==0 && quad->spread[0]==0);
+    }
+    {
+        // A face's lines (Goku's at flip 1200 of the CPU fight lost them): a few dark pixels on skin hardly move a
+        // cell's average, so a plain-skin variant whose average is a little nearer lost to a variant with the lines.
+        // The cells' spread tells them apart.
+        const auto skin=[](float r,float g,float b,unsigned lines) {
+            TextureColours c;c.width=64;
+            for(unsigned cell=0;cell<TextureColours::cells;++cell) {c.add(cell,r,g,b,1,float(256-lines));c.add(cell,20,10,10,1,float(lines));}
+            c.finish();return c;
+        };
+        const auto drawn=skin(250,210,170,24),lined=skin(240,200,160,24),plain=skin(230,193,157,0);
+        require(drawn.spread[0]>50 && plain.spread[0]==0);
+        require(std::abs(drawn.rgb[0][0]-plain.rgb[0][0])<2.0f); // The plain variant's average is the nearer one...
+        require(*TextureColours::distance(drawn,lined)<*TextureColours::distance(drawn,plain)); // ...but the lined one is chosen.
+        require(*TextureColours::distance(drawn,drawn)==0.0f && *TextureColours::distance(lined,plain)>40);
     }
     std::cout<<"Texture name checks passed."<<std::endl;
 }
