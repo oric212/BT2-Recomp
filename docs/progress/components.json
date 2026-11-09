@@ -2,7 +2,7 @@
   "updated": "2026-11-09",
   "flow": [
     {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
-    {"name": "Pad & card check", "status": "verified", "note": "Native services"},
+    {"name": "Pad & card", "status": "verified", "note": "Native checks"},
     {"name": "Films", "status": "working", "note": "Play with sound"},
     {"name": "Title & menus", "status": "working", "note": "All modes run"},
     {"name": "Versus battle", "status": "working", "note": "130 fighters"},

@@ -22,10 +22,10 @@
 <text x="75.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
 <text x="75.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Boot to frame loop</text>
 </g>
-<g><title>Pad &amp; card check: Verified. Native services</title>
+<g><title>Pad &amp; card: Verified. Native checks</title>
 <rect x="139.5" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
-<text x="191.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Pad &amp; card check</text>
-<text x="191.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native services</text>
+<text x="191.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Pad &amp; card</text>
+<text x="191.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native checks</text>
 </g>
 <g><title>Films: Operational. Play with sound</title>
 <rect x="255.0" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
