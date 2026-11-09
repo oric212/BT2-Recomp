@@ -26,7 +26,7 @@ Open, in order:
 
 ## GPU compatibility (2026-11-09)
 
-- The fade into a fight striped on the user's RX 9070 XT: paraLLEl-GS's 24-bit upload (`vram_copy.comp`) now reads and writes single bytes ([GPU compatibility](../plans/graphics/GPU_COMPATIBILITY.md)); verified headless, **not yet seen by the user in play**. Open: HD faces and muscle lines missing on that card.
+- The fade into a fight striped on the user's RX 9070 XT: paraLLEl-GS's 24-bit upload (`vram_copy.comp`) now reads single bytes: AMD's RDNA 4 driver (26.10.2) loads a 3-byte vector from the address rounded down to 4, proven by a unit test ([GPU compatibility](../plans/graphics/GPU_COMPATIBILITY.md)); a report to AMD and paraLLEl-GS is the user's decision; verified headless, **not yet seen by the user in play**. Open: HD faces and muscle lines missing on that card.
 - The release package rebuilt from this commit (`dist/`, not published).
 
 ## How the user runs things

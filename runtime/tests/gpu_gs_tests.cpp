@@ -5,6 +5,7 @@
 #include "gs/textures/gs_texture_names.h"
 #include "host/display_frame.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -286,6 +287,43 @@ void nativeGlow(GpuGsBackend& gpu) {
     require(largest<=16,"the same picture within one filter step");
 }
 
+// A 24-bit host-to-local upload (PSMCT24) as BT2 fades into a fight: 512 x 224 at block 0x1c00, 3 bytes a pixel. On the
+// GS each pixel's colour goes into the low three bytes of its 32-bit word and the top byte is kept. paraLLEl-GS
+// unpacks it on the GPU (vram_copy.comp); its 3-byte vector loads and stores came out striped on an RX 9070 XT
+// (docs/plans/graphics/GPU_COMPATIBILITY.md).
+void ct24Upload(GpuGsBackend& gpu) {
+    constexpr unsigned base=0x1c00,width=512,height=224,bw=width/64;
+    const auto image=[&](unsigned psm,std::span<const std::uint8_t> data) {
+        // BITBLTBUF, TRXPOS, TRXREG, TRXDIR host to local; then the data in an IMAGE loop.
+        auto bytes=packet({{0x50,(std::uint64_t(base)<<32)|(std::uint64_t(bw)<<48)|(std::uint64_t(psm)<<56)},{0x51,0},
+                           {0x52,width|(std::uint64_t(height)<<32)},{0x53,0}});
+        const std::uint64_t tag[2]={(data.size()/16)|(1ULL<<15)|(2ULL<<58),0};
+        bytes.insert(bytes.end(),reinterpret_cast<const std::uint8_t*>(tag),reinterpret_cast<const std::uint8_t*>(tag)+16);
+        bytes.insert(bytes.end(),data.begin(),data.end());
+        gpu.transfer(bytes);
+    };
+    const auto colour=[](unsigned x,unsigned y) {std::uint32_t h=x*0x9E3779B1u^y*0x85EBCA77u;h^=h>>15;h*=0x2C1B3C6Du;return (h^(h>>12))&0xFFFFFFu;};
+    // First every word with a top byte of its own (PSMCT32), then the 24-bit picture over them.
+    std::vector<std::uint8_t> words(std::size_t(width)*height*4),packed(std::size_t(width)*height*3);
+    for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x) {
+        const std::uint32_t old=((x+y*7u)&0xFFu)<<24|0x00ABCDEFu,rgb=colour(x,y);
+        std::memcpy(&words[(std::size_t(y)*width+x)*4],&old,4);
+        std::memcpy(&packed[(std::size_t(y)*width+x)*3],&rgb,3);
+    }
+    image(0x00,words);
+    image(0x01,packed);
+    const auto vram=gpu.readVram();
+    std::size_t wrong=0;
+    std::string shown;
+    for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x) {
+        const std::uint32_t want=((x+y*7u)&0xFFu)<<24|colour(x,y),got=vram[GsCommandSink::ct32Word(base,bw,x,y)];
+        if(got!=want && ++wrong<=4) {
+            char line[96];std::snprintf(line,sizeof line,"\n  x %u, y %u: 0x%08x, not 0x%08x",x,y,got,want);shown+=line;
+        }
+    }
+    if(wrong)throw std::runtime_error("24-bit upload: "+std::to_string(wrong)+" of "+std::to_string(width*height)+" words wrong:"+shown);
+}
+
 int main() try {
     hdTexturePackFiles();
     GpuGsBackend gpu;
@@ -331,7 +369,8 @@ int main() try {
     nativeAlphaFill(gpu);
     nativeInkEdges(gpu);
     nativeGlow(gpu);
+    ct24Upload(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory and the glow the same picture; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory and the glow the same picture; a 24-bit upload keeps each word's top byte; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
