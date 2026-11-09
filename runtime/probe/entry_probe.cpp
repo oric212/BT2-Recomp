@@ -369,6 +369,9 @@ int main(int argc, char** argv) {
             wchar_t card[1024];
             const DWORD length = GetEnvironmentVariableW(L"BT2_CARD_FOLDER", card, DWORD(std::size(card)));
             if (length && length < std::size(card)) runtime.memory_card_folder = std::filesystem::path(card);
+            // Named in the run's log: the card the game loads from and saves to (in a player's run, the launcher's).
+            if (!runtime.memory_card_folder.empty())
+                std::cerr << "Memory card in slot 1: " << reinterpret_cast<const char*>(runtime.memory_card_folder.u8string().c_str()) << std::endl;
         }
         // BT2_VU1_INTERPRET: run every VU1 microprogram in the interpreter, also where the build has a native translation.
         if (std::getenv("BT2_VU1_INTERPRET")) runtime.vif1.vu.use_native = false;
