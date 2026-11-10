@@ -34,6 +34,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/services/sif_system.cpp
     runtime/ee/native_functions.cpp
     runtime/ee/online_view.cpp
+    runtime/ee/online_menus.cpp
     runtime/ee/guest_image.cpp
     runtime/ee/struggle_buttons.cpp
     runtime/services/disc_service.cpp

@@ -25,6 +25,7 @@
 #include "ee/struggle_buttons.h"
 #include "ee/native_functions.h"
 #include "ee/online_view.h"
+#include "ee/online_menus.h"
 #include "ee/ps2_runtime_macros.h"
 #include "ee/state_hash.h"
 #include <algorithm>
@@ -919,6 +920,7 @@ int main(int argc, char** argv) {
             const unsigned player = unsigned(std::atoi(view));
             if (player != 1 && player != 2) throw std::runtime_error("BT2_ONLINE_VIEW is 1 or 2");
             if (!registerOnlineView(runtime, player)) throw std::runtime_error("BT2_ONLINE_VIEW: the game's view setup is not the expected code");
+            if (!registerOnlineMenus(runtime)) throw std::runtime_error("BT2_ONLINE_VIEW: the game's pause menu is not the expected code");
             runtime.gs_sink.hidden_view = 3 - player;
         }
         // BT2_REPLAY_CALL (docs/plans/ee/AI_VERIFICATION_PLAN.md): one function on a RAM captured from PCSX2, then exit.
