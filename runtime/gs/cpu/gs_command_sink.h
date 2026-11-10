@@ -62,7 +62,8 @@ public:
     GsTextureNames* texture_names=nullptr;
     // Online battles (ee/online_view.h): the other player's view mark (1 or 2; 0 none). A SCISSOR set through A+D
     // whose top row is that mark is made empty in a copy of its transfer, which is what is checked and handed on,
-    // so that view draws nothing here; the game's own data is never changed.
+    // so that view draws nothing here; so is a scissor that is exactly one half of the split screen (an effect clipped
+    // to a half would stop at the middle of a full-screen view). The game's own data is never changed.
     unsigned hidden_view=0;
     // PSMCT32 word for block base pointer bp (64-word blocks) and buffer width bw (64-pixel units).
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y) {

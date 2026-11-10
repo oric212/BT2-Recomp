@@ -59,7 +59,15 @@ bool GsCommandSink::hideView(std::span<const std::uint8_t> data,std::vector<std:
             for(unsigned l=0;l<nloop;++l)for(unsigned r=0;r<nreg && at+16<=data.size();++r,at+=16) {
                 if(((regs>>(4*r))&15)!=0xE)continue;
                 const unsigned reg=unsigned(read(at+8)&0xFF);
-                if((reg!=0x40 && reg!=0x41) || ((read(at)>>32)&0x7FF)!=hidden_view)continue;
+                if(reg!=0x40 && reg!=0x41)continue;
+                // Also a scissor that is exactly one half of the split screen, unmarked: an effect drawn over a half
+                // (the heat shimmer around a fighter dashing or charging ki copies its half of the frame at half size and
+                // draws it back distorted, clipped to the half). Over a full-screen view it stopped at the middle, a line
+                // the user saw flicker online (2026-11-10); left out for both players.
+                const std::uint64_t scissor=read(at);
+                const unsigned x0=unsigned(scissor&0x7FF),x1=unsigned((scissor>>16)&0x7FF),y0=unsigned((scissor>>32)&0x7FF),y1=unsigned((scissor>>48)&0x7FF);
+                const bool half=y0==0 && y1==447 && ((x0==0 && x1==255) || (x0==256 && x1==511));
+                if(y0!=hidden_view && !half)continue;
                 if(!changed) {copy.assign(data.begin(),data.end());changed=true;}
                 std::memcpy(copy.data()+at,&empty,8);
             }

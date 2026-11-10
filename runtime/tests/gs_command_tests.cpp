@@ -237,6 +237,13 @@ int main() {
         std::uint64_t kept;std::memcpy(&kept,game.data()+16,8);
         check(forwarded.size()==2 && forwarded[0]==(0x7FFull|(0x7FFull<<32)) && forwarded[1]==shown && kept==hidden);
         check(sink.state.regs[0x40]==shown);
+        // A scissor that is exactly a half of the split screen (x 0 to 255 or 256 to 511, y 0 to 447), unmarked, reaches it
+        // empty too; the full screen and a half-height copy's scissor pass.
+        const std::uint64_t left=0x01BF0000'00FF0000ULL,right=0x01BF0000'01FF0100ULL,full=0x01BF0000'01FF0000ULL,copy=0x00FF0000'00FF0000ULL;
+        forwarded.clear();
+        for(const auto scissor:{left,right,full,copy})sink.transfer(packet(scissor));
+        check(forwarded.size()==4 && forwarded[0]==(0x7FFull|(0x7FFull<<32)) && forwarded[1]==(0x7FFull|(0x7FFull<<32))
+              && forwarded[2]==full && forwarded[3]==copy);
     }
     std::cout<<"GS scoped command tests passed\n";
 }
