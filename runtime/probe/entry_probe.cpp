@@ -918,7 +918,7 @@ int main(int argc, char** argv) {
         if (const char* view = std::getenv("BT2_ONLINE_VIEW")) {
             const unsigned player = unsigned(std::atoi(view));
             if (player != 1 && player != 2) throw std::runtime_error("BT2_ONLINE_VIEW is 1 or 2");
-            if (!registerOnlineView(runtime)) throw std::runtime_error("BT2_ONLINE_VIEW: the game's view setup is not the expected code");
+            if (!registerOnlineView(runtime, player)) throw std::runtime_error("BT2_ONLINE_VIEW: the game's view setup is not the expected code");
             runtime.gs_sink.hidden_view = 3 - player;
         }
         // BT2_REPLAY_CALL (docs/plans/ee/AI_VERIFICATION_PLAN.md): one function on a RAM captured from PCSX2, then exit.

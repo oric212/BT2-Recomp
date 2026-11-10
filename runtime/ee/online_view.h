@@ -4,14 +4,14 @@
 // player's view for the whole screen and both machines keep the same state; each view is marked by its mode in
 // its scissor's top row (+0x208, 1 or 2 instead of 0). The renderer then leaves out the other player's view
 // (GsCommandSink::hidden_view): the mark costs one or two lines at the top of the picture, in the overscan.
-// The fights' radars, which stay where the halves had them, are left out on both machines.
+// Each player sees only their own fight radar, at the bottom right as in a single-screen fight.
 // Installed only when the guest code hashes as expected, as the native functions are (ee/native_functions.h).
 #pragma once
 #include <cstdint>
 
 class EeRuntime;
 
-// Returns whether the view setup was replaced.
-bool registerOnlineView(EeRuntime& runtime);
+// `player`: the local player (1 or 2). Returns whether the view setup was replaced.
+bool registerOnlineView(EeRuntime& runtime,unsigned player);
 // Fight frames so far (the radars' calls): it grows while a fight runs, and stands still in the menus.
 std::uint64_t onlineFightFrames();

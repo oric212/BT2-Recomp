@@ -8,7 +8,7 @@ No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive 
 
 ## Waiting for the user
 
-- **Online on two PCs** (the next battle: the input delay Auto chooses, and 60 fps after a stage-destroying super attack) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
+- **Online on two PCs** (the next battle: the input delay Auto chooses, 60 fps after a stage-destroying super attack, and the own radar at the bottom right) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
 - **Lock-on online:** when it was lost, was the opponent near and in view, or far away or behind the stage ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later" item 2)?
 - **In play:** the HD faces and the fade on the RX 9070 XT, the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline, the second controller, the icons. A texture glitch in the first HD fight is reported but not reproduced headless.
 
@@ -33,4 +33,5 @@ No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive 
 - **Every VU1 or VIF1 change keeps the gate's baseline** (`tools/gate/battle_run.py`).
 - **The graphics device's lock couples every thread:** change the frame only at the flip, a readback or a picture shown.
 - **Paths given to the probe are absolute** (the HD pack, snapshots, cards); the HD pack's path is its subfolder.
+- **The Release probe links incrementally:** after editing a `bt2-ee-runtime` source, delete `build/probe/Release/bt2-entry-probe.ilk` before building (a target-only build once kept the old code), and check a new string is in the executable.
 - **Shell heredocs corrupt backslashes;** write such files with the file tools.
