@@ -4,11 +4,12 @@ Updated: 2026-11-10. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive handshake (2 fields at an 8 ms round trip, not 3), and 60 fps no longer turned off for the session by one heavy super attack (it rests 3 s and resumes). Online items left: the lock-on lost too often (the split bit and its 67 readers found; next a call trace of them in a split fight) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). Then the user's play and the final validation ([PROG.md](../PROG.md), "Next").
+No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive handshake (2 fields at an 8 ms round trip, not 3), and 60 fps no longer turned off for the session by one heavy super attack (it rests 3 s and resumes). Online items left: the lock-on lost too often (traced: the split screen most likely changes only the camera's pose, not lock-on; waiting for the user's description of the losses) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). Then the user's play and the final validation ([PROG.md](../PROG.md), "Next").
 
 ## Waiting for the user
 
 - **Online on two PCs** (the next battle: the input delay Auto chooses, and 60 fps after a stage-destroying super attack) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
+- **Lock-on online:** when it was lost, was the opponent near and in view, or far away or behind the stage ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later" item 2)?
 - **In play:** the HD faces and the fade on the RX 9070 XT, the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline, the second controller, the icons. A texture glitch in the first HD fight is reported but not reproduced headless.
 
 ## How the user runs things
