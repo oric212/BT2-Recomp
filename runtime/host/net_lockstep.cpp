@@ -106,7 +106,11 @@ bool Lockstep::connect(std::chrono::milliseconds timeout) {
         ended_=true;throw std::runtime_error("Online session: "+why(reason,options_.rule_names));
     };
     while(!connected_) {
-        if(Clock::now()-begin>timeout)return false;
+        // Once greetings are answered, both sides stay here until the session starts (or the other side falls silent for
+        // a second): a caller that polls between drawing its window (a player's game: 30 ms of every 50) would otherwise
+        // leave greetings and answers unread for up to 20 ms, which the round trip and its spread would count.
+        const bool exchanging=exchanged_ && Clock::now()-*exchanged_<std::chrono::seconds(1);
+        if(Clock::now()-begin>timeout && !exchanging)return false;
         if(!options_.host && Clock::now()-greeted_>=(starting_?restart:greet)) {
             if(starting_) {Writer out(Start);out.u8(std::uint8_t(*starting_));out.u16(std::uint16_t(std::min(rtt_ms_,65000.0)));transport_.send(out.bytes);}
             else {Writer hello(Hello);hello.u64(options_.program);hello.u32(options_.rules);hello.u32(now());transport_.send(hello.bytes);}
@@ -127,7 +131,7 @@ bool Lockstep::connect(std::chrono::milliseconds timeout) {
             if(!in.ok)continue;
             if(program!=options_.program)refuse(Different);
             if(rules!=options_.rules)refuse(Rules);
-            sendWelcome(stamp);
+            sendWelcome(stamp);exchanged_=Clock::now();
         } else if(options_.host && *kind==Start) {
             const unsigned delay=in.u8();const unsigned rtt=in.u16();
             if(!in.ok || !delay || delay>max_delay)continue;
@@ -140,7 +144,10 @@ bool Lockstep::connect(std::chrono::milliseconds timeout) {
             if(rules!=options_.rules)refuse(Rules);
             if(delay>max_delay)throw std::runtime_error("Online session: the host's input delay is outside 1 to "+std::to_string(max_delay));
             if(starting_)continue;
-            samples_.push_back(double(now()-echo));
+            // The first answer may have waited for the host's window loop (and this side's) and is not counted; the next
+            // greetings go at once, both sides now reading without pause (above).
+            if(exchanged_)samples_.push_back(double(now()-echo));
+            exchanged_=Clock::now();greeted_=Clock::now()-greet;
             if(samples_.size()<rtt_samples)continue;
             // The fastest answer is the link's own round trip; the middle one's lead over it is its spread. (A host that
             // answers between drawing its waiting screen adds tens of milliseconds to some answers: measured on one PC,

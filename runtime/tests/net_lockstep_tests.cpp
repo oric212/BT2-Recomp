@@ -69,11 +69,17 @@ struct Side {
 };
 // One side's session: `fields` fields, the drift hash `hash(field)`; `before_field(field)` may end it early (false).
 void play(LockstepTransport& transport,unsigned side,LockstepOptions options,unsigned fields,Side& out,std::function<std::uint64_t(unsigned)> hash,
-          std::function<bool(unsigned)> before_field={}) {
+          std::function<bool(unsigned)> before_field={},std::chrono::milliseconds poll_pause=std::chrono::milliseconds(0)) {
     options.waiting=[&out](double){++out.waiting_calls;};
     try {
         Lockstep session(transport,options);
-        if(!session.connect(std::chrono::seconds(5)))throw std::runtime_error("no connection");
+        if(poll_pause.count()) { // As a window's loop calls it: briefly, with a pause for drawing between.
+            const auto give_up=Clock::now()+std::chrono::seconds(5);
+            while(!session.connect(std::chrono::milliseconds(10))) {
+                if(Clock::now()>give_up)throw std::runtime_error("no connection");
+                std::this_thread::sleep_for(poll_pause);
+            }
+        } else if(!session.connect(std::chrono::seconds(5)))throw std::runtime_error("no connection");
         out.delay=session.delay();
         for(unsigned field=0;field<fields;++field) {
             if(before_field && !before_field(field))break;
@@ -146,6 +152,18 @@ int main() {
         check(host.delay==joiner.delay && host.delay>=3 && host.delay<=4);
         checkAlike(host,joiner,300,host.delay);
         check(host.rtt_ms>=35 && host.rtt_ms<=80 && joiner.rtt_ms>=35 && joiner.rtt_ms<=80);
+    }
+    {   // Both sides connecting from a window's loop (10 ms of every 210): once greetings are answered both keep reading, so
+        // the measured round trip and spread are the link's (4 ms each way: 2 fields; at most 3 where the system's timer
+        // makes waits up to 16 ms late), not the loops' pauses.
+        Link link;link.latency=std::chrono::milliseconds(4);Side host,joiner;
+        End a_end(link,0),b_end(link,1);
+        std::thread a([&]{play(a_end,0,options(true,0),200+margin,host,same,{},std::chrono::milliseconds(200));});
+        std::thread b([&]{play(b_end,1,options(false),200+margin,joiner,same,{},std::chrono::milliseconds(200));});
+        a.join();b.join();
+        if(host.delay>3)std::cerr<<"net lockstep: a window's loop chose "<<host.delay<<" fields\n";
+        check(host.delay>=2 && host.delay<=3);
+        checkAlike(host,joiner,200,host.delay);
     }
     {   // The joiner's game differs from field 120: both stop, each saying why.
         Link link;Side host,joiner;

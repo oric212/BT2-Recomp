@@ -1,19 +1,19 @@
 # Resume handoff
 
-Updated: 2026-11-09. Finished work: [November history](2026-11.md).
+Updated: 2026-11-10. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Online works between two homes; left for a later pass (the user's choice): the lock-on online (input delay, lost too often) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). The DualSense: measured fast (reports at most 4 ms old when read); the face-button check waits for the user. Done today: saves verified (byte-identical to the original's in PCSX2, written to the launcher's card only), the HD faces fixed (lit-variant choice), the RX 9070 XT's striped fade worked around, the online setup simplified. Next: the user's play, then the final validation ([PROG.md](../PROG.md), "Next").
+No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive handshake (2 fields at an 8 ms round trip, not 3), and 60 fps no longer turned off for the session by one heavy super attack (it rests 3 s and resumes). Online items left: the lock-on lost too often (the split bit and its 67 readers found; next a call trace of them in a split fight) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). Then the user's play and the final validation ([PROG.md](../PROG.md), "Next").
 
 ## Waiting for the user
 
-- **Online on two PCs** with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
+- **Online on two PCs** (the next battle: the input delay Auto chooses, and 60 fps after a stage-destroying super attack) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
 - **In play:** the HD faces and the fade on the RX 9070 XT, the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline, the second controller, the icons. A texture glitch in the first HD fight is reported but not reproduced headless.
 
 ## How the user runs things
 
-- **Game folders** next to `bt2-game.exe` (`build\probe\Release`): `data` (disc image; the HD pack in its own subfolder of `data\textures`), `saves` (one folder per card), `user\settings`, `user\last-run.log` (names the card in slot 1).
+- **Game folders** next to `bt2-game.exe` (`build\probe\Release`): `data` (disc image; the HD pack in its own subfolder of `data\textures`), `saves` (one folder per card), `user\settings`, `user\last-run.log` (names the card in slot 1; the user's own runs on this PC write `D:\Cs\Cpp\BT2-Recomp\user\last-run.log`, which says why 60 fps or a session stopped).
 - **Their settings:** fullscreen at window scale 4, 16x, HD, widescreen, 60 fps, light depth of field.
 
 ## How to run (automated)

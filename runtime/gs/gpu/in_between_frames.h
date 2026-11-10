@@ -29,6 +29,7 @@
 #include "vu/vif1_blend.h"
 #include <array>
 #include <atomic>
+#include <bitset>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -68,9 +69,14 @@ public:
     // picture, and harmless when nothing is running.
     bool wait();
     // At a flip, instead of wait: returns when the thread is at most one frame behind (rethrowing a failure).
-    // A thread that keeps falling behind (more than a quarter of the last 64 flips waited for) means a
-    // processor too slow for the in-between pictures: it throws, and the caller turns them off.
+    // A heavy stretch (3 of the last 8 flips waited for, as in a super attack that destroys the stage) rests the
+    // in-between pictures for `rest_flips`: those frames are replayed (no VIF1/VU1 run; a steady 30 shown), so the
+    // game stops waiting, and the pictures resume after it. Once it rested on over half of the last 1,024 flips the
+    // processor is too slow for them: it throws, and the caller turns them off. (Before 2026-11-10 17 waits in 64 flips
+    // turned them off for the rest of the session: the user's online fight lost 60 fps after one such super attack.)
     void keepPace();
+    static constexpr unsigned rest_flips=90;
+    unsigned rests=0; // Heavy stretches rested.
     // Whether the frame is done (without waiting) and its in-between picture is ready.
     bool ready();
     // When the last picture became ready (meaningful while ready()).
@@ -139,6 +145,8 @@ private:
     // Jobs in order (the thread takes the front one with its task); `started` and `finished` count them.
     std::deque<Job> jobs_;std::uint64_t started_=0,finished_=0;bool ready_=false;std::chrono::steady_clock::time_point ready_at_{};std::exception_ptr failure_;
     std::uint64_t recent_waits_=0; // keepPace: whether each of the last 64 flips waited (newest in bit 0).
+    unsigned resting_=0;           // keepPace: flips the in-between pictures still rest; read by start (the same thread).
+    std::bitset<1024> rested_;std::size_t rested_at_=0; // keepPace: whether each of the last 1,024 flips rested.
     std::mutex lock_;std::condition_variable done_;
     void run(); // The task: finishes job_.
     bool draw(Frame finished,const Job& job);

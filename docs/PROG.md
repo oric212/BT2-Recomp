@@ -23,16 +23,15 @@
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
 
-## Latest (2026-11-09)
+## Latest (2026-11-10)
 
-- **Saves verified** ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)): a new game's save, and one written over the 100% save, are byte-identical to the original's save in PCSX2; read back at the next start; the save goes to the launcher's card only.
-- **HD faces fixed** ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md), step 9): plain-skin lit variants had replaced faces and muscle lines; the colour match now counts each cell's spread. Not a card fault.
-- **The RX 9070 XT's striped fade fixed** (an AMD driver fault worked around, [GPU compatibility](plans/graphics/GPU_COMPATIBILITY.md)).
-- **Online without an open port** ([plan](plans/online/ONLINE_BATTLE_PLAN.md), "Without an open port"): the user's first try between two homes failed at the router (no UPnP port service). Now the codes come from STUN, the friend sends back a reply code (copied by itself), and the host's game connects once the host copies it (hole punching); no router setup, no server. The friend's router gives each destination a new port and has no IPv6, so the side behind such a router now opens 256 ports and the other probes random ones (the birthday technique, after Tailscale); codes carry IPv6 too. Not yet tried between two homes.
+- **Online input delay:** Auto chose 3 fields at an 8 ms round trip because a player's game read the handshake only between drawing its window; both sides now keep reading while it runs, and Auto chooses 2 there (a test; the rule itself measured over simulated links from 8 to 60 ms and kept) ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later").
+- **60 fps through heavy super attacks:** after a super attack that destroyed the stage the user's online fight stayed at 30 fps (the host's log: turned off as "too slow" after one heavy scene). A heavy stretch now pauses the in-between pictures for 3 seconds and they resume ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md), 4d).
+- 2026-11-09: saves verified byte-identical to the original's; the HD faces and the RX 9070 XT's fade fixed; online without an open port, played between two homes ([November](progress/2026-11.md)).
 
 ## Waiting for the user's play
 
-Built and measured, not yet seen in play: online battles on two PCs (the release package, `dist/`); the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline and dialogue shadow, the light depth of field, the second controller, the programs' icons; on the RX 9070 XT the fade fix and the HD faces. Open report: a texture glitch in the first fight with HD (not reproduced headless).
+Built and measured, not yet seen in play: online battles on two PCs (the release package, `dist/`), with Auto's input delay and 60 fps after a stage-destroying super attack; the 60 fps aura fix, Variable refresh rate, beam struggles by buttons, the HD outline and dialogue shadow, the light depth of field, the second controller, the programs' icons; on the RX 9070 XT the fade fix and the HD faces. Open report: a texture glitch in the first fight with HD (not reproduced headless).
 
 ## Measurements
 
@@ -64,7 +63,7 @@ One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with a
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. Online: the lock-on (input delay, lost too often) and each player seeing only their own prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
+1. Online: the lock-on lost too often and each player seeing only their own prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
 2. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
 3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
 4. The user's decisions: a matchmaking server and rollback for online; publishing the release.

@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned super_sampling,bool hd_textures,bool replay_only)
     :replay_only(replay_only),primary_(primary),
@@ -31,7 +32,7 @@ InBetweenFrames::InBetweenFrames(GpuGsMirror& primary,const Vif1& vif1,unsigned 
 InBetweenFrames::~InBetweenFrames() {
     try {thread_.drain();} catch(...) {} // A queued frame uses this.
     std::cerr<<std::dec<<"60 fps battles: "<<drawn<<" in-between pictures drawn, "<<shown<<" shown; "<<unpaired<<" fight frames unpaired, "
-        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<scene_changes<<" scene changes, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips); "
+        <<not_fights<<" other frames, "<<camera_cuts<<" camera cuts, "<<scene_changes<<" scene changes, "<<blended_words<<" words blended, "<<refused_pairs<<" changed unpack pairs left as the newer frame's; "<<late<<" not ready in time (skipped); the game waited "<<waited_seconds*1000<<" ms for them (over 2 ms at "<<paced_waits<<" flips; "<<rests<<" heavy stretches rested); "
         <<(drawn?drawing_seconds*1000/drawn:0)<<" ms per in-between picture drawn (the longest "<<slowest_seconds*1000<<" ms)";
     if(names_.shared_hits+names_.shared_misses)std::cerr<<"; texture hashes taken from the main renderer's: "<<names_.shared_hits<<" of "<<names_.shared_hits+names_.shared_misses;
     if(drawn) {
@@ -90,9 +91,12 @@ void InBetweenFrames::keepPace() {
     const bool long_wait=waited>0.002;
     paced_waits+=long_wait;
     recent_waits_=(recent_waits_<<1)|(long_wait?1u:0u);
-    if(std::popcount(recent_waits_)>16)
-        throw std::runtime_error("the processor does not keep up with the in-between pictures (the game waited at "
-                                 +std::to_string(std::popcount(recent_waits_))+" of the last 64 flips); turned off to keep the game's pace");
+    if(resting_)--resting_;
+    else if(std::popcount(recent_waits_&0xFFu)>=3) {resting_=rest_flips;recent_waits_=0;++rests;}
+    rested_[rested_at_++%rested_.size()]=resting_!=0;
+    if(rested_.count()>rested_.size()/2)
+        throw std::runtime_error("the processor does not keep up with the in-between pictures (they rested at "+std::to_string(rested_.count())
+                                 +" of the last "+std::to_string(rested_.size())+" flips, the game waiting for them); turned off to keep the game's pace");
 }
 
 bool InBetweenFrames::busy() {
@@ -126,7 +130,7 @@ void InBetweenFrames::start(bool fight,const Vif1& vif1,const std::array<std::ui
     }
     recording_.used=0;recording_.handed=0;recording_.fight=false;recording_.streamed=false;
     recording_.start=std::make_unique<Vif1>(vif1);recording_.slot=next_slot;
-    previous_fight_=fight && !replay_only; // The next frame is drawn as it comes.
+    previous_fight_=fight && !replay_only && !resting_; // The next frame is drawn as it comes (not while resting: keepPace).
     {
         std::lock_guard<std::mutex> hold(lock_);
         jobs_.push_back(Job{std::move(finished),privileged,crt_mode,field,started_});
@@ -240,6 +244,14 @@ void InBetweenFrames::drawEvents(const std::vector<const Event*>& events,bool fi
 bool InBetweenFrames::draw(Frame finished,const Job& job) {
     const auto begin=std::chrono::steady_clock::now();
     const double begin_processor=threadProcessorSeconds();
+    // BT2_SIXTY_FPS_SLOW=<from flip>:<to flip>:<ms>: each in-between picture of those flips takes that much longer (a heavy
+    // stretch on demand, to check keepPace's rest).
+    static const auto slow=[]()->std::array<unsigned,3> {
+        const char* text=std::getenv("BT2_SIXTY_FPS_SLOW");unsigned from=0,to=0,ms=0;
+        if(text && std::sscanf(text,"%u:%u:%u",&from,&to,&ms)!=3)throw std::runtime_error("BT2_SIXTY_FPS_SLOW is <from flip>:<to flip>:<ms>");
+        return {from,to,ms};
+    }();
+    if(finished.streamed && job.field>=slow[0] && job.field<slow[1])std::this_thread::sleep_for(std::chrono::milliseconds(slow[2]));
     bool ready=false;
     if(finished.streamed) {
         for(std::size_t n=finished.handed;n<finished.used;++n)finished.events[n].eachOutput([this](std::span<const std::uint8_t> data){send(data);});

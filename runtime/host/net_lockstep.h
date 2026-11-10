@@ -113,6 +113,7 @@ private:
     std::chrono::steady_clock::time_point made_,heard_,greeted_;
     // Joiner while connecting: round trips measured over the host's answers; the delay the session starts with.
     std::vector<double> samples_;std::optional<unsigned> starting_;
+    std::optional<std::chrono::steady_clock::time_point> exchanged_; // The last greeting answered (host) or answer taken (joiner).
     // Round trip stamps: the other side's latest stamp and when it arrived.
     std::uint32_t peer_stamp_=0;std::chrono::steady_clock::time_point peer_stamp_at_;bool has_peer_stamp_=false;
     double rtt_ms_=0;
