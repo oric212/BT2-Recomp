@@ -1,0 +1,66 @@
+#version 450
+// The window's picture scaled by a factor that is not a whole multiple (gs/gpu/gpu_window_presenter.cpp): Lanczos-2
+// (sinc(x) sinc(x / 2) over the 4 x 4 source pixels around the point) in place of the bilinear stretch, which softened
+// every edge of the 4x picture on a 4K screen (1.5 x 1.2). Each result is held within the colours of the 2 x 2 pixels
+// nearest the point, so the filter's negative lobes cannot ring around hard edges (the outlines, the HUD's borders).
+// Built into present_scale_spv.h by tools/graphics/gpu/build_native_shaders.py.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D target;
+
+layout(push_constant) uniform Scale
+{
+	ivec2 size;        // The target's pixels written.
+	ivec2 source_size; // The source's pixels.
+	vec2 step;         // Source pixels per target pixel.
+} scale;
+
+float lanczos2(float x)
+{
+	x = abs(x);
+	if (x < 1e-5)
+		return 1.0;
+	if (x >= 2.0)
+		return 0.0;
+	const float pi = 3.14159265;
+	float a = pi * x;
+	return 2.0 * sin(a) * sin(a * 0.5) / (a * a);
+}
+
+vec3 fetch(ivec2 p)
+{
+	return texelFetch(source, clamp(p, ivec2(0), scale.source_size - 1), 0).rgb;
+}
+
+void main()
+{
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(p, scale.size)))
+		return;
+	vec2 at = (vec2(p) + 0.5) * scale.step - 0.5;
+	vec2 base = floor(at);
+	vec2 f = at - base;
+	ivec2 b = ivec2(base);
+	float wx[4], wy[4];
+	float sx = 0.0, sy = 0.0;
+	for (int i = 0; i < 4; i++)
+	{
+		wx[i] = lanczos2(f.x - float(i - 1));
+		wy[i] = lanczos2(f.y - float(i - 1));
+		sx += wx[i];
+		sy += wy[i];
+	}
+	vec3 sum = vec3(0.0);
+	for (int j = 0; j < 4; j++)
+	{
+		vec3 row = vec3(0.0);
+		for (int i = 0; i < 4; i++)
+			row += wx[i] * fetch(b + ivec2(i - 1, j - 1));
+		sum += wy[j] * row;
+	}
+	sum /= sx * sy;
+	vec3 a = fetch(b), c = fetch(b + ivec2(1, 0)), d = fetch(b + ivec2(0, 1)), e = fetch(b + ivec2(1, 1));
+	vec3 lo = min(min(a, c), min(d, e)), hi = max(max(a, c), max(d, e));
+	imageStore(target, p, vec4(clamp(sum, lo, hi), 1.0));
+}

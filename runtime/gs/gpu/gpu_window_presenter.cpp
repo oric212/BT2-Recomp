@@ -6,6 +6,7 @@
 #endif
 #include <windows.h>
 #include "gs/gpu/gpu_window_presenter.h"
+#include "gs/gpu/native/shaders/present_scale_spv.h"
 #include "thread_id.hpp"
 #include "wsi.hpp"
 #include <vulkan/vulkan_win32.h>
@@ -48,6 +49,46 @@ private:
 
 VkOffset3D corner(int x,int y) {return {x,y,0};}
 VkOffset3D extent(int width,int height) {return {width,height,1};}
+
+// BT2_SHARP_SCALING=0: the bilinear stretch as before (for comparing pictures).
+bool sharpScaling() {static const bool on=!(std::getenv("BT2_SHARP_SCALING") && std::string_view(std::getenv("BT2_SHARP_SCALING"))=="0");return on;}
+
+// The picture scaled to `width` x `height` by Lanczos-2 (shaders/present_scale.comp) into `scaled`, left in
+// TRANSFER_SRC_OPTIMAL. The picture is first copied into `copy`, an image of the presenter's own, so the renderer's
+// picture keeps its layout.
+void scaleSharp(Vulkan::Device& device,Vulkan::CommandBuffer& cmd,const Vulkan::Image& picture,unsigned width,unsigned height,
+                Vulkan::ImageHandle& copy,Vulkan::ImageHandle& scaled) {
+    const unsigned w=picture.get_width(),h=picture.get_height();
+    if(!copy || copy->get_width()!=w || copy->get_height()!=h) {
+        auto info=Vulkan::ImageCreateInfo::immutable_2d_image(w,h,VK_FORMAT_R8G8B8A8_UNORM);
+        info.usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT;info.initial_layout=VK_IMAGE_LAYOUT_UNDEFINED;
+        copy=device.create_image(info);
+    }
+    if(!scaled || scaled->get_width()!=width || scaled->get_height()!=height) {
+        auto info=Vulkan::ImageCreateInfo::immutable_2d_image(width,height,VK_FORMAT_R8G8B8A8_UNORM);
+        info.usage=VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT;info.initial_layout=VK_IMAGE_LAYOUT_UNDEFINED;
+        scaled=device.create_image(info);
+    }
+    cmd.image_barrier(*copy,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,0,VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    cmd.blit_image(*copy,picture,corner(0,0),extent(int(w),int(h)),corner(0,0),extent(int(w),int(h)),0,0,0,0,1,VK_FILTER_NEAREST);
+    cmd.image_barrier(*copy,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    cmd.image_barrier(*scaled,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,0,VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+    Vulkan::ResourceLayout layout;
+    layout.sets[0].sampled_image_mask=1u;layout.sets[0].storage_image_mask=2u;layout.sets[0].fp_mask=3u;
+    layout.sets[0].meta[0].array_size=1;layout.sets[0].meta[1].array_size=1;
+    struct {std::int32_t size[2],source_size[2];float step[2];} push{{int(width),int(height)},{int(w),int(h)},{float(w)/float(width),float(h)/float(height)}};
+    layout.push_constant_size=sizeof push;
+    cmd.set_program(device.request_program(present_scale_spv,sizeof present_scale_spv,&layout));
+    cmd.set_texture(0,0,copy->get_view(),Vulkan::StockSampler::NearestClamp);
+    cmd.set_storage_texture(0,1,scaled->get_view());
+    cmd.push_constants(&push,0,sizeof push);
+    cmd.dispatch((width+7)/8,(height+7)/8,1);
+    cmd.image_barrier(*scaled,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
+}
 }
 
 struct GpuWindowPresenter::State {
@@ -55,7 +96,8 @@ struct GpuWindowPresenter::State {
     std::unique_ptr<WindowPlatform> platform;
     std::unique_ptr<Vulkan::WSI> wsi;
     Vulkan::ImageHandle enlarged; // The picture at whole multiples of its size, kept while the size stays.
-    ~State() {enlarged.reset();wsi.reset();} // The swapchain goes before its platform.
+    Vulkan::ImageHandle copy,scaled; // scaleSharp: the picture copied to be sampled, and scaled; kept while the sizes stay.
+    ~State() {enlarged.reset();copy.reset();scaled.reset();wsi.reset();} // The swapchain goes before its platform.
 };
 
 GpuWindowPresenter::GpuWindowPresenter(Vulkan::ContextHandle context,Vulkan::DeviceHandle device,std::function<Vulkan::ImageHandle()> renderer_picture,
@@ -252,11 +294,22 @@ bool GpuWindowPresenter::present(const Request& request,Vulkan::Fence& done) {
         if(u0>=u1 || v0>=v1)return;
         cmd->blit_image(target,from,corner(x0,y0),extent(x1-x0,y1-y0),corner(u0,v0),extent(u1-u0,v1-v0),0,0,0,0,1,filter);
     };
-    // A stretch that is not a whole multiple (widescreen, scaling off) is done in two steps: first the
+    // An enlargement by less than twice in both directions (the 4x picture on a 4K screen: 1.5 x 1.2) is resampled by
+    // Lanczos-2 (scaleSharp): bilinear made every edge soft (the user, 2026-11-10). A picture made smaller stays
+    // bilinear (the filter's fixed 4 x 4 footprint is for enlarging).
+    const bool sharp=source && smooth && sharpScaling() && at.width>0 && at.height>0
+                     && unsigned(at.width)>=source->get_width() && unsigned(at.height)>=source->get_height()
+                     && unsigned(at.width)<2*source->get_width() && unsigned(at.height)<2*source->get_height()
+                     && (unsigned(at.width)!=source->get_width() || unsigned(at.height)!=source->get_height());
+    if(sharp) {
+        scaleSharp(device,*cmd,*source,unsigned(at.width),unsigned(at.height),s.copy,s.scaled);
+        source=s.scaled.get();
+    }
+    // A larger stretch that is not a whole multiple (widescreen, scaling off) is done in two steps: first the
     // largest whole multiple that fits, pixels copied, then the rest filtered. A plain filtered stretch
     // makes one-pixel lines thinner or thicker with where they fall, so thin edges pulse as the
     // picture moves; this way only the lines' edges are smoothed.
-    if(source && smooth && at.width>0 && at.height>0) {
+    else if(source && smooth && at.width>0 && at.height>0) {
         const unsigned kx=std::max(1u,unsigned(at.width)/source->get_width()),ky=std::max(1u,unsigned(at.height)/source->get_height());
         if(kx>1 || ky>1) {
             const unsigned w=source->get_width()*kx,h=source->get_height()*ky;
