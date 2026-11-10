@@ -58,6 +58,32 @@ void onlineRadarPacket(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
     generated_radar_packet(rdram,ctx,base);
 }
 
+// The players' button prompts (0x119E90, a0 the player 0 or 1): the button to press with its burst, sprite objects +0x3BA0
+// and +0x3CC0 of the player's HUD data, shown for the recovery after a heavy attack ("press O") and in a beam struggle
+// (found by a call trace of the HUD's sprite draws, 0x113430, while each showed). Online each player sees only their own
+// (the user, 2026-11-10: the other player's prompts were on screen). Player 2's own sits at the bottom left of the right
+// half in a split screen; on its full-screen view it is moved by half the screen for the call, to the bottom left where a
+// single-screen fight shows player 1's (x from 0xA to 0x5E there), only while its x is in the right half (0x100 and up).
+constexpr std::uint32_t prompt=0x119E90,prompt_size=0xA0;constexpr std::uint64_t prompt_hash=0x9578B6A6C5EC5330ull;
+constexpr std::array<std::uint32_t,2> prompt_sprites{0x3BA0,0x3CC0};
+constexpr std::array<std::uint32_t,4> prompt_x{0x20,0x30,0x40,0x50};
+constexpr std::uint32_t hud_player_size=0x3E40;
+PS2Runtime::RecompiledFunction generated_prompt=nullptr;
+void onlinePrompt(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
+    const std::uint32_t player=GPR_U32(ctx,4);
+    if(player!=local_player-1) {ctx->pc=GPR_U32(ctx,31);return;}
+    if(player==0) {generated_prompt(rdram,ctx,base);return;}
+    const std::uint32_t data=readWord(rdram,GPR_U32(ctx,28)-hud_pointer_gp)+radar_data+hud_player_size;
+    std::array<bool,prompt_sprites.size()> moved{};
+    for(std::size_t n=0;n<prompt_sprites.size();++n) {
+        moved[n]=readWord(rdram,data+prompt_sprites[n]+prompt_x[0])>=half_screen;
+        if(moved[n])for(const auto x:prompt_x)addToWord(rdram,data+prompt_sprites[n]+x,0u-half_screen);
+    }
+    generated_prompt(rdram,ctx,base);
+    for(std::size_t n=0;n<prompt_sprites.size();++n)
+        if(moved[n])for(const auto x:prompt_x)addToWord(rdram,data+prompt_sprites[n]+x,half_screen);
+}
+
 // view_setup(a0 view object, a1 mode): a half is set up as the full screen (the split flag cleared for the call), then
 // marked by its player in the scissor's top row.
 void onlineViewSetup(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
@@ -81,8 +107,10 @@ bool registerOnlineView(EeRuntime& runtime,unsigned player) {
     if(ram.size()<view_setup+view_setup_size || nativeCodeHash(ram.subspan(view_setup,view_setup_size))!=view_setup_hash)return false;
     if(nativeCodeHash(ram.subspan(radars,radars_size))!=radars_hash)return false;
     if(nativeCodeHash(ram.subspan(radar_packet,radar_packet_size))!=radar_packet_hash)return false;
+    if(nativeCodeHash(ram.subspan(prompt,prompt_size))!=prompt_hash)return false;
     generated_view_setup=runtime.replaceFunction(view_setup,onlineViewSetup);
     generated_radars=runtime.replaceFunction(radars,onlineRadars);
     generated_radar_packet=runtime.replaceFunction(radar_packet,onlineRadarPacket);
+    generated_prompt=runtime.replaceFunction(prompt,onlinePrompt);
     return true;
 }

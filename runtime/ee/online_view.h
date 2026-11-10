@@ -4,7 +4,8 @@
 // player's view for the whole screen and both machines keep the same state; each view is marked by its mode in
 // its scissor's top row (+0x208, 1 or 2 instead of 0). The renderer then leaves out the other player's view
 // (GsCommandSink::hidden_view): the mark costs one or two lines at the top of the picture, in the overscan.
-// Each player sees only their own fight radar, at the bottom right as in a single-screen fight.
+// Each player sees only their own fight radar, at the bottom right as in a single-screen fight, and only their own button
+// prompts (the recovery after a heavy attack, the beam struggle).
 // Installed only when the guest code hashes as expected, as the native functions are (ee/native_functions.h).
 #pragma once
 #include <cstdint>
