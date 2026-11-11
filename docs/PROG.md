@@ -26,6 +26,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 ## Latest (2026-11-11)
 
 - **Low input lag** (the user: the game feels a bit sluggish): a button's delay is measured at about 7 fields of the game's own (the motion starts a frame after the press; Square acts on its release) plus 8 ms of the port's. The game draws each picture a frame before it flips it; the new setting "Low input lag" (on by default) shows it as soon as it is drawn: 18.7 ms sooner in a 30 fps fight, about 12 ms in menus, the game's state unchanged. With 60 fps the fights keep their in-between pictures, which use that time already ([responsiveness plan](plans/ee/RESPONSIVENESS_PLAN.md), step 6; steps 7 and 8 next: lists drawn when built, run-ahead).
+- **HD fixes:** Frieza's dome purple again (a palette the game relights on the GPU and then overwrites in the same frame was named after the second one) and no green outline in his Death Ball with Low input lag and the light depth of field.
 
 ## 2026-11-10
 

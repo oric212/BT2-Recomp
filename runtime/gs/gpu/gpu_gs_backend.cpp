@@ -498,6 +498,8 @@ void GpuGsBackend::replaceTextures(GsTextureNames& names) {
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
+        // A drawn palette whose copy shows a later upload instead (gs_texture_names.h): the original is drawn.
+        if(name->palette_unknown) {++state_->pack->palettes_unknown;return {};}
         // As older PCSX2 versions named it (the used palette entries), then as newer ones do (the whole palette).
         const auto key=[&](std::uint64_t palette){return HdTexturePack::Key{name->texture,palette,name->format,name->has_palette};};
         bool loading=false;
@@ -566,6 +568,6 @@ std::string GpuGsBackend::hdTextureSummary() const {
     const auto& p=*state_->pack;
     return "HD textures: "+std::to_string(p.names())+" in the pack ("+std::to_string(p.duplicates)+" duplicate names), "
         +std::to_string(p.found)+" draws replaced, "+std::to_string(p.missing)+" without a replacement; "+std::to_string(p.variants_chosen)+" drawn palettes by a lit variant, "
-        +std::to_string(p.variants_too_far)+" with none near enough, "+std::to_string(p.read_ahead)+" variants read ahead; "+std::to_string(p.loaded)+" loaded, "
+        +std::to_string(p.variants_too_far)+" with none near enough, "+std::to_string(p.palettes_unknown)+" draws of a palette drawn and overwritten left original, "+std::to_string(p.read_ahead)+" variants read ahead; "+std::to_string(p.loaded)+" loaded, "
         +std::to_string(p.late)+" not ready at their first draw, "+std::to_string(p.evicted)+" dropped for the budget, "+std::to_string(p.refused)+" files refused; peak "+std::to_string(p.peak_bytes>>20)+" MB of a budget of "+std::to_string(p.budget()>>20)+" MB; reading "+std::to_string(int(p.read_seconds*1000))+" ms (all readers), making images "+std::to_string(int(p.image_seconds*1000))+" ms";
 }

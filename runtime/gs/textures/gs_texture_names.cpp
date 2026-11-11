@@ -136,8 +136,11 @@ void GsTextureNames::startTransfer(std::uint64_t dir) {
 
 void GsTextureNames::finishUpload() {
     const auto hash=XXH3_64bits(pending_.data(),pending_.size());
+    // The same upload as before into blocks nothing wrote since is not written again; a draw over one of their pages since
+    // (a palette the game relit on the GPU) counts as a write: the upload then replaces what was drawn.
     if(const auto found=uploads_.find(upload_key_);found!=uploads_.end() && found->second.hash==hash && found->second.generation>=all_written_
-       && std::all_of(found->second.blocks.begin(),found->second.blocks.end(),[&](std::uint16_t block){return block_written_[block]==found->second.generation;})) {
+       && std::all_of(found->second.blocks.begin(),found->second.blocks.end(),[&](std::uint16_t block){
+              return block_written_[block]==found->second.generation && page_drawn_[block/32]<=found->second.generation;})) {
         ++repeated_uploads;uploaded_pixels+=std::uint64_t(w_)*h_;
         pending_.clear();transfer_=false;
         return;
@@ -181,7 +184,14 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
         const std::size_t block=word/64;
         if(block==last_block)return;
         last_block=block;
-        if(block_written_[block]!=generation_) {block_written_[block]=generation_;written_blocks_.push_back(std::uint16_t(block));}
+        if(block_written_[block]!=generation_) {
+            // An upload into a block of a palette page the game has drawn over since the block's last upload: the
+            // end-of-frame copy will show this upload in the block, not what was drawn there (Frieza's dome: a relit
+            // palette, then the sheen's palette uploaded over it for a second pass).
+            const std::size_t in_page=word/2048;
+            late_blocks_[block]=clut_pages_[in_page] && page_drawn_[in_page]>block_written_[block] && page_drawn_[in_page]>all_written_;
+            block_written_[block]=generation_;written_blocks_.push_back(std::uint16_t(block));
+        }
         const std::size_t page=word/2048;
         if(page==last_page)return;
         last_page=page;
@@ -374,6 +384,9 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     }
     ++generation_;
     clut_key_=key;clut_generation_=generation_;clut_drawn_=from_drawn;
+    // A drawn palette in a block the game overwrites after drawing it: the copy does not show it.
+    clut_unknown_=false;
+    if(from_drawn)for(unsigned b=0;b<(f->palette==16?1u:4u);++b)if(late_blocks_[(cbp+b)%16384])clut_unknown_=true;
     // CSM1 with 32-bit entries: 16 entries as 8 x 2 pixels at CSA's 16; 256 as 16 x 16 pixels with index
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
@@ -434,7 +447,7 @@ std::optional<GsTextureNames::Name> GsTextureNames::name(std::uint64_t tex0,std:
     if(!f->palette && psm!=psm_ct32)n.format|=(ta0<<15)|(aem<<23)|(ta1<<24);
     if(f->palette) {
         const auto entries=paletteEntries(tex0,f->palette);
-        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;n.palette_drawn=clut_drawn_;
+        n.palette=XXH3_64bits(entries.data(),std::size_t(f->palette)*4);n.has_palette=true;n.palette_drawn=clut_drawn_;n.palette_unknown=clut_unknown_;
         highest=std::min(highest,f->palette-1);lowest=std::min(lowest,highest);
         n.palette_used=XXH3_64bits(entries.data()+lowest,std::size_t(highest-lowest+1)*4);
     }

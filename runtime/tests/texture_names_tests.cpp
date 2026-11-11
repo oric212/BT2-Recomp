@@ -247,6 +247,34 @@ int main() {
         require(!names.name(t4,0)->palette_drawn);
     }
     {
+        // A palette relit on the GPU, then another uploaded into its place for a second pass (Frieza's dome): the copy of
+        // the page taken at the frame's end shows the upload there, so the next time the drawn palette is loaded from
+        // that block it is not known (the texture is drawn as the original).
+        GsTextureNames names;
+        std::vector<std::uint8_t> pixels(64*32/2,0x11),palette(16*4,0x40);
+        upload(names,0x100,2,0x14,64,32,pixels);
+        upload(names,0x300,1,0x00,8,2,palette); // Block 0x300, in page 24.
+        const auto load=[&]{names.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));return names.name(tex0(0x100,2,0x14,6,5,0x300),0);};
+        require(!load()->palette_drawn); // Loaded once: page 24 is watched from now on.
+        // A sprite over page 24 (FRAME page 24, 64 pixels wide, CT32), as the game's relight draws its palettes.
+        const auto draw=[&]{
+            names.reg(0x1A,1);names.reg(0x4C,24ull|(1ull<<16));names.reg(0x18,0);
+            names.reg(0x00,6);names.reg(0x05,0);names.reg(0x05,(8ull<<4)|((2ull<<4)<<16));
+        };
+        draw();
+        const auto relit=load();
+        require(relit->palette_drawn && !relit->palette_unknown);
+        upload(names,0x300,1,0x00,8,2,palette); // The same bytes again, over the drawn palette: not skipped as a repeat.
+        draw();
+        const auto overwritten=load();
+        require(overwritten->palette_drawn && overwritten->palette_unknown);
+        // A new palette uploaded while the page is not drawn over (after the late one) is the palette's own again.
+        upload(names,0x300,1,0x00,8,2,palette);
+        upload(names,0x300,1,0x00,8,2,std::vector<std::uint8_t>(16*4,0x20));
+        draw();
+        require(!load()->palette_unknown);
+    }
+    {
         // Block-compressed levels: BC1 opaque red, then an 8 x 8 level of four blocks, red at the top left
         // and blue elsewhere (each block covers 2 x 2 of the 4 x 4 cells); BC3 fully transparent covers nothing.
         const std::uint8_t red[8]{0x00,0xF8,0x00,0xF8,0,0,0,0},blue[8]{0x1F,0x00,0x1F,0x00,0,0,0,0};

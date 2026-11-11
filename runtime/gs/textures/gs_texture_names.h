@@ -43,6 +43,9 @@ public:
     struct Name {
         std::uint64_t texture=0,palette=0,palette_used=0;std::uint32_t format=0;bool has_palette=false;
         bool palette_drawn=false; // The CLUT was loaded from a palette the game drew (the fighters' lit palettes).
+        // Drawn, but the copy of its page holds an upload the game made over the drawn palette later in a frame (a
+        // second palette in the same place): what the game drew is not known, so the texture is drawn as the original.
+        bool palette_unknown=false;
         std::string text() const;     // With the whole palette's hash.
         std::string textUsed() const; // With the used entries' hash (the same as text() without a palette).
     };
@@ -120,8 +123,11 @@ private:
     std::unordered_map<std::array<std::uint64_t,3>,Upload,UploadKeyHash> uploads_;
     std::vector<std::uint16_t> written_blocks_; // Blocks the current transfer wrote.
     std::vector<std::uint64_t> block_written_=std::vector<std::uint64_t>(16384); // The generation of the last transfer into each block.
+    // Blocks of a palette page whose last upload came after a draw over that page (pageDrawn): the copy of the page,
+    // taken at the frame's end, holds that upload there instead of the palette drawn before it.
+    std::vector<bool> late_blocks_=std::vector<bool>(16384);
     // The last CLUT load: its TEX0 fields and the generation it was read at.
-    std::uint64_t clut_key_=~0ull,clut_generation_=0;bool clut_drawn_=false;
+    std::uint64_t clut_key_=~0ull,clut_generation_=0;bool clut_drawn_=false,clut_unknown_=false;
     // Changes since a context's texture was last named.
     std::uint64_t generation_=0;
     std::uint64_t named_generation_[2]{~0ull,~0ull},named_tex0_[2]{},named_texa_[2]{};
