@@ -23,7 +23,11 @@
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
 
-## Latest (2026-11-10)
+## Latest (2026-11-11)
+
+- **Low input lag** (the user: the game feels a bit sluggish): a button's delay is measured at about 7 fields of the game's own (the motion starts a frame after the press; Square acts on its release) plus 8 ms of the port's. The game draws each picture a frame before it flips it; the new setting "Low input lag" (on by default) shows it as soon as it is drawn: 18.7 ms sooner in a 30 fps fight, about 12 ms in menus, the game's state unchanged. With 60 fps the fights keep their in-between pictures, which use that time already ([responsiveness plan](plans/ee/RESPONSIVENESS_PLAN.md), step 6; steps 7 and 8 next: lists drawn when built, run-ahead).
+
+## 2026-11-10
 
 - **Online input delay:** Auto chose 3 fields at an 8 ms round trip because a player's game read the handshake only between drawing its window; both sides now keep reading while it runs, and Auto chooses 2 there (a test; the rule itself measured over simulated links from 8 to 60 ms and kept) ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later").
 - **60 fps through heavy super attacks:** after a super attack that destroyed the stage the user's online fight stayed at 30 fps (the host's log: turned off as "too slow" after one heavy scene). A heavy stretch now pauses the in-between pictures for 3 seconds and they resume ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md), 4d).
@@ -47,7 +51,7 @@ One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with a
 | Fight | 29.97 flips a second, super attacks included; an in-between picture for nearly every flip, 6.3 ms each |
 | Game thread | 10 to 14 ms of a 33 ms frame |
 | Graphics card | 6 ms a frame plain, 8 to 10 with 16x, HD and widescreen |
-| Latency | 10 ms flip to screen in menus; 7.5 ms in a 60 fps fight with VRR, 97% of pictures a field apart within 1 ms |
+| Latency | A button to the screen about 7 fields of the game's own plus the port's: with Low input lag a picture goes out 9 ms (menus) to 14 ms (30 fps fight) before the flip that displays it; 7.5 ms after it in a 60 fps fight with VRR |
 | Memory | 0.7 to 0.85 GB; 0.8 to 1.2 GB of video memory |
 
 ## Subsystems

@@ -18,6 +18,7 @@ struct Settings {
     unsigned window_scale=2;        // Window size as a multiple of the game's picture; the launcher offers what fits the screen.
     bool show_frame_rate=false;
     bool variable_refresh=false;    // Pictures presented without waiting for the display's refresh, for VRR displays (gs/gpu/gpu_window_presenter.cpp), from the next start.
+    bool low_input_lag=true;        // Each picture shown as soon as the game has drawn it, a frame before its flip (host/early_picture.h), from the next start.
     unsigned master_volume=100,music_volume=100,effects_volume=100; // Percent.
     bool hd_textures=false;         // The texture pack in data/textures (host/game_folders.h), from the next start.
     unsigned super_sampling=1;      // Samples per pixel (1, 2, 4, 8, 16); 4 and more draw at twice the resolution. From the next start.
@@ -56,7 +57,7 @@ struct Settings {
     std::string text() const {
         std::ostringstream out;
         out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
-           <<"\nshow_frame_rate = "<<show_frame_rate<<"\nvariable_refresh = "<<variable_refresh<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
+           <<"\nshow_frame_rate = "<<show_frame_rate<<"\nvariable_refresh = "<<variable_refresh<<"\nlow_input_lag = "<<low_input_lag<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
            <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nstruggle_buttons = "<<struggle_buttons
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card
@@ -95,6 +96,7 @@ struct Settings {
             else if(key=="window_scale")s.window_scale=number(1,max_window_scale);
             else if(key=="show_frame_rate")s.show_frame_rate=number(0,1);
             else if(key=="variable_refresh")s.variable_refresh=number(0,1);
+            else if(key=="low_input_lag")s.low_input_lag=number(0,1);
             else if(key=="master_volume")s.master_volume=number(0,100);
             else if(key=="music_volume")s.music_volume=number(0,100);
             else if(key=="effects_volume")s.effects_volume=number(0,100);

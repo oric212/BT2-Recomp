@@ -209,6 +209,7 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
     screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
     screen.entries.back().available=windowed;
     screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
+    screen.entries.push_back(toggle("Low input lag",s.low_input_lag,changed,"Each picture shown as soon as the game has drawn it, a frame sooner after a button. With 60 fps battles the fights keep their in-between pictures instead. From the next start."));
     screen.entries.push_back(toggle("Variable refresh rate",s.variable_refresh,changed,"For FreeSync, G-Sync or VRR displays: each picture shown the moment it is ready, for exactly its time. Leave off on other displays (they would tear). From the next start."));
     return screen;
 }

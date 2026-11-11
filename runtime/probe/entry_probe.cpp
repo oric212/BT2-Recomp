@@ -10,6 +10,7 @@
 #include "game_starter.h"
 #include "online_session.h"
 #include "host/audio_device.h"
+#include "host/early_picture.h"
 #include "host/frame_pacer.h"
 #include "host/host_input.h"
 #include "host/input_mapping.h"
@@ -79,6 +80,14 @@ inline std::chrono::steady_clock::duration partnerReadyAfterFlip() {
 }
 unsigned fight_waits = 0;
 bool counting = false;
+}
+
+// "Low input lag" (BT2_LOW_INPUT_LAG=1, the setting; host/early_picture.h): the picture after a flip goes out at the end
+// of the flip's field instead of at the next flip.
+namespace low_lag {
+std::function<void()> field_picture; // Called at each field's end, after sixty_fps::field_picture, before the deadline.
+EarlyPicture early;
+std::chrono::steady_clock::time_point shown_at{}; // When the last early picture was handed to the window.
 }
 
 int main(int argc, char** argv) {
@@ -191,7 +200,8 @@ int main(int argc, char** argv) {
                 if (pacer) {
                     if (quick_title && runtime.padButtonsHeld()) quick_title = pacer->free_run = false; // The player takes over.
                     if (sixty_fps::field_picture) sixty_fps::field_picture(); // An in-between picture, at this field's deadline.
-                    pacer->wait(); // The field that ends here, if it showed no picture.
+                    if (low_lag::field_picture) low_lag::field_picture(); // The next picture, when this field flipped.
+                    pacer->wait(); // The field that ends here (with low input lag also a field that flipped).
                     // A queue above its target means the fields come faster than the device plays them: lengthen the period a little.
                     const double excess = speaker.device ? (double(speaker.device->queuedFrames()) - AudioMixer::rate / 20) / AudioMixer::rate : 0;
                     pacer->fieldStarted(1.0 + excess * 0.1);
@@ -631,6 +641,29 @@ int main(int argc, char** argv) {
                 viewer.setPresenter(&gpu_mirror.windowPresenter());
                 if (player) player->picture_source = [] { return gpu_mirror.readback(); };
             }
+            // BT2_LOW_INPUT_LAG=1 (the setting "Low input lag"; host/early_picture.h): at the end of a field that flipped,
+            // the next picture (drawn by then) goes out, at the moment such pictures are usually ready, before the field's
+            // deadline is waited for. Not with BT2_PICTURE_AT_DEADLINE or in an online session.
+            if (viewer_mode && pacer && std::getenv("BT2_LOW_INPUT_LAG") && std::string_view(std::getenv("BT2_LOW_INPUT_LAG")) == "1"
+                && !std::getenv("BT2_PICTURE_AT_DEADLINE") && !std::getenv("BT2_NET")) {
+                low_lag::field_picture = [&runtime] {
+                    const auto registers = low_lag::early.fieldEnded(runtime.gs_sink.transfers);
+                    if (!registers) return;
+                    if (pacer->freeRun() || !viewer.gpuPresented()) {low_lag::early.cancel();return;}
+                    const unsigned next = runtime.gs_display_flips + 1;
+                    const auto [width, height] = gpu_mirror.vsync(*registers, runtime.gs_crt_request[1], next);
+                    if (!width) {low_lag::early.cancel();return;}
+                    pacer->waitToShow();
+                    low_lag::shown_at = std::chrono::steady_clock::now();
+                    if (player) player->shown();
+                    viewer.presentRenderer(width, height, next);
+                };
+                static struct LowLagSummary {
+                    ~LowLagSummary() {std::cerr << std::dec << "Low input lag: " << low_lag::early.shown_early << " pictures shown at the end of the field before their flip, "
+                                                << low_lag::early.shown_at_flip << " at their flip." << std::endl;}
+                } low_lag_summary;
+                std::cerr << "Low input lag: on" << std::endl;
+            }
             // GPU-only: VRAM lives in the renderer, which also answers local->host transfers.
             runtime.gs_download_source = [](std::span<std::uint8_t> out) { gpu_mirror.readFifo(out); };
             // With the viewer, the window shows the GPU scanout instead of the CPU framebuffer.
@@ -655,6 +688,11 @@ int main(int argc, char** argv) {
             }
             runtime.on_display_flip = [&runtime, viewer_mode] {
                 const auto flip = runtime.gs_display_flips;
+                // Low input lag: whether the picture after this flip may go out at the end of its field (not in fast
+                // forward, not in a fight with 60 fps, whose in-between picture needs that time), and whether this
+                // flip's own picture already went out so (host/early_picture.h).
+                const bool low_lag_allowed = low_lag::field_picture && pacer && !pacer->freeRun() && !(in_between && sixty_fps::fight_waits > 0);
+                const bool early_shown = low_lag::field_picture && low_lag::early.flipped(runtime.gs_privileged, runtime.gs_sink.transfers, low_lag_allowed);
                 // BT2_SAMPLE_PROFILE=<path>: sample where this thread executes, from flip
                 // BT2_SAMPLE_FROM (default 1) to the end of the run or to flip BT2_SAMPLE_TO (host/sample_profiler.h).
                 static std::unique_ptr<SampleProfiler> profiler;
@@ -758,8 +796,14 @@ int main(int argc, char** argv) {
                 static const bool at_deadline = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
                 const bool ahead_sixty = pacer && delayed && on_gpu && !at_deadline;
                 const bool ahead = pacer && !at_deadline && (ahead_sixty || !delayed);
+                // Low input lag: a picture that already went out presents nothing; one that did not goes out now, ahead of
+                // the deadline; either way the field's deadline is waited for at its end, after the next picture is drawn.
+                const bool skip_present = early_shown && !delayed;
+                const bool low_lag_flip = !delayed && on_gpu && (early_shown || low_lag_allowed);
                 Clock::time_point shown_at{};
-                if (ahead_sixty) {
+                if (low_lag_flip) {
+                    if (!skip_present) pacer->waitToShow();
+                } else if (ahead_sixty) {
                     // The game's thread waits for this field's deadline anyway: meanwhile, for the in-between picture.
                     if (in_between_flip + 1 == flip) {
                         const auto job = in_between->lastJob();
@@ -775,7 +819,7 @@ int main(int argc, char** argv) {
                 } else if (ahead) pacer->waitToShow(); else if (pacer) pacer->wait();
                 const auto t_shown = Clock::now();
                 // The flip's own picture with 60 fps ahead: a field after the in-between picture.
-                const auto main_at = ahead_sixty ? shown_at + pacer->period() : t_shown;
+                const auto main_at = skip_present ? low_lag::shown_at : ahead_sixty ? shown_at + pacer->period() : t_shown;
                 // BT2_LATENCY_LOG=<path>: each shown flip: when the game flipped it and when it was handed to the
                 // window after the pacer's wait (steady clock, microseconds), and whether 60 fps holds it a field;
                 // the presenter writes <path>.presents (gpu_window_presenter.h). tools/perf/latency_report.py.
@@ -811,8 +855,10 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     delayed_main.pending = false;
-                    if (player) player->shown(on_gpu ? nullptr : &frame);
-                    if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
+                    if (!skip_present) {
+                        if (player) player->shown(on_gpu ? nullptr : &frame);
+                        if (on_gpu) viewer.presentRenderer(width, height, flip); else viewer.present(frame, flip);
+                    }
                     sixty_fps::main_flip = flip;sixty_fps::shown_main_flip = flip;
                     static const bool at_deadline_direct = std::getenv("BT2_PICTURE_AT_DEADLINE") != nullptr;
                     sixty_fps::direct = in_between && viewer_mode && viewer.gpuPresented() && pacer && !pacer->freeRun() && !delay_fights && !at_deadline_direct
@@ -841,7 +887,7 @@ int main(int argc, char** argv) {
                         window_start = t2;scanout_s = present_s = slowest_s = 0;late = 0;waited_at_window = pacer ? pacer->waited_seconds : 0;(void)waited_before;window_fields = runtime.vblank_deliveries;frame_profile = {};frame_profile.enabled = true;
                     }
                 }
-                if (ahead) pacer->wait(); // The field's deadline, before the game goes on (it reads its input after it).
+                if (ahead && !low_lag_flip) pacer->wait(); // The field's deadline, before the game goes on (it reads its input after it).
                 if (viewer.closed()) {std::cerr << "Viewer closed; ending the run." << std::endl; std::exit(0);}
             };
         }

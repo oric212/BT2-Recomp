@@ -1,13 +1,15 @@
 # Resume handoff
 
-Updated: 2026-11-10. Finished work: [November history](2026-11.md).
+Updated: 2026-11-11. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Done 2026-11-10: Auto's input delay measured from a responsive handshake (2 fields at an 8 ms round trip, not 3), and 60 fps no longer turned off for the session by one heavy super attack (it rests 3 s and resumes). Online items left: the lock-on lost too often (traced: the split screen most likely changes only the camera's pose, not lock-on; waiting for the user's description of the losses) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). Then the user's play and the final validation ([PROG.md](../PROG.md), "Next").
+No pass is open. Done 2026-11-11: "Low input lag" (each picture shown when the game has drawn it, a frame before its flip; 18.7 ms sooner in a 30 fps fight; [responsiveness plan](../plans/ee/RESPONSIVENESS_PLAN.md) step 6). Next for responsiveness: step 7 (a frame's lists drawn when built), then step 8 (run-ahead, its own plan). Done 2026-11-10: Auto's input delay measured from a responsive handshake (2 fields at an 8 ms round trip, not 3), and 60 fps no longer turned off for the session by one heavy super attack (it rests 3 s and resumes). Online items left: the lock-on lost too often (traced: the split screen most likely changes only the camera's pose, not lock-on; waiting for the user's description of the losses) and each player seeing only their own prompts ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"). Then the user's play and the final validation ([PROG.md](../PROG.md), "Next").
 
 ## Waiting for the user
 
+- **Low input lag in play:** does the game feel quicker (menus and, with 60 fps off, fights)? Their choice: 60 fps fights or the quicker 30 fps ones.
+- **Flicker on the destroyed Namek** (stage 15) after the planet blew up: what flickered (sky, ground, lava, fighters, HUD, all), how often, which characters and attack.
 - **Online on two PCs** (the next battle; the delay felt responsive to the user, 2026-11-10: 60 fps after a stage-destroying super attack, the own radar at the bottom right, the sharper enlargement on the 4K screen, no split line during dashes and ki charges, only their own button prompts, and no Return to Main Menu in the pause or after a fight) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.
 - **Lock-on online:** when it was lost, was the opponent near and in view, or far away or behind the stage ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md), "Left for later" item 2)?
 - **Distant fighters:** a PCSX2 picture of what "as sharp as it should be" means, and whether the blocky blur behind them is what reads as blurry ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md) step 6).

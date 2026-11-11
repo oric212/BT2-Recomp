@@ -54,7 +54,7 @@ All optional, set in the launcher or the in-game menu (Escape or the PS button);
 | **Widescreen** | 16:9 fights, cut-scenes and story map. |
 | **60 fps battles** | A picture between each two of the game's 30 frames; the fight itself runs as on the PS2. |
 | **Fast loading** · **Beam struggles by buttons** | Shorter loading screens; Square instead of turning the stick. Both on by default. |
-| **Display** | Integer or smooth scaling, window size, fullscreen, **Variable refresh rate** for VRR displays; **Tab** fast-forwards. |
+| **Display** | Integer or smooth scaling, window size, fullscreen, **Variable refresh rate** for VRR displays, **Low input lag** (each picture shown as soon as it is drawn, on by default); **Tab** fast-forwards. |
 | **Online battle** | 1P vs 2P with a player on another PC: one hosts, the other joins with the host's code ([setup](docs/guides/release/ONLINE_SETUP.md)). |
 
 ## System requirements

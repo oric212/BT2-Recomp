@@ -44,7 +44,7 @@ int main() {
         s.disc="a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
         s.fast_forward_toggle=true;s.fast_loading=false;s.struggle_buttons=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
-        s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;s.variable_refresh=true;s.second_controller=true;
+        s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;s.variable_refresh=true;s.low_input_lag=false;s.second_controller=true;
         s.online_port=65000;s.online_address="my-host.example.net";s.online_delay=4;s.online_upnp=false;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings{}.hd_outline && Settings::parse("disc =\n").hd_outline,"the HD outline is on by default, also in older files");
@@ -52,6 +52,7 @@ int main() {
         check(Settings{}.fast_loading && Settings::parse("disc =\n").fast_loading,"fast loading is on by default, also in older files");
         check(Settings{}.struggle_buttons && Settings::parse("disc =\n").struggle_buttons,"beam struggles by buttons on by default, also in older files");
         check(!Settings{}.variable_refresh && !Settings::parse("disc =\n").variable_refresh,"variable refresh off by default (other displays would tear)");
+        check(Settings{}.low_input_lag && Settings::parse("disc =\n").low_input_lag,"low input lag on by default, also in older files");
         {
             // Fast loading is an enhancement, not part of fast forward.
             Settings e;const auto screen=menu_screens::enhancements(e,[]{});
