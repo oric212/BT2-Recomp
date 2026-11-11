@@ -16,7 +16,7 @@
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
 | Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
-| Online battle | 🟢 Operational — lockstep over UDP with connection codes, no port to open; played between two homes; lock-on and prompts left for later |
+| Online battle | 🟢 Operational — lockstep over UDP with connection codes, no port to open; played between two homes; each player sees their own view, radar and prompts; rounds start locked on |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; nothing interpreted in the gate's runs · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest (2026-11-11)
 
+- **Online rounds start locked on** (the user: both players had to look for each other at a match's start). Measured: lock-on ("Lock on!") comes only when the fighters get within range, and they start a round more than twice that far apart; in 1P vs CPU the CPU flies in at once, in 1P vs 2P nobody was locked on until the players came close, and the camera did not follow the opponent meanwhile (the original's two-player behaviour, also in split screen). Online, both fighters are now locked on from "FIGHT!", on both machines alike; after that the game's own rules apply ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later" item 2).
 - **Fighter textures no longer pop** between HD and the original (the user's report): drawn palettes followed by blocks, and one overwritten later in the frame copied before the upload; draws left original 38,174 to 22 in a test fight. **Player 2's "press O"** online now sits in its corner with its burst ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md), [online plan](plans/online/ONLINE_BATTLE_PLAN.md)). Found: the destroyed Namek's lava flickers in the 60 fps in-between pictures. **Short presses kept:** a tap between the game's reads reaches it (two fields at least). **The launcher's online page** is one panel with a removable code.
 - **Low input lag** (the user: the game feels a bit sluggish): a button's delay is measured at about 7 fields of the game's own (the motion starts a frame after the press; Square acts on its release) plus 8 ms of the port's. The game draws each picture a frame before it flips it; the new setting "Low input lag" (on by default) shows it as soon as it is drawn: 18.7 ms sooner in a 30 fps fight, about 12 ms in menus, the game's state unchanged. With 60 fps the fights keep their in-between pictures, which use that time already ([responsiveness plan](plans/ee/RESPONSIVENESS_PLAN.md), step 6; steps 7 and 8 next: lists drawn when built, run-ahead).
 - **HD fixes:** Frieza's dome purple again (a palette the game relights on the GPU and then overwrites in the same frame was named after the second one) and no green outline in his Death Ball with Low input lag and the light depth of field.
@@ -74,7 +75,7 @@ One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with a
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. Online: the lock-on lost too often and each player seeing only their own prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
+1. Online: the user's play of the start locked on (and whether lock is still lost too often after it), the Dragon Rush's prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
 2. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
 3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
 4. The user's decisions: a matchmaking server and rollback for online; publishing the release.

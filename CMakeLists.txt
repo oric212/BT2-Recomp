@@ -35,6 +35,7 @@ set(BT2_EE_RUNTIME_SOURCES
     runtime/ee/native_functions.cpp
     runtime/ee/online_view.cpp
     runtime/ee/online_menus.cpp
+    runtime/ee/online_lock_on.cpp
     runtime/ee/guest_image.cpp
     runtime/ee/struggle_buttons.cpp
     runtime/services/disc_service.cpp
@@ -244,6 +245,9 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-struggle-buttons-tests runtime/tests/struggle_buttons_tests.cpp)
     bt2_ee_target(bt2-struggle-buttons-tests)
     add_test(NAME struggle-buttons COMMAND bt2-struggle-buttons-tests)
+    add_executable(bt2-online-lock-on-tests runtime/tests/online_lock_on_tests.cpp)
+    bt2_ee_target(bt2-online-lock-on-tests)
+    add_test(NAME online-lock-on COMMAND bt2-online-lock-on-tests)
     # Single generated functions checked against handwritten expectations.
     function(bt2_generated_test target test_name source strict)
         add_executable(${target} runtime/tests/${source} ${ARGN})
@@ -419,7 +423,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_test(NAME disc-sector-bounds COMMAND bt2-disc-sector-tests)
 endif()
 
-foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-native-function-tests bt2-struggle-buttons-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
+foreach(bt2_ee_runtime_target bt2-bootstrap-tests bt2-generated-probe bt2-gs-command-tests bt2-post-sif-tests bt2-native-function-tests bt2-struggle-buttons-tests bt2-online-lock-on-tests bt2-kernel-handler-tests bt2-buffer-fill-tests bt2-timer-write-tests bt2-copy-handler-tests bt2-compare-bytes-tests bt2-rpc-bind-probe)
     if(TARGET ${bt2_ee_runtime_target})
         target_link_libraries(${bt2_ee_runtime_target} PRIVATE bt2-ee-runtime)
     endif()

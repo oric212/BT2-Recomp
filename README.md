@@ -36,7 +36,7 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
 | Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
-| Online battle | 🟢 Operational — lockstep over UDP with connection codes, no port to open; played between two homes; lock-on and prompts left for later |
+| Online battle | 🟢 Operational — lockstep over UDP with connection codes, no port to open; played between two homes; each player sees their own view, radar and prompts; rounds start locked on |
 
 **Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; nothing interpreted in the gate's runs · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
 <!-- progress-summary:end -->
