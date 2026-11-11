@@ -53,6 +53,7 @@ public:
         prepare(width,height);
         if(screen.browser)return browser(screen,seconds);
         const bool over_game=backdrop && backdrop->width,first=root && !over_game;
+        if(screen.panel && !first)return panel(screen,seconds,prompt,over_game);
         std::copy(haze_[first || over_game?0:1].begin(),haze_[first || over_game?0:1].end(),bits_);
         if(first) {
             ring(seconds);
@@ -104,6 +105,71 @@ public:
 
 private:
     enum class Symbol {Cross,Circle};
+
+    // A panel screen (MenuScreen::panel): a dark translucent panel at the right of the fan, the title in yellow with the
+    // status in a pill at its right, gold headings over the groups, each entry's value at the right of its line, the chosen
+    // line on a light band.
+    DisplayFrame panel(const MenuScreen& screen,double seconds,const std::string& prompt,bool over_game) {
+        std::copy(haze_[over_game?0:1].begin(),haze_[over_game?0:1].end(),bits_);
+        if(!over_game) {fan(seconds);cubes(seconds,screen.highlighted);}
+        SetBkMode(dc_,TRANSPARENT);
+        const int w=int(width_),h=int(height_),unit=h/24;
+        if(!over_game)clock(unit);
+        const unsigned count=unsigned(screen.entries.size());
+        unsigned sections=0;for(const auto& e:screen.entries)if(!e.section.empty())++sections;
+        const int left=w*44/100,right=w*95/100,pad=unit*2/3;
+        const int row=std::min(unit*13/10,(h-unit*12)/std::max(int(count)+int(sections)+2,1)),head=row;
+        HFONT entry_font=listFont(std::min(row*7/10,unit*9/10));
+        const int body=int(count)*row+int(sections)*head;
+        const int top=std::max(h/2-(body+unit*3)/2,unit*3),bottom=top+unit*3+body+pad;
+        const auto rect=[&](int x0,int y0,int x1,int y1,std::uint32_t colour,double alpha) {
+            blendConvex({double(x0),double(y0),double(x1),double(y0),double(x1),double(y1),double(x0),double(y1)},4,colour,alpha);
+        };
+        rect(left,top,right,bottom,0x000A0818u,0.62);
+        rect(left,top,right,top+2,0x00F0DE46u,0.85); // A gold edge along the top.
+        // The header: the title, and the status pill flush right.
+        text(screen.title,left+pad,top+unit/2,title_,RGB(240,222,70));
+        if(screen.status) {
+            const std::string status=screen.status();
+            if(!status.empty()) {
+                const std::string shown=fit(status,note_,(right-left)/2);
+                const int tw=extent(shown,note_),ph=unit*9/10,px1=right-pad,px0=px1-tw-unit,py0=top+unit*3/4;
+                rect(px0,py0,px1,py0+ph,0x0060C8FFu,0.20);
+                rect(px0,py0,px1,py0+1,0x0060C8FFu,0.9);rect(px0,py0+ph-1,px1,py0+ph,0x0060C8FFu,0.9);
+                rect(px0,py0,px0+1,py0+ph,0x0060C8FFu,0.9);rect(px1-1,py0,px1,py0+ph,0x0060C8FFu,0.9);
+                text(shown,px0+unit/2,py0+(ph-unit*2/3)/2,note_,RGB(150,215,255));
+            }
+        }
+        int y=top+unit*3;
+        const double pulse=0.5+0.5*std::sin(seconds*3.0);
+        for(unsigned n=0;n<count;++n) {
+            const auto& entry=screen.entries[n];
+            if(!entry.section.empty()) {text(entry.section,left+pad,y+head/3,note_,RGB(214,176,72));y+=head;}
+            const bool on=n==screen.highlighted,usable=entry.usable();
+            if(on)rect(left+pad/2,y,right-pad/2,y+row,0x0060A8F0u,0.20+0.06*pulse);
+            const COLORREF colour=!usable?RGB(84,84,94):on?RGB(BYTE(110+30*pulse),BYTE(206+20*pulse),255):RGB(196,196,204);
+            const std::string value=entry.value?entry.value():std::string();
+            const int value_room=value.empty()?0:(right-left)*45/100;
+            const std::string label=fit(entry.label,entry_font,right-left-pad*3-value_room);
+            const int ty=y+row/8;
+            if(usable)text(label,left+pad*3/2,ty,entry_font,colour);else plainText(label,left+pad*3/2,ty,entry_font,colour);
+            if(!value.empty()) {
+                const std::string shown=fit(value,entry_font,value_room);
+                const bool arrows=on && entry.adjust && !entry.confirm;
+                const int vx=right-pad*3/2-extent(shown,entry_font)-(arrows?unit:0);
+                text(shown,vx,ty,entry_font,!usable?RGB(84,84,94):on?RGB(240,240,244):RGB(150,170,190));
+                if(arrows)arrowsMark(right-pad*3/2-unit/3,y+row/2-unit/8,unit*2/3);
+            }
+            y+=row;
+        }
+        const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
+        if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(170,170,184));
+        const int by=h-unit*3;
+        hint(Symbol::Cross,"Enter",w*34/100,by,unit);
+        hint(Symbol::Circle,"Back",w*58/100,by,unit);
+        DisplayFrame frame;frame.width=width_;frame.height=height_;frame.bgra.assign(bits_,bits_+std::size_t(width_)*height_);
+        return frame;
+    }
 
     // The console's browser: grey, the chosen item's icon, name and details at the top left, the
     // screen's title in yellow at the top right, the items as a row of icons (the chosen one lit and

@@ -21,6 +21,7 @@ struct MenuEntry {
     bool enabled=true;                           // A disabled entry is shown but cannot be highlighted.
     std::function<bool()> available;             // Also disabled while this returns false (it depends on another setting).
     MenuIcon icon=MenuIcon::None;                // Its picture on a browser screen.
+    std::string section;                         // On a panel screen: a heading shown above this entry (it starts a group).
     bool usable() const {return enabled && (!available || available());}
 };
 
@@ -31,6 +32,10 @@ struct MenuScreen {
     // Drawn as the console's browser (a row of icons on grey) instead of a list; every arrow moves
     // through the row.
     bool browser=false;
+    // Drawn as a panel (after BT3-Recomp's netplay panel): the title with a status pill at its right, the entries in groups
+    // under their headings (MenuEntry::section), each with its value at the right of its line.
+    bool panel=false;
+    std::function<std::string()> status; // The pill's text; empty for none.
 };
 
 class Menu {

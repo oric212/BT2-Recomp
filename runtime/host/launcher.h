@@ -100,32 +100,55 @@ private:
         return main;
     }
     // Both PCs start fresh into the game's Dueling screen with every fighter unlocked; no save is used, and each player
-    // keeps their own picture settings and enhancements. Hosting is one press; joining is one press, the code pasted or
-    // typed, and Enter (the user asked for simple navigation, 2026-11-04); the rest waits under Options.
+    // keeps their own picture settings and enhancements. One panel, after BT3-Recomp's netplay panel (the user, 2026-11-11:
+    // the screen should be structured better, a code entered should be removable): Play (Host as player 1, Join as player
+    // 2), the host's code (kept, replaced by a paste or by typing, cleared), and the connection's settings; the status
+    // pill says which code a Join uses. Hosting is one press; joining with a kept code one press too.
     MenuScreen onlineScreen() {
-        MenuScreen screen;screen.title="Online battle";
+        MenuScreen screen;screen.title="Online battle";screen.panel=true;
+        screen.status=[this]{return settings_.online_address.empty()?std::string("No code"):"Code "+settings_.online_address;};
         const auto start=[this](LauncherResult how){if(discReady()) {result=how;host_.finished=true;}};
-        screen.entries.push_back(menuAction("Host a battle",[start]{start(LauncherResult::Host);},
-            "Your code is copied by itself: paste it into a chat, then copy the reply code they send back."));
-        screen.entries.push_back(menuAction("Join with a code",[this,start] {
-            // A code already on the clipboard (copied from the chat) is filled in; Ctrl+V pastes one.
+        const auto enter=[this](std::string prompt,std::string text,std::function<void()> then) {
+            host_.type(std::move(prompt),std::move(text),Settings::online_address_characters,253,[this,then](std::string typed) {
+                if(typed.empty())return;
+                settings_.online_address=std::move(typed);changed();
+                if(then)then();
+            });
+        };
+        MenuEntry host=menuAction("Host  \xC2\xB7  you are player 1",[start]{start(LauncherResult::Host);},
+            "Your code is copied by itself: send it to the other player, then paste the reply code they send back.");
+        host.section="PLAY";
+        screen.entries.push_back(host);
+        screen.entries.push_back(menuAction("Join  \xC2\xB7  you are player 2",[this,start,enter] {
+            // A new code on the clipboard (copied from the chat) is filled in; else a kept code joins at once.
+            const auto clip=host_.clipboardText();
+            const auto pasted=clipboard::codeIn(clip)?clipboard::pastedInto("",clip,Settings::online_address_characters,253):std::string();
+            if(!pasted.empty() && pasted!=settings_.online_address)
+                enter("The host's code, pasted from the clipboard: Enter joins",pasted,[start]{start(LauncherResult::Join);});
+            else if(!settings_.online_address.empty())start(LauncherResult::Join);
+            else enter("The host's code: type it or paste it (Ctrl+V), then Enter","",[start]{start(LauncherResult::Join);});
+        },"Joins with the host's code (a code copied from the chat is filled in). Then send back the reply code shown."));
+        screen.entries.back().value=[this]{return settings_.online_address.empty()?std::string("enter a code"):std::string();};
+        MenuEntry code=menuAction("Code",[this,enter] {
             const auto clip=host_.clipboardText();
             const bool has_code=clipboard::codeIn(clip).has_value();
-            host_.type(has_code?"The host's code, pasted from the clipboard: Enter joins":"The host's code: type it or paste it (Ctrl+V), then Enter",
-                       has_code?clipboard::pastedInto("",clip,Settings::online_address_characters,253):settings_.online_address,
-                       Settings::online_address_characters,253,
-                [this,start](std::string text) {
-                    if(text.empty())return;
-                    settings_.online_address=std::move(text);changed();
-                    start(LauncherResult::Join);
-                });
-        },"Copy the host's code first: it is filled in, and Enter joins. Then send back the reply code shown."));
-        screen.entries.back().value=[this]{return settings_.online_address.empty()?std::string():"last: "+settings_.online_address;};
-        screen.entries.push_back(menuAction("Options",[this]{host_.menu.open(onlineOptions());},"Only if needed: the port, the input delay, the router (UPnP)."));
+            enter("The host's code: type it or paste it (Ctrl+V), then Enter",
+                  has_code?clipboard::pastedInto("",clip,Settings::online_address_characters,253):settings_.online_address,{});
+        },"Enter or change the host's code without joining yet.");
+        code.section="HOST'S CODE";
+        code.value=[this]{return settings_.online_address.empty()?std::string("none"):settings_.online_address;};
+        screen.entries.push_back(code);
+        MenuEntry clear=menuAction("Clear the code",[this]{settings_.online_address.clear();changed();host_.menu.press(MenuKey::Up);},"Forgets the code entered; the next Join asks for one.");
+        clear.available=[this]{return !settings_.online_address.empty();};
+        screen.entries.push_back(clear);
+        auto options=onlineConnection();
+        options.front().section="CONNECTION";
+        for(auto& entry:options)screen.entries.push_back(std::move(entry));
         return screen;
     }
-    MenuScreen onlineOptions() {
-        MenuScreen screen;screen.title="Online battle options";
+    // The connection's settings, under their heading on the online screen.
+    std::vector<MenuEntry> onlineConnection() {
+        std::vector<MenuEntry> entries;
         MenuEntry port;port.label="Port";
         port.value=[this]{return std::to_string(settings_.online_port);};
         port.confirm=[this] {
@@ -135,14 +158,14 @@ private:
             });
         };
         port.note="The port hosted (codes carry it); joining by address, the host's port. Confirm, then type it.";
-        screen.entries.push_back(port);
+        entries.push_back(port);
         MenuEntry delay=menu_screens::number("Input delay",settings_.online_delay,0,8,1,"",[this]{changed();},
             "The host's: fields from a press to the game playing it (60 a second). Auto: chosen from the connection. Raise it if the game halts often.");
         delay.value=[this]{const unsigned d=settings_.online_delay;return d?std::to_string(d)+(d==1?" field":" fields"):std::string("Auto");};
-        screen.entries.push_back(delay);
-        screen.entries.push_back(menu_screens::toggle("Open the port by UPnP",settings_.online_upnp,[this]{changed();},
+        entries.push_back(delay);
+        entries.push_back(menu_screens::toggle("Open the port by UPnP",settings_.online_upnp,[this]{changed();},
             "When hosting: asks the router to open the port. Off, or a router without UPnP: forward the UDP port to this PC by hand."));
-        return screen;
+        return entries;
     }
     MenuScreen discScreen() {
         MenuScreen screen;screen.title=disc_title;screen.browser=true;
