@@ -2,6 +2,7 @@
 // layouts, and live input on the DualShock 2 device (synthetic data only).
 #include "host/dualsense_report.h"
 #include "host/input_mapping.h"
+#include "host/press_latch.h"
 #include "services/devices/dualshock2.h"
 #include <iostream>
 #include <set>
@@ -16,6 +17,19 @@ unsigned bit(std::string_view name) {
 }
 
 int main() {
+    {
+        // Short presses kept (press_latch.h): a tap between two fields reaches the game for two fields; a press seen at
+        // one field only is given at the next too; a long press is passed as it is, its release not delayed.
+        PressLatch latch;
+        constexpr std::uint16_t triangle=1u<<12,square=1u<<15;
+        check(latch.field(0,triangle)==triangle && latch.field(0,0)==triangle && latch.field(0,0)==0,"a tap between fields: two fields");
+        check(latch.field(triangle,triangle)==triangle && latch.field(0,triangle)==triangle && latch.field(0,0)==0,"a tap at one field: one more");
+        std::uint16_t out=0;
+        for(int n=0;n<5;++n)out=latch.field(square,square);
+        check(out==square && latch.field(0,square)==0,"a long press released at once");
+        check(latch.field(triangle,triangle)==triangle && latch.field(triangle,triangle)==triangle && latch.field(0,triangle)==0,"two fields held: no more");
+        check(latch.field(triangle|square,triangle|square)==(triangle|square) && latch.field(0,square)==(triangle|square),"each button on its own");
+    }
     const InputMapping mapping;
     const auto none=[](std::uint8_t){return false;};
     // Nothing held, no gamepad: neutral.

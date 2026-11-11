@@ -6,6 +6,7 @@
 #ifdef _WIN32
 #include "host/frame_pacer.h"
 #include "host/overlay.h"
+#include "host/press_latch.h"
 #include "services/audio_mixer.h"
 #include <chrono>
 #include <cstdio>
@@ -76,6 +77,13 @@ public:
         const bool fast_button=settings.fast_forward_button<GamepadState::Count && pad.connected && pad.held(GamepadState::Button(settings.fast_forward_button));
         if(!online)setFast(fast_switch_.update((settings.fast_forward_key && HostInput::keyDown(std::uint8_t(settings.fast_forward_key))) || fast_button,settings.fast_forward_toggle));
         auto mapped=mapInput(settings.mapping,masked(pad),[keyboard](std::uint8_t key){return keyboard && HostInput::keyDown(key);});
+        // Presses since the last field, sampled between fields, kept for the game for two fields at least (press_latch.h).
+        input_.sampleBetweenFields(std::vector<std::uint8_t>(settings.mapping.keys.begin(),settings.mapping.keys.end()));
+        const auto seen=input_.takeSeen();
+        GamepadState seen_pad=pad;
+        if(!seen.pads.empty())seen_pad.buttons|=seen.pads.front();
+        const auto seen_mapped=mapInput(settings.mapping,masked(seen_pad),[keyboard,&seen](std::uint8_t key){return keyboard && key && seen.keys[key];});
+        mapped.pressed=latch_.field(mapped.pressed,std::uint16_t(seen_mapped.pressed|mapped.pressed));
         // What was held when the menu closed (the button that confirmed Resume) reaches the game only after its release.
         if(swallow_) {if(mapped.pressed)mapped.pressed=0;else swallow_=false;}
         return mapped;
@@ -113,6 +121,7 @@ public:
 private:
     std::string path_;ViewerWindow& window_;HostInput& input_;AudioMixer& mixer_;FramePacer* pacer_;
     OverlayTrigger trigger_;FastForward fast_switch_;bool fast_=false,swallow_=false;
+    PressLatch latch_;
     unsigned pause_test_field_=0,pause_test_ms_=0,fields_=0;std::string pause_test_picture_;
     std::string frame_rate_,online_status_;
     std::string statusLine() const {return frame_rate_.empty() || online_status_.empty()?frame_rate_+online_status_:frame_rate_+"   "+online_status_;}

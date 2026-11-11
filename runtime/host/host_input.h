@@ -19,6 +19,7 @@ extern "C" {
 #include "host/dualsense_report.h"
 #include "host/gamepad.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -39,6 +40,8 @@ public:
         thread_.join();
     }
     GamepadState state() {std::lock_guard lock(mutex_);return state_;}
+    // The buttons held in any report since the last call (each report arrives on this reader's thread).
+    std::uint32_t takeSeen() {std::lock_guard lock(mutex_);const auto seen=seen_|state_.buttons;seen_=0;return seen;}
     // BT2_PAD_TIMING=1 (a diagnostic): how old the newest report is when the game reads it, and whether reports waited
     // in Windows' queue before the reader took them (each read that returns at once was waiting).
     struct Timing {unsigned reports=0,waited=0;double longest_gap_ms=0;};
@@ -94,7 +97,7 @@ private:
                 if(!ReadFile(device,report.data(),DWORD(report.size()),&read,nullptr))break; // Unplugged, or cancelled at shutdown.
                 const auto now=std::chrono::steady_clock::now();
                 if(const auto parsed=parseDualSenseReport(std::span<const std::uint8_t>(report.data(),read),bluetooth)) {
-                    std::lock_guard lock(mutex_);state_=*parsed;received_=now;
+                    std::lock_guard lock(mutex_);state_=*parsed;received_=now;seen_|=parsed->buttons;
                     ++timing_.reports;
                     if(now-asked<std::chrono::microseconds(500))++timing_.waited;
                     timing_.longest_gap_ms=std::max(timing_.longest_gap_ms,std::chrono::duration<double,std::milli>(now-last).count());
@@ -105,7 +108,7 @@ private:
             CloseHandle(device);
         }
     }
-    std::mutex mutex_;GamepadState state_;HANDLE device_=INVALID_HANDLE_VALUE;
+    std::mutex mutex_;GamepadState state_;std::uint32_t seen_=0;HANDLE device_=INVALID_HANDLE_VALUE;
     std::chrono::steady_clock::time_point received_{};Timing timing_;
     std::atomic<bool> stop_{false};
     std::thread thread_; // Last member: it starts in the constructor and uses the others.
@@ -121,24 +124,13 @@ public:
     // Every connected gamepad: the XInput pads in their slots' order, then the DualSense.
     std::vector<GamepadState> gamepads() {
         std::vector<GamepadState> pads;
+        unsigned slots=0;
         for(DWORD user=0;user<XUSER_MAX_COUNT;++user) {
             XINPUT_STATE x{};
             if(XInputGetState(user,&x)!=ERROR_SUCCESS)continue;
-            const auto& g=x.Gamepad;GamepadState s;s.connected=true;
-            const auto set=[&](GamepadState::Button b,bool on){if(on)s.buttons|=1u<<b;};
-            set(GamepadState::South,g.wButtons&XINPUT_GAMEPAD_A);set(GamepadState::East,g.wButtons&XINPUT_GAMEPAD_B);
-            set(GamepadState::West,g.wButtons&XINPUT_GAMEPAD_X);set(GamepadState::North,g.wButtons&XINPUT_GAMEPAD_Y);
-            set(GamepadState::LeftShoulder,g.wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);set(GamepadState::RightShoulder,g.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
-            set(GamepadState::LeftTrigger,g.bLeftTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD);set(GamepadState::RightTrigger,g.bRightTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
-            set(GamepadState::Back,g.wButtons&XINPUT_GAMEPAD_BACK);set(GamepadState::Start,g.wButtons&XINPUT_GAMEPAD_START);
-            set(GamepadState::LeftStick,g.wButtons&XINPUT_GAMEPAD_LEFT_THUMB);set(GamepadState::RightStick,g.wButtons&XINPUT_GAMEPAD_RIGHT_THUMB);
-            set(GamepadState::Up,g.wButtons&XINPUT_GAMEPAD_DPAD_UP);set(GamepadState::Down,g.wButtons&XINPUT_GAMEPAD_DPAD_DOWN);
-            set(GamepadState::Left,g.wButtons&XINPUT_GAMEPAD_DPAD_LEFT);set(GamepadState::Right,g.wButtons&XINPUT_GAMEPAD_DPAD_RIGHT);
-            // XInput axes are signed with up positive; the neutral form is 0..255 with up at 0.
-            const auto axis=[](int v){return std::uint8_t((v+32768)>>8);};
-            s.lx=axis(g.sThumbLX);s.ly=axis(-1-g.sThumbLY);s.rx=axis(g.sThumbRX);s.ry=axis(-1-g.sThumbRY);
-            pads.push_back(s);
+            pads.push_back(xinputState(x.Gamepad));slots|=1u<<user;
         }
+        xinput_slots_=slots;
         if(const auto dualsense=dualsense_.state();dualsense.connected) {
             pads.push_back(dualsense);
             if(timing_) {
@@ -148,7 +140,25 @@ public:
         }
         return pads;
     }
+    // Sampling between fields (press_latch.h): from the first call on, a thread reads the connected XInput pads and
+    // `keys` (virtual-key codes) about every millisecond; takeSeen gives what was held at any moment since its last call,
+    // in gamepads()' order (the pads connected at its last call; the DualSense's own reader sees each report).
+    void sampleBetweenFields(std::vector<std::uint8_t> keys) {
+        {std::lock_guard lock(seen_mutex_);watched_keys_=std::move(keys);}
+        if(!sampler_.joinable())sampler_=std::thread([this]{sample();});
+    }
+    struct Seen {std::vector<std::uint32_t> pads;std::array<bool,256> keys{};};
+    Seen takeSeen() {
+        Seen out;
+        std::lock_guard lock(seen_mutex_);
+        for(DWORD user=0;user<XUSER_MAX_COUNT;++user)if(xinput_slots_>>user&1) {out.pads.push_back(seen_pads_[user]);seen_pads_[user]=0;}
+        if(dualsense_.state().connected)out.pads.push_back(dualsense_.takeSeen());
+        out.keys=seen_keys_;seen_keys_={};
+        return out;
+    }
     ~HostInput() {
+        stop_sampling_=true;
+        if(sampler_.joinable())sampler_.join();
         if(!timing_ || !reads_)return;
         const auto t=dualsense_.timing();
         std::fprintf(stderr,"DualSense timing: %u reports, %u had waited in the queue, longest gap %.1f ms; %u game reads, newest report %.2f ms old on average, %.1f ms at most, %u over 8 ms\n",
@@ -158,6 +168,46 @@ public:
     static bool keyDown(std::uint8_t key) {return (GetAsyncKeyState(key)&0x8000)!=0;}
 
 private:
+    static GamepadState xinputState(const XINPUT_GAMEPAD& g) {
+        GamepadState s;s.connected=true;
+        const auto set=[&](GamepadState::Button b,bool on){if(on)s.buttons|=1u<<b;};
+        set(GamepadState::South,g.wButtons&XINPUT_GAMEPAD_A);set(GamepadState::East,g.wButtons&XINPUT_GAMEPAD_B);
+        set(GamepadState::West,g.wButtons&XINPUT_GAMEPAD_X);set(GamepadState::North,g.wButtons&XINPUT_GAMEPAD_Y);
+        set(GamepadState::LeftShoulder,g.wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);set(GamepadState::RightShoulder,g.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
+        set(GamepadState::LeftTrigger,g.bLeftTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD);set(GamepadState::RightTrigger,g.bRightTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
+        set(GamepadState::Back,g.wButtons&XINPUT_GAMEPAD_BACK);set(GamepadState::Start,g.wButtons&XINPUT_GAMEPAD_START);
+        set(GamepadState::LeftStick,g.wButtons&XINPUT_GAMEPAD_LEFT_THUMB);set(GamepadState::RightStick,g.wButtons&XINPUT_GAMEPAD_RIGHT_THUMB);
+        set(GamepadState::Up,g.wButtons&XINPUT_GAMEPAD_DPAD_UP);set(GamepadState::Down,g.wButtons&XINPUT_GAMEPAD_DPAD_DOWN);
+        set(GamepadState::Left,g.wButtons&XINPUT_GAMEPAD_DPAD_LEFT);set(GamepadState::Right,g.wButtons&XINPUT_GAMEPAD_DPAD_RIGHT);
+        // XInput axes are signed with up positive; the neutral form is 0..255 with up at 0.
+        const auto axis=[](int v){return std::uint8_t((v+32768)>>8);};
+        s.lx=axis(g.sThumbLX);s.ly=axis(-1-g.sThumbLY);s.rx=axis(g.sThumbRX);s.ry=axis(-1-g.sThumbRY);
+        return s;
+    }
+    // The sampler's loop: a high-resolution timer of 1 ms where Windows has one, else Sleep(1).
+    void sample() {
+        HANDLE timer=CreateWaitableTimerExW(nullptr,nullptr,CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,TIMER_ALL_ACCESS);
+        while(!stop_sampling_) {
+            const unsigned slots=xinput_slots_;
+            std::array<std::uint32_t,XUSER_MAX_COUNT> pads{};
+            for(DWORD user=0;user<XUSER_MAX_COUNT;++user)if(slots>>user&1) {
+                XINPUT_STATE x{};if(XInputGetState(user,&x)==ERROR_SUCCESS)pads[user]=xinputState(x.Gamepad).buttons;
+            }
+            {
+                std::lock_guard lock(seen_mutex_);
+                for(DWORD user=0;user<XUSER_MAX_COUNT;++user)seen_pads_[user]|=pads[user];
+                for(const auto key:watched_keys_)if(keyDown(key))seen_keys_[key]=true;
+            }
+            if(timer) {LARGE_INTEGER due{};due.QuadPart=-10000;SetWaitableTimer(timer,&due,0,nullptr,nullptr,FALSE);WaitForSingleObject(timer,20);}
+            else Sleep(1);
+        }
+        if(timer)CloseHandle(timer);
+    }
+    std::atomic<unsigned> xinput_slots_{0}; // The XInput slots connected at gamepads()' last call.
+    std::mutex seen_mutex_;std::array<std::uint32_t,XUSER_MAX_COUNT> seen_pads_{};std::array<bool,256> seen_keys_{};
+    std::vector<std::uint8_t> watched_keys_;
+    std::atomic<bool> stop_sampling_{false};
+    std::thread sampler_;
     DualSenseReader dualsense_;
     const bool timing_=std::getenv("BT2_PAD_TIMING")!=nullptr;
     unsigned reads_=0,old_reads_=0;double age_sum_=0,age_max_=0;
