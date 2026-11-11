@@ -67,7 +67,9 @@ public:
     // variant is another look altogether, and stay original.
     static constexpr float variant_limit=48.0f;
     unsigned variants_chosen=0,variants_too_far=0; // Palettes given a variant, and left original.
-    unsigned palettes_unknown=0; // Draws left original: a drawn palette the game overwrote later in the frame (gs_texture_names.h).
+    // Draws left original: a drawn palette the game overwrote later in the frame, before a copy of it as drawn came back
+    // (gs_texture_names.h).
+    unsigned palettes_unknown=0;
     unsigned read_ahead=0; // Variants' images made when their colours were read, before their first draw.
     // Waits until the loader has nothing left to do (tests, measurements).
     void waitLoaded();

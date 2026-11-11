@@ -3,6 +3,7 @@
 #include <array>
 #include <bitset>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -44,7 +45,8 @@ public:
         std::uint64_t texture=0,palette=0,palette_used=0;std::uint32_t format=0;bool has_palette=false;
         bool palette_drawn=false; // The CLUT was loaded from a palette the game drew (the fighters' lit palettes).
         // Drawn, but the copy of its page holds an upload the game made over the drawn palette later in a frame (a
-        // second palette in the same place): what the game drew is not known, so the texture is drawn as the original.
+        // second palette in the same place) and no copy taken before that upload has come back yet (takeLatePage): what
+        // the game drew is not known, so the texture is drawn as the original.
         bool palette_unknown=false;
         std::string text() const;     // With the whole palette's hash.
         std::string textUsed() const; // With the used entries' hash (the same as text() without a palette).
@@ -86,6 +88,12 @@ public:
     // always the same, and this names as exactly as a read that waits (measured: the same share of draws).
     std::vector<unsigned> drawnPalettePages() const;
     void takeDrawnPage(unsigned page,const std::uint32_t* words); // The page's 2048 words.
+    // A palette drawn and then overwritten in the same frame (Frieza's dome: a relit palette for one pass, the sheen's
+    // uploaded over it for the next): the end-of-frame copy shows the upload. On such an upload into a page the game drew
+    // over, before the upload reaches the renderer, on_late_upload asks for a copy of the page as drawn; the renderer
+    // hands it back with takeLatePage, and later CLUT loads of that palette, before the frame's upload, read it.
+    std::function<void(unsigned page)> on_late_upload;
+    void takeLatePage(unsigned page,const std::uint32_t* words);
     // GS addresses as gs_command_sink.h computes them (word, byte, nibble), from a table of each page's
     // layout: the same results at a fraction of the cost per pixel.
     static std::size_t ct32Word(unsigned bp,unsigned bw,unsigned x,unsigned y);
@@ -123,9 +131,14 @@ private:
     std::unordered_map<std::array<std::uint64_t,3>,Upload,UploadKeyHash> uploads_;
     std::vector<std::uint16_t> written_blocks_; // Blocks the current transfer wrote.
     std::vector<std::uint64_t> block_written_=std::vector<std::uint64_t>(16384); // The generation of the last transfer into each block.
-    // Blocks of a palette page whose last upload came after a draw over that page (pageDrawn): the copy of the page,
+    // Blocks of a palette page whose last upload came after a draw over that block (blockDrawn): the copy of the page,
     // taken at the frame's end, holds that upload there instead of the palette drawn before it.
     std::vector<bool> late_blocks_=std::vector<bool>(16384);
+    // The generation of the last draw over each block of a watched palette page. By blocks, not pages: a draw over one
+    // palette of a page (a fighter's relit palette) does not make the page's other palettes, uploaded and never drawn,
+    // drawn ones (by pages, a fighter's uploaded palette counted as drawn and overwritten in frames where another
+    // palette of its page was drawn, and its HD texture switched to the original for those frames, 2026-11-11).
+    std::vector<std::uint64_t> block_drawn_=std::vector<std::uint64_t>(16384);
     // The last CLUT load: its TEX0 fields and the generation it was read at.
     std::uint64_t clut_key_=~0ull,clut_generation_=0;bool clut_drawn_=false,clut_unknown_=false;
     // Changes since a context's texture was last named.
@@ -158,7 +171,9 @@ private:
     void kick();
     // Drawn palettes: the pages CLUT loads read and those the renderer's copies hold, the generation of the
     // last draw over each page, the last vertices (a primitive's area), the copies.
-    std::bitset<512> clut_pages_,copied_;
+    std::bitset<512> clut_pages_,copied_,late_copied_;
+    std::vector<std::uint32_t> late_copy_; // Pages as drawn before an upload over them (takeLatePage).
+    std::uint64_t late_page_asked_=~0ull;   // The transfer and page last asked for (on_late_upload).
     std::array<std::uint64_t,512> page_drawn_{};
     std::array<std::uint64_t,3> vertices_{};unsigned vertex_count_=0;
     std::vector<std::uint32_t> drawn_copy_;
@@ -167,4 +182,6 @@ private:
     // checked over all of them at once (a primitive's area lies in theirs), so a run that cannot is not taken apart.
     bool runReachesPalettes(std::span<const std::uint64_t> kicks) const;
     bool pageDrawn(unsigned page) const {return page_drawn_[page]>page_written_[page] && page_drawn_[page]>all_written_;}
+    bool blockDrawn(unsigned block) const {return block_drawn_[block]>block_written_[block] && block_drawn_[block]>all_written_;}
+    void markDrawn(unsigned page,int x0,int y0,int x1,int y1,bool by_blocks); // A draw over a watched palette page (inclusive, in the page).
 };

@@ -54,7 +54,9 @@ struct GpuGsBackend::State {
     Vulkan::CommandBuffer::Type queue=Vulkan::CommandBuffer::Type::Generic; // The rendering work's (initShared).
     // Drawn palettes (gs/textures/gs_texture_names.h): the pages the names watch, copied back after each
     // frame into host memory in turn; a copy the GPU finished goes to every names object of the pack.
-    struct PaletteCopy {Vulkan::BufferHandle buffer;Vulkan::Fence fence;std::vector<unsigned> pages;bool pending=false;};
+    // before_buffer and before_pages: pages copied during the frame before an upload over a palette the game drew there
+    // (GsTextureNames::on_late_upload), in their own buffer (a page may be copied at the frame's end as well).
+    struct PaletteCopy {Vulkan::BufferHandle buffer,before_buffer;Vulkan::Fence fence;std::vector<unsigned> pages,before_pages;bool pending=false;};
     std::array<PaletteCopy,3> palette_copies;unsigned next_palette_copy=0;
     // The names that take the copies: this renderer's, and a second renderer's, at once when it draws a
     // frame as this one does, or one flip late when it draws each frame after its flip (with the copies
@@ -62,11 +64,11 @@ struct GpuGsBackend::State {
     struct PaletteTarget {GsTextureNames* names;bool late;};
     GsTextureNames* names=nullptr;std::vector<PaletteTarget> palette_targets;
     GpuGsBackend* shared_from=nullptr; // shareHdTextures' primary: its palette target for these names goes with this renderer.
-    std::vector<std::pair<unsigned,std::vector<std::uint32_t>>> late_pages; // For the late ones.
+    struct LatePage {unsigned page;bool before_upload;std::vector<std::uint32_t> words;};
+    std::vector<LatePage> late_pages; // For the late ones.
     // The lit variant chosen for each drawn palette (texture and format mixed, palette); none: drawn as the original.
     struct PairHash {std::size_t operator()(const std::pair<std::uint64_t,std::uint64_t>& k) const {return std::size_t(k.first^(k.second*0xC2B2AE3D27D4EB4Full));}};
-    std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;
-    Vulkan::ImageHandle missing_marker; // BT2_HD_SHOW_MISSING: drawn for a texture without a replacement.
+    std::unordered_map<std::pair<std::uint64_t,std::uint64_t>,std::optional<HdTexturePack::Key>,PairHash> variants;    Vulkan::ImageHandle missing_marker; // BT2_HD_SHOW_MISSING: drawn for a texture without a replacement.
     std::filesystem::path dump_folder;std::unordered_set<std::string> dumped; // BT2_TEXTURE_DUMP.
     // BT2_GIF_DUMP=<first flip>:<flips>:<file>: the main renderer's input over those flips, as records
     // 'T' size data (a GIF transfer), 'P' index value (a privileged register), 'F' flip (a flip's end);
@@ -318,47 +320,78 @@ void GpuGsBackend::endFrame() {
 
 void GpuGsBackend::changeFrame() {markFrameChange();state_->device->next_frame_context();}
 
+namespace {void copyPages(Vulkan::Device& device,const Vulkan::Buffer& vram,Vulkan::CommandBuffer& cmd,Vulkan::BufferHandle& buffer,const std::vector<unsigned>& pages);}
+
 void GpuGsBackend::copyDrawnPalettes() {
     auto& s=*state_;
     if(!s.names)return;
     auto& device=*s.device;
-    for(const auto& [page,words]:s.late_pages)for(const auto& target:s.palette_targets)if(target.late)target.names->takeDrawnPage(page,words.data());
+    for(const auto& late:s.late_pages)for(const auto& target:s.palette_targets)if(target.late) {
+        if(late.before_upload)target.names->takeLatePage(late.page,late.words.data());else target.names->takeDrawnPage(late.page,late.words.data());
+    }
     s.late_pages.clear();
     // Finished copies, oldest first, so the newest is what the names keep.
     for(unsigned k=1;k<=s.palette_copies.size();++k) {
         auto& copy=s.palette_copies[(s.next_palette_copy+k)%s.palette_copies.size()];
         if(!copy.pending || !copy.fence->wait_timeout(0))continue;
-        const auto* words=static_cast<const std::uint32_t*>(device.map_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT));
-        for(const auto page:copy.pages) {
-            const auto* page_words=words+std::size_t(page)*2048;
-            bool late=false;
-            for(const auto& target:s.palette_targets)if(target.late)late=true;else target.names->takeDrawnPage(page,page_words);
-            if(late)s.late_pages.emplace_back(page,std::vector<std::uint32_t>(page_words,page_words+2048));
-        }
-        device.unmap_host_buffer(*copy.buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
+        const auto hand=[&](const Vulkan::BufferHandle& buffer,const std::vector<unsigned>& pages,bool before_upload) {
+            if(pages.empty())return;
+            const auto* words=static_cast<const std::uint32_t*>(device.map_host_buffer(*buffer,Vulkan::MEMORY_ACCESS_READ_BIT));
+            for(const auto page:pages) {
+                const auto* page_words=words+std::size_t(page)*2048;
+                bool late=false;
+                for(const auto& target:s.palette_targets) {
+                    if(target.late)late=true;
+                    else if(before_upload)target.names->takeLatePage(page,page_words);
+                    else target.names->takeDrawnPage(page,page_words);
+                }
+                if(late)s.late_pages.push_back({page,before_upload,std::vector<std::uint32_t>(page_words,page_words+2048)});
+            }
+            device.unmap_host_buffer(*buffer,Vulkan::MEMORY_ACCESS_READ_BIT);
+        };
+        hand(copy.buffer,copy.pages,false);hand(copy.before_buffer,copy.before_pages,true);
+        copy.pages.clear();copy.before_pages.clear();
         copy.pending=false;copy.fence.reset();
     }
     auto pages=s.names->drawnPalettePages();
-    if(pages.empty())return;
     auto& copy=s.palette_copies[s.next_palette_copy];
     if(copy.pending)return; // The GPU is three frames behind: this frame's palettes are skipped.
+    if(pages.empty() && copy.before_pages.empty())return;
     s.next_palette_copy=(s.next_palette_copy+1)%unsigned(s.palette_copies.size());
-    const auto& vram=s.gs.get_vram_buffer(); // Its first 4 MB is GS memory as the host lays it out.
-    if(!copy.buffer) {
+    auto cmd=device.request_command_buffer();
+    if(!pages.empty())copyPages(device,s.gs.get_vram_buffer(),*cmd,copy.buffer,pages);
+    device.submit(cmd,&copy.fence); // Also the fence of the copies made during the frame (submitted before it).
+    copy.pages=std::move(pages);copy.pending=true;
+}
+
+namespace {
+// Pages of GS memory (`vram`'s first 4 MB, laid out as the host lays it) into `buffer` at the same places, for the host.
+void copyPages(Vulkan::Device& device,const Vulkan::Buffer& vram,Vulkan::CommandBuffer& cmd,Vulkan::BufferHandle& buffer,const std::vector<unsigned>& pages) {
+    if(!buffer) {
         Vulkan::BufferCreateInfo info{};info.domain=Vulkan::BufferDomain::CachedHost;
         info.size=4*1024*1024;info.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        copy.buffer=device.create_buffer(info);
+        buffer=device.create_buffer(info);
     }
     std::vector<VkBufferCopy> regions;regions.reserve(pages.size());
     for(const auto page:pages)regions.push_back({VkDeviceSize(page)*8192,VkDeviceSize(page)*8192,8192});
-    auto cmd=device.request_command_buffer();
-    cmd->barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
-    cmd->copy_buffer(*copy.buffer,vram,regions.data(),regions.size());
+    cmd.barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,VK_ACCESS_2_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_READ_BIT);
+    cmd.copy_buffer(*buffer,vram,regions.data(),regions.size());
     // For the host's read, and before later copies: the next upload into GS memory must not overwrite these pages while
     // this copy still reads them (found by the synchronization validation, 2026-11-09).
-    cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_HOST_BIT|VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_HOST_READ_BIT);
-    device.submit(cmd,&copy.fence);
-    copy.pages=std::move(pages);copy.pending=true;
+    cmd.barrier(VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_2_HOST_BIT|VK_PIPELINE_STAGE_2_COPY_BIT,VK_ACCESS_2_HOST_READ_BIT);
+}
+}
+
+void GpuGsBackend::copyPageBeforeUpload(unsigned page) {
+    auto& s=*state_;
+    auto& copy=s.palette_copies[s.next_palette_copy];
+    // The slot the frame's end submits; while the GPU is three frames behind it is still busy, and the page is not copied.
+    if(copy.pending || std::find(copy.before_pages.begin(),copy.before_pages.end(),page)!=copy.before_pages.end())return;
+    s.gs.flush(); // The draws so far, the palette's among them, go to the GPU before the copy.
+    auto cmd=s.device->request_command_buffer();
+    copyPages(*s.device,s.gs.get_vram_buffer(),*cmd,copy.before_buffer,{page});
+    s.device->submit(cmd);
+    copy.before_pages.push_back(page);
 }
 
 void GpuGsBackend::privileged(unsigned index,std::uint64_t value) {
@@ -495,10 +528,12 @@ void GpuGsBackend::dumpTexture(GsTextureNames& names,std::uint64_t tex0,const st
 
 void GpuGsBackend::replaceTextures(GsTextureNames& names) {
     if(!state_->names) {state_->names=&names;state_->palette_targets.push_back({&names,false});}
+    names.on_late_upload=[this](unsigned page){copyPageBeforeUpload(page);};
     state_->gs.texture_replacement=[this,&names](const ParallelGS::TextureDescriptor& desc)->Vulkan::ImageHandle {
         const auto name=names.name(desc.tex0.bits,desc.texa.bits);
         if(!name)return {};
-        // A drawn palette whose copy shows a later upload instead (gs_texture_names.h): the original is drawn.
+        // A drawn palette overwritten later in the frame, before a copy of it as drawn came back (gs_texture_names.h): the
+        // original is drawn.
         if(name->palette_unknown) {++state_->pack->palettes_unknown;return {};}
         // As older PCSX2 versions named it (the used palette entries), then as newer ones do (the whole palette).
         const auto key=[&](std::uint64_t palette){return HdTexturePack::Key{name->texture,palette,name->format,name->has_palette};};

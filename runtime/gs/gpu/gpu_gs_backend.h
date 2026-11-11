@@ -109,6 +109,7 @@ public:
     std::string timestampSummary() const;
 private:
     void copyDrawnPalettes(); // After a flush: the drawn palettes back to the texture names.
+    void copyPageBeforeUpload(unsigned page); // GsTextureNames::on_late_upload.
     void replaceTextures(GsTextureNames& names);
     void dumpTexture(GsTextureNames& names,std::uint64_t tex0,const std::string& name); // BT2_TEXTURE_DUMP.
     void peek(); // BT2_GS_PEEK.

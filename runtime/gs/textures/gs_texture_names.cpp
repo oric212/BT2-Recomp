@@ -136,11 +136,11 @@ void GsTextureNames::startTransfer(std::uint64_t dir) {
 
 void GsTextureNames::finishUpload() {
     const auto hash=XXH3_64bits(pending_.data(),pending_.size());
-    // The same upload as before into blocks nothing wrote since is not written again; a draw over one of their pages since
+    // The same upload as before into blocks nothing wrote since is not written again; a draw over one of them since
     // (a palette the game relit on the GPU) counts as a write: the upload then replaces what was drawn.
     if(const auto found=uploads_.find(upload_key_);found!=uploads_.end() && found->second.hash==hash && found->second.generation>=all_written_
        && std::all_of(found->second.blocks.begin(),found->second.blocks.end(),[&](std::uint16_t block){
-              return block_written_[block]==found->second.generation && page_drawn_[block/32]<=found->second.generation;})) {
+              return block_written_[block]==found->second.generation && block_drawn_[block]<=found->second.generation;})) {
         ++repeated_uploads;uploaded_pixels+=std::uint64_t(w_)*h_;
         pending_.clear();transfer_=false;
         return;
@@ -188,8 +188,12 @@ void GsTextureNames::writeBytes(std::span<const std::uint8_t> data,std::uint64_t
             // An upload into a block of a palette page the game has drawn over since the block's last upload: the
             // end-of-frame copy will show this upload in the block, not what was drawn there (Frieza's dome: a relit
             // palette, then the sheen's palette uploaded over it for a second pass).
-            const std::size_t in_page=word/2048;
-            late_blocks_[block]=clut_pages_[in_page] && page_drawn_[in_page]>block_written_[block] && page_drawn_[in_page]>all_written_;
+            late_blocks_[block]=clut_pages_[word/2048] && blockDrawn(unsigned(block));
+            // The renderer has had everything before this upload (gs_command_sink.h hands data on before each change of
+            // memory): a copy of the page taken now holds the palette as drawn. Once per page and transfer.
+            if(late_blocks_[block] && on_late_upload && late_page_asked_!=generation_*512+word/2048) {
+                late_page_asked_=generation_*512+word/2048;on_late_upload(unsigned(word/2048));
+            }
             block_written_[block]=generation_;written_blocks_.push_back(std::uint16_t(block));
         }
         const std::size_t page=word/2048;
@@ -301,19 +305,38 @@ void GsTextureNames::vertex(std::uint64_t xyz) {
     const auto offset=regs_[0x18+context];
     const int ofx=int(offset&0xFFFF),ofy=int((offset>>32)&0xFFFF);
     int x0=INT32_MAX,y0=INT32_MAX,x1=INT32_MIN,y1=INT32_MIN;
+    int fx0=INT32_MAX,fy0=INT32_MAX,fx1=INT32_MIN,fy1=INT32_MIN; // The same in 1/16 pixels.
     for(unsigned k=0;k<count;++k) {
         const auto v=vertices_[(vertex_count_-1-k)%3];
-        const int x=(int(v&0xFFFF)-ofx)>>4,y=(int((v>>16)&0xFFFF)-ofy)>>4;
+        const int fx=int(v&0xFFFF)-ofx,fy=int((v>>16)&0xFFFF)-ofy,x=fx>>4,y=fy>>4;
         x0=std::min(x0,x);y0=std::min(y0,y);x1=std::max(x1,x);y1=std::max(y1,y);
+        fx0=std::min(fx0,fx);fy0=std::min(fy0,fy);fx1=std::max(fx1,fx);fy1=std::max(fy1,fy);
     }
     if(x1<0 || y1<0)return;
     x0=std::max(x0,0);y0=std::max(y0,0);
     if(x1-x0>2048 || y1-y0>2048)return;
+    // The pixels it covers, for the blocks: from the first pixel centre at or after its left and top edges to the last
+    // before its right and bottom ones (a 64-pixel sprite from 0 covers 0 to 63); a point its own pixel.
+    int bx0=std::max((fx0+15)>>4,0),by0=std::max((fy0+15)>>4,0),bx1=((fx1+15)>>4)-1,by1=((fy1+15)>>4)-1;
+    if(type==0) {bx0=bx1=fx0>>4;by0=by1=fy0>>4;}
+    // 32-bit frames by blocks (8 x 8 pixels, the GS's block order in a 64 x 32 page); 16-bit ones whole pages.
+    const bool by_blocks=page_h==32;
     for(int py=y0/int(page_h);py<=y1/int(page_h);++py)
         for(int px=x0/int(page_w);px<=x1/int(page_w);++px) {
             const unsigned page=(fbp+unsigned(py)*std::max(fbw,1u)+unsigned(px))%512;
-            if(clut_pages_[page])page_drawn_[page]=++generation_;
+            if(!clut_pages_[page])continue;
+            page_drawn_[page]=++generation_;
+            markDrawn(page,bx0-px*int(page_w),by0-py*int(page_h),bx1-px*int(page_w),by1-py*int(page_h),by_blocks);
         }
+}
+
+void GsTextureNames::markDrawn(unsigned page,int x0,int y0,int x1,int y1,bool by_blocks) {
+    static constexpr std::uint8_t order[4][8]{{0,1,4,5,16,17,20,21},{2,3,6,7,18,19,22,23},{8,9,12,13,24,25,28,29},{10,11,14,15,26,27,30,31}};
+    if(!by_blocks) {for(unsigned b=0;b<32;++b)block_drawn_[page*32+b]=generation_;return;}
+    x0=std::max(x0,0);y0=std::max(y0,0);x1=std::min(x1,63);y1=std::min(y1,31);
+    if(x0>x1 || y0>y1)return;
+    for(int by=y0/8;by<=y1/8;++by)
+        for(int bx=x0/8;bx<=x1/8;++bx)block_drawn_[page*32+order[by][bx]]=generation_;
 }
 
 void GsTextureNames::vertexRun(std::span<const std::pair<unsigned,std::uint64_t>> last,std::span<const std::uint64_t> kicks) {
@@ -367,6 +390,12 @@ void GsTextureNames::takeDrawnPage(unsigned page,const std::uint32_t* words) {
     copied_.set(page%512);++generation_;
 }
 
+void GsTextureNames::takeLatePage(unsigned page,const std::uint32_t* words) {
+    if(late_copy_.empty())late_copy_.resize(memory_.size());
+    std::copy_n(words,2048,late_copy_.begin()+std::ptrdiff_t(std::size_t(page%512)*2048));
+    late_copied_.set(page%512);++generation_;
+}
+
 void GsTextureNames::loadClut(std::uint64_t tex0) {
     const unsigned psm=unsigned((tex0>>20)&63),cbp=unsigned((tex0>>37)&0x3FFF),cpsm=unsigned((tex0>>51)&15);
     const unsigned csm=unsigned((tex0>>55)&1),csa=unsigned((tex0>>56)&31);
@@ -376,7 +405,10 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     writePending();
     const unsigned first_page=(cbp/32)%512,last_page=((cbp+3)/32)%512;
     clut_pages_.set(first_page);clut_pages_.set(last_page);
-    const bool from_drawn=pageDrawn(first_page) || pageDrawn(last_page);
+    // Drawn: a draw since the last upload covered one of the palette's own blocks (16 entries one block, 256 four).
+    const unsigned blocks=f->palette==16?1u:4u;
+    bool from_drawn=false;
+    for(unsigned b=0;b<blocks;++b)from_drawn=from_drawn || blockDrawn((cbp+b)%16384);
     // The same load as the last one from memory nothing wrote since: the CLUT already holds it.
     const std::uint64_t key=std::uint64_t(f->palette)|(std::uint64_t(cbp)<<9)|(std::uint64_t(cpsm)<<23)|(std::uint64_t(csm)<<27)|(std::uint64_t(csa)<<28);
     if(!from_drawn && key==clut_key_ && all_written_<=clut_generation_ && page_written_[first_page]<=clut_generation_ && page_written_[last_page]<=clut_generation_) {
@@ -384,19 +416,24 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     }
     ++generation_;
     clut_key_=key;clut_generation_=generation_;clut_drawn_=from_drawn;
-    // A drawn palette in a block the game overwrites after drawing it: the copy does not show it.
-    clut_unknown_=false;
-    if(from_drawn)for(unsigned b=0;b<(f->palette==16?1u:4u);++b)if(late_blocks_[(cbp+b)%16384])clut_unknown_=true;
+    // A drawn palette in a block the game overwrites after drawing it: the end-of-frame copy does not show it; the copy
+    // taken before that upload does (takeLatePage), and until one has come back it is not known.
+    bool late=false;
+    if(from_drawn)for(unsigned b=0;b<blocks;++b)late=late || late_blocks_[(cbp+b)%16384];
+    const bool from_late=late && late_copied_[first_page] && late_copied_[last_page];
+    clut_unknown_=late && !from_late;
     // CSM1 with 32-bit entries: 16 entries as 8 x 2 pixels at CSA's 16; 256 as 16 x 16 pixels with index
     // bits 3 and 4 swapped in the layout, groups of 16 from CSA's on.
     if(csm || (cpsm!=0 && cpsm!=1)) {++unsupported_cluts;return;}
     auto put=[&](unsigned entry,std::uint32_t value){clut_[entry]=std::uint16_t(value);clut_[entry+256]=std::uint16_t(value>>16);};
-    // A drawn page is read from its latest copy; the palette lies in at most two pages, decided once each.
-    const bool copy_first=from_drawn && pageDrawn(first_page) && copied_[first_page];
-    const bool copy_last=from_drawn && pageDrawn(last_page) && copied_[last_page];
-    auto word=[&](std::size_t w)->std::uint32_t {
-        return (unsigned(w/2048)==first_page?copy_first:copy_last)?drawn_copy_[w]:memory_[w];
+    // A drawn page is read from its latest copy (or the copy before an upload over it); the palette lies in at most two
+    // pages, decided once each.
+    const auto source=[&](unsigned page)->const std::uint32_t* {
+        if(from_late)return late_copy_.data();
+        return from_drawn && pageDrawn(page) && copied_[page]?drawn_copy_.data():memory_.data();
     };
+    const std::uint32_t* const first_source=source(first_page);const std::uint32_t* const last_source=source(last_page);
+    auto word=[&](std::size_t w)->std::uint32_t {return (unsigned(w/2048)==first_page?first_source:last_source)[w];};
     // The entries' words: CBP's first word plus each entry's place in the 16 x 16 (or 8 x 2) pixels of a PSMCT32 page
     // one page wide (ct32Word with x and y below 32), in entry order (for 256 entries with index bits 3 and 4 swapped).
     struct Offsets {std::array<std::uint32_t,16> small;std::array<std::uint32_t,256> large;};
@@ -412,10 +449,10 @@ void GsTextureNames::loadClut(std::uint64_t tex0) {
     const std::size_t base=std::size_t(cbp)*64;
     if(f->palette==16) {
         for(unsigned k=0;k<16;++k)put((csa&15)*16+k,word((base+offsets.small[k])%memory_words));
-    } else if(copy_first==copy_last && base+offsets.large[255]<memory_words) {
+    } else if(first_source==last_source && base+offsets.large[255]<memory_words) {
         // Both pages from one source and no wrap at the end of memory (the 16 x 16 pixels' last word is the
         // largest): read in place.
-        const std::uint32_t* from=(copy_first?drawn_copy_.data():memory_.data())+base;
+        const std::uint32_t* from=first_source+base;
         for(unsigned i=(csa&15)*16;i<256;++i)put(i,from[offsets.large[i]]);
     } else {
         for(unsigned i=(csa&15)*16;i<256;++i)put(i,word((base+offsets.large[i])%memory_words));

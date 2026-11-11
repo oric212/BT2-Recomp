@@ -275,6 +275,63 @@ int main() {
         require(!load()->palette_unknown);
     }
     {
+        // Drawn by blocks: a draw over another palette of the page (x 16 to 23, the page's block 4) leaves the palette
+        // in block 0 uploaded, not drawn; a draw over its own block makes it drawn.
+        GsTextureNames names;
+        std::vector<std::uint8_t> pixels(64*32/2,0x11),palette(16*4,0x40);
+        upload(names,0x100,2,0x14,64,32,pixels);
+        upload(names,0x300,1,0x00,8,2,palette);
+        const auto load=[&]{names.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));return names.name(tex0(0x100,2,0x14,6,5,0x300),0);};
+        require(!load()->palette_drawn);
+        const auto sprite=[&](unsigned x0,unsigned x1){
+            names.reg(0x1A,1);names.reg(0x4C,24ull|(1ull<<16));names.reg(0x18,0);
+            names.reg(0x00,6);names.reg(0x05,(std::uint64_t(x0)<<4));names.reg(0x05,(std::uint64_t(x1)<<4)|((2ull<<4)<<16));
+        };
+        sprite(16,24);
+        require(!load()->palette_drawn);
+        sprite(8,16); // Ends at x 16: pixels 8 to 15, block 1 (the next block's first column is not covered).
+        require(!load()->palette_drawn);
+        sprite(0,8);
+        require(load()->palette_drawn);
+    }
+    {
+        // The copy before an upload over a drawn palette: asked for once, at that upload, for the palette's page; once the
+        // renderer hands it back, the drawn palette loaded before the next such upload is known, with the copy's entries.
+        GsTextureNames names;
+        std::vector<unsigned> asked;
+        names.on_late_upload=[&](unsigned page){asked.push_back(page);};
+        std::vector<std::uint8_t> pixels(64*32/2,0x11),palette(16*4,0x40);
+        upload(names,0x100,2,0x14,64,32,pixels);
+        upload(names,0x300,1,0x00,8,2,palette);
+        const auto load=[&]{names.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));return names.name(tex0(0x100,2,0x14,6,5,0x300),0);};
+        load();
+        const auto draw=[&]{
+            names.reg(0x1A,1);names.reg(0x4C,24ull|(1ull<<16));names.reg(0x18,0);
+            names.reg(0x00,6);names.reg(0x05,0);names.reg(0x05,(8ull<<4)|((2ull<<4)<<16));
+        };
+        draw();
+        load();
+        require(asked.empty());
+        upload(names,0x300,1,0x00,8,2,palette); // Over the drawn palette.
+        require(asked.size()==1 && asked[0]==24);
+        draw();
+        require(load()->palette_unknown); // No copy back yet.
+        // The page as the renderer had it before the upload: the palette relit to another colour.
+        std::vector<std::uint32_t> page(2048,0);
+        for(unsigned k=0;k<16;++k)page[GsTextureNames::ct32Word(0,1,k%8,k/8)]=0x80102030u;
+        names.takeLatePage(24,page.data());
+        const auto known=load();
+        require(known->palette_drawn && !known->palette_unknown);
+        // The same entries uploaded and loaded as a palette of their own name the texture alike.
+        GsTextureNames plain;
+        std::vector<std::uint8_t> relit;
+        for(unsigned k=0;k<16;++k)for(const std::uint8_t b:{std::uint8_t(0x30),std::uint8_t(0x20),std::uint8_t(0x10),std::uint8_t(0x80)})relit.push_back(b);
+        upload(plain,0x100,2,0x14,64,32,pixels);
+        upload(plain,0x300,1,0x00,8,2,relit);
+        plain.reg(0x06,tex0(0x100,2,0x14,6,5,0x300,0,1));
+        require(plain.name(tex0(0x100,2,0x14,6,5,0x300),0)->palette==known->palette);
+    }
+    {
         // Block-compressed levels: BC1 opaque red, then an 8 x 8 level of four blocks, red at the top left
         // and blue elsewhere (each block covers 2 x 2 of the 4 x 4 cells); BC3 fully transparent covers nothing.
         const std::uint8_t red[8]{0x00,0xF8,0x00,0xF8,0,0,0,0},blue[8]{0x1F,0x00,0x1F,0x00,0,0,0,0};

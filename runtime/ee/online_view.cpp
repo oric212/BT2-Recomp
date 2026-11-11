@@ -64,8 +64,12 @@ void onlineRadarPacket(std::uint8_t* rdram,R5900Context* ctx,PS2Runtime* base) {
 // (the user, 2026-11-10: the other player's prompts were on screen). Player 2's own sits at the bottom left of the right
 // half in a split screen; on its full-screen view it is moved by half the screen for the call, to the bottom left where a
 // single-screen fight shows player 1's (x from 0xA to 0x5E there), only while its x is in the right half (0x100 and up).
+// Each object holds up to three sprites 0x60 bytes apart, each with its four corners' x at +0x20 to +0x50: in the recovery
+// prompt the burst and its glow, then the button itself (at +0x60 of the second object). Every sprite in the right half is
+// moved: moving only the first of each left the button at its split-screen place, beside the fighter (the user,
+// 2026-11-11: no "press O" while flying away; seen in a split-screen knockback, `BT2_START_SCREEN=30`, player 2's view).
 constexpr std::uint32_t prompt=0x119E90,prompt_size=0xA0;constexpr std::uint64_t prompt_hash=0x9578B6A6C5EC5330ull;
-constexpr std::array<std::uint32_t,2> prompt_sprites{0x3BA0,0x3CC0};
+constexpr std::array<std::uint32_t,6> prompt_sprites{0x3BA0,0x3C00,0x3C60,0x3CC0,0x3D20,0x3D80};
 constexpr std::array<std::uint32_t,4> prompt_x{0x20,0x30,0x40,0x50};
 constexpr std::uint32_t hud_player_size=0x3E40;
 PS2Runtime::RecompiledFunction generated_prompt=nullptr;
