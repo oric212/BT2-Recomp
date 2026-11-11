@@ -8,6 +8,7 @@ No pass is open. Done 2026-11-11: "Low input lag" (each picture shown when the g
 
 ## Waiting for the user
 
+- **Frieza's dome with HD** (white with grey speckles): the pack's file `8ff0690d824d1f3c-3dbd5645bcd58151` is opaque where the game's texture is mostly transparent ([November](2026-11.md), 2026-11-11). Their choice: leave that file out, or a rule against exact replacements far more opaque than the game's texture.
 - **Low input lag in play:** does the game feel quicker (menus and, with 60 fps off, fights)? Their choice: 60 fps fights or the quicker 30 fps ones.
 - **Flicker on the destroyed Namek** (stage 15) after the planet blew up: what flickered (sky, ground, lava, fighters, HUD, all), how often, which characters and attack.
 - **Online on two PCs** (the next battle; the delay felt responsive to the user, 2026-11-10: 60 fps after a stage-destroying super attack, the own radar at the bottom right, the sharper enlargement on the 4K screen, no split line during dashes and ki charges, only their own button prompts, and no Return to Main Menu in the pause or after a fight) with the release package (`python tools/build/package.py`, `dist/`; guide `docs/guides/release/ONLINE_SETUP.md`): the reply code and hole punching (no port to open), a whole match and a second one. Their decisions: a matchmaking server (short PIN, no open port), rollback, publishing.

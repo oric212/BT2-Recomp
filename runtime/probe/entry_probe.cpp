@@ -651,6 +651,10 @@ int main(int argc, char** argv) {
                     if (!registers) return;
                     if (pacer->freeRun() || !viewer.gpuPresented()) {low_lag::early.cancel();return;}
                     const unsigned next = runtime.gs_display_flips + 1;
+                    // The frame's work so far goes to the GPU first, as the flip's frame change does before its scanout: a
+                    // scanout over work not yet submitted spoiled later pictures where the light depth of field rewrites the
+                    // frame's alpha (a green outline around a fighter in Frieza's Death Ball; the user, 2026-11-11).
+                    gpu_mirror.submit();
                     const auto [width, height] = gpu_mirror.vsync(*registers, runtime.gs_crt_request[1], next);
                     if (!width) {low_lag::early.cancel();return;}
                     pacer->waitToShow();
