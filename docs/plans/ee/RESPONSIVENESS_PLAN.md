@@ -95,6 +95,17 @@ Evenness, from the presents' times (5,097 intervals in a window): the median dis
 
 The gate's path in the window (5,100 flips): 4,994 pictures before their flip, flip to present −9.1 against +2.8 ms (median), the game's state identical on all 6,534 fields; intervals within 1 ms of a field 96.8% against 98.5%, the extra uneven ones mostly in the boot's first 250 flips (54 against 7) while the moment pictures are ready is still being learned. With 60 fps too: menus' pictures early (3,754), the fight unchanged (all 1,221 in-between pictures shown), 96.0% within 1 ms. A unit test of the rule (`early_picture_tests.cpp`) and of the setting.
 
+**Step 7 checked (2026-11-11): a fight frame's list is finished a frame before it is sent.** Each kicked DMA chain compared, tag by tag and byte by byte, with copies of main RAM from the last four field ends (a temporary diagnostic; Release, headless). A fight frame sends one VIF1 chain (about 1,700 tags, 3 MB of data with the models it references); at the end of the field before its kick and of the field before that (the field in which the previous frame was sent), every tag and every data byte is already what is sent except the last tag, which the game turns into END (`70000000 00000000`) just before the kick; three field ends back the list differs. The address of that last tag lies, two field ends back, in the word at `0x387EAC` (the game's write pointer), and the lists start alternately at `0x430600` and `0x530680`. Held at 1,098 of 1,099 frames of the CPU fight, 2,866 of 2,869 of the story fight and the gate's fight; menus, which flip every field, build their list in the field before its kick and are not covered.
+
+So at the end of the field in which a fight frame was sent, the next frame's list can be read (from the other start to the write pointer, with an END tag there) without touching the game: its picture, and with 60 fps the in-between picture before it, could be drawn a game frame (33 ms) sooner, at 30 and at 60 fps. Design:
+
+- **When:** at the end of the field of a fight frame's kick, when the last kicks started alternately at the two starts and each ended where the write pointer pointed two field ends before.
+- **What:** the chain from the start of the kick before last up to the write pointer, read from guest memory (nothing written), an END tag in place of the last tag.
+- **Where:** on the second renderer, which already replays the game's lists from the main renderer's kept state with a VIF1 and VU1 of its own (`gs/gpu/in_between_frames.*`); with 60 fps the in-between picture of the previous and the predicted frame and the predicted picture itself (a second picture a frame for that renderer), without 60 fps the predicted picture.
+- **Checked at the kick:** the kicked words equal to the predicted ones; otherwise the pictures from that frame on come from the kick as now and the prediction rests until the pattern holds again. The game's state, its GS memory and the main renderer are untouched.
+- **Cost:** the second renderer draws a picture more a frame (about 6 to 11 ms of GPU time at 16x); without 60 fps it starts to draw at all.
+- **Open:** a wrong prediction would show a wrong picture for one frame before the check catches it (not seen in the runs above, where the prediction only failed with the pattern already broken).
+
 ## Verification
 
 Each step: the gate (game state unchanged), step 1's numbers before and after, `BT2_FIELD_LOG` for hitches and loading, and the user's feel in play.
