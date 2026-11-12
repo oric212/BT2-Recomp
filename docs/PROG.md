@@ -11,7 +11,7 @@
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
-| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the enemy AI matches PCSX2 exactly at the calls compared |
+| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the enemy AI and the fight's logic step match PCSX2 exactly at the calls compared |
 | Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest (2026-11-12)
 
+- **One comparison with PCSX2, planned and started** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the port runs the game's code from PCSX2's own state and both results are compared byte for byte; one PCSX2 run now takes hundreds of checkpoints. The fight's logic step differed in the last bits of its floats; traced to three faults in the recompiled code (`sqrt.s` read the wrong register at 110 sites and rounds to nearest in the original, `movn`/`movz` copied 128 bits). Now all 292 compared calls are equal to PCSX2's, the whole logic step of three fight frames among them. Input lag and latency are part of the plan.
 - **The destroyed Namek's lava no longer flickers at 60 fps:** polygons cut at the edge the game clips to were left at the newer frame's place in the in-between pictures; they now move halfway like the rest ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
 - **HD packs found where players put them:** the user's fresh release folder ran without HD textures (the pack was not found, without a word). A pack up to three folders deep in `data/textures` is found now, the launcher names it or says none was found, and the log names it.
 - **The launcher slimmed down:** Play, Online battle, Settings (Graphics, Controls, Sound, Game files as cards), one dark look for every page and the in-game menu. Pausing online: the waiting player can open the menu too.
@@ -85,7 +86,7 @@ One PC (Core i9-10900K; Radeon RX 6800 XT, since 2026-11-09 an RX 9070 XT with a
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
 1. Online: the user's play of the start locked on (and whether lock is still lost too often after it), the Dragon Rush's prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
-2. Final validation: the exhaustive battle sweep; 3D frames compared with the original.
+2. Final validation: the [PCSX2 comparison plan](plans/validation/PCSX2_COMPARISON_PLAN.md) (next: the fight frame's draw steps, a scripted fight with super attacks, frame-by-frame trajectories, input lag); the exhaustive battle sweep; 3D frames compared with the original.
 3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
 4. The user's decisions: a matchmaking server and rollback for online; publishing the release.
 

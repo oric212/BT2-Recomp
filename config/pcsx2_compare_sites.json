@@ -1,0 +1,50 @@
+{
+  "about": "Call sites a PCSX2 comparison session can take checkpoints at (tools/pcsx2_compare/session.py, docs/plans/validation/PCSX2_COMPARISON_PLAN.md). call: the jal's address; target: the function it calls.",
+  "sites": {
+    "input": {
+      "call": "0x207760",
+      "target": "0x1214F8",
+      "about": "The input reader asks the AI for a CPU fighter's buttons (a0 the side)."
+    },
+    "think": {
+      "call": "0x102BB8",
+      "target": "0x11E988",
+      "about": "The AI's thinking for every side the CPU plays, once a frame."
+    },
+    "step-a": {
+      "call": "0x102FA8",
+      "target": "0x102AA0",
+      "about": "Fight loop 0x102F30: the step that calls the AI's thinking (0x102BB8)."
+    },
+    "draw-a": {
+      "call": "0x102FB8",
+      "target": "0x102C40",
+      "about": "Fight loop 0x102F30: the call after step-a."
+    },
+    "draw-a2": {
+      "call": "0x102FD0",
+      "target": "0x102D20",
+      "about": "Fight loop 0x102F30: the call after draw-a."
+    },
+    "step-b": {
+      "call": "0x102EF8",
+      "target": "0x102AA0",
+      "about": "Fight loop 0x102E80: the same step."
+    },
+    "draw-b": {
+      "call": "0x102F00",
+      "target": "0x102C40",
+      "about": "Fight loop 0x102E80: the call after step-b."
+    },
+    "fpu-29DEB8": {
+      "call": "0x2603B0",
+      "target": "0x29DEB8",
+      "about": "In 0x260340 (reached from step-b): 16 mul.s and 16 add.s, a 4x4 matrix times a vector."
+    },
+    "vsub-312650": {
+      "call": "0x2603A0",
+      "target": "0x312650",
+      "about": "In 0x260340: one VU0 vsub.xyzw between two quadwords."
+    }
+  }
+}

@@ -10,7 +10,7 @@ import re
 import subprocess
 import uuid
 
-import float_rewrite
+import ee_rewrite
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_CANDIDATE_SHA256 = "f7e5ba8e74657b8533c3a0fedff45de0d052be3a23fe4c475059ef888a81f03e"
@@ -112,8 +112,8 @@ def main():
         log = folder / "generation.log"
         with log.open("w", encoding="utf-8") as stream:
             subprocess.run([str(tool), str(config)], cwd=folder, check=True, stdout=stream, stderr=subprocess.STDOUT)
-        # PS2 rounding for the float operations the recompiler writes inline (float_rewrite.py), before the hashes.
-        rewritten = float_rewrite.rewrite_folder(output)
+        # PS2 rounding for the float operations the recompiler writes inline (ee_rewrite.py), before the hashes.
+        rewritten = ee_rewrite.rewrite_folder(output)
         files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                  for path in sorted(output.iterdir()) if path.is_file() and path.suffix in (".cpp", ".h")}
         if not files:
@@ -123,7 +123,7 @@ def main():
             "map_sha256": hashlib.sha256(function_map.read_bytes()).hexdigest(),
             "lock_sha256": provenance["lock_sha256"],
             "recompiler_sha256": provenance["recompiler_sha256"], "map_kind": "provisional" if args.candidate_map else "reviewed",
-            "entry_hints": len(hints), "float_rewrite_files": rewritten,
+            "entry_hints": len(hints), "ee_rewrite_files": rewritten,
             "files": files}, indent=2) + "\n", encoding="utf-8")
         print(f"Generated {len(files)} local C++/header files ({rewritten} with PS2-rounded divides and roots). Log: {log}. Compile/execution is a separate stage.")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

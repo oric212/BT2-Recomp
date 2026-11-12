@@ -13,6 +13,12 @@ $BiosPath = 'PATH_TO_YOUR_PS2_BIOS'
 
 Disc-backed captures must also pass `--disc rom/BT2-USA.iso` (or your actual ISO path). Tool defaults may reflect a development environment; pass explicit paths when your setup differs.
 
+## PCSX2 comparison sessions
+
+The port compared with PCSX2 from PCSX2's own state ([plan](../plans/validation/PCSX2_COMPARISON_PLAN.md)).
+`python tools/pcsx2_compare/session.py --pcsx2 $Pcsx2Path --bios $BiosPath --disc <iso> --card <Mcd001.ps2 with a BT2 save> --session <name> --site NAME:FIRST:COUNT:STRIDE[:after] ...`
+runs PCSX2 once with checkpoints at the call sites of `config/pcsx2_compare_sites.json`: each site's stub (`context_block.py`) publishes all registers (GPRs at 128 bits, HI/LO, SA, FPRs, FCR31, VU0's VF, VI and control registers; not the two ACCs; `t8`/`t9` are the stub's), waits while the tool reads EE RAM, VU memory and the registers out of the process, and continues. Calls FIRST, FIRST + STRIDE, ... are taken, before the call and with `:after` after it too. Output: `work/pcsx2-compare/<name>/` (`session.json`, a folder per checkpoint). `python tools/pcsx2_compare/compare_calls.py --disc <iso> --session <name>` replays every before/after pair in the Release probe (`BT2_REPLAY_CALL`) and lists the differing words the port wrote and the return and kept registers (`compare.json`). `test_context_block.py` runs the stub on a small interpreter.
+
 ## Preliminary validation
 
 Requires Python 3.10 or newer; uses only the standard library. From the repository root:
@@ -728,7 +734,7 @@ A person answers the prompt and the capture halts at its point as usual. The cap
 
 **VU1 program cost and listing.** With `BT2_VU1_CENSUS` set, the run also writes `cost.txt` into the folder: per program its key, pair count, starts, instruction pairs run and milliseconds (output packets included). `python tools/vu1/disassemble.py <census file>` lists a program as text, one line per instruction pair (`E` marks the end bit, `>` the start address). Both describe the game's programs and stay local.
 
-**Word watch.** `BT2_EE_WATCH_WORD=<file>:<hex address>` writes a line each time the word there is found changed at a guest call: the flip, the call it changed before, the old and new words in hex (the store watch sees 128-bit stores only). With `BT2_REPLAY_CALL` (the probe runs one function on a RAM captured from PCSX2: `"<RAM in>|<function>|<a0>|<a1>|<sp>|<gp>|<RAM out>"`) it follows a value through one call. The AI comparison with PCSX2: `tools/capture_ee/capture_ai_call.py --site input|think --call <N> --when before|after` (PCSX2, a card with a BT2 save, the demo battle) and `tools/capture_ee/compare_ai_call.py --site ... --call <N>` (docs/plans/ee/AI_VERIFICATION_PLAN.md).
+**Word watch.** `BT2_EE_WATCH_WORD=<file>:<hex address>` writes a line each time the word there is found changed at a guest call: the flip, the call it changed before, the old and new words in hex (the store watch sees 128-bit stores only). With `BT2_REPLAY_CALL` (the probe runs one function on a state captured from PCSX2: `"<RAM in>|<registers in>|<hex function>|<RAM out>[|<VU memory in>]"`, see "PCSX2 comparison sessions") it follows a value through one call. The AI comparison with PCSX2 (docs/plans/ee/AI_VERIFICATION_PLAN.md) is now done by the comparison sessions (sites `input` and `think`).
 
 **Call trace.** `BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]` writes one line per call of those functions from that display flip on: the flip, the calling address, the target, `a0` to `a3`, `f12`, `f13` and `f0` (which still holds the previous call's result), and the four floats at each of `a0` to `a2` that points into RAM. Tracing a library function and reading the next line's `f0` gives its inputs and results without touching the game.
 

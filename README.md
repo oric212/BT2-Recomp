@@ -31,7 +31,7 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
 | Films | 🟢 Operational — logo and opening films with sound |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
-| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the enemy AI matches PCSX2 exactly at the calls compared |
+| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the enemy AI and the fight's logic step match PCSX2 exactly at the calls compared |
 | Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |

@@ -91,8 +91,17 @@ float ps2_vu_add(float left, float right) {
 float ps2_vu_sub(float left, float right) {
     return addTowardZero(normalize(left), -normalize(right));
 }
+// Both use |value| (a negative operand only raises the unmodeled invalid flag).
 float ps2_fpu_sqrt(float value) {
-    // SQRT.S uses |value| (a negative operand only raises the unmodeled invalid flag).
+    // SQRT.S rounds to nearest, as DIV.S: a fight's quaternion unpacking (0x29A840) in PCSX2, whose division
+    // rounding mode (nearest by default) covers its square root too, gave the nearest root where the chopped one
+    // was a unit below (docs/plans/validation/PCSX2_COMPARISON_PLAN.md).
+    const float a = std::bit_cast<float>(std::bit_cast<std::uint32_t>(normalize(value)) & 0x7FFFFFFFu);
+    return normalize(std::sqrt(a));
+}
+float ps2_vu_sqrt(float value) {
+    // VU0's SQRT and RSQRT's root round toward zero: to nearest broke the CPU opponent's distances against PCSX2
+    // (docs/plans/ee/AI_VERIFICATION_PLAN.md).
     const float a = std::bit_cast<float>(std::bit_cast<std::uint32_t>(normalize(value)) & 0x7FFFFFFFu);
     return chop([&] { return std::sqrt(a); });
 }

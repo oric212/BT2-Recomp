@@ -975,7 +975,7 @@ int main(int argc, char** argv) {
             if (!registerOnlineLockOn(runtime)) throw std::runtime_error("BT2_ONLINE_VIEW: the fighters' frame update is not the expected code");
             runtime.gs_sink.hidden_view = 3 - player;
         }
-        // BT2_REPLAY_CALL (docs/plans/ee/AI_VERIFICATION_PLAN.md): one function on a RAM captured from PCSX2, then exit.
+        // BT2_REPLAY_CALL (docs/plans/validation/PCSX2_COMPARISON_PLAN.md): one function on a state captured from PCSX2, then exit.
         if (const char* replay = std::getenv("BT2_REPLAY_CALL")) {replayCall(runtime, context, replay);std::exit(0);}
         // BT2_QUICK_TITLE=1 (the in-game menu's "Return to the title screen"): the startup (logos, films) runs in fast
         // forward until the title begins or a button is pressed. 0x24BE80 runs once, as the title starts (traced

@@ -56,7 +56,7 @@ library state, never in the fighters' data, so pairing "before" and "after" from
    now toward zero per lane (`ps2_vu_add`, `ps2_vu_sub`, `ps2_fpu_mul`). 17 differing words at `think` 200 became 12.
 2. Four operations the recompiler writes inline (not through the runtime's helpers) used host arithmetic: the FPU's
    `div.s` (1,836 sites, also giving infinities on a zero divisor, which the EE has not), VU0's `vdiv` (34),
-   `vsqrt` (19) and `vrsqrt` (2; the recompiler also ignored its numerator). `tools/ps2recomp/float_rewrite.py`
+   `vsqrt` (19) and `vrsqrt` (2; the recompiler also ignored its numerator). `tools/ps2recomp/ee_rewrite.py`
    rewrites them after each generation (`generate_game.py`, `generate_interpreter.py`; the discovery loop's receipt
    check applies it to the old output first): `ps2_fpu_div`, `ps2_vu_div`, `ps2_fpu_sqrt`. 12 became 5.
 3. Division rounds differently by unit: the FPU's `div.s` to nearest (as PCSX2's separate FPU division rounding
@@ -69,10 +69,11 @@ library state, never in the fighters' data, so pairing "before" and "after" from
    195.19 whose subtrahend lost bits.
 
 Tests: `fpu_tests.cpp` (each operation against a reference written separately: the alignment rule, division to
-nearest for the FPU and toward zero for VU0, VU0's add without alignment), `test_float_rewrite.py`. The gate's battle
+nearest for the FPU and toward zero for VU0, VU0's add without alignment), `test_ee_rewrite.py`. The gate's battle
 run fights slightly differently with the original's rounding and has a new baseline (`tools/gate/battle_run.py`).
 
-Tools: `capture_ai_call.py --site input|think`, `compare_ai_call.py --site`, the probe's `BT2_REPLAY_CALL`, and
+Tools: `capture_ai_call.py --site input|think` and `compare_ai_call.py --site` (replaced 2026-11-12 by the sessions of the
+[PCSX2 comparison plan](../validation/PCSX2_COMPARISON_PLAN.md), sites `input` and `think`), the probe's `BT2_REPLAY_CALL`, and
 `BT2_EE_WATCH_WORD=<file>:<address>` (which call a scalar changed across; it found the distance's writer).
 
 Not checked: whether PCSX2 itself matches the hardware in these operations (it is the reference here); other

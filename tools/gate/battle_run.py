@@ -23,7 +23,10 @@ FRAMES = 5100
 # FPU division to nearest, the FPU adder's operand alignment; the CPU opponent's AI matched PCSX2 exactly,
 # docs/plans/ee/AI_VERIFICATION_PLAN.md), so the scripted fight goes slightly differently (was 7f996c1524a22bea,
 # 724707622, 2140202).
-BASELINE = {'vu1_kick_hash': '11860f808d115d87', 'vu1_instructions': 724706804, 'vu1_runs': 2140194}
+# 2026-11-12: SQRT.S reads ft and rounds to nearest, MOVN/MOVZ copy 64 bits (the fight's logic step then matched
+# PCSX2 exactly, docs/plans/validation/PCSX2_COMPARISON_PLAN.md): the same work, other values (was
+# 11860f808d115d87; the instruction and start counts unchanged).
+BASELINE = {'vu1_kick_hash': '3b1d549c9add3d06', 'vu1_instructions': 724706804, 'vu1_runs': 2140194}
 ENTERED_AT_LEAST = 3700 # 3,731 at the baseline; the exact count moves when the map splits functions.
 
 

@@ -5,12 +5,13 @@
 float ps2_fpu_add(float left, float right);
 float ps2_fpu_sub(float left, float right);
 float ps2_fpu_mul(float left, float right);
-float ps2_fpu_div(float left, float right); // DIV.S: to nearest (generated code, tools/ps2recomp/float_rewrite.py).
+float ps2_fpu_div(float left, float right); // DIV.S: to nearest (generated code, tools/ps2recomp/ee_rewrite.py).
 float ps2_vu_div(float left, float right);  // VU0's DIV and RSQRT: toward zero.
+float ps2_vu_sqrt(float value);             // VU0's SQRT and RSQRT's root: toward zero.
 // VU0 macro-mode add and subtract: toward zero without the EE FPU's operand alignment (ps2_fpu.cpp).
 float ps2_vu_add(float left, float right);
 float ps2_vu_sub(float left, float right);
-float ps2_fpu_sqrt(float value);
+float ps2_fpu_sqrt(float value);            // SQRT.S: to nearest.
 float ps2_fpu_cvt_s_w(std::int32_t value);
 std::int32_t ps2_fpu_cvt_w_s(float value);
 bool ps2_fpu_c_eq(float left, float right);

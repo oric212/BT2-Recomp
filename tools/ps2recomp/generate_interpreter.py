@@ -16,7 +16,7 @@ work/bt2-generation/interpreter/. A word the table lacks stops the interpreter b
 import csv, hashlib, json, re, subprocess, struct, sys
 from pathlib import Path
 import overlay_programs
-import float_rewrite
+import ee_rewrite
 from prepare_runtime import prepare_text, detach_generated_headers, route_data_cache, VU_QUIET, VU_FLAG_SETTING
 from map_gaps import program_view
 
@@ -168,7 +168,7 @@ def main():
         if stale.name not in files:
             stale.unlink()
     for name, text in files.items():
-        if name.endswith('.cpp'):text = float_rewrite.rewrite(text) # PS2 rounding for the inline divides and roots.
+        if name.endswith('.cpp'):text = ee_rewrite.rewrite(text) # PS2 rounding for the inline divides and roots.
         path = OUTPUT / name
         if not path.exists() or path.read_text(encoding='utf-8') != text:
             path.write_text(text, encoding='utf-8')

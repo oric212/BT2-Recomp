@@ -1,8 +1,10 @@
-// The EE FPU's add, subtract, multiply and divide (runtime/ee/ps2_fpu.cpp) against a reference that rounds toward zero by
+// The EE FPU's add, subtract, multiply, divide and square root (runtime/ee/ps2_fpu.cpp) against a reference that rounds toward zero by
 // setting MXCSR around each operation, then clamps and flushes as the EE does: special values, values near the
 // smallest normal number and overflow, and random operands of every sign and exponent.
 #include "ee/ps2_fpu.h"
 #include <bit>
+#include <cmath>
+#include <iterator>
 #include <cstdint>
 #include <immintrin.h>
 #include <iostream>
@@ -84,6 +86,24 @@ int main() {
         const std::uint32_t low = (random() & 0x807FFFFFu) | ((1u + random() % 3u) << 23), low2 = (random() & 0x807FFFFFu) | ((1u + random() % 3u) << 23);
         const std::uint32_t high = (random() & 0x807FFFFFu) | ((0xFCu + random() % 3u) << 23), high2 = (random() & 0x807FFFFFu) | ((0xFCu + random() % 3u) << 23);
         compare(low, low2);compare(low, low ^ 0x80000000u);compare(high, high2);compare(high, high ^ 0x80000000u);
+    }
+    // Square roots of |x|: SQRT.S to nearest, VU0's toward zero; the case PCSX2 decided (a fight's quaternion,
+    // docs/plans/validation/PCSX2_COMPARISON_PLAN.md): the root of 0x3F5D8EBF is 0x3F6E2830 on the FPU.
+    const auto root = [](std::uint32_t x, bool chop) {
+        const float a = std::bit_cast<float>(std::bit_cast<std::uint32_t>(normalize(std::bit_cast<float>(x))) & 0x7FFFFFFFu);
+        return chop ? reference(a, a, [](float p, float) { return std::sqrt(p); }) : normalize(std::sqrt(a));
+    };
+    const auto bits = [](float value) { return std::bit_cast<std::uint32_t>(value); };
+    if (bits(ps2_fpu_sqrt(std::bit_cast<float>(0x3F5D8EBFu))) != 0x3F6E2830u
+        || bits(ps2_vu_sqrt(std::bit_cast<float>(0x3F5D8EBFu))) != 0x3F6E282Fu) {
+        std::cerr << "The quaternion's root differs\n";
+        ++failures;
+    }
+    for (unsigned n = 0; n < 1000000; ++n) {
+        const std::uint32_t x = n < std::size(special) ? special[n] : std::uint32_t(random());
+        if ((bits(ps2_fpu_sqrt(std::bit_cast<float>(x))) != bits(root(x, false)) || bits(ps2_vu_sqrt(std::bit_cast<float>(x))) != bits(root(x, true)))
+            && failures++ < 10)
+            std::cerr << "Square root differs for " << std::hex << x << std::dec << '\n';
     }
     if (failures) {
         std::cerr << failures << " FPU results differ\n";
