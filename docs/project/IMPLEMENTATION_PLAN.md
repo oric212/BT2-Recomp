@@ -29,31 +29,26 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Milestone | Status |
 | --- | --- |
 | Foundation, generation, startup to the frame loop, controller and card checks | ✅ Verified |
-| Films, title, menus, all game modes | 🟢 Operational |
+| Films, title, menus, all game modes, story mode (all parts and towns without input) | 🟢 Operational |
 | Versus battle with a controller, sound, real-time speed | 🟢 Operational |
-| Story mode (all parts and towns without input) | 🟢 Operational; not played through by the user |
-| Launcher, settings, in-game menu, fast forward | 🟢 Operational |
-| Saving | 🔧 Incomplete: not tried in the game |
-| Enhancements: HD textures, super-sampling, widescreen | 🟢 Operational |
-| Enhancements: 60 fps battles (the fight unchanged, checked by state hash), HD textures with 60 fps, streaming, fighters' HD bodies, FSR 1 scaling | ⏳ In progress |
-| Final validation: exhaustive battle sweep, comparisons of 3D frames | ⏳ Not reached |
+| Saving | ✅ Verified (byte-identical to the original's) |
+| Launcher, settings, in-game menu, release package | 🟢 Operational |
+| Enhancements: HD textures, super-sampling, widescreen, 60 fps battles, fast loading, Low input lag | 🟢 Operational |
+| Online battle | 🟢 Operational |
+| Final validation: the PCSX2 comparison, the exhaustive battle sweep | ⏳ In progress (the fight frame's logic and draw steps match PCSX2) |
 
 ## Current next step
 
-Done, in order: native services; GPU rendering; films; the 3D pipeline; menus and battle setup; sound; controller; launcher, settings and overlay; whole-game coverage (all modes without input); performance (fights at 30, menus at 60); HD textures, super-sampling and widescreen. Details in the [October 2026 history](../progress/2026-10.md).
+Done: native services, GPU rendering, films, the 3D pipeline, sound, controller, all modes without input, performance, the enhancements, the launcher and release package, online battles (history: [October](../progress/2026-10.md), [November](../progress/2026-11.md)).
 
-Done since: GS threads for the GS work (2026-10-25: the game's thread checks and copies the GIF data, the GS threads name textures and feed paraLLEl-GS) and the 60 fps crash (a Granite fix).
+Next, in order:
 
-Next, in order (the user, 2026-10-20 and 2026-10-25):
-
-1. **60 fps battles in play** ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md); revised 2026-11-01 by the user toward [native fight rendering](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md), step 1 built, step 2 revised by the user 2026-11-02 and under way; the flicker the user saw open): the user's look at the fixed in-between pictures (flicker, the up-and-down glitch); HD in-between pictures in time at 16x (now about a third; texture names shared since 2026-10-25); transforms cut at chunk edges; the newer frame's own things (hit flashes).
-2. **Native texture streaming** (HD textures plan, step 8) — built 2026-10-26: a loader thread makes the images; a replacement still loading is drawn without its original being kept.
-3. **The fighters' HD bodies** (HD textures plan, step 9) — built 2026-10-26: the pack's lit variant nearest in colour for the palettes the game relights; the user's look in play left.
-4. **Picture** ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md); native passes inside paraLLEl-GS for the HD outline and heavy effects: [hybrid rendering plan](../plans/graphics/HYBRID_RENDERING_PLAN.md)): FSR 1 scaling with sharpening, an edge filter (FXAA or SMAA); the button art choice (HD textures plan).
-5. **The user's play-testing** of saving, the enhancements and the fixes; stops are mapped with `discovery_loop.py --player-stop`.
-6. **Final validation:** the exhaustive battle sweep; comparisons of 3D frames with the original.
-7. **A release the player completes with their own game** ([release plan](../plans/launcher/RELEASE_PLAN.md); the user's decision of 2026-11-04: BT3-Recomp's model, the compiled runtime ships and the game's data stays on the player's disc): done 2026-11-04: the game's starting memory from the player's disc, the console's state native, the package with nothing of the game or the console; publishing is the user's call.
-8. **Done 2026-10-27 (the user moved it forward):** the runtime generalization plan's groups 4 to 6 ([plan](../plans/ee/RUNTIME_GENERALIZATION_PLAN.md)); two items left with their reason there.
+1. **The PCSX2 comparison** ([plan](../plans/validation/PCSX2_COMPARISON_PLAN.md); the user, 2026-11-12): steps 1 and 2 done (the fight frame and a full versus battle equal). Next: consecutive frames (step 3), input lag and latency (step 9), loaded data (step 5), then VU1 and the GIF stream, GS memory and pictures, the services, and the comparisons into the gate.
+2. **The user's open reports**, as detail comes: the destroyed Namek's flicker at 60 fps ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)); Frieza over the ocean and characters under water with HD ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)). Stops in the user's play are mapped with `discovery_loop.py --player-stop`.
+3. **Picture and responsiveness:** an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)); responsiveness steps 7 and 8 ([plan](../plans/ee/RESPONSIVENESS_PLAN.md); waiting for the user's go).
+4. **Online, left for later** ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md)): the Dragon Rush's prompts; lock-on in play.
+5. **Later features:** textures the HD pack lacks upscaled by the port ([plan](../plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.
+6. **The user's decisions:** a matchmaking server, rollback, publishing the release ([release plan](../plans/launcher/RELEASE_PLAN.md)).
 
 ## Working method
 
