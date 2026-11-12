@@ -25,7 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
-- **2026-11-12 — loaded data against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 5): at the first frame of the same versus battle, the loaded fighters and stage (22 MB from `0x700000`) equal PCSX2's but for 2.7 KB of positions and leftovers; the rest differs by route (the port's starter skips the title), the streams' timing and the kernel. A finding: sticks rest at `0x80` in the port, `0x7F` in PCSX2.
+- **2026-11-12 — loaded data against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 5): at the first frame of the same versus battle, the loaded fighters and stage (22 MB from `0x700000`) equal PCSX2's but for 2.7 KB of positions and leftovers; the rest differs by route (the port's starter skips the title), the streams' timing and the kernel. Sticks rest at `0x80` in the port, `0x7F` in PCSX2; the fight is the same with either (1,427 frames).
 - **2026-11-12 — press to screen against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 9): windowed, a press shown in 104 ms median by the port with Low input lag (the default), 108 ms by PCSX2, 111 ms by the port at 60 fps, 133 ms by the port without Low input lag.
 - **2026-11-12 — the game's input delay equal to PCSX2's** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 9, first part): a press (Cross, d-pad up) at the same fight frame changes the display lists in the frame that read it and VU1's memory a frame later (2 and 4 fields), in PCSX2 and the port alike. Measured in PCSX2 with logging sites that do not wait, so its timing stays the game's.
 - **2026-11-12 — 300 consecutive fight frames equal to PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 3): every call of the fight frame the replay can run, at frames 600 to 899 of a versus battle, gives PCSX2's words (1,459 calls; 41 stop at the sound requests' system call, a service boundary). The replay now loads the game's random numbers (VU0's R register) where the runtime keeps them.
@@ -75,7 +75,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the rest of loaded data (the globals by route, the sticks' rest value), then VU1, GS memory and pictures, the services.
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the rest of loaded data (the globals by route), then VU1, GS memory and pictures, the services.
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.

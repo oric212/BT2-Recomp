@@ -245,8 +245,10 @@ of `config/pcsx2_compare_regions.json` (each with its reason) and the session's 
   against `0x213`), the file service's path buffers ("cdrom0:\", the logo file's name), heap positions of the title's
   allocations, menu tables PCSX2 filled and the starter never reached. Not yet explained one by one.
 - **A finding for the controller service:** the sticks at rest read `7F 7F 7F 7F` in PCSX2's pad record
-  (`0x3B0B1C`) and `80 80 80 80` in the port's. Both rest values are inside a real pad's; whether the game treats
-  them alike (its dead zone) is open, so the port's value is unchanged.
+  (`0x3B0B1C`) and `80 80 80 80` in the port's. Both rest values are inside a real pad's. The game treats them
+  alike: the same battle with side 0 on the pad, all sticks held at `0x7F` from field 1 against at rest, gives the
+  same display lists and VU1 memory in all 1,427 fight frames to field 1,500 (`BT2_EE_CALL_SUMS` at the frame's end).
+  The port's value stays; the difference is the pad record's only.
 - **The title's demo is not the same battle in both programs:** without the starter or `--set` (session
   `loaded-demo`, the port to field 11,201 with PCSX2's save on a folder card) 11.8 MB differ, the fighter and stage
   blocks from `0x8D0000` to `0x15EC860`: the demo draws its fighters with random numbers, which drift between the
@@ -257,12 +259,10 @@ to PCSX2's; the differences are the route (the port's starter skips the logos, f
 timing and the kernel. **Not covered:** the route's own state, which needs the port to reach the battle by PCSX2's
 route (the title's demo with the same draw); other events (a story map shown, a menu entered).
 
-**Next:** the globals' 152 ranges by route (or the port through the same route); the stick rest value against the
-game's dead zone; then step 6 (VU1 and the GIF stream). Press to sound and fullscreen when wanted.
+**Next:** the globals' 152 ranges by route (or the port through the same route); then step 6 (VU1 and the GIF stream). Press to sound and fullscreen when wanted.
 
 ## Unknowns
 
-- Whether BT2's fight treats a stick at `0x7F` (PCSX2's rest) as at `0x80` (the port's).
 
 - Whether `VUmem` is VU0 micro, VU0 data, VU1 micro, VU1 data in that order (checked on the first session against
   the game's VU1 programs).

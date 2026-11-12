@@ -10,9 +10,9 @@ Also done (the same day): step 9's first part, the game's own input delay: loggi
 
 Then step 9's second part: `press_to_screen.py` (unpauses timed from `SendInput` to the first changed picture, windowed): port 104 ms median with Low input lag, 111 ms at 60 fps, 133 ms without; PCSX2 108 ms (`work/latency/*.json`).
 
-Then step 5, loaded data, at a fight's first frame: `BT2_EE_CALL_RAM` (the port's RAM before a call) and `loaded_data.py` (ranges against `config/pcsx2_compare_regions.json`); sessions `loaded` (the versus battle, the comparison that counts) and `loaded-demo` (the plain title demo: another draw, not comparable). The loaded fighters and stage equal; 23 KB of globals differ by route, not yet explained one by one; sticks at rest `0x80` in the port against PCSX2's `0x7F` (open: the game's dead zone).
+Then step 5, loaded data, at a fight's first frame: `BT2_EE_CALL_RAM` (the port's RAM before a call) and `loaded_data.py` (ranges against `config/pcsx2_compare_regions.json`); sessions `loaded` (the versus battle, the comparison that counts) and `loaded-demo` (the plain title demo: another draw, not comparable). The loaded fighters and stage equal; 23 KB of globals differ by route, not yet explained one by one; sticks at rest `0x80` in the port against PCSX2's `0x7F`, the fight the same with either (lists and VU1 in 1,427 frames).
 
-**Next:** the stick rest value against the game's dead zone (who reads `0x3B0B1C`'s sticks in the fight); the globals by route (a port run through PCSX2's route would remove them); then step 6. Fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+**Next:** the globals by route (a port run through PCSX2's route would remove them); then step 6. Fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 
