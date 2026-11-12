@@ -111,3 +111,11 @@ Reported only; not investigated yet. The user's screenshot (kept locally, `work/
 - **The user's view:** a problem of texture streaming, probably in the HD textures' handling, not the renderer.
 - **Not known:** whether it shows without HD textures, without 60 fps (an in-between picture) or with the light depth of field off; whether it lasts or appears as the textures first stream in; which stage and character variant; whether PCSX2 with the same pack shows the same.
 - **First checks when taken up:** the same fight headless (`BT2_START_BATTLE` with Frieza's first form on the ocean stage) with and without `BT2_HD_TEXTURES`, `BT2_SIXTY_FPS` and the depth of field, pictures in `work/frames/hd-textures/`; the run's HD line (files not ready at their first draw, drawn palettes left original); then the user's look.
+
+## Open: characters under water not in HD (the user, 2026-11-12)
+
+Reported only; not investigated yet. With HD textures on, a fighter under water (on the stages with water a fighter can dive into) is drawn with the original textures, not the pack's.
+
+- **Not known:** whether every fighter or some, all of the body or parts; whether it lasts while under water or the replacements come back after a moment; which stage; whether PCSX2 with the same pack shows them in HD there.
+- **A possibility to check, not a finding:** the game may draw a fighter under water differently (other palettes for the water's tint, or the body drawn through a copy), so the names the pack is looked up by would differ from those above water.
+- **First checks when taken up:** a fight on a water stage headless with `BT2_HD_TEXTURES` and `BT2_TEXTURE_NAMES`, a fighter under water: which names its draws get and whether the pack holds them (or a lit variant), and the run's HD line; pictures in `work/frames/hd-textures/`.
