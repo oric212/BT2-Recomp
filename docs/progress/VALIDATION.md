@@ -1,73 +1,171 @@
 # Validation record
 
-What has actually been checked, how, and when. Only checks that were run are listed; anything else is not validated. Details are in the [monthly history](2026-10.md); the current status is in [PROG.md](../PROG.md).
+What has been checked, how, and when. Only checks that were actually run are listed; anything not listed is not
+validated. The current status is in [PROG.md](../PROG.md); the details of each check are in the monthly history
+([November](2026-11.md), [October](2026-10.md)).
 
-**Kinds of check:** *Original*: compared with the original game (PCSX2 captures or an independent decoder). *Exact*: byte-exact comparison between two port runs (state hash of every guest memory per field, VU1 output hash). *Ran*: the run reached its frame budget with no stop and nothing interpreted; the picture was not judged by the user. *User*: the user looked or listened and confirmed.
+**Kinds of check**
 
-## Checked
+| Kind | Meaning |
+| --- | --- |
+| **Original** | Compared with the original game running in PCSX2 (or an independent decoder) |
+| **Exact** | Two port runs compared byte for byte (every guest memory per field, or VU1's output hash) |
+| **Ran** | The run reached its end with no stop and nothing interpreted; nobody judged the picture |
+| **Measured** | A number taken on the developer's PC (Core i9-10900K, Radeon RX 9070 XT) |
+| **User** | The user looked, listened or played and confirmed |
 
-| Area | What was checked | Kind | Date |
+## At a glance
+
+| Area | Strongest check so far | Kind | Date |
 | --- | --- | --- | --- |
-| Gate (every commit) | Debug and Release builds, 26 unit tests, the Python suites, the probe runs, 31 comparisons and renders, map closure, and the scripted 1P-vs-COM fight against its baseline (5,100 frames, VU1 hash `7f996c1524a22bea`) | Exact, Original | last passed 2026-10-27 |
-| Startup | 46 comparison scripts against PCSX2 captures: 42 pass; `cri_rpc`, `second_heap`, `cri_preemption` and `spu2_initialization` fail | Original | 2026-10-13 |
-| Native services | The same stop and identical EE memory as the emulated IOP, except two regions of stale IOP bytes | Exact | 2026-10-11 |
-| Movies | The logo and opening films' first pictures match an independent decode; the boot films' sound level, channel order and timing match a PCSX2 recording | Original | 2026-10-13 |
-| Interior entries | The scripted fight with and without them: same state on all 6,534 fields | Exact | 2026-10-18 |
-| Interpreter | The scripted fight with every function interpreted against compiled: same state on all fields, same VU1 hash | Exact | 2026-10-18 |
-| Runtime rules for the battle starter | The scripted fight before and after the change: same state on all 6,534 fields | Exact | 2026-10-18 |
-| Idle demo fight | Plays (after the `VCLIP` fix) and returns to the title; run to flip 13,000 | Ran | 2026-10-18 |
-| Battles without input | Characters 0 to 10 (each against the next) and 100 to 129 (against 0), variant 0, Rocky Area: each ran 4,500 flips, nothing interpreted. Characters from 130 are not valid | Ran | 2026-10-18 |
-| Stages | Goku against character 1 on stages 0 to 15 (16 distinct stages): each ran 4,500 flips, nothing interpreted; stage numbers from 16 give Wasteland again | Ran | 2026-10-19 |
-| Screens without input | The ten main-menu screens started by mode (`BT2_START_SCREEN`): Dragon Adventure intro, Ultimate Battle Z, Dragon Tournament, Dueling, Ultimate Training, Evolution Z, Item Shop, Data Center, Options, Dragon Library; each ran 1,200 flips, nothing interpreted | Ran | 2026-10-19 |
-| Story episode starts | Episodes 0 to 24 started by `BT2_START_EPISODE`: 24 load their 3D map with their own lead character and ran 1,500 flips, nothing interpreted; episode 23 draws no 3D because its first scene's script is empty (the game's episode table marks it unavailable). From 25 the game reads past its tables (28 and up stop presenting frames). Story battles not reached | Ran | 2026-10-19 |
-| Story scene scripts | All 621 scene files (33 to 653) decode with `story_scenes.py`; 25 episodes with 207 parts per the game's episode table; 193 parts have a map marker to their story scene and 7 go there without one (the other 7 are the unavailable episode 23) | Ran | 2026-10-19 |
-| Story scene from a marker | Episode 0 part 0, marker 14 (`BT2_START_EPISODE=0,0,marker:14`): the map hands over to scene 34, the opening cutscene, which plays without input up to its first text box; SOUNDS request `0x80` (implemented from the module's code, unit-tested) answered; 3,000 flips, nothing interpreted | Ran | 2026-10-19 |
-| Story parts without input | Episode 0 part 0: map, marker, cutscene with its text boxes, pre-battle screen, battle, "CLEAR!!", save questions answered without saving, next part's map (4,543 flips). Sample of 8 parts (episodes 0, 1, 6, 9, 13, 17, 21, 24, first part with a marker): every one reached and finished its battle, 1 cleared and 7 lost (the player's side has no input), nothing interpreted | Ran | 2026-10-19 |
-| Story sweep | All 200 parts that can be started (`story_sweep.py`, the CPU on both sides, the 3 chases reported caught): every one reached and finished its battle, 73 cleared and 127 lost, nothing interpreted; the cleared ones answered the save questions without saving | Ran | 2026-10-19 |
-| Story sweep after the load work | All 200 parts again on the build of 2026-11-02 (`story_sweep.py --jobs 6`, after the FPU, VIF1 recording and texture-name changes): every one reached and finished its battle, 70 cleared and 130 lost, nothing interpreted; 0,5 needs 25,882 flips (over the default budget, run again with 40,000; it took 23,447 in October); outcomes differ from October's in 58 parts, as the random seeds changed on 2026-10-26 and 27 | Ran | 2026-11-02 |
-| Story towns and shop | All 73 scenes optional markers lead to (`story_sweep.py --optional`): each ran to its end without input, nothing interpreted: 32 towns with their conversations and items (all seven Dragon Balls among them; the item shop: greeting, member's card, buy list, back out), 41 fights (14 cleared, 27 lost) | Ran | 2026-10-19 |
-| Menu screens explored | `menu_explorer.py`: eight main-menu screens (all but Dueling and Dragon Adventure), up to 200 button paths each (1,476 runs), each screen reaching 958 to 1,154 functions, nothing interpreted. Found: Dragon Tournament's status query of memory card port 1 (now answered as an empty port; 200 more runs without a stop) and an Evolution Z hang that comes from the starters' missing New Game unlocks (the game's own search over an all-locked character list; after a real New Game the list has unlocked characters) | Ran | 2026-10-19 |
-| New Game and Item Fusion | The starters run the title's New Game (the starting Z-items and unlocks): Evolution Z then opens as after a real New Game, and the menu explorer runs all eight screens without a stop (Evolution Z 1,064 functions). With the user's save copied in from its card folder: Item Fusion of two Support items (Master's Essence) and of a character item (item 450 owned afterwards, on a copy of the save without it), with the game's dialogue and animation; a wrong pair is refused | Ran | 2026-10-19 |
-| Battle rules, sagas and Dragon Balls | The story sweep again with each battle's record (`story_sweep.py`, all 200 parts reached their battle's end, 62 cleared and 138 lost, nothing interpreted): 187 battles with rule 0, 9 with rule 1, 1 with rule 2, 3 with rule 3 (the special sagas' battles). Saga items 392, 395, 401, 408 and 411 unlocked by the CPU's wins (411, episode 21, from a rule-3 battle); the other 18 saga rewards need wins the CPU did not get. Stage objects broke in 112 parts, an item spawned in 98, and in one (episode 13 part 3) the player's side picked up Dragon Ball 1 (lost battle, so not given). 16 CPU battles, one per stage: objects took damage on 7 stages and broke on 7 | Ran | 2026-10-19 |
-| Other modes' battles | `menu_explorer.py --buttons cross`: Ultimate Battle Z (10 crosses), Dragon Tournament (its announcer's messages, then the match, to the battle's end) and Ultimate Training (the lesson's pages, then its battle) reach their battles with the CPU on both sides; 3,629, 3,785 and 2,467 functions, no stop, nothing interpreted | Ran | 2026-10-19 |
-| Other modes past their first battle | The screen starter with cross every 120 fields and side 0 evened to the opponent's CPU level and strength: Ultimate Battle Z through its first course's fights (8 battles, 3 won, then retries against a stronger opponent; 4,453 functions), Dragon Tournament to "Champion" (4,197 functions), nothing interpreted, no stop. Ultimate Training stays in its first lesson (it waits for the player's move) | Ran | 2026-10-19 |
-| General kernel semaphores | CreateSema accepts any attr, DeleteSema any semaphore (ids reused): unit tests; the gate's 32 comparisons with the original and the battle hash unchanged; a story part (cleared, saga 411), the shop town and the Dragon Tournament (to Champion) as before, nothing interpreted | Ran | 2026-10-19 |
-| General GS reset path | CSR reset and read, GsGetIMR/GsPutIMR and SetGsCrt from any pc: unit tests (the read clear after a reset and set after the next VBlank, the previous mask returned, a later mode replacing the first, wrong mask bits and PAL refused); the gate's 32 comparisons with the original and the battle hash unchanged; a story part (cleared, saga 411), a town and the Dragon Tournament (four battles, 4,197 functions) as before, nothing interpreted | Ran | 2026-10-19 |
-| General thread calls | The startup's CreateThread, StartThread, ChangeThreadPriority, ReferThreadStatus and SuspendThread through the scheduler's handler from any pc: unit tests (the full descriptor of a created thread, main's status and priority, the root return address, the argument in a0, the startup counters); the gate's 32 comparisons with the original and the battle hash unchanged; a story part (cleared, saga 411), a town and the Dragon Tournament as before, nothing interpreted | Ran | 2026-10-19 |
-| Thread exit and deletion | ExitThread/ExitDeleteThread from a scheduled worker, DeleteThread, TerminateThread, id reuse: unit tests (the exited and the terminated workers' stacks unwound, main's exit refused); the gate's 32 comparisons and the battle hash unchanged. Not reached by a game run | Ran | 2026-10-19 |
-| Ultimate Training lessons | `screen_run.py --modes 61 --flips 90000 --down-every 400`: the 21 lessons in turn, each through its pages, practice (Movement and Dash from the pad, the rest reported by the starter) and Exit training, result bit 8, then the list again; 3,235 functions entered, nothing interpreted. Ultimate Battle Z and the Dragon Tournament through the same tool as before | Ran | 2026-10-20 |
-| Ultimate Battle Z courses and Tournament saves | `screen_run.py --modes 10,24 --flips 600000`: all 15 courses cleared in order (175 battles, 6 lost and retried; 5,191 functions entered), the Dragon Tournament past its save question through 130 matches (4,634 functions); nothing interpreted | Ran | 2026-10-20 |
-| Channel balance of the mix | `BT2_AUDIO_WAV` recordings of the boot to the title and menus, the Ultimate Battle Z screens and story episode 0: no 0.1-second stretch with one side below a ninth of the other; no one-channel stream played | Ran (the user's report not reproduced) | 2026-10-20 |
-| Texture names | `bt2-texture-names-tests` (block order, small textures, the palette at CSA, the format word, names drawn after uploads); `BT2_TEXTURE_NAMES` runs compared with the packs: pack 2 has 188 of 437 names drawn on the Ultimate Battle Z screens and a fight, 92 of 633 in a versus battle, 41 of 97 on the story map, with texture and palette hashes equal to PCSX2's; the characters' bodies match by texture hash only (their palettes are drawn by the game) | Compared with pack 2 | 2026-10-20 |
-| HD textures drawn | `BT2_HD_TEXTURES` with pack 2, Ultimate Battle Z screens and a fight (2,000 flips): 57,784 draws replaced, 159 loaded, peak 115 MB, no renderer errors; `bt2-gs-command-tests` (pieces before an upload's data and a CLUT load, joined equal to the transfer), `bt2-gpu-gs-tests` (a draw packet in pieces renders as the CPU model; DDS levels and names) | Ran; pictures in `work/frames/hd-textures/` for the user | 2026-10-20 |
-| Super-sampling | `BT2_SUPER_SAMPLING` 4 and 16 with pack 2, Ultimate Battle Z screens and a fight (2,000 flips): 1,280 × 896 pictures, no renderer errors, 27 s and 31 s | Ran; pictures in `work/frames/hd-textures/` for the user | 2026-10-20 |
-| Picture settings | `bt2-menu-tests`: `hd_textures` and `super_sampling` read back, super-sampling other than 1, 2, 4, 8, 16 refused, `data/textures` made on the first start and the pack found as the folder with `replacements` | Unit-tested (not tried by the user in the launcher) | 2026-10-20 |
-| Widescreen | `BT2_GAME_PATCHES=widescreen`: a versus fight (1,100 flips), the Ultimate Battle Z screens (2,000) and story part 0's map (2,400): wider 3D view at unchanged proportions, 2D stretched, nothing interpreted, the fight's pictures unchanged by the story map's word; window work per picture 19.5 ms as without; `bt2-game-patches-tests` (words written, originals checked, names), `test_prepare_runtime` (the `lui` rewrite, the config against the runtime's table), `bt2-menu-tests` (the setting) | Ran; pictures in `work/frames/widescreen/` for the user | 2026-10-20 |
-| Widescreen leaves the fight unchanged | The same CPU-vs-CPU battle (characters 0 and 10, stage 2) to flip 5,000 with and without `BT2_GAME_PATCHES=widescreen`: at flips 3,500, 4,000, 4,500 and 5,000 the same moves, hit counters, health bars and positions (only the view wider) | Ran (pictures compared by eye; `work/frames/widescreen/end-grid.png`) | 2026-10-20 |
-| Pictures shown on the GPU | Versus fight in the window at super-sampling 1, 4, 8, 16 and with pack 2: no errors, 30 pictures per second without HD; the window captured at 1,592 × 896 with widescreen, 16x and pack 2 shows the picture filtered at 16:9 | Ran (the window's capture looked at); not tried by the user | 2026-10-20 |
-| HD texture naming, faster | `bt2-texture-names-tests` (page-table addresses equal the sink's on 200,000 random cases; a repeated upload skipped with the name kept, changed data and a write in between written, a transfer in two pieces with a name asked between; a repeated CLUT load skipped, read again after its memory changed); the fight with pack 2 replaces the same 77,300 draws (97 loaded) as before | Unit-tested; ran | 2026-10-20 |
-| One-channel streams in both ears | `bt2-native-services-tests` (a source whose partner gets no data is one channel and heard on both sides; a partner silent for 60 fields ends a pair; the mixer gives such a voice to both sides equally); WAV recordings of a versus fight, the Ultimate Battle Z screens and story part 0: no 0.1-second stretch with one side over four times the other, left and right within 1% | Unit-tested; ran; to be confirmed by the user's listening | 2026-10-20 |
-| Resource use | Paced fight in the window: plain 0.42 processor cores, 680 MB, GPU memory 831 MB; 4x 0.43 cores, 748 MB, 1,024 MB; 16x with pack 2 and widescreen 0.55 cores, 843 MB, 1,180 MB. GPU time per frame (`BT2_GPU_TIMESTAMPS`, 1,300 frames): 5.9 ms plain (the card at low clocks), 6.4 ms at 4x, 7.7 ms at 16x, 10.1 ms with everything | Measured on the developer's PC only | 2026-10-20 |
-| 60 fps in-between pictures | `bt2-vif1-blend-tests` (lists blended, aligned by Myers' diff when unpacks differ, DIRECT and non-float words from the newer frame); `BT2_SIXTY_FPS=check`: in-between pictures drawn at blend 1 from the main renderer's kept GPU state pixel-equal to the main picture one flip later (flips 700, 999, 1,200 of a versus fight, stage 8); in the window 30 flips and 60 pictures per second, plain and with 16x, HD textures and widescreen; a player's run with the setting on and the pause test | Ran; not yet seen by the user in play | 2026-10-21 |
-| HD textures, PCSX2 names | Versus fight, stage 8, 2,000 flips with pack 2: 22.2 % of draws found (4.5 % before), mostly by the used-palette-range name; palettes drawn by the game copied after each frame give the same share as a read that waits; a body texture's exact palettes (read back) match 2 of the pack's 4 to 14 variants; the menu (Ultimate Battle Z) at 4x with the pack looked at: sharper, no seams seen; `bt2-texture-names-tests` | Ran; not yet seen by the user in play | 2026-10-21 |
-| 60 fps steadiness | `bt2-vif1-blend-tests` (a bone axis keeps its length halfway, camera cuts found); window: plain 30 flips per second with 1,269 in-between pictures shown, 188 camera cuts, 22 left out as not ready, the game waiting 14 ms in all; with HD textures 22 to 27 flips per second | Ran; not yet seen by the user | 2026-10-21 |
-| 60 fps on the async compute queue | `bt2-gpu-gs-tests` (a second renderer on the compute queue takes the kept state, draws, scans out the main renderer's picture); `BT2_SIXTY_FPS=check` pixel-exact at flips 700, 999, 1,200, 3,300 (16x, HD, widescreen); Vulkan validation with synchronization validation silent over 873 in-between pictures; without HD the in-between pictures byte-identical on both queues; window: super attack 28.23 → 29.17 flips per second | Ran; not yet seen by the user | 2026-10-26 |
-| Play test fixes | The in-game menu opened by `BT2_PAUSE_TEST` in a player's run with the user's settings (16x, HD, widescreen, 4x window): froze before, opens and closes now; a press on the Options screen first changes the picture four fields later; the window presenter's two-step stretch ran with the Vulkan validation layer without messages; floor sharpness at 4x to 16x measured equal with and without mipmaps (they were not the cause) | Ran; not yet confirmed in play | 2026-10-21 |
-| Fast forward | `bt2-menu-tests`: off after the window loses the focus, in both the held and the switched mode. Release, viewer, versus battle 4 against 70 on stage 22, 1,800 flips: 30.0 flips (59.9 fields) per second normally, 48.2 flips (96.4 fields) per second with `BT2_FAST_FORWARD` (the fight's own work, about 20 ms a flip on this machine, is the limit) | Measured (not tried by the user) | 2026-10-20 |
-| Launcher folders and screens | `bt2-menu-tests`: `data` and `saves` made once and never replaced or emptied (a file named `data` refused), disc images, cards and card images listed, the configured check (a full or relative path refused), new card names, the older cards copied once; the launcher driven by presses: Start refused without a disc, a disc image and a card moved in while their screen is open appear and are chosen, the card image cannot be chosen, the disc mark shown only with a disc and gone after its blinking. The programs from the build folder: first start made both folders, copied the two cards and showed the launcher; with the disc image hard-linked into `data` the launcher chose it; then `bt2-game` started the game without the launcher (frame 679) and `bt2-launcher` showed the launcher; the folders' files unchanged | Ran | 2026-10-19 |
-| Runtime rules for the screen starter | The scripted fight before and after the general SetVSyncFlag and INTC_STAT rules: same state on all 6,534 fields | Exact | 2026-10-19 |
-| The fight's logic against PCSX2 | Five PCSX2 sessions in the title's demo battle (`tools/pcsx2_compare/`), each call replayed in the port from PCSX2's registers, RAM and VU memory: 292 calls equal byte for byte after the SQRT.S and MOVN/MOVZ fixes, among them the whole logic step `0x102AA0` at frames 150, 450, 750, its 34 reached calls, their 148 callees, the AI's `think` at 200, 550, 900. Frames 600 to 899 of a versus battle without a gap: every replayable call of the fight loop (`0x2A8678`, `0x297978`, `0x1057F8`, the logic and draw steps), 1,459 calls equal, VU0's R register included; 41 stop at `SifSetDma` (a service boundary) | Original | 2026-11-12 |
-| The game's input delay against PCSX2 | The demo's fight as a played versus battle in both programs, a press of Cross and of d-pad up at fight frame 480 (two frames held), each compared with a run without it: the display lists change in the frame that read the press (2.0 fields after the start of the read's field) and VU1's memory a frame later (4.0 fields), the same in PCSX2 (logging sites that do not wait; its runs identical before the press) and the port. VU1 to the screen not compared | Original | 2026-11-12 |
-| Press to screen against PCSX2 | `press_to_screen.py`, the same fight, 30 unpauses a setup timed from `SendInput` to the first changed picture (screen read every 7 ms), windowed on the RX 9070 XT PC: median PCSX2 108 ms; port 104 ms with Low input lag, 111 ms at 60 fps, 133 ms without; with HD textures, 16x, widescreen and light depth of field 105 ms (30 fps, Low input lag) and 117 ms (60 fps) | Measured | 2026-11-12 |
-| Loaded data against PCSX2 | EE RAM before the first logic step of the same versus battle (fighters 8 and 120, stage index 9), PCSX2's session against the port's starter run (`loaded_data.py`): from `0x700000` up (22 MB of loaded fighters and stage) 2.7 KB differ, positions and leftovers of earlier screens, no file data; of 803 KB differing in all, 777 KB in regions explained by route, stream timing and the kernel; 23 KB of globals differ by route, not explained one by one; sticks at rest `0x7F` (PCSX2) against `0x80` (port), the fight's lists and VU1 memory the same with either in 1,427 frames | Original | 2026-11-12 |
-| VU1 against PCSX2 | The fight frame's VIF1 chain (`0x28B090`) replayed in the port from PCSX2's RAM, VU1 memories, VIF1 registers and VU1 registers: VU1's whole data memory equal to PCSX2's after the chains of frames 300, 600, 900 (microVU) and 300, 600 (PCSX2's VU1 interpreter), after the I-bit fix; `BT2_VU1_VERIFY` over 2,000 flips, 9,061,301 starts equal. GIF packets not compared | Original | 2026-11-12 |
-| GS memory against PCSX2 | Fight frame 300 of a versus battle: the frame's chain replayed in the port on PCSX2's RAM, VU, VIF1 and GS state (a save state), compared at the frame's end: every texture, palette and work-buffer word equal, Z 1 word apart; the frame's 229,376 pixels 36% equal, 63% one or two levels apart, 26 more than 16 (thin features); native passes off, 1x | Original | 2026-11-12 |
-| Frames | Demo fights, title dialogues, main and Dueling menus, character and map selection, loading screen, battle | User | 2026-10-13 |
-| Sound | A WAV of menus and a fight | User | 2026-10-13 |
-| Saves | The user's 100% save loads from a card folder | User | 2026-10-13 |
+| Fight logic and AI | Every replayable step of 300 consecutive fight frames equal to PCSX2 | Original | 2026-11-12 |
+| 3D pipeline (VU1) | VU1 memory after a fight frame's chain equal to PCSX2 | Original | 2026-11-12 |
+| Pictures (GS) | One fight frame: textures exact, picture within 1 to 2 levels | Original | 2026-11-12 |
+| Loaded data | Fighters and stage in memory equal to PCSX2 at a fight's start | Original | 2026-11-12 |
+| Input delay | Same delay in fields as PCSX2; press to screen as fast as PCSX2 | Original, Measured | 2026-11-12 |
+| Saves | A new save byte-identical to the one the original wrote in PCSX2 | Original | 2026-11-09 |
+| Startup | 42 of 46 boot comparisons pass; 31 run in every gate | Original | 2026-10-13 |
+| Films | First pictures and sound timing match | Original | 2026-10-13 |
+| Whole game reachable | All modes, 200 story parts, 73 towns, 130 fighters, 16 stages run without input | Ran | 2026-10 to 2026-11 |
+| Sound | Menus, fights and story heard by the user | User | 2026-10-13 |
+| Online | Played between two homes | User | 2026-11-09 |
+
+## Against the original (PCSX2)
+
+### How the comparison works
+
+Running both programs side by side does not work: the port loads faster, so the two drift apart within seconds.
+So the port is **started from PCSX2's own state** ([plan](../plans/validation/PCSX2_COMPARISON_PLAN.md)):
+
+1. PCSX2 runs the game with **checkpoints**: chosen calls where the game pauses while a tool copies out its memory,
+   registers, VU and VIF1 state and, when asked, a save state (GS memory).
+2. The port loads that state, runs the same function, and the results are **compared byte for byte**.
+3. Where the timing itself is the question, **logging sites** record without pausing, and a black-box tester
+   measures press to screen on the real display.
+
+Every difference is therefore the port's own, and each one found is either fixed or explained below.
+
+### Results
+
+| What | Compared | Result | Date |
+| --- | --- | --- | --- |
+| Fight logic and AI | The logic step `0x102AA0`, its 34 calls, their 148 callees, the AI's `think`; 292 calls in 5 sessions | Equal, after 3 fixes (below) | 2026-11-12 |
+| Fight logic over time | Frames 600 to 899 of a versus battle, every replayable call of the fight loop (1,500 calls) | 1,459 equal; 41 stop at the sound requests' system call (a service, compared separately) | 2026-11-12 |
+| Draw step | `0x102C40` at frames 150, 450, 750 and every 600 frames of a full battle | Equal | 2026-11-12 |
+| Loaded data | All 32 MB of memory at the first frame of the same battle | Fighters and stage (22 MB) equal but 2.7 KB of positions and leftovers; the rest explained (below) | 2026-11-12 |
+| VU1 | VU1 memory after the fight frame's VIF1 chain, frames 300, 600, 900 | Equal (16 KB), after 1 fix; also against PCSX2's VU1 interpreter | 2026-11-12 |
+| GS memory | Fight frame 300: GS memory after the frame, PCSX2's software renderer | Textures, palettes, work buffers equal; Z buffer 1 word apart; picture: 36% of pixels equal, 63% 1 to 2 levels apart, 26 of 229,376 more than 16 | 2026-11-12 |
+| Input delay in fields | A press at fight frame 480 (Cross, d-pad up) | The display lists change in the frame that read it, VU1 a frame later: same in both | 2026-11-12 |
+| Press to screen | 30 unpauses per setup, windowed, screen read every 7 ms | PCSX2 108 ms; port 104 ms (Low input lag, default), 111 ms (60 fps), 133 ms (Low input lag off); 105 and 117 ms with HD, 16x, widescreen | 2026-11-12 |
+| Saves | A new save written by the port's title New Game | Byte-identical to the original's | 2026-11-09 |
+| Startup | 46 scripts at points of the boot | 42 pass; `cri_rpc`, `second_heap`, `cri_preemption`, `spu2_initialization` fail | 2026-10-13 |
+| Films | Logo and opening films | First pictures match an independent decode; sound level, channels and timing match a PCSX2 recording | 2026-10-13 |
+
+### Faults found and fixed
+
+| Fault | Effect in the game | Fixed |
+| --- | --- | --- |
+| `SQRT.S` took the root of the wrong register (110 of 300 sites) | Wrong rotations from packed quaternions in the fight | 2026-11-12 |
+| `SQRT.S` rounded toward zero; PCSX2 rounds to nearest | Last-bit differences in the fight's floats | 2026-11-12 |
+| `MOVN`/`MOVZ` copied 128 bits instead of 64 (4,657 sites) | Upper register halves wrong after many calls | 2026-11-12 |
+| VU1: in an instruction pair that loads I, the other instruction saw the new I; it must see the old one | Triangles clipped at the screen's edges were pushed out from a wrong centre | 2026-11-12 |
+
+### Differences that remain, with their reason
+
+| Difference | Reason |
+| --- | --- |
+| Picture pixels 1 to 2 levels apart; rare larger ones on thin lines | paraLLEl-GS rounds some interpolation differently from PCSX2's software renderer (documented as not bit-exact) |
+| Memory below `0x100000` | The kernel: PCSX2 runs the BIOS's, the port answers it natively |
+| Stream and display-list buffers, stack, counters | Timing and route: the port loads faster and its starter skips the logos, films and title |
+| 23 KB of game globals | Same route difference; not explained one by one |
+| Sticks at rest `0x7F` (PCSX2) against `0x80` (port) | Each emulator's rest value; the fight is the same with either (1,427 frames compared) |
+
+### Not compared with PCSX2 yet
+
+- GS memory at fight frames with the fighters and effects in view (only frame 300, the intro's stage pan, so far).
+- Other screens' logic and pictures: menus, character select, the story map, towns.
+- The services' requests and replies after the boot (sound, CRI, card, disc).
+- Fullscreen press to screen; press to sound.
+
+## The port against itself (Exact)
+
+| Check | Result | Date |
+| --- | --- | --- |
+| **Gate**, every commit: Debug and Release builds, unit tests, Python suites, probe runs, 31 comparisons with the original, map closure, the scripted 1P-vs-COM fight against its baseline (VU1 hash `aeff76be1011da3b`) | Passed | 2026-11-12 |
+| Native services against the emulated IOP | Same stop and memory, except two regions of stale IOP bytes | 2026-10-11 |
+| Interior entries on and off; every function interpreted against compiled; the battle and screen starters' runtime rules | Same state on all 6,534 fields of the scripted fight | 2026-10-18 to 19 |
+| Native VU1 programs against the VU1 interpreter (`BT2_VU1_VERIFY`) | 9,061,301 starts equal over a 2,000-flip fight | 2026-11-12 |
+| 60 fps in-between pictures (`BT2_SIXTY_FPS=check`) | Pixel-equal to the next main picture at flips 700, 999, 1,200, 3,300 (also 16x, HD, widescreen); Vulkan validation silent | 2026-10-26 |
+| Online lockstep over loopback | 84 drift checks alike, audio byte-identical | 2026-11-04 |
+
+## Coverage runs (Ran)
+
+Each ran to its budget with no stop and nothing interpreted.
+
+| Area | What ran | Date |
+| --- | --- | --- |
+| Fighters | Characters 0 to 10 and 100 to 129 in CPU battles, 4,500 flips each (from 130 not valid) | 2026-10-18 |
+| Stages | All 16 stages, 4,500 flips each | 2026-10-19 |
+| Story | All 200 startable parts to their battle's end (70 cleared, 130 lost by the CPU); all 73 optional markers: 32 towns, the shop, 41 fights | 2026-10-19, again 2026-11-02 |
+| Story details | 621 scene scripts decode; battle rules 0 to 3, saga items 392, 395, 401, 408, 411 unlocked, objects broken in 112 parts, a Dragon Ball picked up | 2026-10-19 |
+| Main menu | All ten screens; 1,476 button paths through eight of them | 2026-10-19 |
+| Other modes | Ultimate Battle Z: all 15 courses (175 battles); Dragon Tournament to Champion and 130 matches; Ultimate Training: all 21 lessons | 2026-10-20 |
+| New Game and Item Fusion | New Game's unlocks; fusion of two items and of a character item; a wrong pair refused | 2026-10-19 |
+| Idle demo fight | Plays and returns to the title (flip 13,000) | 2026-10-18 |
+| Kernel generalizations | Semaphores, GS reset path, thread calls, thread exit: unit tests, gate comparisons and battle hash unchanged | 2026-10-19 |
+
+## Graphics and enhancements
+
+| Check | Result | Kind | Date |
+| --- | --- | --- | --- |
+| HD textures (pack 2) | 57,784 draws replaced in 2,000 flips, no renderer errors; names match PCSX2's texture and palette hashes | Ran | 2026-10-20 |
+| HD texture names, PCSX2's scheme | 22.2% of a versus fight's draws found (4.5% before) | Ran | 2026-10-21 |
+| Super-sampling 4x and 16x | 1,280 × 896 pictures, no renderer errors | Ran | 2026-10-20 |
+| Widescreen | Wider 3D view at the same proportions; the fight itself unchanged (same moves, hits, health, positions at 4 points over 5,000 flips) | Ran | 2026-10-20 |
+| 60 fps battles | 30 flips and 60 pictures a second, also with 16x, HD, widescreen | Ran | 2026-10-21 |
+| Pictures in the window | Super-sampling 1 to 16 and pack 2, no errors, 30 pictures a second | Ran | 2026-10-20 |
+| Settings | Picture, enhancement and launcher settings read back, wrong values refused | Unit-tested | 2026-10-20 |
+
+## Sound
+
+| Check | Result | Kind | Date |
+| --- | --- | --- | --- |
+| Menus and a fight | Heard and confirmed | User | 2026-10-13 |
+| Channel balance | No 0.1-second stretch with one side far below the other (boot, menus, Ultimate Battle Z, story) | Ran | 2026-10-20 |
+| One-channel streams | Heard on both sides, left and right within 1% | Unit-tested, Ran | 2026-10-20 |
+
+## Saves, launcher, online
+
+| Check | Result | Kind | Date |
+| --- | --- | --- | --- |
+| New save | Byte-identical to the original's (see above) | Original | 2026-11-09 |
+| The user's 100% save | Loads from a card folder | User | 2026-10-13 |
+| Launcher folders and screens | Folders made once and never emptied; discs and cards found; game and launcher start | Ran | 2026-10-19 |
+| Online between two homes | Connected without an open port and played | User | 2026-11-09 |
+
+## Measured performance
+
+| Measurement | Value | Date |
+| --- | --- | --- |
+| Fight speed | 29.97 flips a second with every enhancement, super attacks included | 2026-11 ([PROG.md](../PROG.md)) |
+| Processor and memory, paced fight | 0.42 cores and 680 MB plain; 0.55 cores, 843 MB with 16x, HD, widescreen | 2026-10-20 |
+| GPU time a frame | 5.9 ms plain, 7.7 ms at 16x, 10.1 ms with everything | 2026-10-20 |
+| Fast forward | 48.2 flips a second (normal 30.0) | 2026-10-20 |
+
+## Confirmed by the user
+
+- **Pictures** (2026-10-13): demo fights, title dialogues, main and Dueling menus, character and map selection,
+  the loading screen, a battle.
+- **Sound** (2026-10-13): menus and a fight.
+- **Saves** (2026-10-13): the user's 100% save loads.
+- **Online** (2026-11-09): played between two homes.
 
 ## Not validated yet
 
-- Characters 11 to 99, variants 1 to 8, other character and stage pairings (left for the final validation); the screens beyond their first page (they wait for input); the story parts after a lost battle (the next part is started on its own instead), the chase itself (reported caught), how a town's fight block starts its fight (reached, not decoded), buying in the shop (0 Zeni); Dragon Balls inside a fight and stage destruction, special sagas unlocked by a fight's condition (the user's notes).
-- 3D frames, menu frames, memory card replies and GS readback pixels against the original.
-- Writing a save; special moves and ultimates in play; live sound in play.
+- **Against PCSX2:** see "Not compared with PCSX2 yet" above.
+- **Coverage:** characters 11 to 99, variants 1 to 8, all character and stage pairings (the exhaustive battle sweep);
+  screens beyond their first page; story parts after a lost battle; the chase itself; buying in the shop; Dragon
+  Balls inside a fight; sagas unlocked by a fight's condition.
+- **In play, by the user:** special moves and ultimates, live sound in play, the second controller, Variable
+  refresh rate, beam struggles by buttons, Low input lag, the enhancements on the RX 9070 XT (see
+  [the handoff](ACTIVE_PASS.md), "Waiting for the user").

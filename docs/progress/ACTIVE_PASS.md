@@ -4,7 +4,9 @@ Updated: 2026-11-12. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it. The release package (`dist/BT2-Recomp-8227c74`) is unchanged by this pass (tools and the replay only).
+No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it.
+
+**Release package:** `dist/BT2-Recomp-2533dd6.zip` (made at the user's request when the pass ended, 2026-11-12; it carries the VU1 I-bit fix, which changes clipped triangles at the screen's edges). The older `8227c74` package was removed.
 
 Also done (the same day): step 9's first part, the game's own input delay: logging sites that do not wait (`session.py --log`, `--set`), `BT2_EE_CALL_SUMS` for the port, `input_delay.py`; a press at fight frame 480 changes the lists in its frame and VU1 a frame later in both programs (sessions `delay-base`, `delay-x480`, `delay-u480`; port runs in `work/latency/`).
 
@@ -16,7 +18,9 @@ Then step 6, VU1: the kick `0x28B090` replayed through the port's VIF1 and VU1 w
 
 Then step 7 started: save states through PINE at checkpoints (`--save-state`), `gs_memory.py` (GS.bin version 9, GS memory at 425), the replay's GIF setup and GS memory out, `gs_compare.py`; session `gs3` (fight frame 300: kick `@102ED8`, settled at the frame's end `@102F08`). Textures exact, Z 1 word, the frame within ±1 to 2 levels but 1,047 pixels.
 
-**Next:** step 7 at fight frames with the fighters, super attacks and effects (frame 300 is the intro's stage pan); the globals by route (a port run through PCSX2's route would remove them). Fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+The pass was ended by the user while a session for fight frames 900 and 1500 (`gs4`) was running; it was stopped and its partial output deleted. [VALIDATION.md](VALIDATION.md) was rewritten by topic, the PCSX2 comparison first (the user found it unreadable).
+
+**Next:** step 7 at fight frames with the fighters, super attacks and effects (frame 300 is the intro's stage pan; the `gs4` session's command is the one under "How to run", with `--site "@102ED8:900:2:600" --site "@102F08:900:2:600"`); the globals by route (a port run through PCSX2's route would remove them). Fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 
