@@ -12,6 +12,7 @@
 #include "services/devices/pad_script.h"
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,29 @@ void setSwitch(const char* name,const char* value) {
     // Both the C library's copy and the process's (BT2_CARD_FOLDER is read with GetEnvironmentVariableW).
     if(_putenv_s(name,value?value:"") || (!SetEnvironmentVariableA(name,value) && value))
         throw std::runtime_error(std::string("Online session: cannot set ")+name);
+}
+
+// The session ended under a player's game (the other player left or fell silent, the games went apart): the reason goes to
+// the log, where the launcher reads it ("ended: Online session: ...", game_main.cpp) and shows it on its online page, and
+// over the game's last picture for two seconds; then the game ends at once, at this field. Before, the end was thrown
+// through the running game: the window was held open frozen until closed, and the shutdown that followed the unwinding
+// could wait forever on the graphics device (the user, 2026-11-12: the game stuck after the other player left).
+[[noreturn]] void endForPlayer(const std::string& reason) {
+    std::cerr<<"Online battle ended: "<<reason<<std::endl;
+    std::string text=reason.starts_with("Online session: ")?reason.substr(16):reason;
+    if(!text.empty())text[0]=char(std::toupper(static_cast<unsigned char>(text[0])));
+    online.player->onlineStatus(text,true);
+    for(const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(2);std::chrono::steady_clock::now()<until;)
+        online.player->pumpWindow();
+    std::exit(PlayerSession::online_ended_exit_code);
+}
+// Runs a session step; in a player's game the session's end ends the game (endForPlayer), in a tool run it is thrown.
+template<class Step> auto sessionStep(Step step) {
+    try {return step();}
+    catch(const std::runtime_error& error) {
+        if(!online.player || !std::string_view(error.what()).starts_with("Online session: "))throw;
+        endForPlayer(error.what());
+    }
 }
 
 // This side as the internet sees it: STUN and IPv6 on the session's socket; the router's UPnP answer for IPv4 when STUN
@@ -247,7 +271,7 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
         if(seconds>=0.25)online.player->menuWhileWaiting();
     };
     online.player=player;online.pacer=pacer;
-    if(player)player->online_keep_alive=[]{online.session->keepAlive();};
+    if(player)player->online_keep_alive=[]{sessionStep([]{online.session->keepAlive();});};
     // STUN in a player's game (its codes need the internet address), or with BT2_NET_STUN=1 in a tool run.
     const bool stun=(window && input) || (std::getenv("BT2_NET_STUN") && std::string_view(std::getenv("BT2_NET_STUN"))=="1");
     online.transport=address.host?hostUdp(address.port,stun):joinUdp(address.targets,stun);
@@ -263,8 +287,6 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
     std::cerr<<"Online session: connected as player "<<(address.host?1:2)<<", input delay "<<online.session->delay()<<" fields, round trip "
              <<int(online.session->roundTripMs())<<" ms"<<(online.upnp?", UPnP: "+std::string(online.upnp->state()==UpnpPort::State::Opened?"opened":online.upnp->failure()):std::string())<<std::endl;
     if(window)window->attention();
-    // Leaving tells the other player before anything else ends (the renderer's ending can take a while).
-    std::atexit([]{if(online.session)online.session->leave();});
     // The local controller: the player's (live), or BT2_PAD_SCRIPT counted in fields as DualShock2 counts them.
     std::function<PadInput()> local=runtime.on_pad_input;
     if(!local) {
@@ -279,7 +301,12 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
     runtime.hash_service_requests=true;
     // Port 2 is asked first each field (pad_service.cpp): the exchange happens there.
     runtime.on_pad2_input=[&runtime,local] {
-        online.ports=online.session->field(local(),runtime.service_request_hash);
+        // Leaving tells the other player before anything else ends (the renderer's ending can take a while): registered at
+        // the first field, after the renderers' objects exist, so it runs before their destructors (the last registered
+        // runs first). Registered with the session, it ran after them, and the other player waited seconds to learn of it.
+        static const bool leave_first=(std::atexit([]{if(online.session)online.session->leave();}),true);
+        (void)leave_first;
+        online.ports=sessionStep([&]{return online.session->field(local(),runtime.service_request_hash);});
         afterField();
         return online.ports[1];
     };

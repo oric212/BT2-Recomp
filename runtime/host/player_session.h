@@ -17,6 +17,7 @@ class PlayerSession {
 public:
     static constexpr int launcher_exit_code=2; // The player chose "Quit to the launcher".
     static constexpr int title_exit_code=3;    // The player chose "Return to the title screen": the game program starts the game again.
+    static constexpr int online_ended_exit_code=4; // The online session ended by itself (the other player left): its reason is in the log.
     Settings settings;
     // An online battle (BT2_NET): the game cannot run fast on one side only, so there is no fast forward; the in-game
     // menu is the online one (Resume, End online battle), during which `online_keep_alive` keeps the session going.
@@ -120,6 +121,8 @@ public:
     }
     // An online battle's line beside the frame rate (the connection, or a wait for the other player); `now`: shown at
     // once over the last picture, for a game that stands still meanwhile.
+    // Keeps the window answering while the game stands still (the online session's end).
+    void pumpWindow() {window_.pump();Sleep(10);}
     void onlineStatus(std::string text,bool now) {
         if(text==online_status_ && !now)return;
         online_status_=std::move(text);

@@ -64,8 +64,11 @@ public:
     // The root mean square colour difference (0 to 255) beyond which a variant is not drawn. An approximate
     // lighting is accepted (the user, 2026-10-26): measured in a fight, half the palettes are within 9 of a
     // variant, 95 % within 40; the few far beyond (up to about 240) are flashes and fades whose nearest
-    // variant is another look altogether, and stay original.
-    static constexpr float variant_limit=48.0f;
+    // variant is another look altogether, and stay original. Raised from 48 (2026-11-12, the user: fighters popping
+    // in and out, not always sharp): in a two-player fight Kid Gohan's face detail is lit brighter than any of the
+    // pack's four variants (50.2 and 51.6 from the nearest, the same art a little lighter) and stayed original in a
+    // third of its draws, switching with the HD face from frame to frame.
+    static constexpr float variant_limit=64.0f;
     unsigned variants_chosen=0,variants_too_far=0; // Palettes given a variant, and left original.
     // Draws left original: a drawn palette the game overwrote later in the frame, before a copy of it as drawn came back
     // (gs_texture_names.h).

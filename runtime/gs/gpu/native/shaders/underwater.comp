@@ -1,0 +1,151 @@
+#version 450
+// Native pass "underwater" (runtime/gs/gpu/native/underwater.cpp): the picture under water drawn back through the
+// game's wave from the frame's own samples instead of the game's copy at half height. GS memory as paraLLEl-GS holds
+// it: per 32-bit word the resolved value, the super-sample reference one plane later and sample s at plane s + 2.
+// Mode 0 copies the frame's samples into `source` (the strips overwrite the frame they read); mode 1 draws each sample
+// of the strips: its texture coordinates in the half-height copy, held to the copy's region as the game clamps them,
+// then the same place of the frame, (u, 2v) (row y of the copy is the average of frame rows 2y and 2y + 1), read
+// bilinearly from the copied samples, modulated by the strips' colour. Samples are kept only while they differ, and
+// resolved as the renderer averages them.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) buffer GSMemory { uint words[]; };
+layout(set = 0, binding = 1, std430) buffer Source { uint source[]; };
+struct Triangle
+{
+	ivec4 x, y;  // Vertices in 1/16 pixels (w: 1 for a parallelogram, the fourth corner opposite vertex 0).
+	vec4 u, v;   // Texture coordinates in texels.
+};
+layout(set = 0, binding = 2, std430) readonly buffer Triangles { Triangle triangles[]; };
+
+layout(push_constant) uniform Pass
+{
+	uint block;        // The frame's base pointer in 64-word blocks.
+	uint width;        // Its width in 64-pixel units.
+	uint plane;        // Words per plane of GS memory.
+	uint side;         // Samples per pixel along each axis (2 or 4).
+	uvec2 size;        // The frame's area in pixels (from 0, 0).
+	uint mode;         // 0: copy the samples; 1: draw.
+	uint count;        // Triangles.
+	vec2 region;       // The copy's last texel (MAXU, MAXV); its first is 0, 0.
+	uint colour;       // The strips' colour (RGBA8).
+	uint pad;
+} pass;
+
+uint ct32_word(uvec2 p)
+{
+	uint bx = (p.x & 63u) >> 3u, by = (p.y & 31u) >> 3u;
+	uint block = (bx & 1u) | ((by & 1u) << 1u) | ((bx & 2u) << 1u) | ((by & 2u) << 2u) | ((bx & 4u) << 2u);
+	uint px = p.x & 7u, py = p.y & 7u;
+	uint pixel = (px & 1u) | ((py & 1u) << 1u) | ((px & 6u) << 1u) | ((py & 6u) << 3u);
+	return (pass.block * 64u + ((p.y >> 5u) * pass.width + (p.x >> 6u)) * 2048u + block * 64u + pixel) & 0xFFFFFu;
+}
+
+// Sample s's place in the pixel as the renderer lays it out (bits 0 and 2 are y, bits 1 and 3 are x), in samples.
+uvec2 sample_place(uint s)
+{
+	return uvec2(((s >> 1u) & 1u) | ((s >> 2u) & 2u), (s & 1u) | ((s >> 1u) & 2u));
+}
+
+vec4 source_at(ivec2 g)
+{
+	ivec2 last = ivec2(pass.size * pass.side) - 1;
+	g = clamp(g, ivec2(0), last);
+	return unpackUnorm4x8(source[uint(g.y) * pass.size.x * pass.side + uint(g.x)]);
+}
+
+// The strips' texture coordinates at p (1/16 pixels); false where no strip covers it.
+bool coordinates(ivec2 p, out vec2 uv)
+{
+	vec2 q = vec2(p);
+	for (uint n = 0u; n < pass.count; n++)
+	{
+		Triangle t = triangles[n];
+		vec2 a = vec2(t.x.x, t.y.x), e1 = vec2(t.x.y, t.y.y) - a, e2 = vec2(t.x.z, t.y.z) - a;
+		float det = e1.x * e2.y - e1.y * e2.x;
+		if (det == 0.0)
+			continue;
+		vec2 d = q - a;
+		float b = (d.x * e2.y - d.y * e2.x) / det, c = (e1.x * d.y - e1.y * d.x) / det;
+		const float slack = -1e-4;
+		bool inside = t.x.w != 0 ? (b >= slack && c >= slack && b <= 1.0 - slack && c <= 1.0 - slack)
+		                         : (b >= slack && c >= slack && b + c <= 1.0 - slack);
+		if (!inside)
+			continue;
+		uv = vec2(t.u.x, t.v.x) + b * vec2(t.u.y - t.u.x, t.v.y - t.v.x) + c * vec2(t.u.z - t.u.x, t.v.z - t.v.x);
+		return true;
+	}
+	return false;
+}
+
+void main()
+{
+	uvec2 pixel = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(pixel, pass.size)))
+		return;
+	uint i = ct32_word(pixel);
+	uint samples = pass.side * pass.side;
+	if (pass.mode == 0u)
+	{
+		bool multi = words[i + pass.plane] == ~0u;
+		for (uint s = 0u; s < samples; s++)
+		{
+			uvec2 g = pixel * pass.side + sample_place(s);
+			source[g.y * pass.size.x * pass.side + g.x] = multi ? words[i + (s + 2u) * pass.plane] : words[i];
+		}
+		return;
+	}
+	bool multi = words[i + pass.plane] == ~0u;
+	uint v[16];
+	bool any_drawn = false;
+	vec4 tint = unpackUnorm4x8(pass.colour) * 255.0;
+	for (uint s = 0u; s < samples; s++)
+	{
+		uvec2 place = sample_place(s);
+		v[s] = multi ? words[i + (s + 2u) * pass.plane] : words[i];
+		vec2 uv;
+		if (!coordinates(ivec2(pixel * 16u + place * (16u / pass.side)), uv))
+			continue;
+		any_drawn = true;
+		// The copy's texel space, held to its region as the game's REGION_CLAMP holds the bilinear read; then the frame's.
+		vec2 texel = clamp(uv - 0.5, vec2(0.0), pass.region);
+		vec2 frame = vec2(texel.x + 0.5, 2.0 * texel.y + 1.0);
+		// Sample j lies at j / side of a pixel: the frame position in samples.
+		vec2 g = frame * float(pass.side);
+		ivec2 g0 = ivec2(floor(g));
+		vec2 f = g - vec2(g0);
+		vec4 c = mix(mix(source_at(g0), source_at(g0 + ivec2(1, 0)), f.x),
+		             mix(source_at(g0 + ivec2(0, 1)), source_at(g0 + ivec2(1, 1)), f.x), f.y) * 255.0;
+		// MODULATE with the colour clamped (COLCLAMP); the alpha is the strips' (TCC 0).
+		uvec3 rgb = min(uvec3(round(c.rgb)) * uvec3(tint.rgb) >> 7u, uvec3(255u));
+		v[s] = rgb.r | (rgb.g << 8u) | (rgb.b << 16u) | (uint(tint.a) << 24u);
+	}
+	if (!any_drawn)
+		return;
+	bool differ = false;
+	for (uint s = 1u; s < samples; s++)
+		differ = differ || v[s] != v[0];
+	if (!differ)
+	{
+		words[i] = v[0];
+		words[i + pass.plane] = 0u;
+		return;
+	}
+	vec4 sum[16];
+	for (uint s = 0u; s < samples; s++)
+	{
+		words[i + (s + 2u) * pass.plane] = v[s];
+		sum[s] = unpackUnorm4x8(v[s]);
+	}
+	// The renderer's resolve: sums of samples a half, a quarter ... of the samples apart, as sample 0 sees them.
+	for (uint stride = samples >> 1u; stride >= 1u; stride >>= 1u)
+	{
+		vec4 next[16];
+		for (uint s = 0u; s < samples; s++)
+			next[s] = sum[s] + sum[s ^ stride];
+		for (uint s = 0u; s < samples; s++)
+			sum[s] = next[s];
+	}
+	words[i] = packUnorm4x8(sum[0] / float(samples));
+	words[i + pass.plane] = ~0u;
+}

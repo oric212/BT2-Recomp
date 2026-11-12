@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
+- **2026-11-12 — after the user's online match** ([history](progress/2026-11.md)): leaving an online battle no longer leaves the game stuck (the other player's leaving ends the game at once, with the reason on the launcher's online page); fighters' faces stay HD where the game lights them brighter than the pack's variants; under water on Namek the picture keeps its super-sampled detail (native pass `underwater`). The "press O to recover" prompt online: the game decides it the same way on both machines and the port draws it in every picture tested; waiting for the user's details.
 - **2026-11-12 — GS memory and the picture against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): the fight frame's chain replayed on PCSX2's GS state (from a save state) leaves every texture, palette and work-buffer word as PCSX2's; the Z buffer differs in 1 word; the frame's pixels are 36% equal and 63% one or two levels apart (paraLLEl-GS's rounding against PCSX2's software renderer), 26 of 229,376 more than 16 levels apart (rain streaks, edges).
 - **2026-11-12 — VU1 equal to PCSX2 after a frame's chain; a VU1 fault fixed** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 6): the fight's VIF1 chain replayed from PCSX2's state (VIF1's and VU1's registers taken from PCSX2) leaves VU1's whole data memory equal to PCSX2's at frames 300, 600 and 900. Found on the way: an I-bit pair's upper instruction must read the I before the pair; the port's reading pushed clipped triangles out from a wrong centre.
 - **2026-11-12 — loaded data against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 5): at the first frame of the same versus battle, the loaded fighters and stage (22 MB from `0x700000`) equal PCSX2's but for 2.7 KB of positions and leftovers; the rest differs by route (the port's starter skips the title), the streams' timing and the kernel. Sticks rest at `0x80` in the port, `0x7F` in PCSX2; the fight is the same with either (1,427 frames).
@@ -40,7 +41,8 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 - **The destroyed Namek still flickers** at 60 fps after the lava fix ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
 - **Frieza over the ocean with HD:** a doubled outline, broken lines, blocky water ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md)).
-- **Characters under water** drawn without HD textures (same plan).
+- **Characters under water** drawn without HD textures (same plan); the low resolution under water is fixed (2026-11-12).
+- **"Press O to recover" not always shown online** (the user, 2026-11-12): no port fault found ([online plan](plans/online/ONLINE_BATTLE_PLAN.md)); which fighters, attack and side?
 - A texture glitch in the first HD fight (not reproduced headless).
 
 ## Waiting for the user's play

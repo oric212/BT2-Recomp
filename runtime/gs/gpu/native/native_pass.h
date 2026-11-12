@@ -43,3 +43,5 @@ bool fighters(const NativeRenderPass& pass,NativeContext& context);
 bool dofWeightDraw(const ParallelGS::RegisterState& registers); // dof_weight.cpp
 bool dofWeight(const NativeRenderPass& pass,NativeContext& context);
 std::uint32_t dofStrength(); // In 256ths of the game's weights (dof_weight.cpp).
+bool underwaterDraw(const ParallelGS::RegisterState& registers); // underwater.cpp
+bool underwater(const NativeRenderPass& pass,NativeContext& context);

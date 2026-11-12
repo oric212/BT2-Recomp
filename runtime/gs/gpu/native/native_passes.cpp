@@ -27,6 +27,9 @@ constexpr std::array passes{
     // The depth of field's weights scaled by the user's setting "Depth of field" (docs/plans/graphics/IMAGE_QUALITY_PLAN.md
     // step 5b); at the game's strength the renderer draws the pass.
     NativePass{"dof-weight",NativePass::WithLighterDof,dofWeightDraw,dofWeight},
+    // The picture under water drawn back through the game's wave from the frame's samples instead of its half-height copy
+    // (underwater.cpp); with super-sampling only, on (the user, 2026-11-12: the underwater render low resolution).
+    NativePass{"underwater",NativePass::On,underwaterDraw,underwater},
 };
 
 // BT2_NATIVE_PASSES: the passes named (comma-separated), "none", or without it those on by default; names written

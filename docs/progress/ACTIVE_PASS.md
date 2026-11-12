@@ -4,7 +4,9 @@ Updated: 2026-11-12. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it.
+No pass is open. Last done (2026-11-12, late): the user's reports after an online match ([November history](2026-11.md), last entry): the game no longer sticks when the other player leaves (exit code 4, the reason on the launcher's online page); the HD lit-variant limit 48 to 64 (fighters' faces popping); the native pass `underwater` (Namek's under-water picture from the frame's samples). The recovery prompt online: no port fault found, waiting for the user's details.
+
+Before that, the same day: Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it.
 
 **Release package:** `dist/BT2-Recomp-2533dd6.zip` (made at the user's request when the pass ended, 2026-11-12; it carries the VU1 I-bit fix, which changes clipped triangles at the screen's edges). The older `8227c74` package was removed.
 
@@ -24,6 +26,7 @@ The pass was ended by the user while a session for fight frames 900 and 1500 (`g
 
 ## Waiting for the user
 
+- **From the pass after the online match (2026-11-12):** their look at the under-water picture on Namek (`work/frames/underwater/cmp-fix.png`, before and after) and whether characters under water now look HD; fighters' sharpness online; leaving an online battle (the other side's game should end within seconds, the launcher saying why); for "press O to recover": which fighters, attack and side when it was missing.
 - **Open reports, documented only:** the destroyed Namek still flickers at 60 fps after the lava fix: what, when, with 60 fps only? ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md), "Still present for the user"); Frieza over the ocean with HD: a doubled outline, broken lines, blocky water, the user suspects the HD streaming ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md), picture in `work/frames/hd-textures/`); characters under water not in HD (same plan); a texture glitch in the first HD fight.
 - **In play, with the release package:** online on two PCs (lock-on from "FIGHT!", the connect screen, pausing; guide `docs/guides/release/ONLINE_SETUP.md`); Low input lag (60 fps fights or quicker 30 fps ones); on the RX 9070 XT the HD faces and the fade; Variable refresh rate, beam struggles by buttons, the second controller; distant fighters' sharpness (a PCSX2 picture of the expected look).
 - **Their decisions:** responsiveness step 7; a matchmaking server, rollback, publishing.

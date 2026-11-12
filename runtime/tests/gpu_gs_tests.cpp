@@ -287,6 +287,53 @@ void nativeGlow(GpuGsBackend& gpu) {
     require(largest<=16,"the same picture within one filter step");
 }
 
+// The picture under water (native pass "underwater"): the frame (512 x 448) copied into a buffer half as tall by a
+// bilinear sprite and drawn back by a triangle strip, as BT2 does on Namek, here without the game's wave or tint. The
+// frame's rows alternate white and black: through the copy each pair of rows becomes grey (the renderer); the pass reads
+// the frame's own samples, so the strip gives the rows back exactly. Not at 1x.
+void nativeUnderwater(GpuGsBackend& gpu) {
+    auto require=[](bool ok,const char* what){if(!ok)throw std::runtime_error(std::string("Native underwater: ")+what);};
+    const auto passes=[](const char* value) {
+#ifdef _WIN32
+        _putenv_s("BT2_NATIVE_PASSES",value);
+#else
+        setenv("BT2_NATIVE_PASSES",value,1);
+#endif
+    };
+    passes("none");GpuGsBackend emulated;emulated.initShared(gpu,16);
+    passes("underwater");GpuGsBackend native;native.initShared(gpu,16);GpuGsBackend single;single.initShared(gpu,1);
+    passes("");
+    const auto xy=[](unsigned x,unsigned y){return std::uint64_t(x*16)|(std::uint64_t(y*16)<<16);};
+    const std::uint64_t frame=0|(8ull<<16),copy=0x150|(8ull<<16); // Page 0 and block 0x2a00, both 512 wide, PSMCT32.
+    const std::uint64_t tex0_frame=0|(8ull<<14)|(9ull<<26)|(9ull<<30),tex0_copy=0x2a00|(8ull<<14)|(9ull<<26)|(9ull<<30);
+    std::vector<std::pair<std::uint64_t,std::uint64_t>> writes={{0x1A,1},{0x18,0},{0x40,0x01BF000001FF0000ULL},{0x4C,frame},
+        {0x4E,2|(1ull<<32)},{0x47,0x30000},{0x46,1},{0x00,6},{0x01,0x80000000},{0x05,xy(0,0)},{0x05,xy(512,448)},{0x01,0x80FFFFFF}};
+    for(unsigned y=0;y<448;y+=2)writes.insert(writes.end(),{{0x05,xy(0,y)},{0x05,xy(512,y+1)}});
+    // The copy: one bilinear sprite of the whole frame into 512 x 224, held to the frame (REGION_CLAMP to 512 and 448).
+    writes.insert(writes.end(),{{0x4C,copy},{0x40,0x00DF000001FF0000ULL},{0x06,tex0_frame},{0x14,0x60},{0x08,0x7000080000aULL},
+        {0x00,6|(1u<<4)|(1u<<8)},{0x01,0x80808080},{0x03,xy(0,0)},{0x05,xy(0,0)},{0x03,xy(512,448)},{0x05,xy(512,224)}});
+    // Drawn back over the frame by one strip, the copy held to 512 and 224 as the game holds it.
+    writes.insert(writes.end(),{{0x4C,frame},{0x40,0x01BF000001FF0000ULL},{0x06,tex0_copy},{0x08,0x3800080000aULL},
+        {0x00,4|(1u<<4)|(1u<<8)},{0x01,0x80808080},{0x03,xy(0,0)},{0x05,xy(0,0)},{0x03,xy(512,0)},{0x05,xy(512,0)},
+        {0x03,xy(0,224)},{0x05,xy(0,448)},{0x03,xy(512,224)},{0x05,xy(512,448)},
+        {0x00,6},{0x4C,0x10|(1ull<<16)},{0x40,0x003F0000003F0000ULL},{0x01,0},{0x05,xy(0,0)},{0x05,xy(1,1)}});
+    const auto draw=packet(writes);
+    for(auto* r:{&emulated,&native,&single})r->transfer(draw);
+    const auto e=emulated.readVram();
+    const std::vector<std::uint32_t> expected(e.begin(),e.end());
+    const auto n=native.readVram();
+    require(native.nativePassSummary()=="Native passes: underwater 1" && emulated.nativePassSummary().empty(),"the pass ran with super-sampling only where asked");
+    single.readVram();
+    require(single.nativePassSummary().empty(),"not at 1x");
+    const auto at=[](std::span<const std::uint32_t> vram,unsigned x,unsigned y){return vram[GsCommandSink::ct32Word(0,8,x,y)];};
+    const std::uint32_t grey=at(expected,100,100)&0xFFu;
+    require(grey>0x60 && grey<0xA0 && (at(expected,100,101)&0xFFu)>0x60,"the renderer's copy greys the rows");
+    for(unsigned y=2;y<440;y+=37)for(unsigned x=3;x<512;x+=61) {
+        const std::uint32_t want=(y%2?0x000000u:0xFFFFFFu)|0x80000000u;
+        if(at(n,x,y)!=want)throw std::runtime_error("Native underwater: the frame's rows drawn back as they were");
+    }
+}
+
 // A 24-bit host-to-local upload (PSMCT24) as BT2 fades into a fight: 512 x 224 at block 0x1c00, 3 bytes a pixel. On the
 // GS each pixel's colour goes into the low three bytes of its 32-bit word and the top byte is kept. paraLLEl-GS
 // unpacks it on the GPU (vram_copy.comp); its 3-byte vector loads and stores came out striped on an RX 9070 XT
@@ -369,8 +416,9 @@ int main() try {
     nativeAlphaFill(gpu);
     nativeInkEdges(gpu);
     nativeGlow(gpu);
+    nativeUnderwater(gpu);
     ct24Upload(gpu);
     hdTexturePackLoading(gpu); // Last: the pack stays on the renderer.
-    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory and the glow the same picture; a 24-bit upload keeps each word's top byte; HD textures load on their thread\n";
+    std::cout<<"GPU GS draws the sprite and the strip as expected; a second renderer on the compute queue takes the kept state and scans out the same picture; the native alpha fill and ink edges leave the same GS memory and the glow the same picture; the underwater pass draws the frame back from its own samples; a 24-bit upload keeps each word's top byte; HD textures load on their thread\n";
     return 0;
 } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

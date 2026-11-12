@@ -123,7 +123,11 @@ std::string lastLines(const fs::path& log,unsigned count) {
 // Why an online battle ended: the runtime's "Online session: ..." stop, without its prefix; empty for other stops.
 std::string onlineReason(const fs::path& log) {
     std::ifstream in(log);std::string line,reason;
-    while(std::getline(in,line))if(const auto at=line.find("failed: Online session: ");at!=std::string::npos)reason=line.substr(at+24);
+    for(const std::string_view stop:{"failed: Online session: ","ended: Online session: "}) {
+        in.clear();in.seekg(0);
+        while(std::getline(in,line))if(const auto at=line.find(stop);at!=std::string::npos)reason=line.substr(at+stop.size());
+        if(!reason.empty())break;
+    }
     if(!reason.empty())reason[0]=char(std::toupper(static_cast<unsigned char>(reason[0])));
     return reason.empty()?reason:reason+".";
 }

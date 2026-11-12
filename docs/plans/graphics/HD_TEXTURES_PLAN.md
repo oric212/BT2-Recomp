@@ -116,6 +116,9 @@ Reported only; not investigated yet. The user's screenshot (kept locally, `work/
 
 Reported only; not investigated yet. With HD textures on, a fighter under water (on the stages with water a fighter can dive into) is drawn with the original textures, not the pack's.
 
+- **Likely the same as the low resolution under water (2026-11-12, to confirm with the user):** on Namek (stage 14) the game draws the whole picture under water back from a copy half as tall, which with super-sampling kept none of the frame's samples: HD fighters came back at 512 x 224 and looked like the original. The native pass `underwater` ([hybrid rendering plan](HYBRID_RENDERING_PLAN.md), step 3b) now draws it from the frame's samples. If the user still sees original textures under water, the checks below apply.
+- **Lit variants (2026-11-12):** the limit for a lit variant rose from 48 to 64: in a two-player fight Kid Gohan's face detail is lit 50 to 52 from the pack's nearest variant (the same art a little lighter) and stayed original in a third of its draws, popping against the HD face (the user: fighters not always sharp).
+
 - **Not known:** whether every fighter or some, all of the body or parts; whether it lasts while under water or the replacements come back after a moment; which stage; whether PCSX2 with the same pack shows them in HD there.
 - **A possibility to check, not a finding:** the game may draw a fighter under water differently (other palettes for the water's tint, or the body drawn through a copy), so the names the pack is looked up by would differ from those above water.
 - **First checks when taken up:** a fight on a water stage headless with `BT2_HD_TEXTURES` and `BT2_TEXTURE_NAMES`, a fighter under water: which names its draws get and whether the pack holds them (or a lit variant), and the run's HD line; pictures in `work/frames/hd-textures/`.
