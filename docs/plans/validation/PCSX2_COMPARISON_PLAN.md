@@ -132,8 +132,24 @@ frames 150, 450 and 750 (about 10,000 words written each), its 34 reached calls,
 scripted fight goes slightly differently (VU1 hash rerecorded; the same VU1 work). Not reached by the title's demo
 battle: 7 of the step's calls (`0x102B58` to `0x102BA0`) and other fight loop `0x102F30`.
 
-**Next:** the remaining steps of the fight frame (`0x102C40`, the draw builders), then a scripted fight with super
-attacks and a stage destroyed (step 2's other half, needing the pad hook), then step 3.
+**The rest of the fight frame (2026-11-12, later):** the draw step `0x102C40` equal at frames 150, 450 and 750
+(16,000 to 30,000 words of the frame's lists each) and its 16 reached calls. The fight loop's other calls: three
+equal (`0x2A8678`, `0x297978`, `0x1057F8`); four stop at their boundary, by design: `0x2711A0` and `0x28B090`
+(hardware registers), `0x28BDA0` (the pad read's system call), `0x2711E8` (the frame end's VBlank wait). These are
+the services' and timing steps' to compare.
+
+**Steering a session:** sites at a function's entry (`%<function>`, any caller: the demo picker is in the overlay)
+and `--edit` (registers changed at a checkpoint; the stub loads them back). `battle_set` (`0x101A60`) given the
+versus kind (`a0=0, a2=0, a3=1`, as the port's starter) makes the title's demo a full battle. PCSX2's null renderer
+stopped at an assertion (`IsCoverageAlphaSupported`, a dialog) once that battle drew; sessions use the software
+renderer now. The fighters stay the demo's (the picker also passes three of its character's values on the stack).
+
+**A full versus battle (2026-11-12):** the demo turned into a versus battle by `--edit` ran to its K.O. in PCSX2
+(seen by the user: won, then the after-battle screen waiting for player 1). The logic and draw steps every 600
+frames from 600 to 6,000: all 20 equal (3,000 to 45,000 words written each). Sessions end with `--until SITE` and
+minimize PCSX2's window (the software renderer shows one).
+
+**Next:** trajectories (step 3: consecutive frames), the input lag (step 9), loaded data (step 5).
 
 ## Unknowns
 

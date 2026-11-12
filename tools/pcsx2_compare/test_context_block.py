@@ -32,12 +32,12 @@ class Machine:
         if address == SLOT + cb.DATA + cb.MARK and data != bytes(4):
             self.host(self, struct.unpack('<I', data)[0])
 
-    def run(self):
+    def run(self, body=TARGET, stop=RESUME):
         pc, after = SLOT, None
         for _ in range(100000):
-            if pc == RESUME:
+            if pc == stop:
                 return
-            if pc == TARGET:
+            if pc == body:
                 self.calls += 1
                 self.gpr[2], self.gpr[24], self.gpr[25] = self.calls, 0xDEAD, 0xBEEF
                 pc = self.gpr[31]
@@ -57,10 +57,16 @@ class Machine:
                 self.gpr[rt] = (self.gpr[rs] + simm) & 0xFFFFFFFF
             elif op == 0x23:
                 self.gpr[rt] = struct.unpack_from('<I', self.mem, ea - SLOT)[0]
+            elif op == 0x1E:
+                self.gpr[rt] = int.from_bytes(self.mem[ea - SLOT:ea - SLOT + 16], 'little')
+            elif op == 0x31:
+                self.fpr[rt] = struct.unpack_from('<I', self.mem, ea - SLOT)[0]
+            elif op == 0 and w & 63 == 8:
+                jump = self.gpr[rs]
             elif op == 0x2B:
                 self.store(ea, struct.pack('<I', self.gpr[rt] & 0xFFFFFFFF))
             elif op == 0x3F:
-                self.store(ea, struct.pack('<Q', self.gpr[rt]))
+                self.store(ea, struct.pack('<Q', self.gpr[rt] & 0xFFFFFFFFFFFFFFFF))
             elif op == 0x1F:
                 self.store(ea, self.gpr[rt].to_bytes(16, 'little'))
             elif op == 0x39:
@@ -145,6 +151,47 @@ class StubTests(unittest.TestCase):
         self.assertEqual(before['fcr31'], 0x5A5A)
         self.assertEqual(before['vi'][15], 115)
         self.assertEqual(before['vf'][9], '09' * 16)
+
+    def test_the_host_changes_arguments_and_results(self):
+        image = cb.stub_words(SLOT, TARGET, DELAY, RESUME, 0, True)
+        seen = []
+
+        def host(machine, mark):
+            base = cb.DATA + cb.BLOCK
+            seen.append((mark, machine.gpr[4], machine.calls))
+            register = 4 if mark == cb.MARK_BEFORE else 2       # a0 before the call, v0 after it
+            machine.mem[base + cb.GPRS + 16 * register:base + cb.GPRS + 16 * register + 8] = struct.pack('<Q', 0x77)
+            struct.pack_into('<I', machine.mem, cb.DATA + cb.SKIP, cb.NEVER)
+            struct.pack_into('<I', machine.mem, cb.DATA + cb.MARK, 0)
+
+        machine = Machine(image, host)
+        machine.gpr[31] = 0x12345678
+        machine.run()
+        self.assertEqual([m for m, _, _ in seen], [1, 2])
+        self.assertEqual(machine.gpr[4] & 0xFFFFFFFF, 0x77)            # the call saw the changed argument
+        self.assertEqual(machine.gpr[2] & 0xFFFFFFFF, 0x77)            # and the caller the changed result
+
+    def test_function_entry(self):
+        # The function's first words (addiu sp,sp,-16; daddu a2,a0,zero) run in the stub, then target + 8; with
+        # `after` the function returns into the stub, which returns to the caller's ra.
+        entry = [0x27BDFFF0, 0x0080302D]
+        for want_after, marks in ((True, [1, 2]), (False, [1])):
+            image = cb.stub_words(SLOT, TARGET, 0, TARGET + 8, 0, want_after, entry=entry)
+            seen = []
+
+            def host(machine, mark):
+                seen.append(mark)
+                struct.pack_into('<I', machine.mem, cb.DATA + cb.SKIP, cb.NEVER)
+                struct.pack_into('<I', machine.mem, cb.DATA + cb.MARK, 0)
+
+            machine = Machine(image, host)
+            machine.gpr[31] = 0x00400000
+            machine.run(body=TARGET + 8, stop=0x00400000)
+            self.assertEqual(seen, marks)
+            self.assertEqual((machine.calls, machine.gpr[29], machine.gpr[6]), (1, 0x01FFF000 - 16, 2))
+            self.assertEqual(machine.gpr[31], 0x00400000)
+        with self.assertRaises(ValueError):
+            cb.stub_words(SLOT, TARGET, 0, TARGET + 8, 0, True, entry=[0x10000003, 0])   # a branch
 
     def test_before_only(self):
         _, seen = run_calls(first_skip=0, want_after=False, calls=3, next_skip=cb.NEVER)

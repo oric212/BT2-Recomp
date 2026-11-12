@@ -1,9 +1,11 @@
 """The checkpoint stub and the register block it publishes (docs/plans/validation/PCSX2_COMPARISON_PLAN.md).
 
-A checkpoint is a call site (`jal target` and its delay slot) in an instrumented copy of the executable. The call
-is replaced by a jump to a stub in an added segment that runs the delay slot, counts the call, and at the calls the
-host asks for publishes the full register state, marks the checkpoint and spins until the host clears the mark;
-then it makes the call and, if asked, publishes and waits again after it returns. `t8` and `t9` are the stub's own.
+A checkpoint is a call site (`jal target` and its delay slot) or a function's entry in an instrumented copy of the
+executable. The call (or the function's first two words) is replaced by a jump to a stub in an added segment that
+runs the delay slot, counts the call, and at the calls the host asks for publishes the full register state, marks
+the checkpoint and spins until the host clears the mark, then loads the arguments back (the host may have changed
+them); then it makes the call and, if asked, publishes and waits again after it returns, and loads the results
+back. `t8` and `t9` are the stub's own.
 
 Each site has a slot of SLOT bytes: the code, then at DATA its words (offsets below) and the register block at
 BLOCK. The block's layout is shared with the probe's replay (runtime/probe/call_replay.cpp).
@@ -14,7 +16,7 @@ SLOT = 0x2000
 # The stub's data, from the slot's start: a page of its own, as PCSX2 write-protects the pages of code it has
 # compiled (to catch self-modifying code) and the host's writes there fail (WinError 998, first session).
 DATA = 0x1000
-COUNT, SKIP, WANT_AFTER, ARMED, MARK = 0x0, 0x4, 0x8, 0xC, 0x10
+COUNT, SKIP, WANT_AFTER, ARMED, MARK, SAVED_RA = 0x0, 0x4, 0x8, 0xC, 0x10, 0x14
 BLOCK = 0x100                      # The register block, from DATA.
 MARK_BEFORE, MARK_AFTER = 1, 2
 NEVER = 0x7FFFFFFF                 # SKIP that captures no more calls.
@@ -47,8 +49,15 @@ def check_delay_slot(word):
         raise ValueError(f'The delay slot {word:#010x} may use t8, t9 or ra.')
 
 
-def publish(mark):
-    """Store every register into the block at DATA + BLOCK (t8 holds DATA's address), mark, and wait."""
+# Registers the stub loads back from the block after a wait, so the host can change them: a call's arguments
+# (a0 to a3, t0 to t3, f12 to f19) before it, its results (v0, v1, f0) after it.
+ARGUMENTS = ([4, 5, 6, 7, 8, 9, 10, 11], list(range(12, 20)))
+RESULTS = ([2, 3], [0])
+
+
+def publish(mark, reload):
+    """Store every register into the block at DATA + BLOCK (t8 holds DATA's address), mark, wait, and load the
+    `reload` registers back."""
     b = BLOCK
     words = [_store(0x1F, r, b + GPRS + 16 * r) for r in range(32)]                      # sq
     words += [_store(0x39, f, b + FPRS + 4 * f) for f in range(32)]                       # swc1
@@ -63,30 +72,62 @@ def publish(mark):
     words += [_store(0x3E, vf, b + VFS + 16 * vf) for vf in range(32)]                   # sqc2
     words += [_i(0x0D, 0, T9, mark), _store(0x2B, T9, MARK),                              # ori t9,zero,mark; sw
               _store(0x23, T9, MARK), _i(5, T9, 0, -2), 0]                                # lw; bne t9,zero,-2; nop
+    gprs, fprs = reload
+    words += [_store(0x1E, r, b + GPRS + 16 * r) for r in gprs]                           # lq
+    words += [_store(0x31, f, b + FPRS + 4 * f) for f in fprs]                            # lwc1
     return words
 
 
-def stub_words(slot, target, delay, resume, first_skip, want_after):
-    """The stub at address `slot` for `jal target` with its delay slot `delay`, returning to `resume`."""
-    check_delay_slot(delay)
+def check_entry_words(words):
+    """A function's first two words run in the stub: refuse branches and uses of t8 and t9 (ra is the caller's
+    return address there, as it would be)."""
+    for word in words:
+        opcode, rs, rt, rd, funct = word >> 26, (word >> 21) & 31, (word >> 16) & 31, (word >> 11) & 31, word & 63
+        if opcode in _BRANCH_OPCODES or (opcode == 0 and funct in (8, 9)) or (opcode in (0x11, 0x12) and rs == 8):
+            raise ValueError(f"The function's word {word:#010x} is a branch.")
+        if ({rs, rt, rd} if opcode in (0, 0x1C) else {rs, rt}) & {T8, T9}:
+            raise ValueError(f"The function's word {word:#010x} may use t8 or t9.")
+
+
+def stub_words(slot, target, delay, resume, first_skip, want_after, entry=None):
+    """The stub at address `slot`. A call site: `jal target` with its delay slot `delay`, returning to `resume`.
+    A function's entry (`entry`, its first two words): the stub runs them and jumps to target + 8; to take the
+    state after the call it keeps the caller's ra (at SAVED_RA) and has the function return into the stub."""
     data = slot + DATA
     base = [_i(0x0F, 0, T8, data >> 16), _i(0x0D, T8, T8, data & 0xFFFF)]                 # lui, ori t8
-    words = [delay] + base
+    if entry is None:
+        check_delay_slot(delay)
+        words = [delay] + base
+    else:
+        check_entry_words(entry)
+        words = list(base)
     words += [_store(0x23, T9, COUNT), _i(0x09, T9, T9, 1), _store(0x2B, T9, COUNT)]       # count += 1
     words += [_store(0x2B, 0, ARMED), _store(0x23, T9, SKIP)]                              # armed = 0; t9 = skip
     words += [_i(4, T9, 0, 4), 0,                                                          # beq t9,zero,capture
               _i(0x09, T9, T9, -1), _i(4, 0, 0, 0), _store(0x2B, T9, SKIP)]             # skip -= 1; b call
     branch_to_call = len(words) - 2
     words += [_store(0x23, T9, WANT_AFTER), _store(0x2B, T9, ARMED)]                       # capture: armed = want
-    words += publish(MARK_BEFORE)
+    words += publish(MARK_BEFORE, ARGUMENTS)
     call = len(words)
     words[branch_to_call] = _i(4, 0, 0, call - (branch_to_call + 1))
-    words += [0x0C000000 | ((target >> 2) & 0x3FFFFFF), 0] + base                           # jal target; nop
-    words += [_store(0x23, T9, ARMED), _i(4, T9, 0, 0), 0]                               # beq t9,zero,resume
-    branch_to_resume = len(words) - 2
-    words += publish(MARK_AFTER)
-    words[branch_to_resume] = _i(4, T9, 0, len(words) - (branch_to_resume + 1))
-    words += [0x08000000 | ((resume >> 2) & 0x3FFFFFF), 0]                                  # j resume; nop
+    if entry is None:
+        words += [0x0C000000 | ((target >> 2) & 0x3FFFFFF), 0] + base                       # jal target; nop
+        words += [_store(0x23, T9, ARMED), _i(4, T9, 0, 0), 0]                           # beq t9,zero,resume
+        branch_to_resume = len(words) - 2
+        words += publish(MARK_AFTER, RESULTS)
+        words[branch_to_resume] = _i(4, T9, 0, len(words) - (branch_to_resume + 1))
+        words += [0x08000000 | ((resume >> 2) & 0x3FFFFFF), 0]                              # j resume; nop
+    else:
+        words += [_store(0x23, T9, ARMED), _i(4, T9, 0, 0), 0]                           # beq t9,zero,body
+        branch_to_body = len(words) - 2
+        words += [_store(0x2B, RA, SAVED_RA), 0x0C000000, 0]                               # keep ra; jal body; nop
+        jal_body = len(words) - 2
+        words += base + publish(MARK_AFTER, RESULTS)
+        words += [_store(0x23, RA, SAVED_RA), 0x03E00008, 0]                               # lw ra; jr ra; nop
+        body = len(words)
+        words[branch_to_body] = _i(4, T9, 0, body - (branch_to_body + 1))
+        words[jal_body] = 0x0C000000 | (((slot + 4 * body) >> 2) & 0x3FFFFFF)
+        words += list(entry) + [0x08000000 | (((target + 8) >> 2) & 0x3FFFFFF), 0]        # the two words; j target+8
     if len(words) * 4 > DATA:
         raise ValueError('The stub is longer than its code area.')
     image = bytearray(SLOT)
