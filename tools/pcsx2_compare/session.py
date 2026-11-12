@@ -27,6 +27,10 @@ The records go to <site>.log.json; the site counts as done for `--until` once CO
 `--set %FUNC:CALL:REG=VALUE[,REG=VALUE...]` changes registers at a function's CALL-th entry inside its stub, without
 waiting (as `--edit` steers the game, but leaving PCSX2's timing alone, so two sessions stay alike).
 
+`--realtime` runs PCSX2 as a player sees it (step 9, press to screen): at full speed with its default renderer and
+sound, its window shown, and the keyboard as pad 1 (KEYS); once the `--until` site is done it writes READY in the
+session folder and keeps running until a file STOP appears there (press_to_screen.py writes it) or the timeout.
+
 Usage: python tools/pcsx2_compare/session.py --pcsx2 <pcsx2-qt.exe> --bios <bios> --disc <iso> --card <Mcd001.ps2>
        --session <name> --site think:200:3:350:after [--site ...] [--timeout 1800]
 """
@@ -294,7 +298,13 @@ def instrument(data, sites):
     return bytes(patched)
 
 
-def prepare(folder, pcsx2, bios, card):
+# Pad 1 from the keyboard in realtime sessions: the port's default keys (runtime/host/input_mapping.h).
+KEYS = {'Start': 'Return', 'Select': 'Backspace', 'Up': 'Up', 'Down': 'Down', 'Left': 'Left', 'Right': 'Right',
+        'Cross': 'Z', 'Circle': 'X', 'Square': 'A', 'Triangle': 'S', 'L1': 'Q', 'R1': 'W', 'L2': 'E', 'R2': 'R'}
+READY, STOP = 'ready', 'stop'
+
+
+def prepare(folder, pcsx2, bios, card, realtime=False):
     """A copy of PCSX2 without the user's portable marker, and a profile of its own (as the capture tools do)."""
     package = folder / 'package'
     package.mkdir(parents=True, exist_ok=True)
@@ -320,9 +330,11 @@ def prepare(folder, pcsx2, bios, card):
         'SaveStateOnShutdown = false\nEnableDiscordPresence = false\n'
         # The software renderer (13): the null renderer (11) stopped PCSX2 at an assertion
         # (IsCoverageAlphaSupported) when a versus battle began drawing; the software one draws as the console.
-        '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\n'
-        '[SPU2/Output]\nOutputModule = nullout\n'
-        '[MemoryCards]\nSlot1_Enable = true\nSlot1_Filename = Mcd001.ps2\nSlot2_Enable = false\n', encoding='utf-8')
+        # Realtime sessions keep PCSX2's defaults: its automatic renderer, the frame limiter and sound.
+        + ('[InputSources]\nKeyboard = true\n[Pad1]\nType = DualShock2\n'
+           + ''.join(f'{button} = Keyboard/{key}\n' for button, key in KEYS.items()) if realtime else
+           '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\n[SPU2/Output]\nOutputModule = nullout\n')
+        + '[MemoryCards]\nSlot1_Enable = true\nSlot1_Filename = Mcd001.ps2\nSlot2_Enable = false\n', encoding='utf-8')
     return package / pcsx2.name
 
 
@@ -347,7 +359,9 @@ def drain(memory, ee, site):
 def run(args, sites):
     folder = ROOT / 'work/pcsx2-compare' / args.session
     folder.mkdir(parents=True, exist_ok=True)
-    executable = prepare(folder, args.pcsx2.resolve(), args.bios.resolve(), args.card.resolve())
+    executable = prepare(folder, args.pcsx2.resolve(), args.bios.resolve(), args.card.resolve(), args.realtime)
+    for marker in (READY, STOP):
+        (folder / marker).unlink(missing_ok=True)
     image = executable.read_bytes()
     ee_rva, vu_rva = ce.export_rva(image, 'EEmem'), ce.export_rva(image, 'VUmem')
     elf = folder / 'capture.elf'
@@ -382,7 +396,8 @@ def run(args, sites):
             if process.poll() is not None:
                 print(f'PCSX2 exited ({process.returncode}) after {len(taken)} checkpoints; see {log}.', flush=True)
                 break
-            minimize_windows(process.pid)
+            if not args.realtime:
+                minimize_windows(process.pid)
             try:
                 memory = memory or ProcessMemory(process.pid, executable)
                 ee, = struct.unpack('<Q', memory.read(memory.base + ee_rva, 8))
@@ -437,6 +452,11 @@ def run(args, sites):
                 memory.write(data + cb.MARK, struct.pack('<I', 0))
             if not found:
                 time.sleep(0.05)
+        if args.realtime and process.poll() is None:
+            (folder / READY).write_text(str(process.pid), encoding='utf-8')
+            print(f'Ready at {time.monotonic() - started:.1f} s; running until {folder / STOP} appears.', flush=True)
+            while process.poll() is None and not (folder / STOP).exists() and time.monotonic() - started < args.timeout:
+                time.sleep(0.2)
     finally:
         if memory is not None:
             memory.close()
@@ -472,6 +492,8 @@ def main():
     parser.add_argument('--set', action='append', default=[],
                         help='%%FUNC:CALL:REG=VALUE[,...]: registers set at a function entry without waiting.')
     parser.add_argument('--until', help='End the session when this site has taken its checkpoints (others may be left).')
+    parser.add_argument('--realtime', action='store_true',
+                        help='Full speed, default renderer, window shown, keyboard as pad 1; READY/STOP markers.')
     parser.add_argument('--idle', type=float, default=0, help='End the session this many seconds after the last checkpoint.')
     args = parser.parse_args()
     catalogue = json.loads(SITES.read_text(encoding='utf-8'))['sites']

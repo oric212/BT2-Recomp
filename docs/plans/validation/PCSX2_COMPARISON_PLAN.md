@@ -195,7 +195,31 @@ run with a run without the press.
 a press that arrives in a fight frame's second field (the game reads the pad once per frame in both programs; when
 the host samples it is the port's). Both are the black-box tester's (press to screen, the second part).
 
-**Next:** the press-to-screen tester (step 9, second part), loaded data (step 5).
+**Step 9, second part: press to screen (2026-11-12).** `press_to_screen.py` starts either program in that fight
+(PCSX2 through a realtime session: full speed, its default renderer, the keyboard as pad 1 with the port's keys; the
+port through the probe's live play), brings its window to the front, presses Start with `SendInput` and reads the
+window's middle from the screen (GDI, about every 7 ms) for the first picture that differs from the one before.
+The keys reach PCSX2's game about 30 ms after `SendInput` (the button word read from its memory). Pausing is not a
+clean stimulus (the fight freezes, then the menu fades in), so each sample is an **unpause**: the paused picture is
+still and the first change is the game taking the press. 30 samples a setup, all seen, on this PC (Core i9-10900K,
+RX 9070 XT), windowed through the desktop compositor:
+
+| Setup (windowed) | Median | 10% to 90% | Range |
+| --- | --- | --- | --- |
+| PCSX2, its defaults | 108 ms | 91 to 126 ms | 90 to 139 ms |
+| Port, 30 fps, Low input lag off | 133 ms | 118 to 140 ms | 112 to 141 ms |
+| Port, 30 fps, Low input lag on (the game's default) | 104 ms | 91 to 119 ms | 91 to 126 ms |
+| Port, 60 fps | 111 ms | 98 to 126 ms | 97 to 126 ms |
+
+With Low input lag on (the game's default) the port shows a press as soon as PCSX2 does (4 ms sooner at the median,
+within the 7 ms sampling); without it about a frame later (25 ms), the wait for the field's deadline that Low input
+lag removes; at 60 fps 4 ms later than PCSX2 (the in-between picture comes first). The samples fall on steps of
+about 7 ms (the sampling) spread over a frame (33 ms), as the press lands anywhere in it. Not measured: fullscreen,
+the player's settings (16x, HD), a move in the fight (the fight's own motion hides it from this detector), sound.
+A first try read the wrong part of the screen (the tester was not DPI-aware on a scaled display); the tester now
+is, and saves the region it reads (`work/frames/latency/<label>-region.png`) to check.
+
+**Next:** loaded data (step 5); press to sound and fullscreen when wanted.
 
 ## Unknowns
 

@@ -8,7 +8,9 @@ No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validat
 
 Also done (the same day): step 9's first part, the game's own input delay: logging sites that do not wait (`session.py --log`, `--set`), `BT2_EE_CALL_SUMS` for the port, `input_delay.py`; a press at fight frame 480 changes the lists in its frame and VU1 a frame later in both programs (sessions `delay-base`, `delay-x480`, `delay-u480`; port runs in `work/latency/`).
 
-**Next:** step 9's second part (the press-to-screen tester: `SendInput` and the desktop duplication API, for PCSX2 and the port), then step 5 (loaded data). Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+Then step 9's second part: `press_to_screen.py` (unpauses timed from `SendInput` to the first changed picture, windowed): port 104 ms median with Low input lag, 111 ms at 60 fps, 133 ms without; PCSX2 108 ms (`work/latency/*.json`).
+
+**Next:** step 5 (loaded data); fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 
