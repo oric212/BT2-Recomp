@@ -53,7 +53,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 | Fight | 29.97 flips a second, super attacks included; an in-between picture for nearly every flip, 6.3 ms each |
 | Game thread | 10 to 14 ms of a 33 ms frame |
 | Graphics card | 6 ms a frame plain, 8 to 10 with 16x, HD and widescreen |
-| Latency | About 7 fields of the game's own from a button to the screen, plus the port's: with Low input lag a picture goes out 9 to 14 ms before its flip. Press to screen, windowed (median): port 104 ms with Low input lag, 111 ms at 60 fps, 133 ms without; PCSX2 108 ms |
+| Latency | About 7 fields of the game's own from a button to the screen, plus the port's: with Low input lag a picture goes out 9 to 14 ms before its flip. Press to screen, windowed (median): port 104 ms with Low input lag (105 with HD, 16x and widescreen), 111 ms at 60 fps (117 with them), 133 ms without Low input lag; PCSX2 108 ms |
 | Memory | 0.7 to 0.85 GB; 0.8 to 1.2 GB of video memory |
 
 ## Subsystems

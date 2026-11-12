@@ -210,12 +210,15 @@ RX 9070 XT), windowed through the desktop compositor:
 | Port, 30 fps, Low input lag off | 133 ms | 118 to 140 ms | 112 to 141 ms |
 | Port, 30 fps, Low input lag on (the game's default) | 104 ms | 91 to 119 ms | 91 to 126 ms |
 | Port, 60 fps | 111 ms | 98 to 126 ms | 97 to 126 ms |
+| Port, 30 fps, Low input lag, HD textures, 16x, widescreen, light depth of field | 105 ms | 92 to 126 ms | 91 to 127 ms |
+| Port, 60 fps, the same picture settings | 117 ms | 104 to 132 ms | 97 to 134 ms |
 
 With Low input lag on (the game's default) the port shows a press as soon as PCSX2 does (4 ms sooner at the median,
 within the 7 ms sampling); without it about a frame later (25 ms), the wait for the field's deadline that Low input
 lag removes; at 60 fps 4 ms later than PCSX2 (the in-between picture comes first). The samples fall on steps of
-about 7 ms (the sampling) spread over a frame (33 ms), as the press lands anywhere in it. Not measured: fullscreen,
-the player's settings (16x, HD), a move in the fight (the fight's own motion hides it from this detector), sound.
+about 7 ms (the sampling) spread over a frame (33 ms), as the press lands anywhere in it. With the user's picture settings (HD textures, 16x, widescreen, light depth
+of field) the 30 fps fight is unchanged (105 ms: the picture is drawn well within its frame) and the 60 fps one 6 ms
+later (117 ms: the in-between picture costs more to draw). Not measured: fullscreen, the window at scale 4, a move in the fight (the fight's own motion hides it from this detector), sound.
 A first try read the wrong part of the screen (the tester was not DPI-aware on a scaled display); the tester now
 is, and saves the region it reads (`work/frames/latency/<label>-region.png`) to check.
 
