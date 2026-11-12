@@ -27,6 +27,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 - **The destroyed Namek's lava no longer flickers at 60 fps:** polygons cut at the edge the game clips to were left at the newer frame's place in the in-between pictures; they now move halfway like the rest ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
 - **HD packs found where players put them:** the user's fresh release folder ran without HD textures (the pack was not found, without a word). A pack up to three folders deep in `data/textures` is found now, the launcher names it or says none was found, and the log names it.
+- **Online page as two cards, and no freeze while the reply code is entered** (the connect screen was held by a one-way handshake; now 3 s at most).
 - **One window to an online battle:** the launcher's window stays until the game's opens in its place, and comes back on the online page after a battle with why it ended ([launcher plan](plans/launcher/LAUNCHER_PLAN.md)).
 
 ## 2026-11-11

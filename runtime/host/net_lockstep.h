@@ -75,6 +75,8 @@ public:
     // and starts the session with the host's delay or one chosen from it. False when `timeout` passed first (call again
     // to go on waiting); throws on a different program or gameplay settings.
     bool connect(std::chrono::milliseconds timeout);
+    // The way back may have opened (the host took a reply code): connect may hold its caller for an exchange again.
+    void holdAgain() {hold_began_.reset();}
     // One field: `local` is played `delay` fields later; `check` is this field's drift hash (compared every 60
     // fields). Returns the input of ports 1 and 2 for this field, waiting for the other player's if needed.
     std::array<PadInput,2> field(const PadInput& local,std::uint64_t check);
@@ -114,6 +116,9 @@ private:
     // Joiner while connecting: round trips measured over the host's answers; the delay the session starts with.
     std::vector<double> samples_;std::optional<unsigned> starting_;
     std::optional<std::chrono::steady_clock::time_point> exchanged_; // The last greeting answered (host) or answer taken (joiner).
+    // Since when connect() has held its caller for an exchange under way, at most `max_hold` (net_lockstep.cpp).
+    std::optional<std::chrono::steady_clock::time_point> hold_began_;
+    static constexpr std::chrono::seconds max_hold{3};
     // Round trip stamps: the other side's latest stamp and when it arrived.
     std::uint32_t peer_stamp_=0;std::chrono::steady_clock::time_point peer_stamp_at_;bool has_peer_stamp_=false;
     double rtt_ms_=0;

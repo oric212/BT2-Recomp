@@ -65,6 +65,10 @@ std::vector<connection_code::Address> internetAddresses(unsigned port) {
 void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& address) {
     using namespace std::chrono_literals;
     MenuHost host(window,input);
+    { // The launcher's logo (assets next to the program), as on the launcher's online page.
+        wchar_t path[MAX_PATH];
+        if(const DWORD length=GetModuleFileNameW(nullptr,path,MAX_PATH);length && length<MAX_PATH)host.setLogo(std::filesystem::path(path).parent_path()/"assets"/"logo.png");
+    }
     const auto start=std::chrono::steady_clock::now();
     const auto cancel=[&host]{host.finished=true;};
     const std::string home=address.host?UpnpPort::localAddress():std::string();
@@ -112,6 +116,7 @@ void waitInWindow(ViewerWindow& window,HostInput& input,const LockstepAddress& a
         for(const auto& r:reply->second)key+=r.address+":"+std::to_string(r.port)+(r.changes_port?"*":"")+" ";
         if(key==punched)return;
         online.transport->punch(reply->second);punched=key;punched_at=std::chrono::steady_clock::now();
+        online.session->holdAgain(); // The answers can now reach the joiner: measure the round trip without the window's pauses.
         std::cerr<<"Online session: reply code received:";
         for(const auto& a:reply->second)std::cerr<<' '<<a.address<<" port "<<a.port<<(a.changes_port?" (its router changes ports)":"");
         std::cerr<<std::endl;

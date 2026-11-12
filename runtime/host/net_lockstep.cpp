@@ -109,7 +109,14 @@ bool Lockstep::connect(std::chrono::milliseconds timeout) {
         // Once greetings are answered, both sides stay here until the session starts (or the other side falls silent for
         // a second): a caller that polls between drawing its window (a player's game: 30 ms of every 50) would otherwise
         // leave greetings and answers unread for up to 20 ms, which the round trip and its spread would count.
-        const bool exchanging=exchanged_ && Clock::now()-*exchanged_<std::chrono::seconds(1);
+        // The hold lasts 3 s at most (six answers take 2 s at a 300 ms round trip): when only one direction gets through
+        // (the joiner reached the host, the host's answers not the joiner, as before the host takes the reply code that
+        // opens its way back), the joiner greets on and the host's window froze here for good, unable to take that
+        // reply (the user, 2026-11-12: it froze while entering the reply code).
+        bool exchanging=exchanged_ && Clock::now()-*exchanged_<std::chrono::seconds(1);
+        if(!exchanging)hold_began_.reset();
+        else if(!hold_began_)hold_began_=Clock::now();
+        else if(Clock::now()-*hold_began_>max_hold)exchanging=false;
         if(Clock::now()-begin>timeout && !exchanging)return false;
         if(!options_.host && Clock::now()-greeted_>=(starting_?restart:greet)) {
             if(starting_) {Writer out(Start);out.u8(std::uint8_t(*starting_));out.u16(std::uint16_t(std::min(rtt_ms_,65000.0)));transport_.send(out.bytes);}

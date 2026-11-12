@@ -151,3 +151,12 @@ An optional entry under Display, off by default ([60 fps plan](../graphics/HIGH_
 ### One window from the launcher to the game (2026-11-12)
 
 The user: reaching an online battle opened two windows. The launcher's window used to close before the game's opened, elsewhere on the screen and a moment later. Now the launcher keeps its window (still answering) until the game's window is up, which opens at the launcher's place (`BT2_WINDOW_AT`, so also on its screen when fullscreen); then the launcher hides its window and shows it again when the player comes back. After an online run the launcher opens on its online page, and why the battle ended (the other player left, no answer) is a line at the top of that page ("LAST BATTLE") instead of a separate message box.
+
+### The online page as two cards (2026-11-12)
+
+The user did not like the online panel's look (a violet panel unlike the launcher's first screen) and chose, of three sketches, two big cards. The online page is now drawn in the first screen's look (black, the logo, a yellow heading) with Host (player 1) and Join (player 2) as two cards side by side (Left and Right between them; Up and Down treat the row as one stop), the host's code, Clear the code and Connection settings (port, input delay, UPnP, on a page of their own) centred under them. The heading says how the last online battle ended, when it did not end here. The connect screens in the game's window (the code, the reply code) take the same look with the logo and their title as the heading (`MenuScreen::first_look`, `MenuEntry::card`; `host/menu_renderer.h`). Pictures: `work/frames/online-cards/`.
+
+### The connect screen's freeze (2026-11-12)
+
+The user: the game froze, not responding, while entering the reply code or using the online screens. While a handshake is under way, connecting holds its caller (the window's loop) so the round trip is measured without the window's pauses. With only one direction through (the joiner's greetings reach the host, the host's answers not the joiner, as before the host takes the reply code that opens the way back), the joiner greets on and the host's window was held for good, unable to take that reply. The hold now lasts 3 s at most (six answers take 2 s at a 300 ms round trip) and starts again when the host takes a reply code (`Lockstep::holdAgain`); a test with a one-way link. Not yet seen in the user's play.
+

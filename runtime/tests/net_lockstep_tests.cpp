@@ -32,13 +32,14 @@ struct Link {
     std::mutex mutex;std::condition_variable arrived;
     std::deque<std::pair<Clock::time_point,std::vector<std::uint8_t>>> queue[2];
     unsigned drop_every=0,sent=0;std::chrono::milliseconds latency{0};bool cut=false;
+    bool deaf[2]={false,false}; // Packets to that side are lost (one direction only).
 };
 class End final : public LockstepTransport {
 public:
     End(Link& link,unsigned side):link_(link),side_(side) {}
     void send(std::span<const std::uint8_t> packet) override {
         std::lock_guard lock(link_.mutex);
-        if(link_.cut || (link_.drop_every && ++link_.sent%link_.drop_every==0))return;
+        if(link_.cut || link_.deaf[1-side_] || (link_.drop_every && ++link_.sent%link_.drop_every==0))return;
         link_.queue[1-side_].emplace_back(Clock::now()+link_.latency,std::vector<std::uint8_t>(packet.begin(),packet.end()));
         link_.arrived.notify_all();
     }
@@ -197,6 +198,26 @@ int main() {
         });
         check(contains(host.error,"no word") && contains(joiner.error,"no word"));
         check(host.waiting_calls>=3 && joiner.waiting_calls>=3);
+    }
+    {   // One way only (the joiner reaches the host, the host's answers are lost, as before the host takes the reply
+        // code): the host's connect, called as its window's loop does, still returns, at the latest after the 3 s hold,
+        // and then at once each time; once the way back opens, both connect.
+        Link link;link.deaf[1]=true;
+        End host_end(link,0),joiner_end(link,1);
+        Lockstep host(host_end,options(true,0)),joiner(joiner_end,options(false));
+        std::atomic<bool> joined=false,stop=false;
+        std::thread greeting([&]{while(!stop && !joined)joined=joiner.connect(std::chrono::milliseconds(50));});
+        const auto first=Clock::now();
+        check(!host.connect(std::chrono::milliseconds(30)));
+        check(Clock::now()-first<std::chrono::milliseconds(3600));
+        const auto second=Clock::now();
+        check(!host.connect(std::chrono::milliseconds(30)));
+        check(Clock::now()-second<std::chrono::milliseconds(300));
+        {std::lock_guard lock(link.mutex);link.deaf[1]=false;}
+        bool connected=false;
+        for(const auto give_up=Clock::now()+std::chrono::seconds(10);!connected && Clock::now()<give_up;)connected=host.connect(std::chrono::milliseconds(30));
+        stop=true;greeting.join();
+        check(connected && joined);
     }
     {   // Nobody there: connecting gives up after its time, and can be called again.
         Link link;End end(link,0);

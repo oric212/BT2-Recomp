@@ -52,7 +52,7 @@ inline MenuEntry codeEntry(const std::string& label,const std::string& code,cons
 
 // `copy`: puts a code on the clipboard; `paste`: takes the reply code from it.
 inline MenuScreen hosting(const Hosting& h,std::function<void()> cancel,std::function<void(const std::string&)> copy,std::function<void()> paste={}) {
-    MenuScreen screen;screen.title="Waiting for the other player";
+    MenuScreen screen;screen.title="Waiting for the other player";screen.first_look=true;screen.status=[]{return std::string("Waiting for the other player");};
     const auto internet=h.finding?std::nullopt:internetCode(h);
     const auto home=homeCode(h);
     if(internet) {
@@ -85,7 +85,7 @@ struct Joining {
 // A host on the internet needs the reply code; one on the home network does not.
 inline bool needsReply(const Joining& j) {return !reachableOnly(j.host).empty();}
 inline MenuScreen joining(const Joining& j,std::function<void()> cancel,std::function<void(const std::string&)> copy) {
-    MenuScreen screen;screen.title="Connecting to the host";
+    MenuScreen screen;screen.title="Connecting to the host";screen.first_look=true;screen.status=[]{return std::string("Connecting to the host");};
     if(needsReply(j)) {
         if(!j.reply.empty())screen.entries.push_back(codeEntry("Reply: ",j.reply,j.copied,copy,j.copied==j.reply
             ?"Copied: paste it (Ctrl+V) into the chat to the host. The battle starts when they copy it.":"Confirm copies it, to send to the host."));

@@ -281,40 +281,46 @@ int main() {
         check(host.finished && launcher.result==LauncherResult::Start,"Start game with a disc");
         for(int n=0;n<4;++n)host.menu.press(MenuKey::Down);
         host.menu.press(MenuKey::Confirm);host.settle();picture(host,"6-display");
-        // Online battles: one panel. Play (Host, Join), the host's code (entered, cleared), the connection. Joining without a
-        // code asks for it; an empty code joins nothing; a kept code joins at once.
+        // Online battles: two cards (Host, Join; Left and Right between them), the host's code (entered, cleared), the
+        // connection on its own page. Joining without a code asks for it; an empty code joins nothing; a kept code joins at once.
         host.menu.press(MenuKey::Back);host.finished=false;
         for(int n=0;n<3;++n)host.menu.press(MenuKey::Down);
         host.menu.press(MenuKey::Confirm);host.settle();
         const auto& online=host.menu.screen();
-        check(online.title=="Online battle" && online.panel && labels(online)==std::vector<std::string>{"Host  \xC2\xB7  you are player 1","Join  \xC2\xB7  you are player 2",
-              "Code","Clear the code","Port","Input delay","Open the port by UPnP"},"the online screen");
-        check(online.entries[0].section=="PLAY" && online.entries[2].section=="HOST'S CODE" && online.entries[4].section=="CONNECTION","its groups");
-        check(online.status()=="No code" && online.entries[2].value()=="none" && !online.entries[3].usable(),"no code yet: nothing to clear");
+        check(online.title=="Online battle" && online.first_look && labels(online)==std::vector<std::string>{"HOST","JOIN","Host's code","Clear the code","Connection settings"},"the online screen");
+        check(online.entries[0].card && online.entries[1].card && !online.entries[2].card,"Host and Join are cards");
+        check(online.status()=="Online battle" && online.entries[2].value()=="none" && online.entries[1].value()=="no code yet" && !online.entries[3].usable(),"no code yet: nothing to clear");
         picture(host,"7-online");
-        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        host.menu.press(MenuKey::Left);check(host.menu.screen().highlighted==0,"Left stops at the first card");
+        host.menu.press(MenuKey::Down);check(host.menu.screen().highlighted==2,"Down leaves the row of cards");
+        host.menu.press(MenuKey::Up);check(host.menu.screen().highlighted==0,"Up enters it at its first card");
+        host.menu.press(MenuKey::Right);check(host.menu.screen().highlighted==1,"Right to Join");
+        host.menu.press(MenuKey::Confirm);host.settle();
         check(host.typing(),"Join without a code asks for it");
         host.typed("");
         check(!host.finished && settings.online_address.empty(),"an empty code joins nothing");
         // The code entered without joining, then cleared.
         host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
         host.typed("ab12-cd34");
-        check(!host.finished && settings.online_address=="ab12-cd34" && host.menu.screen().status()=="Code ab12-cd34" && host.menu.screen().entries[3].usable(),"a code entered is kept and shown");
+        check(!host.finished && settings.online_address=="ab12-cd34" && host.menu.screen().entries[1].value()=="with ab12-cd34" && host.menu.screen().entries[3].usable(),"a code entered is kept and shown");
         picture(host,"7-online-code");
         host.menu.press(MenuKey::Down);check(host.menu.screen().highlighted==3,"Clear the code can be chosen");
         host.menu.press(MenuKey::Confirm);host.settle();
-        check(settings.online_address.empty() && Settings::load(settings_path)->online_address.empty() && host.menu.screen().highlighted==2,"cleared and saved; the choice back on Code");
-        // The connection's settings.
-        host.menu.press(MenuKey::Down);
-        check(host.menu.screen().highlighted==4 && host.menu.screen().entries[4].value()=="7411" && host.menu.screen().entries[5].value()=="Auto","the usual port, the delay chosen by default");
+        check(settings.online_address.empty() && Settings::load(settings_path)->online_address.empty() && host.menu.screen().highlighted==2,"cleared and saved; the choice back on the code");
+        // The connection's settings, on their page.
+        host.menu.press(MenuKey::Down);check(host.menu.screen().highlighted==4,"Connection settings");
+        host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.menu.screen().title=="Connection" && host.menu.screen().entries[0].value()=="7411" && host.menu.screen().entries[1].value()=="Auto","the usual port, the delay chosen by default");
+        picture(host,"7-online-connection");
         host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
-        check(settings.online_delay==1 && Settings::load(settings_path)->online_delay==1 && host.menu.screen().entries[5].value()=="1 field","the input delay is changed and saved");
+        check(settings.online_delay==1 && Settings::load(settings_path)->online_delay==1 && host.menu.screen().entries[1].value()=="1 field","the input delay is changed and saved");
         host.menu.press(MenuKey::Left);check(settings.online_delay==0,"and back to Auto");
         host.menu.press(MenuKey::Left);check(settings.online_delay==0,"which is the lowest");
         host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Right);
         check(!settings.online_upnp && !Settings::load(settings_path)->online_upnp,"UPnP switched off and saved");
+        host.menu.press(MenuKey::Back);host.settle();
         // Join with a code typed, then with the kept code at once.
-        for(int n=0;n<4;++n)host.menu.press(MenuKey::Up);
+        host.menu.press(MenuKey::Up);host.menu.press(MenuKey::Up);host.menu.press(MenuKey::Right);
         check(host.menu.screen().highlighted==1,"back on Join");
         host.menu.press(MenuKey::Confirm);host.settle();
         host.typed("sc07-3zky");

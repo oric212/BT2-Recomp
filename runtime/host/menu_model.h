@@ -22,6 +22,9 @@ struct MenuEntry {
     std::function<bool()> available;             // Also disabled while this returns false (it depends on another setting).
     MenuIcon icon=MenuIcon::None;                // Its picture on a browser screen.
     std::string section;                         // On a panel screen: a heading shown above this entry (it starts a group).
+    // A big card (on a first-look screen): consecutive cards make a row, Left and Right move along it, Up and Down leave
+    // it; `card_text` is its lines under the label ('\n' between them).
+    bool card=false;std::string card_text;
     bool usable() const {return enabled && (!available || available());}
 };
 
@@ -35,7 +38,10 @@ struct MenuScreen {
     // Drawn as a panel (after BT3-Recomp's netplay panel): the title with a status pill at its right, the entries in groups
     // under their headings (MenuEntry::section), each with its value at the right of its line.
     bool panel=false;
-    std::function<std::string()> status; // The pill's text; empty for none.
+    std::function<std::string()> status; // The pill's text; empty for none. In the first screen's look: the heading under the logo.
+    // Drawn in the first screen's look (black, the ring, the logo, the list beside it) though not the first screen, with
+    // Back (the user, 2026-11-12: the online pages as the launcher's first screen, not a panel of another style).
+    bool first_look=false;
 };
 
 class Menu {
@@ -68,12 +74,21 @@ public:
         switch(key) {
         case MenuKey::Up: case MenuKey::Down: {
             // To the next enabled entry, around the ends.
+            // A row of cards is one stop: entered at its first card, left past its last.
             const auto count=unsigned(s.entries.size());
-            do s.highlighted=(s.highlighted+(key==MenuKey::Down?1:count-1))%count; while(!s.entries[s.highlighted].usable());
+            const unsigned from=s.highlighted;const bool from_card=s.entries[from].card;
+            do s.highlighted=(s.highlighted+(key==MenuKey::Down?1:count-1))%count;
+            while(s.highlighted!=from && (!s.entries[s.highlighted].usable() || (from_card && s.entries[s.highlighted].card)));
+            if(!from_card)while(s.entries[s.highlighted].card && s.highlighted>0 && s.entries[s.highlighted-1].card && s.entries[s.highlighted-1].usable())--s.highlighted;
             break;
         }
         case MenuKey::Left: case MenuKey::Right:
             if(s.browser) {press(key==MenuKey::Right?MenuKey::Down:MenuKey::Up);break;}
+            if(s.entries[s.highlighted].card) { // Along the row of cards.
+                const unsigned next=key==MenuKey::Right?s.highlighted+1:s.highlighted-1;
+                if(next<s.entries.size() && s.entries[next].card && s.entries[next].usable())s.highlighted=next;
+                break;
+            }
             if(const auto adjust=s.entries[s.highlighted].adjust)adjust(key==MenuKey::Right?1:-1); // A copy: the callback may change the stack.
             break;
         case MenuKey::Confirm: {

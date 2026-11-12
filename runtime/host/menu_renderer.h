@@ -52,8 +52,10 @@ public:
                       const DisplayFrame* backdrop=nullptr) {
         prepare(width,height);
         if(screen.browser)return browser(screen,seconds);
-        const bool over_game=backdrop && backdrop->width,first=root && !over_game;
+        const bool over_game=backdrop && backdrop->width,first=(root || screen.first_look) && !over_game;
+        const std::string heading=first && screen.first_look && screen.status?screen.status():std::string();
         if(screen.panel && !first)return panel(screen,seconds,prompt,over_game);
+        if(first && std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& e){return e.card;}))return cards(screen,seconds,prompt,heading);
         std::copy(haze_[first || over_game?0:1].begin(),haze_[first || over_game?0:1].end(),bits_);
         if(first) {
             ring(seconds);
@@ -77,6 +79,7 @@ public:
         int y=(first?h*55/100:h*52/100)-lines*row/2;
         if(first) {
             logo(w*25/100,h*4/100,w*50/100,h*24/100);
+            if(!heading.empty())textCentred(fit(heading,entry_,w*90/100),w/2,std::min(h*29/100,y-row-unit/2),entry_,RGB(240,222,70));
         } else text(screen.title,left,y-unit*3/2-(row<unit*3/2?unit/2:0),title_,RGB(240,222,70));
         const double pulse=0.5+0.5*std::sin(seconds*3.0);
         for(unsigned n=0;n<count;++n,y+=row) {
@@ -98,7 +101,7 @@ public:
         // The buttons, as on the console: the cross at the left of the middle, the circle to its right.
         const int by=h-unit*3;
         hint(Symbol::Cross,"Enter",w*34/100,by,unit);
-        if(!first)hint(Symbol::Circle,"Back",w*58/100,by,unit);
+        if(!first || screen.first_look)hint(Symbol::Circle,"Back",w*58/100,by,unit);
         DisplayFrame frame;frame.width=width;frame.height=height;frame.bgra.assign(bits_,bits_+std::size_t(width)*height);
         return frame;
     }
@@ -106,6 +109,66 @@ public:
 private:
     enum class Symbol {Cross,Circle};
 
+    // A first-look screen with a row of cards (MenuEntry::card; the online page, the user's choice of 2026-11-12): black,
+    // the logo smaller, the heading under it, the cards side by side in the middle (the chosen one edged in pulsing light
+    // blue), the other entries centred under them with their values, the note and the buttons at the bottom.
+    DisplayFrame cards(const MenuScreen& screen,double seconds,const std::string& prompt,const std::string& heading) {
+        std::copy(haze_[0].begin(),haze_[0].end(),bits_);
+        SetBkMode(dc_,TRANSPARENT);
+        const int w=int(width_),h=int(height_),unit=h/24;
+        const double pulse=0.5+0.5*std::sin(seconds*3.0);
+        const auto rect=[&](int x0,int y0,int x1,int y1,std::uint32_t colour,double alpha) {
+            blendConvex({double(x0),double(y0),double(x1),double(y0),double(x1),double(y1),double(x0),double(y1)},4,colour,alpha);
+        };
+        const auto frameRect=[&](int x0,int y0,int x1,int y1,int t,std::uint32_t colour,double alpha) {
+            rect(x0,y0,x1,y0+t,colour,alpha);rect(x0,y1-t,x1,y1,colour,alpha);rect(x0,y0+t,x0+t,y1-t,colour,alpha);rect(x1-t,y0+t,x1,y1-t,colour,alpha);
+        };
+        logo(w*32/100,h*3/100,w*36/100,h*17/100);
+        if(!heading.empty())textCentred(fit(heading,entry_,w*90/100),w/2,h*22/100,entry_,RGB(240,222,70));
+        std::vector<unsigned> row,rest;
+        for(unsigned n=0;n<screen.entries.size();++n)(screen.entries[n].card?row:rest).push_back(n);
+        // The cards.
+        const int gap=w*4/100,cw=std::min(w*34/100,(w*88/100-gap*(int(row.size())-1))/std::max(int(row.size()),1)),ch=h*24/100;
+        const int total=cw*int(row.size())+gap*(int(row.size())-1),top=h*30/100;
+        for(unsigned i=0;i<row.size();++i) {
+            const auto& entry=screen.entries[row[i]];
+            const bool on=row[i]==screen.highlighted,usable=entry.usable();
+            const int x0=w/2-total/2+int(i)*(cw+gap),x1=x0+cw,y1=top+ch;
+            rect(x0,top,x1,y1,on?0x00182848u:0x00101018u,on?0.85:0.70);
+            frameRect(x0,top,x1,y1,std::max(unit/8,2),on?0x0060C8FFu:0x00484858u,on?0.55+0.40*pulse:0.9);
+            const COLORREF colour=!usable?RGB(84,84,94):on?RGB(BYTE(110+30*pulse),BYTE(206+20*pulse),255):RGB(214,214,220);
+            int y=top+ch*12/100;
+            textCentred(fit(entry.label,title_,cw-unit),(x0+x1)/2,y,title_,colour);
+            y+=unit*2;
+            std::size_t at=0;
+            while(at<=entry.card_text.size() && !entry.card_text.empty()) {
+                const auto end=std::min(entry.card_text.find('\n',at),entry.card_text.size());
+                textCentred(fit(entry.card_text.substr(at,end-at),note_,cw-unit),(x0+x1)/2,y,note_,usable?RGB(170,170,184):RGB(84,84,94));
+                y+=unit;at=end+1;
+            }
+            if(const std::string value=entry.value?entry.value():std::string();!value.empty())
+                textCentred(fit(value,note_,cw-unit),(x0+x1)/2,y+unit/3,note_,usable?RGB(150,215,255):RGB(84,84,94));
+        }
+        // The other entries, centred under the cards, each with its value.
+        const int line=unit*3/2;
+        int y=top+ch+unit;
+        for(const unsigned n:rest) {
+            const auto& entry=screen.entries[n];
+            const bool on=n==screen.highlighted,usable=entry.usable();
+            const COLORREF colour=!usable?RGB(78,78,86):on?RGB(BYTE(96+30*pulse),BYTE(200+20*pulse),255):RGB(172,172,178);
+            const std::string value=entry.value?entry.value():std::string();
+            const std::string shown=fit(value.empty()?entry.label:entry.label+"   "+value,entry_,w*80/100);
+            if(usable)textCentred(shown,w/2,y,entry_,colour);else{SetBkMode(dc_,TRANSPARENT);plainText(shown,w/2-extent(shown,entry_)/2,y,entry_,colour);}
+            y+=line;
+        }
+        const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
+        if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
+        const int by=h-unit*3;
+        hint(Symbol::Cross,"Enter",w*34/100,by,unit);
+        hint(Symbol::Circle,"Back",w*58/100,by,unit);
+        DisplayFrame frame;frame.width=width_;frame.height=height_;frame.bgra.assign(bits_,bits_+std::size_t(width_)*height_);
+        return frame;
+    }
     // A panel screen (MenuScreen::panel): a dark translucent panel at the right of the fan, the title in yellow with the
     // status in a pill at its right, gold headings over the groups, each entry's value at the right of its line, the chosen
     // line on a light band.
