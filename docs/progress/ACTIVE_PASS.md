@@ -8,7 +8,7 @@ No pass is open. Last done (2026-11-12, late): the user's reports after an onlin
 
 Before that, the same day: Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it.
 
-**Release package:** `dist/BT2-Recomp-2533dd6.zip` (made at the user's request when the pass ended, 2026-11-12; it carries the VU1 I-bit fix, which changes clipped triangles at the screen's edges). The older `8227c74` package was removed.
+**Release package:** `dist/BT2-Recomp-c357a2a.zip` (remade at the user's request, 2026-11-12 late, after the pass on their online reports: the clean end of an online battle, the HD lit-variant limit, the native pass `underwater`). The older `2533dd6` package was removed.
 
 Also done (the same day): step 9's first part, the game's own input delay: logging sites that do not wait (`session.py --log`, `--set`), `BT2_EE_CALL_SUMS` for the port, `input_delay.py`; a press at fight frame 480 changes the lists in its frame and VU1 a frame later in both programs (sessions `delay-base`, `delay-x480`, `delay-u480`; port runs in `work/latency/`).
 
