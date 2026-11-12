@@ -1,7 +1,9 @@
 #include "probe_state.h"
 #include "ee/ee_runtime.h"
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <span>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -17,7 +19,9 @@
 // registers 0x10003C00 to 0x10003D70 and GIF_STAT (context_block.py, HARDWARE_WORDS), loaded into the VIF1 model.
 // "|<VU1 registers in>" adds VU1's registers as PCSX2 keeps them (tools/pcsx2_compare/vu_registers.py: VF[32],
 // VI[32] at 16 bytes each with the control registers among them, ACC); without it VU1's registers start at reset,
-// though the game keeps values in them from one chain to the next. The call returns to a sentinel; the RAM
+// though the game keeps values in them from one chain to the next. "|<GIF in>" (step 7) is GIF data sent to the GS
+// before the call (tools/pcsx2_compare/gs_memory.py: PCSX2's GS registers and its whole GS memory as one upload);
+// GS memory after the call is then written to <RAM out>.gs. The call returns to a sentinel; the RAM
 // after it is written to <RAM out>, the registers, in the same layout, to <RAM out>.registers, and VU1's data
 // memory to <RAM out>.vu1.
 namespace {
@@ -84,6 +88,8 @@ std::vector<char> save(const EeRuntime& runtime,const R5900Context& c) {
 }
 }
 
+std::function<std::vector<std::uint32_t>()> probe_gs_memory;
+
 void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::string& spec) {
     std::vector<std::string> part;
     for(std::size_t at=0;;) {
@@ -92,8 +98,8 @@ void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::strin
         if(end==std::string::npos)break;
         at=end+1;
     }
-    if(part.size()<4||part.size()>7)
-        throw std::runtime_error("BT2_REPLAY_CALL is <RAM in>|<registers in>|<function>|<RAM out>[|<VU memory in>[|<hardware in>[|<VU1 registers in>]]]");
+    if(part.size()<4||part.size()>8)
+        throw std::runtime_error("BT2_REPLAY_CALL is <RAM in>|<registers in>|<function>|<RAM out>[|<VU memory in>[|<hardware in>[|<VU1 registers in>[|<GIF in>]]]]");
     auto ram=runtime.memory();
     const auto image=readFile(part[0],ram.size());
     std::memcpy(ram.data(),image.data(),ram.size());
@@ -105,25 +111,40 @@ void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::strin
         std::memcpy(vu1.data.data(),vu.data()+vu1_data,vu1.data.size());
     }
     if(part.size()>=6)loadVif1(runtime.vif1,readFile(part[5],hardware_size));
-    if(part.size()==7)loadVu1Registers(vu1,readFile(part[6],vu1_registers_size));
+    if(part.size()>=7)loadVu1Registers(vu1,readFile(part[6],vu1_registers_size));
+    const bool gs=part.size()==8;
+    if(gs) {
+        if(!probe_gs_memory)throw std::runtime_error("BT2_REPLAY_CALL: GS memory needs the GPU renderer");
+        const auto size=std::filesystem::file_size(part[7]);
+        const auto packets=readFile(part[7],size);
+        runtime.gs_sink.transfer(std::span(reinterpret_cast<const std::uint8_t*>(packets.data()),packets.size()));
+    }
     constexpr std::uint32_t sentinel=0xFFFFFFFC;
     R5900Context call=prepared;
     load(runtime,call,readFile(part[1],block_size));
     call.r[31].low=sentinel;call.r[31].high=0;
     runtime.expected_return=sentinel;
-    try {runtime.callFunction(static_cast<std::uint32_t>(std::stoul(part[2],nullptr,16)),call);}
-    catch(const UnsupportedSyscall& stop) {
-        // A boundary the replay does not cross (the kernel); named, so the comparison can list it as such.
-        std::ostringstream text;
-        text<<std::hex<<"BT2_REPLAY_CALL: stopped at system call 0x"<<stop.selector<<" at 0x"<<stop.resume_pc;
-        throw std::runtime_error(text.str());
+    // Function 0 runs nothing: the state as loaded is written out (a check of the loading itself).
+    const auto function=static_cast<std::uint32_t>(std::stoul(part[2],nullptr,16));
+    if(function) {
+        try {runtime.callFunction(function,call);}
+        catch(const UnsupportedSyscall& stop) {
+            // A boundary the replay does not cross (the kernel); named, so the comparison can list it as such.
+            std::ostringstream text;
+            text<<std::hex<<"BT2_REPLAY_CALL: stopped at system call 0x"<<stop.selector<<" at 0x"<<stop.resume_pc;
+            throw std::runtime_error(text.str());
+        }
+        if(static_cast<std::uint32_t>(call.pc)!=sentinel)throw std::runtime_error("BT2_REPLAY_CALL: the function did not return to the sentinel");
     }
-    if(static_cast<std::uint32_t>(call.pc)!=sentinel)throw std::runtime_error("BT2_REPLAY_CALL: the function did not return to the sentinel");
     std::ofstream out(part[3],std::ios::binary);
     out.write(reinterpret_cast<const char*>(ram.data()),std::streamsize(ram.size()));
     const auto registers=save(runtime,call);
     std::ofstream(part[3]+".registers",std::ios::binary).write(registers.data(),std::streamsize(registers.size()));
     std::ofstream(part[3]+".vu1",std::ios::binary).write(reinterpret_cast<const char*>(vu1.data.data()),std::streamsize(vu1.data.size()));
+    if(gs) {
+        const auto memory=probe_gs_memory();
+        std::ofstream(part[3]+".gs",std::ios::binary).write(reinterpret_cast<const char*>(memory.data()),std::streamsize(memory.size()*4));
+    }
     std::cout<<std::hex<<"Replayed call: v0 "<<static_cast<std::uint32_t>(call.r[2].low)<<std::dec<<" VU1 runs "<<vu1.runs
              <<" kicks "<<vu1.kicks<<std::endl;
 }

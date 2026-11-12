@@ -54,6 +54,8 @@ public:
     void takeState(const GpuGsMirror& primary,unsigned slot) {const auto hold=use();gpu_.takeState(primary.gpu_,slot);}
     void submit() {const auto hold=use();gpu_.submit();} // The work so far, without ending the frame (gpu_gs_backend.h).
     void readFifo(std::span<std::uint8_t> out) {const auto hold=use();gpu_.readFifo(out);} // Local->host data, GPU-only mode.
+    // GS memory as drawn so far (4 MB; the comparison with PCSX2, docs/plans/validation/PCSX2_COMPARISON_PLAN.md, step 7).
+    std::vector<std::uint32_t> readVram() {const auto hold=use();const auto words=gpu_.readVram();return {words.begin(),words.end()};}
     void enableTimestamps() {const auto hold=use();gpu_.enableTimestamps();}
     void enableHdTextures(const std::filesystem::path& pack,std::uint64_t budget_bytes,GsTextureNames& names,bool playstation_buttons=true,
                           const std::filesystem::path& overrides={});

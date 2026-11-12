@@ -52,6 +52,7 @@ sys.path.insert(0, str(ROOT / 'tools/capture_ee'))
 import context_block as cb  # noqa: E402
 import ram_store  # noqa: E402
 import vu_registers as vr  # noqa: E402
+import pine  # noqa: E402
 import capture_ee as ce  # noqa: E402  (the ELF check and the PE export reader)
 
 SITES = ROOT / 'config/pcsx2_compare_sites.json'
@@ -329,6 +330,7 @@ def prepare(folder, pcsx2, bios, card, realtime=False, vu1_interpreter=False):
         f'[Filenames]\nBIOS = {bios.name}\n'
         '[EmuCore]\nEnablePatches = false\nEnableCheats = false\nEnableWideScreenPatches = false\nEnableNoInterlacingPatches = false\n'
         'SaveStateOnShutdown = false\nEnableDiscordPresence = false\n'
+        f'EnablePINE = true\nPINESlot = {pine.SLOT}\n'   # Save states at checkpoints (--save-state, step 7).
         # The software renderer (13): the null renderer (11) stopped PCSX2 at an assertion
         # (IsCoverageAlphaSupported) when a versus battle began drawing; the software one draws as the console.
         # Realtime sessions keep PCSX2's defaults: its automatic renderer, the frame limiter and sound.
@@ -359,6 +361,28 @@ def drain(memory, ee, site):
         if entry[0] != number:
             return                                                     # Not written whole yet; next time.
         site['entries'].append(entry)
+
+
+def take_save_state(folder, out, timeout=60.0):
+    """PCSX2's save state while the stub waits (GS memory for step 7), moved to <checkpoint>/state.p2s. PCSX2 writes
+    it on its own thread: the newest .p2s in the profile's sstates folder, once its size holds still."""
+    states = folder / 'profile/PCSX2/sstates'
+    states.mkdir(parents=True, exist_ok=True)
+    for old in states.glob('*.p2s'):
+        old.unlink()
+    pine.save_state(1)
+    started, size = time.monotonic(), -1
+    while time.monotonic() - started < timeout:
+        found = sorted(states.glob('*.p2s'))
+        if found:
+            now = found[-1].stat().st_size
+            if now and now == size:
+                shutil.move(found[-1], out / 'state.p2s')
+                print(f'  save state {now} bytes', flush=True)
+                return
+            size = now
+        time.sleep(0.5)
+    print('  save state not written', flush=True)
 
 
 def run(args, sites):
@@ -446,6 +470,8 @@ def run(args, sites):
                         print(f"VU1's registers not taken: {error}", flush=True)
                 if vu1_registers:
                     (out / 'vu1-regs.bin').write_bytes(memory.read(vu1_registers, vr.SIZE))
+                if site['name'] in args.save_state:
+                    take_save_state(folder, out)
                 taken.append({'site': site['name'], 'call': count, 'when': when, 'folder': out.name,
                               'seconds': round(time.monotonic() - started, 1),
                               'ram_sha256': hashlib.sha256(ram).hexdigest(), 'vu_sha256': hashlib.sha256(vu_memory).hexdigest()})
@@ -513,6 +539,8 @@ def main():
     parser.add_argument('--realtime', action='store_true',
                         help='Full speed, default renderer, window shown, keyboard as pad 1; READY/STOP markers.')
     parser.add_argument('--idle', type=float, default=0, help='End the session this many seconds after the last checkpoint.')
+    parser.add_argument('--save-state', action='append', default=[],
+                        help="SITE: PCSX2's save state at each of that site's checkpoints (state.p2s; GS memory, step 7).")
     parser.add_argument('--vu1-interpreter', action='store_true',
                         help="PCSX2's VU1 interpreter instead of its microVU recompiler (to tell the two apart).")
     args = parser.parse_args()

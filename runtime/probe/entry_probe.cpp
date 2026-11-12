@@ -526,6 +526,7 @@ int main(int argc, char** argv) {
             // BT2_SUPER_SAMPLING=<1|2|4|8|16>: samples per pixel; 4 or more scan out at twice the resolution.
             const unsigned super_sampling = std::getenv("BT2_SUPER_SAMPLING") ? static_cast<unsigned>(std::stoul(std::getenv("BT2_SUPER_SAMPLING"))) : 1u;
             gpu_mirror.attach(runtime.gs_sink, super_sampling);
+            probe_gs_memory = [] {return gpu_mirror.readVram();}; // BT2_REPLAY_CALL's GS memory (call_replay.cpp).
             // The names follow the renderer on the GS thread (gs/gpu/gpu_gs_mirror.h), not the game's sink.
             if (runtime.gs_sink.texture_names) {gpu_mirror.nameTextures(*runtime.gs_sink.texture_names);runtime.gs_sink.texture_names = nullptr;}
             if (std::getenv("BT2_GPU_TIMESTAMPS")) gpu_mirror.enableTimestamps(); // GPU time by stage, printed at the end.

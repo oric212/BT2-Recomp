@@ -2,6 +2,7 @@
 #include "ee/ee_runtime.h"
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <stdexcept>
 #include <vector>
 
@@ -37,6 +38,8 @@ void registerSelectedStartup(EeRuntime& runtime);  // selected_bindings.cpp
 void registerSelectedOverlays(EeRuntime& runtime); // overlay_bindings.cpp
 // BT2_REPLAY_CALL: one guest function on a state captured from PCSX2 (call_replay.cpp).
 void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::string& spec);
+// GS memory as the GPU renderer has drawn it (set where the renderer is attached; empty without one).
+extern std::function<std::vector<std::uint32_t>()> probe_gs_memory;
 // BT2_EE_CALL_SUMS: the field, flips, a word and range checksums at every call from one call address (call_sums.cpp).
 void installCallSums(EeRuntime& runtime,const std::string& spec);
 // BT2_EE_CALL_RAM: EE RAM written whole before the n-th call from one call address (call_ram.cpp).

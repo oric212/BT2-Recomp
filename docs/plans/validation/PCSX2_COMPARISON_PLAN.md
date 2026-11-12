@@ -292,19 +292,53 @@ baseline was rerecorded (5,886 more VU1 instructions: the clipped polygons chang
 **Not compared yet:** the GIF packets the chain sends (XGKICK and DIRECT): PCSX2 hands them to its GS, which a
 session cannot read; step 7 compares GS memory instead. Other screens' chains.
 
-**Next:** the globals' 152 ranges by route (or the port through the same route); step 7 (GS memory and pictures), which also covers the chain's GIF packets. Press to sound and fullscreen when wanted.
+**Step 7, GS memory and the picture: one fight frame (2026-11-12).** PCSX2's GS state comes from its save states:
+the session asks for one through PINE (`pine.py`, PCSX2's local control socket, enabled in the session's profile)
+while the stub waits (`session.py --save-state SITE`; `state.p2s` in the checkpoint). Its `GS.bin` (freeze version
+9) holds the general registers (the environment's from offset 4, the two contexts' from 124, RGBAQ, ST, UV from
+316), the transfer state, and GS memory at offset 425 (`gs_memory.py`; found from textures: read from 424 every
+texel was a byte off). The port gets that state as GIF data before the replay (BT2_REPLAY_CALL's eighth part): GS
+memory as one host-to-local upload (a 512 × 2048 PSMCT32 rectangle covers the 512 pages once; checked word for
+word, synthetic and PCSX2's), then the registers by A+D. Its GS memory after the call is read back from
+paraLLEl-GS (`<RAM out>.gs`). `gs_compare.py` compares it with PCSX2's GS memory by region (the frame and Z buffers
+FRAME_1 and ZBUF_1 name, the rest) and the frame's pixels by how much they differ, and saves both pictures.
+
+The comparison point must be the frame's end (`@102F08`): just after the chain (`@102EE0`) PCSX2's GS was still
+drawing the frame's last strips (76,136 Z words changed between the two).
+
+Fight frame 300 of the versus battle, the kick's chain replayed (2,777 VU1 starts, 3,200 XGKICKs, 3,695 draws,
+2,421 with Z writes, about 130 uploads), the port's native passes off and one sample per pixel:
+
+| Region | PCSX2 changed | Port changed | Differ |
+| --- | --- | --- | --- |
+| Textures, palettes, work buffers (the rest) | 42 words | 42 words | 0 |
+| Z buffer | 16 | 15 | 1 |
+| Frame (512 × 448) | 226,757 | 226,959 | 146,212 |
+
+Of the frame's 229,376 pixels 83,164 are equal, 130,475 differ by one level, 14,690 by two, 1,021 by 3 to 16 and
+26 by more than 16 (largest 52): the ±1 and ±2 spread evenly over the shaded surfaces (paraLLEl-GS's interpolation
+rounding against PCSX2's software renderer), the larger ones on thin features (rain streaks, a few edges,
+sparkles at the waterfall), where the two rasterize differently. Pictures in
+`work/frames/pcsx2-compare/gs3-102ED8-300-*.png`. Everything the chain uploads and every texture-side write is
+exact, and the frame is the same picture within the GS renderers' rounding. **Not compared yet:** a frame with the
+fighters in view (frame 300 is the intro's stage pan), frames with the port's native passes on (they are the
+port's, not the original's), super-sampling and the enhancements (not the original's), other screens.
+
+**Next:** the same at fight frames with the fighters, super attacks and effects; the globals' 152 ranges by route
+(or the port through the same route). Press to sound and fullscreen when wanted.
 
 ## Unknowns
 
 
 - How many of the fight's steps can be replayed without reaching a service or DMA (step 2 finds out).
-- Whether the save state's GS memory can be taken while the stub spins without changing what is drawn next.
+- Whether a save state taken while the stub waits changes what PCSX2 draws afterwards (states are taken there and
+  the session goes on; a change to later frames has not been looked for).
 - Which word of the display shows when a drawn frame reaches the screen in PCSX2 (GS memory and its privileged
   registers are not exported; the tester sees the screen instead).
 - Whether the desktop duplication API sees a fullscreen program's pictures when they bypass the compositor (if not,
   fullscreen press-to-screen needs a camera, and the user's).
-- Whether PCSX2's software renderer and paraLLEl-GS agree exactly on BT2's draws (paraLLEl-GS documents some
-  interpolation rounding as not bit-exact).
+- Whether the CLUT buffer matters: PCSX2's freeze does not hold it, so a chain that draws with a CLUT loaded in an
+  earlier frame (CLD 0) would draw differently in the replay (not seen in fight frame 300: its draws load theirs).
 
 ## Not in this plan
 

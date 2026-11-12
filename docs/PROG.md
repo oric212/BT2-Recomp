@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
+- **2026-11-12 — GS memory and the picture against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): the fight frame's chain replayed on PCSX2's GS state (from a save state) leaves every texture, palette and work-buffer word as PCSX2's; the Z buffer differs in 1 word; the frame's pixels are 36% equal and 63% one or two levels apart (paraLLEl-GS's rounding against PCSX2's software renderer), 26 of 229,376 more than 16 levels apart (rain streaks, edges).
 - **2026-11-12 — VU1 equal to PCSX2 after a frame's chain; a VU1 fault fixed** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 6): the fight's VIF1 chain replayed from PCSX2's state (VIF1's and VU1's registers taken from PCSX2) leaves VU1's whole data memory equal to PCSX2's at frames 300, 600 and 900. Found on the way: an I-bit pair's upper instruction must read the I before the pair; the port's reading pushed clipped triangles out from a wrong centre.
 - **2026-11-12 — loaded data against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 5): at the first frame of the same versus battle, the loaded fighters and stage (22 MB from `0x700000`) equal PCSX2's but for 2.7 KB of positions and leftovers; the rest differs by route (the port's starter skips the title), the streams' timing and the kernel. Sticks rest at `0x80` in the port, `0x7F` in PCSX2; the fight is the same with either (1,427 frames).
 - **2026-11-12 — press to screen against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 9): windowed, a press shown in 104 ms median by the port with Low input lag (the default), 108 ms by PCSX2, 111 ms by the port at 60 fps, 133 ms by the port without Low input lag.
@@ -76,12 +77,12 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): GS memory and pictures (with the chain's GIF packets), the services; the rest of loaded data (the globals by route).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): GS memory and pictures at frames with the fighters and effects, the services; the rest of loaded data (the globals by route).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.
 5. **The user's decisions:** a matchmaking server and rollback for online; publishing the release.
 
-**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GIF packets, GS memory and pictures, the services after the boot.
+**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GS memory beyond one fight frame, GS memory and pictures, the services after the boot.
 
 [Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)
