@@ -259,13 +259,44 @@ to PCSX2's; the differences are the route (the port's starter skips the logos, f
 timing and the kernel. **Not covered:** the route's own state, which needs the port to reach the battle by PCSX2's
 route (the title's demo with the same draw); other events (a story map shown, a menu entered).
 
-**Next:** the globals' 152 ranges by route (or the port through the same route); then step 6 (VU1 and the GIF stream). Press to sound and fullscreen when wanted.
+**Step 6, VU1: a frame's chain (2026-11-12).** The fight frame's VIF1 kick is `0x28B090` (call `@102ED8`): it ends
+the current display list with an END tag, starts it (`0x28B318`) and switches to the other buffer. Its replay now
+runs the chain through the port's VIF1 and VU1 from PCSX2's state, which needed three things from PCSX2 beyond RAM:
+
+- **VU1's two memories,** already in each checkpoint (`vu-mem.bin`), now loaded by the replay.
+- **VIF1's registers,** which a chain relies on from the one before (CYCLE, BASE, OFST, TOPS, TOP, ITOP, ROW, COL,
+  MASK, MODE, DBF): the stub reads them with `lw` from `0x10003C00` to `0x10003D70`, with GIF_STAT and VIF1's DMA
+  channel registers (`hardware.bin`). Without them the first replay stopped at an UNPACK with a filling write cycle
+  (CYCLE at reset).
+- **VU1's registers,** which the EE cannot read: `vu_registers.py` finds PCSX2's `VURegs` array in its writable
+  sections by VU0's VF registers (published by the stub), takes VU1's entry beside it and checks VF0
+  (`vu1-regs.bin`). They turned out not to matter for these chains.
+
+Comparison point: PCSX2's VU1 memory once the chain has finished. With microVU it already has at the kick's "after"
+checkpoint; with PCSX2's interpreter (`session.py --vu1-interpreter`) not yet, so the next call's checkpoint
+(`@102EE0`, D1_CHCR idle) is the reference.
+
+**One fault found, in the port's VU1:** an instruction pair with the I bit loads I from its lower word, and the
+port let that pair's upper instruction read the new I; PCSX2, its interpreter and microVU alike, gives it the I
+before the pair. Before the fix VU1's memory after the chain differed at frames 300, 600 and 900 (20, 38 and 23
+ranges): the unused fourth word of the strip program's STQ quadwords, and at 600 vertex positions and the clip
+polygon's data. The strip program (`1657b0`, `a728e0`, hand-written; `81d8a7`, translated) computes a clipped
+triangle's centre with `ADDA` (I = 1), `MADDi` (loading I = 1/3), `MULi`: (a + b + 1·c) / 3 with PCSX2's reading,
+(a + b + c/3) / 3 with the port's, so clipped triangles were pushed out from a wrong point. Fixed in the
+interpreter, the translator (`vu.i` set after the upper instruction) and the hand-written clipper; the unit test
+asserts the rule. After the fix VU1's whole data memory equals PCSX2's after all five chains compared (frames 300,
+600, 900 against microVU; 300, 600 against the interpreter). A fight with `BT2_VU1_VERIFY=1` (2,000 flips, 9,061,301
+starts, 7,124,333 of them hand-written) has every native program equal to the interpreter. The gate's battle
+baseline was rerecorded (5,886 more VU1 instructions: the clipped polygons change).
+
+**Not compared yet:** the GIF packets the chain sends (XGKICK and DIRECT): PCSX2 hands them to its GS, which a
+session cannot read; step 7 compares GS memory instead. Other screens' chains.
+
+**Next:** the globals' 152 ranges by route (or the port through the same route); step 7 (GS memory and pictures), which also covers the chain's GIF packets. Press to sound and fullscreen when wanted.
 
 ## Unknowns
 
 
-- Whether `VUmem` is VU0 micro, VU0 data, VU1 micro, VU1 data in that order (checked on the first session against
-  the game's VU1 programs).
 - How many of the fight's steps can be replayed without reaching a service or DMA (step 2 finds out).
 - Whether the save state's GS memory can be taken while the stub spins without changing what is drawn next.
 - Which word of the display shows when a drawn frame reaches the screen in PCSX2 (GS memory and its privileged

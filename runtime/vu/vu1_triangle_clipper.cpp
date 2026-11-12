@@ -14,12 +14,14 @@ using namespace vu1_simd;
 
 void Vu1Hand::Clipper::triangle() {
     auto& vi=vu.vi;
-    // The centre of the three vertices; what the strip loop needs again goes on the stack.
+    // The centre of the three vertices, (a + b + c) / 3; what the strip loop needs again goes on the stack. Pair 90
+    // reads the I pair 89 loaded (1) and loads its own (1/3), which pair 94 reads: an I-bit pair's upper
+    // instruction sees the I before the pair.
     vu.i=pairLow(vu,89);
     __m128 acc=_mm_add_ps(value(22),value(23));
+    __m128 centre=_mm_add_ps(acc,_mm_mul_ps(value(24),clean(_mm_set1_epi32(int(vu.i)))));
     vu.i=pairLow(vu,90);
     const __m128 weight=clean(_mm_set1_epi32(int(vu.i)));
-    __m128 centre=_mm_add_ps(acc,_mm_mul_ps(value(24),weight));
     push(20);push(23);push(24);
     centre=_mm_mul_ps(centre,weight);
     push(25);

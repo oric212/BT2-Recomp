@@ -122,7 +122,6 @@ def emit_pair(at, d, out, indent='        '):
     if d['debug']: raise Untranslatable(f'D/T bit at {at}')
     w(f'{{ // {at}: {high:08X} {low:08X}')
     w('if(vu.q_pending_ || vu.clip_count_)vu.settle(false);')
-    if d['i_bit']: w(f'vu.i=0x{low:08X}u;')
     commit = None
     if d['upper'] in ('register', 'accumulator'):
         second = {VECTOR: f'lanes(vu.vf[{d["ft"]}])', FIELD: f'_mm_castsi128_ps(_mm_set1_epi32(int(vu.vf[{d["ft"]}][{d["field"]}])))',
@@ -138,6 +137,7 @@ def emit_pair(at, d, out, indent='        '):
         w(f'const auto result{at}=vu.upper(0x{high:08X}u,{at});')
         commit = (f'if(result{at}.target==Vu1::Result::Register && result{at}.reg)storeMasked(vu.vf[result{at}.reg].data(),load4(result{at}.value.data()),result{at}.mask);'
                   f'else if(result{at}.target==Vu1::Result::Accumulator)storeMasked(vu.acc.data(),load4(result{at}.value.data()),result{at}.mask);')
+    if d['i_bit']: w(f'vu.i=0x{low:08X}u;')  # Loaded with the pair: the upper instruction read the I before it.
     if not d['i_bit'] and not d['skip_lower']:
         kind = d['lower']
         vf, vi, mask, imm = d.get('lower_vf'), d.get('lower_vi'), d.get('lower_mask'), d.get('lower_imm')

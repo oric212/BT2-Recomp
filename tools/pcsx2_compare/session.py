@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / 'tools/capture_ee'))
 import context_block as cb  # noqa: E402
 import ram_store  # noqa: E402
+import vu_registers as vr  # noqa: E402
 import capture_ee as ce  # noqa: E402  (the ELF check and the PE export reader)
 
 SITES = ROOT / 'config/pcsx2_compare_sites.json'
@@ -304,7 +305,7 @@ KEYS = {'Start': 'Return', 'Select': 'Backspace', 'Up': 'Up', 'Down': 'Down', 'L
 READY, STOP = 'ready', 'stop'
 
 
-def prepare(folder, pcsx2, bios, card, realtime=False):
+def prepare(folder, pcsx2, bios, card, realtime=False, vu1_interpreter=False):
     """A copy of PCSX2 without the user's portable marker, and a profile of its own (as the capture tools do)."""
     package = folder / 'package'
     package.mkdir(parents=True, exist_ok=True)
@@ -331,9 +332,13 @@ def prepare(folder, pcsx2, bios, card, realtime=False):
         # The software renderer (13): the null renderer (11) stopped PCSX2 at an assertion
         # (IsCoverageAlphaSupported) when a versus battle began drawing; the software one draws as the console.
         # Realtime sessions keep PCSX2's defaults: its automatic renderer, the frame limiter and sound.
+        # VU1 on the EE's thread (MTVU off): with its own thread VU1's memory, read from outside the process, need
+        # not hold the work of a chain that has finished (step 6).
         + ('[InputSources]\nKeyboard = true\n[Pad1]\nType = DualShock2\n'
            + ''.join(f'{button} = Keyboard/{key}\n' for button, key in KEYS.items()) if realtime else
-           '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\n[SPU2/Output]\nOutputModule = nullout\n')
+           '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\n[SPU2/Output]\nOutputModule = nullout\n'
+           '[EmuCore/Speedhacks]\nvuThread = false\n'
+           + ('[EmuCore/CPU/Recompiler]\nEnableVU1 = false\n' if vu1_interpreter else ''))
         + '[MemoryCards]\nSlot1_Enable = true\nSlot1_Filename = Mcd001.ps2\nSlot2_Enable = false\n', encoding='utf-8')
     return package / pcsx2.name
 
@@ -359,7 +364,8 @@ def drain(memory, ee, site):
 def run(args, sites):
     folder = ROOT / 'work/pcsx2-compare' / args.session
     folder.mkdir(parents=True, exist_ok=True)
-    executable = prepare(folder, args.pcsx2.resolve(), args.bios.resolve(), args.card.resolve(), args.realtime)
+    executable = prepare(folder, args.pcsx2.resolve(), args.bios.resolve(), args.card.resolve(), args.realtime,
+                         args.vu1_interpreter)
     for marker in (READY, STOP):
         (folder / marker).unlink(missing_ok=True)
     image = executable.read_bytes()
@@ -373,6 +379,7 @@ def run(args, sites):
     started = time.monotonic()
     process = subprocess.Popen(command, cwd=folder, creationflags=subprocess.CREATE_NO_WINDOW)
     memory, taken, store = None, [], ram_store.Writer()
+    vu1_registers = None                         # VU1's VURegs entry in PCSX2: found at the first checkpoint.
     left = {s['name']: s['count'] for s in sites if not s.get('log') and not s.get('set')}
     try:
         def busy(site):
@@ -428,6 +435,17 @@ def run(args, sites):
                 store.store(out, ram)
                 (out / 'vu-mem.bin').write_bytes(vu_memory)
                 (out / 'registers.bin').write_bytes(block)
+                hardware = site['slot'] + cb.DATA + cb.HARDWARE
+                (out / 'hardware.bin').write_bytes(ram[hardware:hardware + cb.HARDWARE_SIZE])
+                if vu1_registers is None:
+                    try:
+                        vu1_registers = vr.locate(memory.read, memory.base, image, vu, block[cb.VFS:cb.VFS + 512])
+                        print(f"VU1's registers at {vu1_registers:#x} in PCSX2", flush=True)
+                    except LookupError as error:
+                        vu1_registers = False
+                        print(f"VU1's registers not taken: {error}", flush=True)
+                if vu1_registers:
+                    (out / 'vu1-regs.bin').write_bytes(memory.read(vu1_registers, vr.SIZE))
                 taken.append({'site': site['name'], 'call': count, 'when': when, 'folder': out.name,
                               'seconds': round(time.monotonic() - started, 1),
                               'ram_sha256': hashlib.sha256(ram).hexdigest(), 'vu_sha256': hashlib.sha256(vu_memory).hexdigest()})
@@ -495,6 +513,8 @@ def main():
     parser.add_argument('--realtime', action='store_true',
                         help='Full speed, default renderer, window shown, keyboard as pad 1; READY/STOP markers.')
     parser.add_argument('--idle', type=float, default=0, help='End the session this many seconds after the last checkpoint.')
+    parser.add_argument('--vu1-interpreter', action='store_true',
+                        help="PCSX2's VU1 interpreter instead of its microVU recompiler (to tell the two apart).")
     args = parser.parse_args()
     catalogue = json.loads(SITES.read_text(encoding='utf-8'))['sites']
     try:

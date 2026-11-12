@@ -8,6 +8,9 @@ For each call a session captured before and after (session.py), the probe runs t
   (interrupt handlers, other threads) unless the port should have written it too, which the listing lets one judge.
 - **Registers:** v0, v1, f0, VU0's random number register R (the game's random numbers) and the registers a
   function must keep (s0 to s7, gp, sp, fp).
+- **VU1's data memory** (step 6): a call that kicks VIF1 runs the chain in the port's VIF1 and VU1 (VU1's memories
+  and, from sessions that publish them, VIF1's registers loaded from the "before" checkpoint); the words differ as
+  for RAM.
 
 Usage: python tools/pcsx2_compare/compare_calls.py --disc <iso> --session <name> [--site NAME] [--config Release]
 A call that reaches a system call stops there and is listed as stopped at its boundary, not as a difference.
@@ -46,8 +49,12 @@ def ranges(addresses, gap=16):
 
 def replay(disc, config, target, before, out):
     ram = ram_store.materialize(before, out.with_suffix('.in.bin'))
-    env = dict(os.environ, BT2_REPLAY_CALL='|'.join([str(ram), str(before / 'registers.bin'),
-                                                     f'{target:x}', str(out), str(before / 'vu-mem.bin')]))
+    parts = [str(ram), str(before / 'registers.bin'), f'{target:x}', str(out), str(before / 'vu-mem.bin')]
+    if (before / 'hardware.bin').exists():                     # VIF1's registers (sessions since step 6).
+        parts.append(str(before / 'hardware.bin'))
+        if (before / 'vu1-regs.bin').exists():                 # VU1's registers, read out of PCSX2.
+            parts.append(str(before / 'vu1-regs.bin'))
+    env = dict(os.environ, BT2_REPLAY_CALL='|'.join(parts))
     for name in ('BT2_START_BATTLE', 'BT2_START_EPISODE', 'BT2_START_SCREEN', 'BT2_PAD_SCRIPT', 'BT2_GPU_GS', 'BT2_VIEWER'):
         env.pop(name, None)
     cmd = command(ROOT, disc, config)
@@ -103,11 +110,32 @@ def check(disc, config, session, site, call):
     theirs = registers((after / 'registers.bin').read_bytes())
     ours = registers(Path(str(out) + '.registers').read_bytes())
     register_differences = {k: [f'{theirs[k]:#x}', f'{ours[k]:#x}'] for k in theirs if theirs[k] != ours[k]}
-    out.unlink()
-    Path(str(out) + '.registers').unlink()
-    return {'call': call, 'site': site['name'], 'result': 'equal' if not findings and not register_differences else 'DIFFERENT',
+    vu1_port = Path(str(out) + '.vu1').read_bytes()
+    vu1 = vu1_compare(vu1_data(before), vu1_data(after), vu1_port)
+    for path in (out, Path(str(out) + '.registers'), Path(str(out) + '.vu1')):
+        path.unlink()
+    equal = not findings and not register_differences and not vu1['findings']
+    return {'call': call, 'site': site['name'], 'result': 'equal' if equal else 'DIFFERENT',
             'port_words_written': int(port_wrote.sum()), 'pcsx2_words_written': int(pcsx2_wrote.sum()),
-            'findings': findings, 'registers': register_differences, 'other_activity': activity}
+            'findings': findings, 'registers': register_differences, 'other_activity': activity, 'vu1': vu1}
+
+
+VU1_DATA, VU1_SIZE = 0x6000, 0x4000                   # VU1's data memory in PCSX2's VUmem block.
+
+
+def vu1_data(checkpoint):
+    return (checkpoint / 'vu-mem.bin').read_bytes()[VU1_DATA:VU1_DATA + VU1_SIZE]
+
+
+def vu1_compare(start, pcsx2, port):
+    """VU1's data memory after the call: words that differ, as for RAM (a finding where the port wrote)."""
+    differ, port_wrote, pcsx2_wrote = compare(start, pcsx2, port, [])
+    findings, activity = [], []
+    for low, high in ranges(differ.tolist()):
+        entry = {'range': f'{low:#06x}-{high + 3:#06x}', 'pcsx2': pcsx2[low:low + 16].hex(), 'port': port[low:low + 16].hex()}
+        (findings if port_wrote[low // 4:high // 4 + 1].any() else activity).append(entry)
+    return {'port_words_written': int(port_wrote.sum()), 'pcsx2_words_written': int(pcsx2_wrote.sum()),
+            'findings': findings, 'other_activity': activity}
 
 
 def main():
@@ -140,6 +168,12 @@ def main():
         print(line, flush=True)
         for entry in result.get('findings', [])[:20]:
             print(f'  {entry["range"]}  PCSX2 {entry["pcsx2"]}  port {entry["port"]}')
+        vu1 = result.get('vu1')
+        if vu1 and (vu1['port_words_written'] or vu1['pcsx2_words_written']):
+            print(f'  VU1 data: port wrote {vu1["port_words_written"]} words, PCSX2 {vu1["pcsx2_words_written"]};'
+                  f' {len(vu1["findings"])} differing ranges the port wrote, {len(vu1["other_activity"])} only PCSX2 changed')
+            for entry in vu1['findings'][:20]:
+                print(f'    {entry["range"]}  PCSX2 {entry["pcsx2"]}  port {entry["port"]}')
         for k, (theirs, ours) in result.get('registers', {}).items():
             print(f'  {k}: PCSX2 {theirs}, port {ours}')
         if result.get('error'):

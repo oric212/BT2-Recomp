@@ -11,6 +11,11 @@ SLOT, TARGET, RESUME = 0x01D00000, 0x0011E988, 0x00102BC0
 DELAY = 0x03A0282D                       # daddu a1, sp, zero
 
 
+def device_word(address):
+    """A hardware register's value in the test: its address turned around, so each word is told apart."""
+    return (address * 0x9E3779B1) & 0xFFFFFFFF
+
+
 class Machine:
     """Runs a stub; the target 'returns' v0 = its call count; a mark is answered by the host at once."""
 
@@ -55,6 +60,8 @@ class Machine:
                 self.gpr[rt] = self.gpr[rs] | imm
             elif op == 0x09:
                 self.gpr[rt] = (self.gpr[rs] + simm) & 0xFFFFFFFF
+            elif op == 0x23 and ea in cb.HARDWARE_WORDS:
+                self.gpr[rt] = device_word(ea)
             elif op == 0x23:
                 self.gpr[rt] = struct.unpack_from('<I', self.mem, ea - SLOT)[0]
             elif op == 0x1E:
@@ -203,9 +210,27 @@ class StubTests(unittest.TestCase):
                 cb.check_delay_slot(word)
         cb.check_delay_slot(DELAY)
 
+    def test_publishes_the_hardware_words(self):
+        image = cb.stub_words(SLOT, TARGET, DELAY, RESUME, 0, False)
+        words = []
+
+        def host(machine, mark):
+            at = cb.DATA + cb.HARDWARE
+            words.extend(struct.unpack_from(f'<{len(cb.HARDWARE_WORDS)}I', machine.mem, at))
+            struct.pack_into('<I', machine.mem, cb.DATA + cb.SKIP, cb.NEVER)
+            struct.pack_into('<I', machine.mem, cb.DATA + cb.MARK, 0)
+
+        machine = Machine(image, host)
+        machine.gpr[31] = 0x12345678
+        machine.run()
+        self.assertEqual(words, [device_word(a) for a in cb.HARDWARE_WORDS])
+        self.assertEqual(cb.HARDWARE_WORDS[4], 0x10003C40)              # CYCLE
+        self.assertEqual(cb.HARDWARE_WORDS[24], 0x10003020)             # GIF_STAT
+        self.assertEqual(cb.HARDWARE_WORDS[25], 0x10009000)             # D1_CHCR (a negative lw offset)
+
     def test_layout(self):
         self.assertEqual((cb.SA, cb.FCR31, cb.VU_Q), (0x2A0, 0x2A4, 0x2BC))
-        self.assertLessEqual(cb.DATA + cb.BLOCK + cb.BLOCK_SIZE, cb.SLOT)
+        self.assertLessEqual(cb.DATA + cb.HARDWARE + cb.HARDWARE_SIZE, cb.SLOT)
         block = cb.from_registers(a0=2, sp=0x01FFF000)
         self.assertEqual(cb.parse(block)['gpr'][29], 0x01FFF000)
 

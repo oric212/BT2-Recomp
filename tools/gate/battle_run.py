@@ -26,7 +26,10 @@ FRAMES = 5100
 # 2026-11-12: SQRT.S reads ft and rounds to nearest, MOVN/MOVZ copy 64 bits (the fight's logic step then matched
 # PCSX2 exactly, docs/plans/validation/PCSX2_COMPARISON_PLAN.md): the same work, other values (was
 # 11860f808d115d87; the instruction and start counts unchanged).
-BASELINE = {'vu1_kick_hash': '3b1d549c9add3d06', 'vu1_instructions': 724706804, 'vu1_runs': 2140194}
+# 2026-11-12: an I-bit pair's upper instruction reads the I before the pair (VU1's memory after a frame's chain then
+# matched PCSX2's exactly, step 6): the strip program's clipper pushes clipped triangles out from their true centre
+# (was 3b1d549c9add3d06, 724706804; the start count unchanged).
+BASELINE = {'vu1_kick_hash': 'aeff76be1011da3b', 'vu1_instructions': 724712690, 'vu1_runs': 2140194}
 ENTERED_AT_LEAST = 3700 # 3,731 at the baseline; the exact count moves when the map splits functions.
 
 

@@ -359,8 +359,10 @@ void Vu1::interpret(const Kick& kick) {
         const bool last=ending,branching=branch_;const std::uint32_t target=branch_target_;
         ending=d.ending;branch_=false;
         if(q_pending_ || clip_count_)settle(false);
-        if(d.i_bit)i=low; // I bit: the lower word is a float for I; the upper instruction sees it.
         // The upper result is computed from the state before the pair and committed after the lower instruction.
+        // With the I bit the lower word is a float for I, loaded with the pair: the upper instruction still reads
+        // the I before it (as PCSX2's interpreter and microVU do; the strip program's centre (a + b + 1.0 c) / 3
+        // depends on it, docs/plans/validation/PCSX2_COMPARISON_PLAN.md, step 6).
         __m128i value=_mm_setzero_si128();unsigned commit=Result::None,commit_reg=0,commit_mask=d.mask;
         switch(d.upper) {
             case Decoded::UpperNop:break;
@@ -386,6 +388,7 @@ void Vu1::interpret(const Kick& kick) {
                 value=load4(result.value.data());commit=result.target;commit_reg=result.reg;commit_mask=result.mask;
             }
         }
+        if(d.i_bit)i=low;
         if(!d.i_bit && !d.skip_lower) {
             switch(d.lower) {
                 case Decoded::LowerNop:break;

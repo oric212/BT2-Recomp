@@ -12,13 +12,18 @@
 // from PCSX2, to compare what it leaves with PCSX2's own state after the same call. The spec is
 // "<RAM in>|<registers in>|<hex function>|<RAM out>[|<VU memory in>]". The registers are the block a checkpoint
 // stub publishes (tools/pcsx2_compare/context_block.py has the layout); the VU memory is PCSX2's VUmem block
-// (VU0 micro 4 KB, VU0 data 4 KB, VU1 micro 16 KB, VU1 data 16 KB), of which VU0's data memory is loaded. The call
-// returns to a sentinel; the RAM after it is written to <RAM out> and the registers, in the same layout, to
-// <RAM out>.registers.
+// (VU0 micro 4 KB, VU0 data 4 KB, VU1 micro 16 KB, VU1 data 16 KB), of which VU0's data memory and VU1's two
+// memories are loaded. "|<hardware in>" (step 6, a VIF1 kick) adds the hardware words the stub read: VIF1's
+// registers 0x10003C00 to 0x10003D70 and GIF_STAT (context_block.py, HARDWARE_WORDS), loaded into the VIF1 model.
+// "|<VU1 registers in>" adds VU1's registers as PCSX2 keeps them (tools/pcsx2_compare/vu_registers.py: VF[32],
+// VI[32] at 16 bytes each with the control registers among them, ACC); without it VU1's registers start at reset,
+// though the game keeps values in them from one chain to the next. The call returns to a sentinel; the RAM
+// after it is written to <RAM out>, the registers, in the same layout, to <RAM out>.registers, and VU1's data
+// memory to <RAM out>.vu1.
 namespace {
 // The register block's layout (context_block.py).
 constexpr std::size_t gprs=0x000,fprs=0x200,hilo=0x280,sa=0x2A0,fcr31=0x2A4,clip=0x2B0,rand=0x2B4,q=0x2BC,vis=0x2C0,vfs=0x300,
-    block_size=0x500,vu0_data=0x1000;
+    block_size=0x500,vu0_data=0x1000,vu1_program=0x2000,vu1_data=0x6000,vu_size=0xA000,hardware_size=25*4;
 
 std::vector<char> readFile(const std::string& path,std::size_t size) {
     std::vector<char> data(size);
@@ -29,6 +34,28 @@ std::vector<char> readFile(const std::string& path,std::size_t size) {
 
 template<class T> T field(const std::vector<char>& block,std::size_t offset) {T value;std::memcpy(&value,block.data()+offset,sizeof value);return value;}
 template<class T> void put(std::vector<char>& block,std::size_t offset,const T& value) {std::memcpy(block.data()+offset,&value,sizeof value);}
+
+// VIF1's registers as the stub read them (index k is 0x10003C00 + 0x10 * k; 24 is GIF_STAT).
+void loadVif1(Vif1& vif1,const std::vector<char>& words) {
+    const auto w=[&](unsigned k) {return field<std::uint32_t>(words,4*k);};
+    auto& r=vif1.r;
+    r.mark=w(3);r.cycle=w(4);r.mode=w(5);r.mask=w(7);r.code=w(8);r.itops=w(9);r.base=w(10);r.ofst=w(11);
+    r.tops=w(12);r.itop=w(13);r.top=w(14);
+    for(unsigned k=0;k<4;++k) {r.row[k]=w(16+k);r.col[k]=w(20+k);}
+    r.dbf=(w(0)>>7)&1;      // VIF1_STAT.DBF.
+    r.mskpath3=(w(24)>>1)&1; // GIF_STAT.M3P: PATH3 masked by VIF1's MSKPATH3.
+    vif1.vu.top=r.top;vif1.vu.itop=r.itop;
+}
+
+// VU1's registers from PCSX2's VURegs entry (vu_registers.py: VF at 0, VI at 0x200, ACC at 0x400).
+constexpr std::size_t vu1_registers_size=0x430;
+void loadVu1Registers(Vu1& vu,const std::vector<char>& b) {
+    for(unsigned k=0;k<32;++k)std::memcpy(vu.vf[k].data(),b.data()+16*k,16);
+    const auto vi=[&](unsigned k) {return field<std::uint32_t>(b,0x200+16*k);};
+    for(unsigned k=0;k<16;++k)vu.vi[k]=static_cast<std::uint16_t>(vi(k));
+    vu.clip=vi(18)&0xFFFFFF;vu.i=vi(21);vu.q=vi(22);
+    std::memcpy(vu.acc.data(),b.data()+0x400,16);
+}
 
 // R lives in the runtime (EeRuntime::vu0_random_, the exponent of 1.0 above its 23 bits), the block holds the 23
 // bits as CFC2 reads them; R5900Context::vu0_r is the raw generated code's storage, unused once it is prepared.
@@ -65,15 +92,20 @@ void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::strin
         if(end==std::string::npos)break;
         at=end+1;
     }
-    if(part.size()!=4&&part.size()!=5)
-        throw std::runtime_error("BT2_REPLAY_CALL is <RAM in>|<registers in>|<function>|<RAM out>[|<VU memory in>]");
+    if(part.size()<4||part.size()>7)
+        throw std::runtime_error("BT2_REPLAY_CALL is <RAM in>|<registers in>|<function>|<RAM out>[|<VU memory in>[|<hardware in>[|<VU1 registers in>]]]");
     auto ram=runtime.memory();
     const auto image=readFile(part[0],ram.size());
     std::memcpy(ram.data(),image.data(),ram.size());
-    if(part.size()==5) {
-        const auto vu=readFile(part[4],vu0_data+runtime.vu0_memory_.size());
+    auto& vu1=runtime.vif1.vu;
+    if(part.size()>=5) {
+        const auto vu=readFile(part[4],vu_size);
         std::memcpy(runtime.vu0_memory_.data(),vu.data()+vu0_data,runtime.vu0_memory_.size());
+        std::memcpy(vu1.program.data(),vu.data()+vu1_program,vu1.program.size());++vu1.program_generation;
+        std::memcpy(vu1.data.data(),vu.data()+vu1_data,vu1.data.size());
     }
+    if(part.size()>=6)loadVif1(runtime.vif1,readFile(part[5],hardware_size));
+    if(part.size()==7)loadVu1Registers(vu1,readFile(part[6],vu1_registers_size));
     constexpr std::uint32_t sentinel=0xFFFFFFFC;
     R5900Context call=prepared;
     load(runtime,call,readFile(part[1],block_size));
@@ -91,5 +123,7 @@ void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::strin
     out.write(reinterpret_cast<const char*>(ram.data()),std::streamsize(ram.size()));
     const auto registers=save(runtime,call);
     std::ofstream(part[3]+".registers",std::ios::binary).write(registers.data(),std::streamsize(registers.size()));
-    std::cout<<std::hex<<"Replayed call: v0 "<<static_cast<std::uint32_t>(call.r[2].low)<<std::dec<<std::endl;
+    std::ofstream(part[3]+".vu1",std::ios::binary).write(reinterpret_cast<const char*>(vu1.data.data()),std::streamsize(vu1.data.size()));
+    std::cout<<std::hex<<"Replayed call: v0 "<<static_cast<std::uint32_t>(call.r[2].low)<<std::dec<<" VU1 runs "<<vu1.runs
+             <<" kicks "<<vu1.kicks<<std::endl;
 }

@@ -102,14 +102,16 @@ void arithmetic() {
     check(vu.acc==std::array<std::uint32_t,4>{fb(-19),fb(-28),fb(-37),fb(-46)},"MSUBAx"); // (vf1-10) - vf1*10
     check(isFloat(vu,13,0,0,0,2) && isFloat(vu,0,0,0,0,1),"VF0 operands and writes");
 
-    // Q and I operands; the I bit loads I for the upper instruction of the same pair.
-    Vu1 qi;setFloat(qi,1,1,2,3,4);qi.q=fb(2);
+    // Q and I operands; the I bit loads I with its pair: the upper instruction of that pair still reads the I
+    // before it (3 here), the next pairs the loaded one (0.5), as in PCSX2.
+    Vu1 qi;setFloat(qi,1,1,2,3,4);qi.q=fb(2);qi.i=fb(3);
     exec(qi,{up(upper(XYZW,0,1,2,0x1C)),up(upper(XYZW,0,1,3,0x20)),up(upper(XYZW,0,1,4,0x24)),   // MULq, ADDq, SUBq
-        {fb(0.5f),IBIT|upper(XYZW,0,1,5,0x1E)},up(upper(XYZW,0,1,6,0x22)),up(upper(XYZW,0,1,7,0x26)), // MULi (I=0.5), ADDi, SUBi
+        {fb(0.5f),IBIT|upper(XYZW,0,1,5,0x1E)},up(upper(XYZW,0,1,6,0x22)),up(upper(XYZW,0,1,7,0x26)), // MULi (loads I=0.5), ADDi, SUBi
         up(upperSpecial(XYZW,0,1,0x1C)),up(upper(XYZW,0,1,8,0x21)),                              // MULAq, MADDq
         up(upperSpecial(XYZW,0,1,0x1E)),up(upper(XYZW,0,1,9,0x23)),up(upper(XYZW,0,1,10,0x27))}); // MULAi, MADDi, MSUBi
     check(isFloat(qi,2,2,4,6,8) && isFloat(qi,3,3,4,5,6) && isFloat(qi,4,-1,0,1,2),"Q operand");
-    check(isFloat(qi,5,0.5f,1,1.5f,2) && isFloat(qi,6,1.5f,2.5f,3.5f,4.5f) && isFloat(qi,7,0.5f,1.5f,2.5f,3.5f),"I operand");
+    check(isFloat(qi,5,3,6,9,12),"an I-bit pair's upper instruction reads the I before the pair");
+    check(isFloat(qi,6,1.5f,2.5f,3.5f,4.5f) && isFloat(qi,7,0.5f,1.5f,2.5f,3.5f),"I operand");
     check(isFloat(qi,8,4,8,12,16) && isFloat(qi,9,1,2,3,4) && isFloat(qi,10,0,0,0,0),"accumulator forms with Q and I");
 
     // Conversions and ABS.

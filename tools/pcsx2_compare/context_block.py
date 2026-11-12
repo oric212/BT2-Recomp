@@ -26,6 +26,13 @@ GPRS, FPRS, HILO = 0x000, 0x200, 0x280               # 32 x 128 bits; 32 x 32 bi
 SA, FCR31, VU_STATUS, VU_MAC, VU_CLIP, VU_R, VU_I, VU_Q = range(0x2A0, 0x2C0, 4)
 VIS, VFS, BLOCK_SIZE = 0x2C0, 0x300, 0x500           # 16 x 32 bits; 32 x 128 bits
 T8, T9, RA = 24, 25, 31
+# After the block (step 6, VU1 and the GIF stream): the hardware words a replay of a VIF1 kick needs, read by the
+# EE as the game would. VIF1's registers 0x10003C00 to 0x10003D70 (STAT, FBRST, ERR, MARK, CYCLE, MODE, NUM, MASK,
+# CODE, ITOPS, BASE, OFST, TOPS, ITOP, TOP, a reserved word, R0 to R3, C0 to C3), then GIF_STAT (PATH3's mask),
+# then VIF1's DMA channel (D1_CHCR, D1_MADR, D1_QWC, D1_TADR: whether a chain is still running).
+HARDWARE = BLOCK + BLOCK_SIZE
+HARDWARE_WORDS = [0x10003C00 + 0x10 * k for k in range(24)] + [0x10003020] + [0x10009000 + 0x10 * k for k in range(4)]
+HARDWARE_SIZE = 4 * len(HARDWARE_WORDS)
 
 # Instructions that change the flow and so cannot be moved out of a delay slot.
 _BRANCH_OPCODES = {1, 2, 3, 4, 5, 6, 7, 0x14, 0x15, 0x16, 0x17}
@@ -70,6 +77,9 @@ def publish(mark, reload):
     for vi in range(16):
         words += [0x48400000 | (T9 << 16) | (vi << 11), _store(0x2B, T9, b + VIS + 4 * vi)]
     words += [_store(0x3E, vf, b + VFS + 16 * vf) for vf in range(32)]                   # sqc2
+    for k, address in enumerate(HARDWARE_WORDS):                                          # lui t9; lw t9; sw
+        high = (address + 0x8000) >> 16                                                   # lw's offset is signed
+        words += [_i(0x0F, 0, T9, high), _i(0x23, T9, T9, address & 0xFFFF), _store(0x2B, T9, HARDWARE + 4 * k)]
     words += [_i(0x0D, 0, T9, mark), _store(0x2B, T9, MARK),                              # ori t9,zero,mark; sw
               _store(0x23, T9, MARK), _i(5, T9, 0, -2), 0]                                # lw; bne t9,zero,-2; nop
     gprs, fprs = reload
