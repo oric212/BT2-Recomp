@@ -198,59 +198,67 @@ inline MenuEntry number(std::string label,unsigned& value,unsigned low,unsigned 
     MenuEntry e=menuNumber(std::move(label),value,low,high,step,std::move(unit),std::move(note));
     const auto adjust=e.adjust;e.adjust=[adjust,changed](int direction){adjust(direction);changed();};return e;
 }
-inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> changed) {
-    MenuScreen screen;screen.title="Display";
+// The settings, grouped (the user, 2026-11-12: the launcher felt bloated; their choice of Play / Online / Settings):
+// Graphics (the five main choices, the rest under More), Controls, Sound and Game files, from the launcher's Settings
+// and the in-game menu alike. What the game takes at its start says "From the next start" in its note.
+inline MenuScreen graphicsMore(MenuHost& host,Settings& s,std::function<void()> changed) {
+    MenuScreen screen;screen.title="More graphics settings";
     const unsigned largest=std::min(host.window().largestScale(),Settings::max_window_scale);
     if(s.window_scale>largest)s.window_scale=largest;
     // Integer scaling and the window's size apply to a window; the whole screen is always filled.
     const auto windowed=[&s]{return !s.fullscreen;};
-    screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed,"Fills the screen at the picture's shape. Integer scaling and the window size apply to a window."));
+    screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"In a window: a multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
+    screen.entries.back().available=windowed;
     screen.entries.push_back(toggle("Integer scaling",s.integer_scaling,changed,"In a window. On: whole multiples of the picture, sharp. Off: stretched to the window."));
     screen.entries.back().available=windowed;
-    screen.entries.push_back(number("Window size",s.window_scale,1,largest,1,"x",changed,"A multiple of 640 x 448. "+std::to_string(largest)+"x is the nearest to this screen."));
-    screen.entries.back().available=windowed;
-    screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second: 60 in menus, 30 in fights."));
-    screen.entries.push_back(toggle("Low input lag",s.low_input_lag,changed,"Each picture shown as soon as the game has drawn it, a frame sooner after a button. With 60 fps battles the fights keep their in-between pictures instead. From the next start."));
-    screen.entries.push_back(toggle("Variable refresh rate",s.variable_refresh,changed,"For FreeSync, G-Sync or VRR displays: each picture shown the moment it is ready, for exactly its time. Leave off on other displays (they would tear). From the next start."));
+    screen.entries.push_back(toggle("Variable refresh rate",s.variable_refresh,changed,"For FreeSync, G-Sync or VRR displays: each picture shown the moment it is ready. Leave off on other displays (they would tear). From the next start."));
+    screen.entries.push_back(toggle("Low input lag",s.low_input_lag,changed,"Each picture shown as soon as the game has drawn it, a frame sooner after a button. From the next start."));
+    MenuEntry outline=toggle("HD outline",s.hd_outline,changed,"With super-sampling: the fighters' ink outline drawn at the full resolution, smooth instead of in the game's pixel steps. From the next start.");
+    outline.available=[&s]{return s.super_sampling>1;};
+    screen.entries.push_back(outline);
+    screen.entries.push_back(toggle("Light depth of field",s.light_depth_of_field,changed,"The fights' distance blurred at a quarter of the game's strength, so distant detail shows. Off: the game's own blur. From the next start."));
+    MenuEntry buttons;buttons.label="Button art";
+    buttons.value=[&s]{return std::string(s.playstation_buttons?"PlayStation":"Xbox");};
+    buttons.adjust=[&s,changed](int){s.playstation_buttons=!s.playstation_buttons;changed();};
+    buttons.note="With HD textures: the pack's PlayStation buttons, or its Xbox ones. From the next start.";
+    buttons.available=[&s]{return s.hd_textures;};
+    screen.entries.push_back(buttons);
+    screen.entries.push_back(toggle("Frame rate display",s.show_frame_rate,changed,"Pictures per second in the corner: 60 in menus, 30 in fights."));
     return screen;
 }
-// The settings the game takes when it starts (the renderer's and the game's patches): one screen, so it is
-// clear that they apply from the next start.
 // `pack`: the launcher's look in data/textures, the pack's folder name or empty when there is none; not given (the
 // in-game menu), the entry does not say.
-inline MenuScreen enhancements(Settings& s,std::function<void()> changed,std::function<std::optional<std::string>()> pack={}) {
-    MenuScreen screen;screen.title="Enhancements (from the next start)";
-    MenuEntry hd=toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). Sharpest with 16x super-sampling.");
+inline MenuScreen graphics(MenuHost& host,Settings& s,std::function<void()> changed,std::function<std::optional<std::string>()> pack={}) {
+    MenuScreen screen;screen.title="Graphics";
+    screen.entries.push_back(toggle("Fullscreen",s.fullscreen,changed,"Fills the screen at the picture's shape. Off: a window (its size under More)."));
+    MenuEntry hd=toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). From the next start.");
     if(pack) {
         // A pack that is not found says so where the setting is, not by a game without HD textures.
         const auto found=pack(); // Looked for once, when the screen opens.
         const bool there=found && !found->empty();
         hd.value=[&s,there]{return std::string(!s.hd_textures?"Off":there?"On":"On, no pack found");};
-        if(there)hd.note="The pack \""+*found+"\" in data/textures. Sharpest with 16x super-sampling.";
+        if(there)hd.note="The pack \""+*found+"\" in data/textures. From the next start.";
         else hd.note="No pack in data/textures: put the pack's folder there (the folder that holds \"replacements\").";
     }
     screen.entries.push_back(hd);
-    MenuEntry buttons;buttons.label="Button art";
-    buttons.value=[&s]{return std::string(s.playstation_buttons?"PlayStation":"Xbox");};
-    buttons.adjust=[&s,changed](int){s.playstation_buttons=!s.playstation_buttons;changed();};
-    buttons.note="With HD textures: the pack's PlayStation buttons, or its Xbox ones.";
-    buttons.available=[&s]{return s.hd_textures;};
-    screen.entries.push_back(buttons);
     MenuEntry samples;samples.label="Super-sampling";
     samples.value=[&s]{return s.super_sampling==1?std::string("Off"):std::to_string(s.super_sampling)+"x";};
     samples.adjust=[&s,changed](int direction) { // 1, 2, 4, 8, 16, round.
         s.super_sampling=direction<0?(s.super_sampling==1?16:s.super_sampling/2):(s.super_sampling==16?1:s.super_sampling*2);changed();
     };
-    samples.note="Smoother edges, finer textures. 4x and 8x: twice the resolution; 16x: up to four times, as large as the window.";
+    samples.note="Smoother edges, finer textures; 16x is the sharpest. From the next start.";
     screen.entries.push_back(samples);
-    MenuEntry outline=toggle("HD outline",s.hd_outline,changed,"With super-sampling: the fighters' ink outline drawn at the full resolution, smooth instead of in the game's pixel steps.");
-    outline.available=[&s]{return s.super_sampling>1;};
-    screen.entries.push_back(outline);
-    screen.entries.push_back(toggle("Light depth of field",s.light_depth_of_field,changed,"The fights' distance blurred at a quarter of the game's strength, so distant detail (and HD textures there) shows. Off: the game's own blur."));
-    screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view (PCSX2's widescreen patch). Menus and the HUD are stretched."));
-    screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. Turned off by itself if the processor cannot keep up."));
-    screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows; the game itself is unchanged."));
-    screen.entries.push_back(toggle("Beam struggles by buttons",s.struggle_buttons,changed,"Mash Square (X on an Xbox pad) to push in a beam struggle; turning the sticks still works."));
+    screen.entries.push_back(toggle("Widescreen",s.widescreen,changed,"16:9: the game draws a wider view. Menus and the HUD are stretched. From the next start."));
+    screen.entries.push_back(toggle("60 fps battles",s.sixty_fps,changed,"A picture between each two of the fight's 30 frames per second; the fight itself is unchanged. From the next start."));
+    screen.entries.push_back(menuAction("More",[&host,&s,changed]{host.menu.open(graphicsMore(host,s,changed));},
+        "Window size, integer scaling, variable refresh, low input lag, HD outline, depth of field, button art, frame rate display."));
+    return screen;
+}
+// `files`: the launcher's disc and card entries, put first (the in-game menu has none).
+inline MenuScreen gameFiles(Settings& s,std::function<void()> changed,std::vector<MenuEntry> files={}) {
+    MenuScreen screen;screen.title="Game files";
+    screen.entries=std::move(files);
+    screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows. From the next start."));
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {
@@ -302,6 +310,25 @@ inline MenuScreen controls(MenuHost& host,Settings& s,std::function<void()> chan
     screen.entries.push_back(menuAction("Fast forward",[&host,&s,changed]{host.menu.open(fastForward(host,s,changed));}));
     screen.entries.push_back(toggle("Menu on Start + Select",s.overlay_start_select,changed,"Opens the in-game menu. Off: both stick buttons. The PS button and Escape always do."));
     screen.entries.push_back(toggle("Player 2 controller",s.second_controller,changed,"A second controller for 1P vs 2P: the second gamepad, or the keyboard when only one gamepad is connected. From the next start."));
+    screen.entries.push_back(toggle("Beam struggles by buttons",s.struggle_buttons,changed,"Mash Square (X on an Xbox pad) to push in a beam struggle; turning the sticks still works. From the next start."));
+    return screen;
+}
+// The settings' groups. `cards`: drawn as a row of cards in the first screen's look (the launcher); the in-game menu
+// lists them over the game. `files`: the launcher's disc and card entries for Game files.
+inline MenuScreen settingsHub(MenuHost& host,Settings& s,std::function<void()> changed,bool cards,
+                              std::function<std::optional<std::string>()> pack={},std::function<std::vector<MenuEntry>()> files={}) {
+    MenuScreen screen;screen.title="Settings";
+    if(cards) {screen.first_look=true;screen.status=[]{return std::string("Settings");};}
+    const auto group=[&](const char* label,const char* text,std::function<void()> open,const char* note) {
+        MenuEntry e=menuAction(label,std::move(open),note);
+        if(cards) {e.card=true;e.card_text=text;}
+        screen.entries.push_back(std::move(e));
+    };
+    group("Graphics","Picture, HD\n60 fps",[&host,&s,changed,pack]{host.menu.open(graphics(host,s,changed,pack));},"Fullscreen, HD textures, super-sampling, widescreen, 60 fps battles, and more.");
+    group("Controls","Buttons, pads\nFast forward",[&host,&s,changed]{host.menu.open(controls(host,s,changed));},"Button mapping, sticks, fast forward, the in-game menu, a second controller.");
+    group("Sound","Volumes",[&host,&s,changed]{host.menu.open(sound(s,changed));},"Master, music and effects volume.");
+    group("Game files","Disc, memory card\nLoading",[&host,&s,changed,files]{host.menu.open(gameFiles(s,changed,files?files():std::vector<MenuEntry>{}));},
+          "The game disc, the memory card in slot 1, fast loading.");
     return screen;
 }
 }

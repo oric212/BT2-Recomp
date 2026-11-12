@@ -21,7 +21,7 @@ LEFT_OUT={'logo.png'}
 CRT=('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') # What the programs import (dumpbin /dependents), beyond Windows' own.
 FORBIDDEN=re.compile(r'(\.(iso|cue|chd|img|mdf|mds|nrg|bin|pdb|ilk|map)$)|(^SLUS[_-]?214\.?41)',re.I) # .bin: captures, dumps.
 DATA_NOTE='Put your own disc image of the game here (Dragon Ball Z: Budokai Tenkaichi 2, USA, SLUS-21441), as an .iso file.\nThe launcher finds it here.\n'
-TEXTURE_NOTE='HD textures (optional): put a PCSX2 texture pack for the game here, in a folder of its own:\n  data\\textures\\<pack name>\\replacements\\...\nThen switch on "HD textures" under Enhancements in the launcher.\n'
+TEXTURE_NOTE='HD textures (optional): put a PCSX2 texture pack for the game here, in a folder of its own:\n  data\\textures\\<pack name>\\replacements\\...\nThen switch on "HD textures" under Settings, Graphics in the launcher.\n'
 
 def redistributable(vs_root):
     """The x64 C runtime folder of Visual Studio's redistributable files (the newest version)."""

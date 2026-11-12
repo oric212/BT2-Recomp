@@ -41,8 +41,7 @@ public:
         discs_=discs;cards_=cards;images_=images;
         if(!changed)return;
         pickDefaults();
-        // Only a list screen on top is rebuilt (the first screen's values are read as they are drawn).
-        if(host_.menu.depth()!=2)return;
+        // Only a list screen on top is rebuilt (the other screens' values are read as they are drawn).
         if(host_.menu.screen().title==disc_title)reopen(discScreen());
         else if(host_.menu.screen().title==card_title)reopen(cardScreen());
     }
@@ -81,31 +80,41 @@ private:
         },note);
     }
 
+    // The first screen: Play, Online battle, Settings, Quit (the user, 2026-11-12: the launcher felt bloated; their choice
+    // of three). The disc and the card in use are said in Play's note; choosing them is under Settings, Game files.
     MenuScreen mainScreen() {
         MenuScreen main;main.title="BT2 Recomp";
-        MenuEntry start=menuAction("Start game",[this] {
+        MenuEntry play=menuAction("Play",[this] {
             if(discReady()) {result=LauncherResult::Start;host_.finished=true;}
-        },"Disc image: the data folder. Memory cards: the saves folder.");
-        start.value=[this]{return std::string(discReady()?"":"No game disc in the data folder");};
-        main.entries.push_back(start);
-        MenuEntry disc=openList("Game disc",List::Discs,"The disc images in the data folder next to the program.");
-        disc.value=[this]{const auto d=folders_.disc(settings_);return d.empty()?std::string("none"):utf8(d.filename());};
-        main.entries.push_back(disc);
-        MenuEntry card=openList("Memory card",List::Cards,"The memory cards in the saves folder next to the program.");
-        card.value=[this]{const auto c=folders_.card(settings_);return c.empty()?std::string("a new card"):utf8(c.filename());};
-        main.entries.push_back(card);
-        const std::function<void()> apply=[this]{changed();};
-        main.entries.push_back(menuAction("Controls",[this,apply]{host_.menu.open(menu_screens::controls(host_,settings_,apply));},"Keys and gamepad buttons, fast forward, the in-game menu."));
-        main.entries.push_back(menuAction("Display",[this,apply]{host_.menu.open(menu_screens::display(host_,settings_,apply));},"Window size, fullscreen, scaling, frame rate."));
-        main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply,[this]()->std::optional<std::string> {
-            const auto pack=folders_.texturePack();
-            return pack.empty()?std::string():utf8(std::filesystem::relative(pack,folders_.textures));
-        }));},"HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
-        main.entries.push_back(menuAction("Sound",[this,apply]{host_.menu.open(menu_screens::sound(settings_,apply));},"Master, music and effects volume."));
+        },"Starts the game. The disc and the memory card: Settings, Game files.");
+        play.value=[this] {
+            if(!discReady())return std::string("No game disc in the data folder");
+            const auto c=folders_.card(settings_);
+            return "Memory card: "+(c.empty()?std::string("a new card"):utf8(c.filename()));
+        };
+        main.entries.push_back(play);
         main.entries.push_back(menuAction("Online battle",[this]{host_.menu.open(onlineScreen());},"1P vs 2P with a player on another PC: one hosts, the other joins with the host's code."));
         main.entries.back().available=[this]{return discReady();};
+        const std::function<void()> apply=[this]{changed();};
+        main.entries.push_back(menuAction("Settings",[this,apply] {
+            host_.menu.open(menu_screens::settingsHub(host_,settings_,apply,true,[this]()->std::optional<std::string> {
+                const auto pack=folders_.texturePack();
+                return pack.empty()?std::string():utf8(std::filesystem::relative(pack,folders_.textures));
+            },[this]{return fileEntries();}));
+        },"Graphics, controls, sound, the game disc and the memory card."));
         main.entries.push_back(menuAction("Quit",[this]{result=LauncherResult::Quit;host_.finished=true;}));
         return main;
+    }
+    // Game files' entries in the launcher: the disc and the card in slot 1, each a list of what the folders hold.
+    std::vector<MenuEntry> fileEntries() {
+        std::vector<MenuEntry> entries;
+        MenuEntry disc=openList("Game disc",List::Discs,"The disc images in the data folder next to the program.");
+        disc.value=[this]{const auto d=folders_.disc(settings_);return d.empty()?std::string("none"):utf8(d.filename());};
+        entries.push_back(disc);
+        MenuEntry card=openList("Memory card",List::Cards,"The memory cards in the saves folder next to the program.");
+        card.value=[this]{const auto c=folders_.card(settings_);return c.empty()?std::string("a new card"):utf8(c.filename());};
+        entries.push_back(card);
+        return entries;
     }
     // Both PCs start fresh into the game's Dueling screen with every fighter unlocked; no save is used, and each player
     // keeps their own picture settings and enhancements. Two big cards in the first screen's look (the user, 2026-11-12:

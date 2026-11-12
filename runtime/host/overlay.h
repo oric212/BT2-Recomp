@@ -44,11 +44,8 @@ inline OverlayResult runOverlay(Settings& settings,const std::string& settings_p
     };
     MenuScreen main;main.title="Paused";
     main.entries.push_back(menuAction("Resume",[&]{host.finished=true;}));
-    main.entries.push_back(menuAction("Sound",[&]{host.menu.open(menu_screens::sound(settings,changed));}));
-    main.entries.push_back(menuAction("Display",[&]{host.menu.open(menu_screens::display(host,settings,changed));}));
-    main.entries.push_back(menuAction("Enhancements",[&]{host.menu.open(menu_screens::enhancements(settings,changed));},"From the next start: HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
-    main.entries.push_back(menuAction("Fast forward",[&]{host.menu.open(menu_screens::fastForward(host,settings,changed));},"Which key and button run the game as fast as the machine allows."));
-    main.entries.push_back(menuAction("Controls",[&]{host.menu.open(menu_screens::controls(host,settings,changed));}));
+    // The settings as in the launcher (menu_screens::settingsHub), listed over the game.
+    main.entries.push_back(menuAction("Settings",[&]{host.menu.open(menu_screens::settingsHub(host,settings,changed,false));},"Graphics, controls, sound, fast loading."));
     main.entries.push_back(menuAction("Return to the title screen",[&]{confirmed("Return to the title screen?",OverlayResult::Title);},"Starts the game again; the logos and films pass in fast forward."));
     main.entries.push_back(menuAction("Quit to the launcher",[&]{confirmed("Quit to the launcher?",OverlayResult::Launcher);}));
     main.entries.push_back(menuAction("Quit game",[&]{confirmed("Quit the game?",OverlayResult::Quit);}));

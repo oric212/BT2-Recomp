@@ -55,7 +55,12 @@ public:
         const bool over_game=backdrop && backdrop->width,first=(root || screen.first_look) && !over_game;
         const std::string heading=first && screen.first_look && screen.status?screen.status():std::string();
         if(screen.panel && !first)return panel(screen,seconds,prompt,over_game);
-        if(first && std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& e){return e.card;}))return cards(screen,seconds,prompt,heading);
+        // The dark look (2026-11-12): cards, or rows; the in-game menu as rows over the game; the first screen keeps its ring.
+        const bool has_cards=std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& e){return e.card;});
+        const std::string named=screen.status?screen.status():screen.title;
+        if(over_game)return rows(screen,seconds,prompt,screen.title,false);
+        if(first && has_cards)return cards(screen,seconds,prompt,heading);
+        if(!root || screen.first_look)return rows(screen,seconds,prompt,named.empty()?screen.title:named,true);
         std::copy(haze_[first || over_game?0:1].begin(),haze_[first || over_game?0:1].end(),bits_);
         if(first) {
             ring(seconds);
@@ -97,7 +102,7 @@ public:
             }
         }
         const std::string& note=!prompt.empty()?prompt:chosen.note;
-        if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
+        if(!note.empty())noteLines(note,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
         // The buttons, as on the console: the cross at the left of the middle, the circle to its right.
         const int by=h-unit*3;
         hint(Symbol::Cross,"Enter",w*34/100,by,unit);
@@ -109,63 +114,145 @@ public:
 private:
     enum class Symbol {Cross,Circle};
 
-    // A first-look screen with a row of cards (MenuEntry::card; the online page, the user's choice of 2026-11-12): black,
-    // the logo smaller, the heading under it, the cards side by side in the middle (the chosen one edged in pulsing light
-    // blue), the other entries centred under them with their values, the note and the buttons at the bottom.
+    // The dark look's pieces (the user, 2026-11-12: the online page's direction, refined, for every launcher page and the
+    // in-game menu). A rectangle with cut corners, filled, its edge, and a soft glow around it.
+    void cutFill(int x0,int y0,int x1,int y1,int c,std::uint32_t colour,double alpha) {
+        const auto q=[&](double ax,double ay,double bx,double by,double cx,double cy,double dx,double dy) {blendConvex({ax,ay,bx,by,cx,cy,dx,dy},4,colour,alpha);};
+        q(x0+c,y0,x1-c,y0,x1,y0+c,x0,y0+c);
+        q(x0,y0+c,x1,y0+c,x1,y1-c,x0,y1-c);
+        q(x0,y1-c,x1,y1-c,x1-c,y1,x0+c,y1);
+    }
+    void cutEdge(int x0,int y0,int x1,int y1,int c,int t,std::uint32_t colour,double alpha) {
+        const auto q=[&](double ax,double ay,double bx,double by,double cx,double cy,double dx,double dy) {blendConvex({ax,ay,bx,by,cx,cy,dx,dy},4,colour,alpha);};
+        q(x0+c,y0,x1-c,y0,x1-c,y0+t,x0+c,y0+t);q(x0+c,y1-t,x1-c,y1-t,x1-c,y1,x0+c,y1);       // Top, bottom.
+        q(x0,y0+c,x0+t,y0+c,x0+t,y1-c,x0,y1-c);q(x1-t,y0+c,x1,y0+c,x1,y1-c,x1-t,y1-c);       // Left, right.
+        q(x0,y0+c,x0+c,y0,x0+c,y0+t,x0+t,y0+c);q(x1-c,y0,x1,y0+c,x1-t,y0+c,x1-c,y0+t);       // The corners.
+        q(x1-t,y1-c,x1,y1-c,x1-c,y1,x1-c,y1-t);q(x0,y1-c,x0+t,y1-c,x0+c,y1-t,x0+c,y1);
+    }
+    // The logo and the heading of a dark page; returns where its content may start.
+    int darkHeader(const std::string& heading,bool with_logo) {
+        const int w=int(width_),h=int(height_);
+        if(with_logo) {
+            logo(w*34/100,h*3/100,w*32/100,h*15/100);
+            if(!heading.empty())textCentred(fit(heading,entry_,w*90/100),w/2,h*19/100,entry_,RGB(240,222,70));
+            return h*27/100;
+        }
+        if(!heading.empty())textCentred(fit(heading,title_,w*90/100),w/2,h*10/100,title_,RGB(240,222,70));
+        return h*20/100;
+    }
+    // A note at the bottom, whole (the user, 2026-11-12: descriptions were cut off): wrapped at words onto as many lines as
+    // it needs (two at most in practice), the last line where a single one stood.
+    void noteLines(const std::string& note,COLORREF colour) {
+        const int w=int(width_),h=int(height_),unit=h/24,room=w*90/100;
+        std::vector<std::string> lines;std::string line;
+        std::size_t at=0;
+        while(at<note.size()) {
+            const auto space=note.find(' ',at);
+            const std::string word=note.substr(at,space==std::string::npos?std::string::npos:space-at);
+            const std::string longer=line.empty()?word:line+" "+word;
+            if(!line.empty() && extent(longer,note_)>room) {lines.push_back(line);line=word;}
+            else line=longer;
+            at=space==std::string::npos?note.size():space+1;
+        }
+        if(!line.empty())lines.push_back(line);
+        const int step=unit*4/5;
+        int y=h-unit*9/2-(int(lines.size())-1)*step;
+        for(const auto& l:lines) {textCentred(fit(l,note_,room),w/2,y,note_,colour);y+=step;}
+    }
+    void darkFooter(const MenuScreen& screen,const std::string& prompt,bool back=true) {
+        const int w=int(width_),h=int(height_),unit=h/24;
+        const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
+        if(!note.empty())noteLines(note,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
+        const int by=h-unit*3;
+        hint(Symbol::Cross,"Enter",w*34/100,by,unit);
+        if(back)hint(Symbol::Circle,"Back",w*58/100,by,unit);
+    }
+    // A first-look screen with a row of cards (MenuEntry::card; the online page and the settings): black, the logo and
+    // the heading, the cards side by side (cut corners, a light top; the chosen one lit, edged in pulsing light blue with a
+    // glow and a bar under its name), the other entries as rows under them.
     DisplayFrame cards(const MenuScreen& screen,double seconds,const std::string& prompt,const std::string& heading) {
         std::copy(haze_[0].begin(),haze_[0].end(),bits_);
         SetBkMode(dc_,TRANSPARENT);
         const int w=int(width_),h=int(height_),unit=h/24;
         const double pulse=0.5+0.5*std::sin(seconds*3.0);
-        const auto rect=[&](int x0,int y0,int x1,int y1,std::uint32_t colour,double alpha) {
-            blendConvex({double(x0),double(y0),double(x1),double(y0),double(x1),double(y1),double(x0),double(y1)},4,colour,alpha);
-        };
-        const auto frameRect=[&](int x0,int y0,int x1,int y1,int t,std::uint32_t colour,double alpha) {
-            rect(x0,y0,x1,y0+t,colour,alpha);rect(x0,y1-t,x1,y1,colour,alpha);rect(x0,y0+t,x0+t,y1-t,colour,alpha);rect(x1-t,y0+t,x1,y1-t,colour,alpha);
-        };
-        logo(w*32/100,h*3/100,w*36/100,h*17/100);
-        if(!heading.empty())textCentred(fit(heading,entry_,w*90/100),w/2,h*22/100,entry_,RGB(240,222,70));
+        const int content=darkHeader(heading,true);
         std::vector<unsigned> row,rest;
         for(unsigned n=0;n<screen.entries.size();++n)(screen.entries[n].card?row:rest).push_back(n);
-        // The cards.
-        const int gap=w*4/100,cw=std::min(w*34/100,(w*88/100-gap*(int(row.size())-1))/std::max(int(row.size()),1)),ch=h*24/100;
-        const int total=cw*int(row.size())+gap*(int(row.size())-1),top=h*30/100;
+        const int count=std::max(int(row.size()),1),gap=w*3/100;
+        const int cw=std::min(w*30/100,(w*88/100-gap*(count-1))/count),ch=rest.empty()?h*30/100:h*25/100,c=unit/2,t=std::max(unit/12,2);
+        const int total=cw*count+gap*(count-1);
+        // Alone (the settings), the cards sit in the middle of the room; with rows under them, near the top.
+        const int top=rest.empty()?std::max(content,(h-unit*6)/2-ch/2):content;
         for(unsigned i=0;i<row.size();++i) {
             const auto& entry=screen.entries[row[i]];
             const bool on=row[i]==screen.highlighted,usable=entry.usable();
             const int x0=w/2-total/2+int(i)*(cw+gap),x1=x0+cw,y1=top+ch;
-            rect(x0,top,x1,y1,on?0x00182848u:0x00101018u,on?0.85:0.70);
-            frameRect(x0,top,x1,y1,std::max(unit/8,2),on?0x0060C8FFu:0x00484858u,on?0.55+0.40*pulse:0.9);
-            const COLORREF colour=!usable?RGB(84,84,94):on?RGB(BYTE(110+30*pulse),BYTE(206+20*pulse),255):RGB(214,214,220);
-            int y=top+ch*12/100;
+            if(on)for(int g=3;g>=1;--g)cutFill(x0-g*unit/6,top-g*unit/6,x1+g*unit/6,y1+g*unit/6,c+g*unit/6,0x0060C8FFu,0.05+0.03*pulse);
+            cutFill(x0,top,x1,y1,c,on?0x00142440u:0x000C0C14u,on?0.92:0.80);
+            cutFill(x0+t,top+t,x1-t,top+ch*2/5,std::max(c-t,1),0x00FFFFFFu,on?0.06:0.035); // The light top.
+            cutEdge(x0,top,x1,y1,c,t,on?0x0060C8FFu:0x0040404Cu,on?0.65+0.30*pulse:0.95);
+            const COLORREF colour=!usable?RGB(84,84,94):on?RGB(BYTE(120+30*pulse),BYTE(210+20*pulse),255):RGB(220,220,226);
+            int y=top+ch*14/100;
             textCentred(fit(entry.label,title_,cw-unit),(x0+x1)/2,y,title_,colour);
-            y+=unit*2;
+            y+=unit*3/2;
+            if(on) {const int bw=cw/5;cutFill((x0+x1)/2-bw/2,y,(x0+x1)/2+bw/2,y+t,0,0x0060C8FFu,0.9);}
+            y+=unit/2;
             std::size_t at=0;
             while(at<=entry.card_text.size() && !entry.card_text.empty()) {
                 const auto end=std::min(entry.card_text.find('\n',at),entry.card_text.size());
-                textCentred(fit(entry.card_text.substr(at,end-at),note_,cw-unit),(x0+x1)/2,y,note_,usable?RGB(170,170,184):RGB(84,84,94));
+                textCentred(fit(entry.card_text.substr(at,end-at),note_,cw-unit),(x0+x1)/2,y,note_,!usable?RGB(84,84,94):on?RGB(196,206,220):RGB(150,150,162));
                 y+=unit;at=end+1;
             }
             if(const std::string value=entry.value?entry.value():std::string();!value.empty())
                 textCentred(fit(value,note_,cw-unit),(x0+x1)/2,y+unit/3,note_,usable?RGB(150,215,255):RGB(84,84,94));
         }
-        // The other entries, centred under the cards, each with its value.
-        const int line=unit*3/2;
-        int y=top+ch+unit;
-        for(const unsigned n:rest) {
+        rowList(screen,rest,top+ch+unit,seconds,w*30/100,w*70/100);
+        darkFooter(screen,prompt);
+        DisplayFrame frame;frame.width=width_;frame.height=height_;frame.bgra.assign(bits_,bits_+std::size_t(width_)*height_);
+        return frame;
+    }
+    // Entries as rows from `y` on between `left` and `right`: the label at the left, its value at the right, the chosen
+    // row on a faint band with a light blue bar at its left (and arrows when Left and Right change it).
+    void rowList(const MenuScreen& screen,const std::vector<unsigned>& entries,int y,double seconds,int left,int right) {
+        const int h=int(height_),unit=h/24;
+        if(entries.empty())return;
+        const double pulse=0.5+0.5*std::sin(seconds*3.0);
+        const int row=std::min(unit*3/2,(h-unit*6-y)/std::max(int(entries.size()),1)),pad=unit/2,t=std::max(unit/12,2);
+        HFONT font=row<unit*3/2?listFont(row*2/3):listFont(unit*4/5);
+        for(const unsigned n:entries) {
             const auto& entry=screen.entries[n];
             const bool on=n==screen.highlighted,usable=entry.usable();
-            const COLORREF colour=!usable?RGB(78,78,86):on?RGB(BYTE(96+30*pulse),BYTE(200+20*pulse),255):RGB(172,172,178);
+            if(on) {
+                cutFill(left,y,right,y+row-unit/8,unit/4,0x0060A8F0u,0.13+0.05*pulse);
+                cutFill(left,y+unit/6,left+t*2,y+row-unit/8-unit/6,0,0x0060C8FFu,0.9);
+            }
+            const COLORREF colour=!usable?RGB(78,78,86):on?RGB(BYTE(120+30*pulse),BYTE(210+20*pulse),255):RGB(196,196,204);
             const std::string value=entry.value?entry.value():std::string();
-            const std::string shown=fit(value.empty()?entry.label:entry.label+"   "+value,entry_,w*80/100);
-            if(usable)textCentred(shown,w/2,y,entry_,colour);else{SetBkMode(dc_,TRANSPARENT);plainText(shown,w/2-extent(shown,entry_)/2,y,entry_,colour);}
-            y+=line;
+            const bool arrows=on && usable && entry.adjust && !entry.confirm;
+            const int value_room=value.empty()?0:(right-left)*45/100;
+            const int ty=y+(row-unit/8)/2-unit*2/5;
+            const std::string label=fit(entry.label,font,right-left-pad*3-value_room);
+            if(usable)text(label,left+pad*2,ty,font,colour);else plainText(label,left+pad*2,ty,font,colour);
+            if(!value.empty()) {
+                const std::string shown=fit(value,font,value_room);
+                const int vx=right-pad*2-extent(shown,font)-(arrows?unit:0);
+                text(shown,vx,ty,font,!usable?RGB(78,78,86):on?RGB(240,240,244):RGB(140,160,182));
+                if(arrows)arrowsMark(right-pad*2-unit/3,y+(row-unit/8)/2-unit/8,unit*2/3);
+            }
+            y+=row;
         }
-        const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
-        if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(150,150,164));
-        const int by=h-unit*3;
-        hint(Symbol::Cross,"Enter",w*34/100,by,unit);
-        hint(Symbol::Circle,"Back",w*58/100,by,unit);
+    }
+    // A dark page of rows (every launcher page that is not the first screen, a list or cards; the connect screens; the
+    // in-game menu over the game, without the logo).
+    DisplayFrame rows(const MenuScreen& screen,double seconds,const std::string& prompt,const std::string& heading,bool with_logo) {
+        std::copy(haze_[0].begin(),haze_[0].end(),bits_);
+        SetBkMode(dc_,TRANSPARENT);
+        const int w=int(width_);
+        const int y=darkHeader(heading,with_logo);
+        std::vector<unsigned> all(screen.entries.size());
+        for(unsigned n=0;n<all.size();++n)all[n]=n;
+        rowList(screen,all,y,seconds,w*27/100,w*73/100);
+        darkFooter(screen,prompt);
         DisplayFrame frame;frame.width=width_;frame.height=height_;frame.bgra.assign(bits_,bits_+std::size_t(width_)*height_);
         return frame;
     }
@@ -226,7 +313,7 @@ private:
             y+=row;
         }
         const std::string& note=!prompt.empty()?prompt:screen.entries[screen.highlighted].note;
-        if(!note.empty())textCentred(fit(note,note_,w*90/100),w/2,h-unit*9/2,note_,!prompt.empty()?RGB(255,225,120):RGB(170,170,184));
+        if(!note.empty())noteLines(note,!prompt.empty()?RGB(255,225,120):RGB(170,170,184));
         const int by=h-unit*3;
         hint(Symbol::Cross,"Enter",w*34/100,by,unit);
         hint(Symbol::Circle,"Back",w*58/100,by,unit);

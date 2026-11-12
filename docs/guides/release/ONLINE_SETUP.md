@@ -37,12 +37,12 @@ If it does not connect
 - Check that the host pasted the friend's latest reply code (Ctrl+V in the
   game's window).
 - "different build" or "gameplay settings differ": both need the same
-  version and the same "Beam struggles by buttons" setting (Enhancements).
+  version and the same "Beam struggles by buttons" setting (Settings, Controls).
   Everything else (HD, widescreen, 60 fps) may differ.
 - Still nothing: swap roles (the friend hosts). Some mobile and office
   networks cannot be reached this way.
 - "Connection slow" or frequent waits: the host raises "Input delay" under
-  Online battle, Options.
+  Online battle, Connection settings.
 
 If a battle stops with "the two games went apart", please report it with
 both players' user\last-run.log.

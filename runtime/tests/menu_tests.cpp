@@ -53,16 +53,26 @@ int main() {
         check(Settings{}.struggle_buttons && Settings::parse("disc =\n").struggle_buttons,"beam struggles by buttons on by default, also in older files");
         check(!Settings{}.variable_refresh && !Settings::parse("disc =\n").variable_refresh,"variable refresh off by default (other displays would tear)");
         check(Settings{}.low_input_lag && Settings::parse("disc =\n").low_input_lag,"low input lag on by default, also in older files");
+        // The settings' groups (the launcher's Settings and the in-game menu): Graphics with its five main choices and More,
+        // Controls, Sound, Game files. One window and input for the screens that need them.
+        ViewerWindow group_window;HostInput group_input;MenuHost group_host(group_window,group_input);
         {
-            // Fast loading is an enhancement, not part of fast forward.
-            Settings e;const auto screen=menu_screens::enhancements(e,[]{});
-            check(std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="Fast loading";}),"fast loading among the enhancements");
-            check(std::any_of(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="Beam struggles by buttons";}),"beam struggles by buttons among the enhancements");
+            Settings e;
+            const auto hub=menu_screens::settingsHub(group_host,e,[]{},true);
+            check(labels(hub)==std::vector<std::string>{"Graphics","Controls","Sound","Game files"} && hub.first_look && hub.entries[0].card,"the settings as four cards");
+            check(!menu_screens::settingsHub(group_host,e,[]{},false).entries[0].card,"in the in-game menu, a list");
+            check(labels(menu_screens::graphics(group_host,e,[]{}))==std::vector<std::string>{"Fullscreen","HD textures","Super-sampling","Widescreen","60 fps battles","More"},"graphics: the main choices");
+            check(labels(menu_screens::graphicsMore(group_host,e,[]{}))==std::vector<std::string>{"Window size","Integer scaling","Variable refresh rate","Low input lag","HD outline",
+                  "Light depth of field","Button art","Frame rate display"},"the rest under More");
+            // Fast loading is with the game's files, not fast forward; beam struggles by buttons with the controls.
+            check(labels(menu_screens::gameFiles(e,[]{}))==std::vector<std::string>{"Fast loading"},"game files in the in-game menu: fast loading");
+            const auto controls=labels(menu_screens::controls(group_host,e,[]{}));
+            check(std::find(controls.begin(),controls.end(),"Beam struggles by buttons")!=controls.end(),"beam struggles by buttons among the controls");
         }
         {
             // The HD outline can be chosen only with super-sampling (it changes nothing without).
             Settings e;e.super_sampling=1;
-            auto screen=menu_screens::enhancements(e,[]{});
+            auto screen=menu_screens::graphicsMore(group_host,e,[]{});
             const auto entry=std::find_if(screen.entries.begin(),screen.entries.end(),[](const MenuEntry& m){return m.label=="HD outline";});
             check(entry!=screen.entries.end() && !entry->available(),"the HD outline greyed out without super-sampling");
             e.super_sampling=16;check(entry->available(),"the HD outline with super-sampling");
@@ -71,9 +81,9 @@ int main() {
             // The launcher says when HD textures are on but no pack is in data/textures, and names the pack it found.
             Settings e;e.hd_textures=true;
             const auto hd=[](const MenuScreen& s){return *std::find_if(s.entries.begin(),s.entries.end(),[](const MenuEntry& m){return m.label=="HD textures";});};
-            const auto none=hd(menu_screens::enhancements(e,[]{},[]{return std::optional<std::string>(std::string());}));
+            const auto none=hd(menu_screens::graphics(group_host,e,[]{},[]{return std::optional<std::string>(std::string());}));
             check(none.value()=="On, no pack found" && none.note.find("No pack")==0,"HD textures on without a pack says so");
-            const auto found=hd(menu_screens::enhancements(e,[]{},[]{return std::optional<std::string>("Pack 2");}));
+            const auto found=hd(menu_screens::graphics(group_host,e,[]{},[]{return std::optional<std::string>("Pack 2");}));
             check(found.value()=="On" && found.note.find("\"Pack 2\"")!=std::string::npos,"the pack found is named");
             e.hd_textures=false;check(none.value()=="Off","off is off");
         }
@@ -239,14 +249,23 @@ int main() {
         host.setLogo(fs::path(BT2_SOURCE_DIR)/"assets"/"launcher"/"logo.png");
         Launcher launcher(settings,settings_path,folders,host);
         launcher.open();
-        check(labels(host.menu.screen())==std::vector<std::string>{"Start game","Game disc","Memory card","Controls","Display","Enhancements","Sound","Online battle","Quit"},"the first screen");
-        check(!host.menu.screen().entries[7].usable(),"no online battle without a disc");
-        check(host.menu.screen().entries[0].value()=="No game disc in the data folder","Start says what is missing");
+        check(labels(host.menu.screen())==std::vector<std::string>{"Play","Online battle","Settings","Quit"},"the first screen");
+        check(!host.menu.screen().entries[1].usable(),"no online battle without a disc");
+        check(host.menu.screen().entries[0].value()=="No game disc in the data folder","Play says what is missing");
         picture(host,"1-first-start");
         check(discArea(host)<60,"no disc: no disc mark");
         host.menu.press(MenuKey::Confirm);host.settle();
         check(!host.finished && launcher.result==LauncherResult::Quit,"no game without a disc");
-        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        // Settings: four cards; Game files holds the disc and the card.
+        host.menu.press(MenuKey::Down);check(host.menu.screen().highlighted==2,"Online battle is passed over without a disc");
+        host.menu.press(MenuKey::Confirm);host.settle();
+        check(host.menu.screen().title=="Settings" && host.menu.screen().entries[0].card,"the settings' cards");
+        picture(host,"6-settings");
+        for(int n=0;n<3;++n)host.menu.press(MenuKey::Right);
+        check(host.menu.screen().highlighted==3,"Right along the cards to Game files");
+        host.menu.press(MenuKey::Confirm);host.settle();
+        check(labels(host.menu.screen())==std::vector<std::string>{"Game disc","Memory card","Fast loading"},"game files: the disc, the card, fast loading");
+        host.menu.press(MenuKey::Confirm);host.settle();
         check(host.menu.screen().title=="Game disc" && labels(host.menu.screen())==std::vector<std::string>{"No disc image yet"},"an empty data folder");
         picture(host,"2-no-disc");
         // A disc image moved in while the screen is open appears by itself and, being the only one, is chosen.
@@ -271,20 +290,24 @@ int main() {
         check(settings.memory_card=="Card 1" && fs::is_directory(program/"saves"/"Card 1") && labels(host.menu.screen()).size()==4,"a new empty card");
         check(fs::exists(program/"saves"/"My card"/"BASLUS-21441DBZT2"/"BASLUS-21441DBZT2"),"the other card is untouched");
         host.menu.press(MenuKey::Back);
-        // A list screen that is not open is not rebuilt over the first screen.
+        // A list screen that is not open is not rebuilt over another screen.
         touch(program/"saves"/"Late card"/"x");launcher.refresh();host.settle();
-        check(host.menu.depth()==1 && host.menu.screen().title=="BT2 Recomp","refresh leaves the first screen alone");
+        check(host.menu.screen().title=="Game files","refresh leaves the other screens alone");
+        host.menu.press(MenuKey::Back);host.menu.press(MenuKey::Back);
+        check(host.menu.depth()==1 && host.menu.screen().title=="BT2 Recomp","back on the first screen");
+        check(host.menu.screen().entries[0].value()=="Memory card: Card 1","Play says the card it starts with");
         host.menu.press(MenuKey::Up);host.menu.press(MenuKey::Up);picture(host,"5-ready");
         check(discArea(host)>110,"a disc in: the disc mark blinks in the corner");
         check(discArea(host,4.0)>110 && discArea(host,7.0)<60,"it blinks for a few seconds, then goes away");
         host.menu.press(MenuKey::Confirm);host.settle();
-        check(host.finished && launcher.result==LauncherResult::Start,"Start game with a disc");
-        for(int n=0;n<4;++n)host.menu.press(MenuKey::Down);
-        host.menu.press(MenuKey::Confirm);host.settle();picture(host,"6-display");
+        check(host.finished && launcher.result==LauncherResult::Start,"Play with a disc");
+        host.finished=false;
+        host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Down);host.menu.press(MenuKey::Confirm);host.settle();
+        host.menu.press(MenuKey::Confirm);host.settle();picture(host,"6-graphics");
+        host.menu.press(MenuKey::Back);host.menu.press(MenuKey::Back);
         // Online battles: two cards (Host, Join; Left and Right between them), the host's code (entered, cleared), the
         // connection on its own page. Joining without a code asks for it; an empty code joins nothing; a kept code joins at once.
-        host.menu.press(MenuKey::Back);host.finished=false;
-        for(int n=0;n<3;++n)host.menu.press(MenuKey::Down);
+        host.menu.press(MenuKey::Up);
         host.menu.press(MenuKey::Confirm);host.settle();
         const auto& online=host.menu.screen();
         check(online.title=="Online battle" && online.first_look && labels(online)==std::vector<std::string>{"HOST","JOIN","Host's code","Clear the code","Connection settings"},"the online screen");

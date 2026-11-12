@@ -15,18 +15,19 @@ Getting started
 ---------------
 1. Unzip this folder anywhere you like (not inside Program Files).
 2. Put your game's .iso file into the "data" folder.
-3. Start bt2-launcher.exe. Check the settings, then choose "Start game".
+3. Start bt2-launcher.exe. Check the settings, then choose "Play".
    From then on, bt2-game.exe starts the game directly with your settings.
 
-The launcher has the controls (keyboard and gamepads, including a second
-controller for 1P vs 2P on one PC), display, sound and enhancements.
+The launcher's Settings hold the graphics, the controls (keyboard and gamepads,
+including a second controller for 1P vs 2P on one PC), the sound and the game's
+files (disc, memory card).
 In the game, Escape (or the PS button) opens the in-game menu.
 
 HD textures (optional)
 ----------------------
 Put a PCSX2 texture pack for this game into "data\textures", in a folder of
 its own: data\textures\<pack name>\replacements\...
-Then switch on "HD textures" under Enhancements in the launcher.
+Then switch on "HD textures" under Settings, Graphics in the launcher.
 
 Saves
 -----

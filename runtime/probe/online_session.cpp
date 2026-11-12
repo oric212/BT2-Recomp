@@ -236,12 +236,15 @@ void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input
     options.rule_names="Beam struggles by buttons";
     // A field waiting for the other player: after a quarter of a second the window says so over the game's last
     // picture, and it keeps answering (closing it leaves the battle).
+    // The menu's combination opens the online menu meanwhile (End online battle, or wait on), so a player is never stuck
+    // while the other has paused or stopped answering.
     if(player && window)options.waiting=[window](double seconds) {
         if(seconds>=0.25) {
-            char text[64];std::snprintf(text,sizeof text,"Waiting for the other player... %.0f s",seconds);
+            char text[96];std::snprintf(text,sizeof text,"Waiting for the other player... %.0f s   (Esc: menu)",seconds);
             online.player->onlineStatus(text,true);
         } else window->pump();
         if(window->closed())std::exit(0);
+        if(seconds>=0.25)online.player->menuWhileWaiting();
     };
     online.player=player;online.pacer=pacer;
     if(player)player->online_keep_alive=[]{online.session->keepAlive();};

@@ -61,12 +61,7 @@ public:
         const auto& pad=players.one;
         const bool keyboard=focused && !(settings.second_controller && players.keyboard_two); // The keyboard plays port 2 then.
         if(trigger_.update(pad,focused && HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select)) {
-            if(online) {
-                takePicture();
-                if(runOnlineOverlay(window_,input_,picture_,online_keep_alive)!=OverlayResult::Resume)std::exit(launcher_exit_code); // The session tells the other player as it ends.
-                trigger_.swallow();swallow_=true;
-                return {};
-            }
+            if(online) {openOnlineMenu();return {};}
             setFast(false);
             takePicture();
             const auto result=runOverlay(settings,path_,window_,input_,picture_,[this]{apply();});
@@ -87,6 +82,19 @@ public:
         // What was held when the menu closed (the button that confirmed Resume) reaches the game only after its release.
         if(swallow_) {if(mapped.pressed)mapped.pressed=0;else swallow_=false;}
         return mapped;
+    }
+    // An online battle's menu (Resume, End online battle); ending it returns to the launcher, the other player told.
+    void openOnlineMenu() {
+        takePicture();
+        if(runOnlineOverlay(window_,input_,picture_,online_keep_alive)!=OverlayResult::Resume)std::exit(launcher_exit_code);
+        trigger_.swallow();swallow_=true;
+    }
+    // While an online game waits for the other player (no field is played, so padInput is not asked): the menu's
+    // combination opens the online menu there too. Before, a player whose opponent had paused could do nothing until
+    // they resumed (the user, 2026-11-12: pausing online froze the game and would not unpause).
+    void menuWhileWaiting() {
+        const auto players=assignPlayers(input_.gamepads());
+        if(trigger_.update(players.one,window_.focused() && HostInput::keyDown(VK_ESCAPE),settings.overlay_start_select))openOnlineMenu();
     }
     // Once per field with "Player 2 controller" (asked before padInput): port 2's controller state, the second
     // gamepad's or, with one gamepad, the keyboard's (assignPlayers). The in-game menu and fast forward stay player 1's.
