@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <optional>
 #include <string>
 #include <stdexcept>
 #include <thread>
@@ -121,6 +124,19 @@ public:
     }
     bool opened() const {return hwnd_!=nullptr;}
     HWND handle() const {return hwnd_;} // For dialogs that belong to the window.
+    // The launcher's window while the game runs (runtime/game/game_main.cpp): hidden once the game's window is up,
+    // shown again when the player comes back to the launcher.
+    void setVisible(bool visible) {
+        if(!hwnd_)return;
+        ShowWindow(hwnd_,visible?SW_SHOW:SW_HIDE);
+        if(visible)SetForegroundWindow(hwnd_);
+    }
+    // The window's top left corner on the screen, for the next window to open in the same place.
+    std::optional<POINT> position() const {
+        RECT at;
+        if(!hwnd_ || !GetWindowRect(hwnd_,&at))return std::nullopt;
+        return POINT{at.left,at.top};
+    }
 private:
     Scaling scaling_;HWND hwnd_=nullptr;bool closed_=false;DisplayFrame frame_;
     unsigned scale_=2;bool fullscreen_=false,widescreen_=false;std::string title_,status_;
@@ -205,7 +221,11 @@ private:
         wc.hIcon=LoadIconA(wc.hInstance,MAKEINTRESOURCEA(1)); // The program's icon (runtime/game/*.rc), none in tools.
         RegisterClassA(&wc);
         RECT r{0,0,LONG(pictureWidth(640*scale_,448*scale_)),LONG(448*scale_)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
-        hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,
+        // BT2_WINDOW_AT=<x>,<y>: where the launcher's window was, so the game's opens in its place (and on its screen,
+        // which a fullscreen window then fills): one window from the launcher to the game.
+        int x=CW_USEDEFAULT,y=CW_USEDEFAULT;
+        if(const char* at=std::getenv("BT2_WINDOW_AT")) {int ax=0,ay=0;if(std::sscanf(at,"%d,%d",&ax,&ay)==2) {x=ax;y=ay;}}
+        hwnd_=CreateWindowA(wc.lpszClassName,"BT2 Recomp",WS_OVERLAPPEDWINDOW|WS_VISIBLE,x,y,
             r.right-r.left,r.bottom-r.top,nullptr,nullptr,wc.hInstance,this);
         if(!hwnd_)throw std::runtime_error("Viewer window creation failed");
         SetWindowLongPtrA(hwnd_,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(this));

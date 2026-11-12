@@ -150,16 +150,21 @@ std::size_t blendGsPackets(std::vector<std::uint32_t>& out,std::span<const std::
                 const std::size_t index=std::get<2>(*c);
                 const auto& candidate=pa.units[index];
                 if(candidate.used || candidate.count!=unit.count)continue;
-                // Every vertex within the limit, and all moving alike (a quarter of the limit around the first's
-                // move): a polygon the game clips anew each frame (the sky) has its corners on other edges.
+                // Every vertex within the limit, and all moving alike (a quarter of the limit around the first move):
+                // a polygon the game clips anew each frame (the sky) has its corners on other edges. A coordinate
+                // the same in both frames is held by the edge the game clips to (the destroyed Namek's backdrop:
+                // triangles cut at its guard band, x 541.69 and -29.75, y -26, the other corners moving 34 pixels)
+                // and is not compared: counted, it left the whole backdrop at the newer frame's place, and the
+                // lava behind it showed through where neither frame has it (2026-11-11).
                 std::int64_t distance=0,dx0=0,dy0=0;
-                bool alike=true;
+                bool alike=true,moved_x=false,moved_y=false;
                 for(std::size_t n=0;n<unit.count && alike;++n) {
                     const Position p=read(older,pa.vertices[candidate.first+n]),q=read(newer,pb.vertices[unit.first+n]);
                     const std::int64_t dx=q.x-p.x,dy=q.y-p.y;
-                    if(n==0) {dx0=dx;dy0=dy;}
+                    if(dx && !moved_x) {dx0=dx;moved_x=true;}
+                    if(dy && !moved_y) {dy0=dy;moved_y=true;}
                     distance=std::max({distance,std::abs(dx),std::abs(dy)});
-                    alike=distance<=limit && std::abs(dx-dx0)<=limit/4 && std::abs(dy-dy0)<=limit/4;
+                    alike=distance<=limit && (!dx || std::abs(dx-dx0)<=limit/4) && (!dy || std::abs(dy-dy0)<=limit/4);
                 }
                 if(alike && (best==SIZE_MAX || distance<best_distance)) {best=index;best_distance=distance;}
             }

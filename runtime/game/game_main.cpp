@@ -34,9 +34,25 @@ fs::path findRoot(const fs::path& program) {
 }
 std::string inQuotes(const fs::path& path) {return "\""+path.string()+"\"";}
 
+// Whether a process shows a top-level window yet.
+bool showsWindow(DWORD process_id) {
+    struct Look {DWORD id;bool found=false;} look{process_id};
+    EnumWindows([](HWND window,LPARAM data)->BOOL {
+        auto& l=*reinterpret_cast<Look*>(data);
+        DWORD owner=0;GetWindowThreadProcessId(window,&owner);
+        if(owner==l.id && IsWindowVisible(window) && !GetWindow(window,GW_OWNER)) {l.found=true;return FALSE;}
+        return TRUE;
+    },reinterpret_cast<LPARAM>(&look));
+    return look.found;
+}
+
 // Runs the game; returns the runtime's exit code. Its messages go to `log`.
 // `online`: BT2_NET for an online battle (probe/online_session.h), empty for a game of one's own.
-DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log,const std::string& online) {
+// `launcher`: the launcher's window, kept up (and answering) until the game's window opens in its place, then hidden:
+// the player sees one window from the launcher to the game (the user, 2026-11-12: reaching an online battle opened two
+// windows). Before, the launcher's window closed first and the game's opened elsewhere a moment later.
+DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings& settings,const GameFolders& folders,const fs::path& log,
+              const std::string& online,ViewerWindow* launcher) {
     const fs::path runtime=programFolder()/"bt2-entry-probe.exe";
     std::error_code error;
     if(!fs::is_regular_file(runtime,error))throw std::runtime_error("The runtime program is missing: "+runtime.string());
@@ -68,17 +84,30 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     const fs::path card=folders.card(settings);
     SetEnvironmentVariableW(L"BT2_CARD_FOLDER",card.empty()?nullptr:card.wstring().c_str());
     for(const char* name:{"BT2_FRAME_LIMIT","BT2_PAD_SCRIPT","BT2_PAD_RECORD","BT2_VIEWER_SCALE","BT2_GPU_GS_SNAPSHOT"})SetEnvironmentVariableA(name,nullptr);
+    const auto at=launcher?launcher->position():std::nullopt;
+    SetEnvironmentVariableA("BT2_WINDOW_AT",at?(std::to_string(at->x)+","+std::to_string(at->y)).c_str():nullptr); // host/viewer_window.h
 
     SECURITY_ATTRIBUTES inherit{sizeof inherit,nullptr,TRUE};
     const HANDLE out=CreateFileA(log.string().c_str(),GENERIC_WRITE,FILE_SHARE_READ,&inherit,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(out==INVALID_HANDLE_VALUE)throw std::runtime_error("Cannot write "+log.string());
+    if(settings.hd_textures) { // Which pack the run uses, first in its messages.
+        const std::string line=pack.empty()?"HD textures: on, but no pack in "+utf8(folders.textures)+" (no folder there holds \"replacements\")\r\n"
+                                           :"HD textures: the pack "+utf8(pack)+"\r\n";
+        DWORD written=0;WriteFile(out,line.data(),DWORD(line.size()),&written,nullptr);
+    }
     STARTUPINFOA startup{};startup.cb=sizeof startup;startup.dwFlags=STARTF_USESTDHANDLES;startup.hStdOutput=startup.hStdError=out;
     PROCESS_INFORMATION process{};
     std::string mutable_command=command;
     if(!CreateProcessA(nullptr,mutable_command.data(),nullptr,nullptr,TRUE,CREATE_NO_WINDOW,nullptr,root.string().c_str(),&startup,&process)) {
         CloseHandle(out);throw std::runtime_error("The runtime program could not be started.");
     }
-    WaitForSingleObject(process.hProcess,INFINITE);
+    bool handed=!launcher || !launcher->opened();
+    for(;;) {
+        if(MsgWaitForMultipleObjects(1,&process.hProcess,FALSE,handed?INFINITE:50,QS_ALLINPUT)==WAIT_OBJECT_0)break;
+        if(launcher)launcher->pump(); // Hidden or not, the launcher's window keeps answering.
+        if(!handed && showsWindow(process.dwProcessId)) {launcher->setVisible(false);handed=true;}
+    }
+    if(launcher)launcher->setVisible(false); // Also when the game ended before its window opened.
     DWORD code=1;GetExitCodeProcess(process.hProcess,&code);
     CloseHandle(process.hThread);CloseHandle(process.hProcess);CloseHandle(out);
     return code;
@@ -96,7 +125,7 @@ std::string onlineReason(const fs::path& log) {
     std::ifstream in(log);std::string line,reason;
     while(std::getline(in,line))if(const auto at=line.find("failed: Online session: ");at!=std::string::npos)reason=line.substr(at+24);
     if(!reason.empty())reason[0]=char(std::toupper(static_cast<unsigned char>(reason[0])));
-    return reason.empty()?reason:"The online battle ended: "+reason+".";
+    return reason.empty()?reason:reason+".";
 }
 // How many places of untranslated code the session ran through the interpreter (its log lines).
 unsigned interpretedPlaces(const fs::path& log) {
@@ -135,11 +164,16 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
         bool launcher=!fs::is_regular_file(settings_path,error) || !folders.configured(settings);
 #endif
         LauncherResult chosen=LauncherResult::Start; // Host or Join: the next run is an online battle.
+        std::unique_ptr<ViewerWindow> window; // The launcher's, kept while the game runs (runGame).
+        bool back_from_online=false;std::string online_notice; // The launcher opens on its online page, saying how it ended.
         for(;;) {
             if(launcher) {
-                ViewerWindow window;HostInput input;
+                if(!window || window->closed())window=std::make_unique<ViewerWindow>();
+                else window->setVisible(true);
+                HostInput input;
                 settings.save(settings_path.string());
-                chosen=runLauncher(settings,settings_path.string(),folders,window,input);
+                chosen=runLauncher(settings,settings_path.string(),folders,*window,input,back_from_online,std::move(online_notice));
+                back_from_online=false;online_notice.clear();
                 if(chosen==LauncherResult::Quit)return 0;
             }
             if(!folders.configured(settings)) {launcher=true;continue;} // No disc image of the data folder: choose one.
@@ -156,17 +190,19 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR arguments,int) {
                 :chosen!=LauncherResult::Join?std::string()
                 :host_code?"join:"+settings.online_address:"join:"+settings.online_address+":"+std::to_string(settings.online_port);
             chosen=LauncherResult::Start;
-            const DWORD code=runGame(root,settings_path,settings,folders,log,net);
+            const DWORD code=runGame(root,settings_path,settings,folders,log,net,window.get());
             SetEnvironmentVariableA("BT2_QUICK_TITLE",nullptr);
             if(auto stored=Settings::load(settings_path.string()))settings=*stored; // The in-game menu may have changed them.
-            if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
-            if(online) { // Back to the launcher after an online battle; why it ended, when it did not end here.
-                if(code!=0) {
-                    const std::string reason=onlineReason(log);
-                    MessageBoxA(nullptr,(reason.empty()?"The game stopped.\n\n"+lastLines(log,6)+"\nThe full messages are in "+log.string():reason).c_str(),"BT2 Recomp - online battle",MB_OK|MB_ICONINFORMATION);
+            if(online) { // Back to the launcher's online page; why it ended, when it did not end here, at its top.
+                back_from_online=true;
+                if(code!=0 && code!=DWORD(PlayerSession::launcher_exit_code)) {
+                    online_notice=onlineReason(log);
+                    if(online_notice.empty())online_notice="The game stopped: "+lastLines(log,1).substr(0,80)+" (all in user\\last-run.log)";
+                    while(!online_notice.empty() && (online_notice.back()=='\n' || online_notice.back()==' '))online_notice.pop_back();
                 }
                 launcher=true;continue;
             }
+            if(code==DWORD(PlayerSession::launcher_exit_code)) {launcher=true;continue;}
             // "Return to the title screen": the game again, its startup in fast forward up to the title.
             if(code==DWORD(PlayerSession::title_exit_code)) {launcher=false;SetEnvironmentVariableA("BT2_QUICK_TITLE","1");continue;}
             // Code that was never translated ran interpreted (slower), or stopped the game: the discovery

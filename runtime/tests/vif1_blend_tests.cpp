@@ -73,6 +73,14 @@ void gsPacketTests() {
     const auto last=flames({{0x2B50,700,100,30000,1}},0x00400040u),more=flames({{0x2B50,702,100,30000,1},{0x2B60,800,100,30000,1}},0x00400040u);
     const auto eop=blendVif1(last,more,0.5f);
     check(eop && (word(*eop,0,0,4)&0xFFFF)==701*16,"the end of packet mark is no part of a flame's kind");
+    // A polygon cut at the edge the game clips to (the destroyed Namek's backdrop): its right corners stay on that edge
+    // (x 608 in both frames) while the others move 40 pixels; it moves halfway, its corners on the edge staying there.
+    const auto cut_older=flames({{0x2B90,600,150,30000,1}},0x00400040u);
+    auto cut_newer=flames({{0x2B90,640,150,30000,1}},0x00400040u);
+    for(unsigned c:{1u,3u})cut_newer[1+8+8+c*6+4]=(cut_newer[1+8+8+c*6+4]&0xFFFF0000u)|608u*16;
+    const auto cut=blendVif1(cut_older,cut_newer,0.5f);
+    check(cut && (word(*cut,0,0,4)&0xFFFF)==620*16 && (word(*cut,0,2,4)&0xFFFF)==620*16,"a polygon cut at the clip edge moves halfway");
+    check((word(*cut,0,1,4)&0xFFFF)==608*16 && (word(*cut,0,3,4)&0xFFFF)==608*16,"its corners on the edge stay there");
 }
 }
 

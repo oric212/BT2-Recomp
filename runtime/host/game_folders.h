@@ -57,11 +57,21 @@ struct GameFolders {
     }
     // The HD texture pack: the first folder in `textures` (in name order) that holds a `replacements`
     // folder, as PCSX2's packs do, or `textures` itself when it holds one; empty when there is none.
+    // A pack unpacked into a folder of its own name one or two levels deeper (an archive extracted into a folder named
+    // after it: textures/<pack>/<pack>/replacements) is found too; the shallowest wins, then name order. Without this
+    // such a pack was passed over silently and the game ran with no HD textures (the user's fresh release folder,
+    // 2026-11-12).
     std::filesystem::path texturePack() const {
         std::error_code error;
-        if(std::filesystem::is_directory(textures/"replacements",error))return textures;
-        for(const auto& name:names(textures,true,{}))
-            if(std::filesystem::is_directory(textures/pathFromUtf8(name)/"replacements",error))return textures/pathFromUtf8(name);
+        std::vector<std::filesystem::path> level{textures};
+        for(unsigned depth=0;depth<=3 && !level.empty();++depth) {
+            std::vector<std::filesystem::path> next;
+            for(const auto& folder:level) {
+                if(std::filesystem::is_directory(folder/"replacements",error))return folder;
+                for(const auto& name:names(folder,true,{}))next.push_back(folder/pathFromUtf8(name));
+            }
+            level=std::move(next);
+        }
         return {};
     }
     // Ready to play without the launcher: the settings name a disc image that is in `data`.

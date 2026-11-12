@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 
 class MenuHost {
@@ -215,9 +216,20 @@ inline MenuScreen display(MenuHost& host,Settings& s,std::function<void()> chang
 }
 // The settings the game takes when it starts (the renderer's and the game's patches): one screen, so it is
 // clear that they apply from the next start.
-inline MenuScreen enhancements(Settings& s,std::function<void()> changed) {
+// `pack`: the launcher's look in data/textures, the pack's folder name or empty when there is none; not given (the
+// in-game menu), the entry does not say.
+inline MenuScreen enhancements(Settings& s,std::function<void()> changed,std::function<std::optional<std::string>()> pack={}) {
     MenuScreen screen;screen.title="Enhancements (from the next start)";
-    screen.entries.push_back(toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). Sharpest with 16x super-sampling."));
+    MenuEntry hd=toggle("HD textures",s.hd_textures,changed,"A PCSX2 texture pack in data/textures (its folder holds \"replacements\"). Sharpest with 16x super-sampling.");
+    if(pack) {
+        // A pack that is not found says so where the setting is, not by a game without HD textures.
+        const auto found=pack(); // Looked for once, when the screen opens.
+        const bool there=found && !found->empty();
+        hd.value=[&s,there]{return std::string(!s.hd_textures?"Off":there?"On":"On, no pack found");};
+        if(there)hd.note="The pack \""+*found+"\" in data/textures. Sharpest with 16x super-sampling.";
+        else hd.note="No pack in data/textures: put the pack's folder there (the folder that holds \"replacements\").";
+    }
+    screen.entries.push_back(hd);
     MenuEntry buttons;buttons.label="Button art";
     buttons.value=[&s]{return std::string(s.playstation_buttons?"PlayStation":"Xbox");};
     buttons.adjust=[&s,changed](int){s.playstation_buttons=!s.playstation_buttons;changed();};

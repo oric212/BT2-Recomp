@@ -24,11 +24,15 @@ public:
 
     // Opens the first screen. Also picks what there is only one of: the only disc image in data, and
     // a card of saves when none is in the slot.
-    void open() {
+    // `online`: back from an online run, the online page is opened over the first screen, with `notice` (why the battle
+    // ended; empty when it ended here) at its top instead of a separate message box.
+    void open(bool online=false,std::string notice={}) {
         host_.setDiscPresent([this]{return discReady();});
         pickDefaults();
         host_.menu.open(mainScreen());
         host_.menu.on_leave_root=[]{}; // Back does nothing on the first screen.
+        notice_=std::move(notice);
+        if(online && discReady())host_.menu.open(onlineScreen());
     }
     // Called while the menu runs: the open list screen is built again when the folder changed.
     void refresh() {
@@ -50,6 +54,7 @@ private:
     static constexpr const char* card_title="Memory card (slot 1)";
     Settings& settings_;std::string settings_path_;const GameFolders& folders_;MenuHost& host_;
     std::vector<std::string> discs_,cards_,images_;
+    std::string notice_; // How the last online battle ended, shown on the online page.
 
     void changed() {if(on_change)on_change();settings_.save(settings_path_);}
     void pickDefaults() {
@@ -92,7 +97,10 @@ private:
         const std::function<void()> apply=[this]{changed();};
         main.entries.push_back(menuAction("Controls",[this,apply]{host_.menu.open(menu_screens::controls(host_,settings_,apply));},"Keys and gamepad buttons, fast forward, the in-game menu."));
         main.entries.push_back(menuAction("Display",[this,apply]{host_.menu.open(menu_screens::display(host_,settings_,apply));},"Window size, fullscreen, scaling, frame rate."));
-        main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply));},"HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
+        main.entries.push_back(menuAction("Enhancements",[this,apply]{host_.menu.open(menu_screens::enhancements(settings_,apply,[this]()->std::optional<std::string> {
+            const auto pack=folders_.texturePack();
+            return pack.empty()?std::string():utf8(std::filesystem::relative(pack,folders_.textures));
+        }));},"HD textures, super-sampling, the HD outline, widescreen, 60 fps battles, fast loading, beam struggles by buttons."));
         main.entries.push_back(menuAction("Sound",[this,apply]{host_.menu.open(menu_screens::sound(settings_,apply));},"Master, music and effects volume."));
         main.entries.push_back(menuAction("Online battle",[this]{host_.menu.open(onlineScreen());},"1P vs 2P with a player on another PC: one hosts, the other joins with the host's code."));
         main.entries.back().available=[this]{return discReady();};
@@ -115,6 +123,11 @@ private:
                 if(then)then();
             });
         };
+        if(!notice_.empty()) {
+            MenuEntry last=menuAction(notice_,[]{},"");
+            last.enabled=false;last.section="LAST BATTLE";
+            screen.entries.push_back(last);
+        }
         MenuEntry host=menuAction("Host  \xC2\xB7  you are player 1",[start]{start(LauncherResult::Host);},
             "Your code is copied by itself: send it to the other player, then paste the reply code they send back.");
         host.section="PLAY";
@@ -208,7 +221,8 @@ private:
     }
 };
 
-inline LauncherResult runLauncher(Settings& settings,const std::string& settings_path,const GameFolders& folders,ViewerWindow& window,HostInput& input) {
+inline LauncherResult runLauncher(Settings& settings,const std::string& settings_path,const GameFolders& folders,ViewerWindow& window,HostInput& input,
+                                  bool online=false,std::string notice={}) {
     MenuHost host(window,input);
     host.setLogo(folders.logo());
     const auto apply=[&] {
@@ -218,7 +232,7 @@ inline LauncherResult runLauncher(Settings& settings,const std::string& settings
     apply();
     Launcher launcher(settings,settings_path,folders,host);
     launcher.on_change=apply;
-    launcher.open();
+    launcher.open(online,std::move(notice));
     host.every(500,[&]{launcher.refresh();});
     if(!host.run("BT2 Recomp - launcher"))return LauncherResult::Quit;
     return launcher.result;

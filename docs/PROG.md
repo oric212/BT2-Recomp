@@ -23,7 +23,14 @@
 
 Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached ([definitions](project/PROGRESS_TRACKING.md)).
 
-## Latest (2026-11-11)
+## Latest (2026-11-12)
+
+- **The destroyed Namek's lava no longer flickers at 60 fps:** polygons cut at the edge the game clips to were left at the newer frame's place in the in-between pictures; they now move halfway like the rest ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+- **HD packs found where players put them:** the user's fresh release folder ran without HD textures (the pack was not found, without a word). A pack up to three folders deep in `data/textures` is found now, the launcher names it or says none was found, and the log names it.
+- **One window to an online battle:** the launcher's window stays until the game's opens in its place, and comes back on the online page after a battle with why it ended ([launcher plan](plans/launcher/LAUNCHER_PLAN.md)).
+
+## 2026-11-11
+
 
 - **Online rounds start locked on** (the user: both players had to look for each other at a match's start). Measured: lock-on ("Lock on!") comes only when the fighters get within range, and they start a round more than twice that far apart; in 1P vs CPU the CPU flies in at once, in 1P vs 2P nobody was locked on until the players came close, and the camera did not follow the opponent meanwhile (the original's two-player behaviour, also in split screen). Online, both fighters are now locked on from "FIGHT!", on both machines alike; after that the game's own rules apply ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later" item 2).
 - **Fighter textures no longer pop** between HD and the original (the user's report): drawn palettes followed by blocks, and one overwritten later in the frame copied before the upload; draws left original 38,174 to 22 in a test fight. **Player 2's "press O"** online now sits in its corner with its burst ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md), [online plan](plans/online/ONLINE_BATTLE_PLAN.md)). Found: the destroyed Namek's lava flickers in the 60 fps in-between pictures. **Short presses kept:** a tap between the game's reads reaches it (two fields at least). **The launcher's online page** is one panel with a removable code.

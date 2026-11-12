@@ -67,6 +67,16 @@ int main() {
             check(entry!=screen.entries.end() && !entry->available(),"the HD outline greyed out without super-sampling");
             e.super_sampling=16;check(entry->available(),"the HD outline with super-sampling");
         }
+        {
+            // The launcher says when HD textures are on but no pack is in data/textures, and names the pack it found.
+            Settings e;e.hd_textures=true;
+            const auto hd=[](const MenuScreen& s){return *std::find_if(s.entries.begin(),s.entries.end(),[](const MenuEntry& m){return m.label=="HD textures";});};
+            const auto none=hd(menu_screens::enhancements(e,[]{},[]{return std::optional<std::string>(std::string());}));
+            check(none.value()=="On, no pack found" && none.note.find("No pack")==0,"HD textures on without a pack says so");
+            const auto found=hd(menu_screens::enhancements(e,[]{},[]{return std::optional<std::string>("Pack 2");}));
+            check(found.value()=="On" && found.note.find("\"Pack 2\"")!=std::string::npos,"the pack found is named");
+            e.hd_textures=false;check(none.value()=="Off","off is off");
+        }
         check(refused([]{Settings::parse("super_sampling = 3\n");}) && refused([]{Settings::parse("super_sampling = 32\n");}),"super-sampling is 1, 2, 4, 8 or 16");
         // Older files: the dialog folders and the hidden cards are ignored, a card elsewhere is dropped.
         const auto old=Settings::parse("disc = E:\\x.iso\ndisc_folder = E:\\discs\ncard_folder = E:\\saves\\One\nhidden_card = Card 2\nmemory_card = E:\\saves\\My card\n");
@@ -195,6 +205,16 @@ int main() {
         check(fs::is_directory(program/"data"/"textures") && folders.texturePack().empty(),"the textures folder is made, empty");
         touch(program/"data"/"textures"/"A notes"/"readme.txt");touch(program/"data"/"textures"/"B pack"/"replacements"/"x.dds");
         check(folders.texturePack()==program/"data"/"textures"/"B pack","a pack is the folder with replacements");
+        {
+            // A pack extracted into a folder of its own name (an archive's usual layout) is found one level deeper.
+            const fs::path nested=fs::temp_directory_path()/"bt2-menu-tests-nested";fs::remove_all(nested);fs::create_directories(nested);
+            const GameFolders deep(nested);deep.create();
+            touch(nested/"data"/"textures"/"Pack 2"/"Pack 2"/"replacements"/"x.dds");
+            check(deep.texturePack()==nested/"data"/"textures"/"Pack 2"/"Pack 2","a pack one folder deeper is found");
+            touch(nested/"data"/"textures"/"Z pack"/"replacements"/"y.dds");
+            check(deep.texturePack()==nested/"data"/"textures"/"Z pack","the shallowest pack wins");
+            fs::remove_all(nested);
+        }
         check(folders.cards()==std::vector<std::string>{"Card A"} && folders.cardImages()==std::vector<std::string>{"other.ps2"},"cards are folders; card image files listed apart");
         Settings s;
         check(!folders.configured(s),"no disc chosen: not configured");
