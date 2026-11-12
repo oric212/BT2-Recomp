@@ -222,9 +222,47 @@ later (117 ms: the in-between picture costs more to draw). Not measured: fullscr
 A first try read the wrong part of the screen (the tester was not DPI-aware on a scaled display); the tester now
 is, and saves the region it reads (`work/frames/latency/<label>-region.png`) to check.
 
-**Next:** loaded data (step 5); press to sound and fullscreen when wanted.
+**Step 5, loaded data: a fight's first frame (2026-11-12).** PCSX2's session `loaded` took the versus battle
+(the demo turned into one by `--set`, as for the input delay; fighters 8 and 120, stage index 9, music 23) before
+the first call of its logic step (`step-b` call 1, at 200.7 s); the port ran the same battle from its starter
+(`BT2_START_BATTLE=8,120,9,23`, `BT2_START_BATTLE_PLAYER=1`) and wrote its RAM before the same call
+(`BT2_EE_CALL_RAM`, field 531). `loaded_data.py` lists the words that differ, merged into ranges, against the regions
+of `config/pcsx2_compare_regions.json` (each with its reason) and the session's patched call words.
+
+- **803 KB of 32 MB differ; 777 KB of them in explained regions:** the kernel's memory (below `0x100000`: PCSX2's
+  BIOS kernel, the port's native one; 177 KB), the two display-list buffers (the previous screen's lists: PCSX2's
+  title demo, none after the starter; 50 KB each), a 416 KB streaming buffer (`0x64BBC0`, at the same heap place in
+  both, full in PCSX2 at the first frame, filled in the port by frame 600: the stream's timing), two ADX stream
+  buffers of a pool (CRI headers; PCSX2 and the port had different ones current), the main stack, the session's
+  stubs and patched calls.
+- **The fighters' and stage's data are equal:** from `0x700000` to the end of RAM (22 MB, the loaded and unpacked
+  files) 2.7 KB differ, none of it file data: positions shaped (x, −10, z, 1) with counters beside them
+  (`0x19CE154`, `0x19CF414`, `0x1BB2D90` to `0x1BBF3BC`; most likely objects placed with random numbers, which differ
+  by route, not yet shown), and two records PCSX2 has and the port leaves zero (`0x8C6080`, `0xD23F00`), left by
+  earlier screens: PCSX2's fight never writes them (frames 600 to 2,400 of the `versus` session), the port's never
+  sets them (a word watch to field 800).
+- **23 KB in the game's globals (`0x340000` to `0x3C0000`, 152 ranges)** differ by route: frame counters (`0x2E17`
+  against `0x213`), the file service's path buffers ("cdrom0:\", the logo file's name), heap positions of the title's
+  allocations, menu tables PCSX2 filled and the starter never reached. Not yet explained one by one.
+- **A finding for the controller service:** the sticks at rest read `7F 7F 7F 7F` in PCSX2's pad record
+  (`0x3B0B1C`) and `80 80 80 80` in the port's. Both rest values are inside a real pad's; whether the game treats
+  them alike (its dead zone) is open, so the port's value is unchanged.
+- **The title's demo is not the same battle in both programs:** without the starter or `--set` (session
+  `loaded-demo`, the port to field 11,201 with PCSX2's save on a folder card) 11.8 MB differ, the fighter and stage
+  blocks from `0x8D0000` to `0x15EC860`: the demo draws its fighters with random numbers, which drift between the
+  two. The same-battle comparison above is therefore the one that counts.
+
+What this shows: at the first frame of the same battle, everything the loads brought in and unpacked is byte-equal
+to PCSX2's; the differences are the route (the port's starter skips the logos, films and title), the streams'
+timing and the kernel. **Not covered:** the route's own state, which needs the port to reach the battle by PCSX2's
+route (the title's demo with the same draw); other events (a story map shown, a menu entered).
+
+**Next:** the globals' 152 ranges by route (or the port through the same route); the stick rest value against the
+game's dead zone; then step 6 (VU1 and the GIF stream). Press to sound and fullscreen when wanted.
 
 ## Unknowns
+
+- Whether BT2's fight treats a stick at `0x7F` (PCSX2's rest) as at `0x80` (the port's).
 
 - Whether `VUmem` is VU0 micro, VU0 data, VU1 micro, VU1 data in that order (checked on the first session against
   the game's VU1 programs).

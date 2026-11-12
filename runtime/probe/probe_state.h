@@ -39,6 +39,8 @@ void registerSelectedOverlays(EeRuntime& runtime); // overlay_bindings.cpp
 void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::string& spec);
 // BT2_EE_CALL_SUMS: the field, flips, a word and range checksums at every call from one call address (call_sums.cpp).
 void installCallSums(EeRuntime& runtime,const std::string& spec);
+// BT2_EE_CALL_RAM: EE RAM written whole before the n-th call from one call address (call_ram.cpp).
+void installCallRam(EeRuntime& runtime,const std::string& spec);
 
 // Checkpoint validation (checkpoint_checks.cpp): each throws if the reached state differs.
 void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop);

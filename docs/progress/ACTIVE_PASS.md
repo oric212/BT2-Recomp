@@ -10,7 +10,9 @@ Also done (the same day): step 9's first part, the game's own input delay: loggi
 
 Then step 9's second part: `press_to_screen.py` (unpauses timed from `SendInput` to the first changed picture, windowed): port 104 ms median with Low input lag, 111 ms at 60 fps, 133 ms without; PCSX2 108 ms (`work/latency/*.json`).
 
-**Next:** step 5 (loaded data); fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+Then step 5, loaded data, at a fight's first frame: `BT2_EE_CALL_RAM` (the port's RAM before a call) and `loaded_data.py` (ranges against `config/pcsx2_compare_regions.json`); sessions `loaded` (the versus battle, the comparison that counts) and `loaded-demo` (the plain title demo: another draw, not comparable). The loaded fighters and stage equal; 23 KB of globals differ by route, not yet explained one by one; sticks at rest `0x80` in the port against PCSX2's `0x7F` (open: the game's dead zone).
+
+**Next:** the stick rest value against the game's dead zone (who reads `0x3B0B1C`'s sticks in the fight); the globals by route (a port run through PCSX2's route would remove them); then step 6. Fullscreen and press to sound if the user wants them. Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 
@@ -31,6 +33,7 @@ Then step 9's second part: `press_to_screen.py` (unpauses timed from `SendInput`
 - **Online over loopback:** `BT2_NET=host:7411` and `BT2_NET=join:127.0.0.1:7411`, each its own `--report` and `--pad-script` (two runs at once are allowed here).
 - **Input delay:** `session.py ... --set %101A60:1:a0=0,a2=0,a3=1 --set %101AB0:1:a2=0 --set %101AF8:1:a3=0 --log "@102EE0:700,word=3B0C2C[,press=480/2/3B0C2C/4000]" --log @102F08:700,word=3B0A84,word=3B0A80,sum=430000-457000,sum=1100C000-11010000,sum=530000-557000 --until @102F08` (about 4 minutes); the port: `BT2_START_BATTLE=8,120,9,23 BT2_START_BATTLE_PLAYER=1 BT2_EE_CALL_SUMS="<file>:102ee8,102ec8:3b0c2c:430000-457000:1100c000-11010000:530000-557000"`, frame 480's read at field 1489; then `input_delay.py`. Presses during the intro (before frame 471) do nothing.
 - **PCSX2 comparison sessions:** `tools/pcsx2_compare/session.py` with the PCSX2 copy, BIOS and card copy under `work/pcsx2-capture/ai-think-before-200/` (`package/pcsx2-qt.exe`, `profile/PCSX2/bios/scph39001.bin`, `profile/PCSX2/memcards/Mcd001.ps2`); about 200 s to the demo battle, which `--site %101A60:1:1:1 --edit %101A60:a0=0,a2=0,a3=1` makes a full versus battle; end with `--until <site>`; each checkpoint 32 MB under `work/pcsx2-compare/`; then `compare_calls.py --session <name>` ([TOOLS.md](../guides/TOOLS.md), "PCSX2 comparison sessions").
+- **Loaded data:** the port's RAM with `BT2_EE_CALL_RAM=<absolute file>:102ef8:1` and the starter's battle (`BT2_START_BATTLE=8,120,9,23 BT2_START_BATTLE_PLAYER=1`, field 531); `loaded_data.py --pcsx2 work/pcsx2-compare/loaded/step-b-1-before --port <file>`. In PowerShell an empty pad script is `"--pad-script="`.
 - **Pictures:** `BT2_GPU_GS_SNAPSHOT="<flip>:<absolute path>.ppm;…"`; 60 fps: `BT2_SIXTY_FPS_SNAPSHOT`, `BT2_SIXTY_FPS=check`. Other tools: [TOOLS.md](../guides/TOOLS.md).
 
 ## Rules learned the hard way

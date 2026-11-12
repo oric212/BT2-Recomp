@@ -1,0 +1,53 @@
+{
+  "about": "EE RAM regions that differ between PCSX2 and the port at the same event for a known reason (tools/pcsx2_compare/loaded_data.py, docs/plans/validation/PCSX2_COMPARISON_PLAN.md, step 5). start and end in hex, end exclusive. The session's patched call words are read from its session.json.",
+  "regions": [
+    {
+      "start": "0x0",
+      "end": "0x100000",
+      "name": "kernel",
+      "reason": "The EE kernel's memory: PCSX2 runs the BIOS kernel there, the port answers the kernel natively and keeps its state in the runtime."
+    },
+    {
+      "start": "0x430000",
+      "end": "0x457000",
+      "name": "display lists A",
+      "reason": "One of the two display-list buffers the frames alternate between; before a fight's first frame it holds the previous screen's lists (2026-11-12: PCSX2's title demo, none after the port's starter)."
+    },
+    {
+      "start": "0x530000",
+      "end": "0x557000",
+      "name": "display lists B",
+      "reason": "The other display-list buffer, as A."
+    },
+    {
+      "start": "0x64BBC0",
+      "end": "0x6B0D64",
+      "name": "stream buffer",
+      "reason": "A 416 KB heap block at the same place in both, filled by streaming during the fight (2026-11-12: full in PCSX2 at the fight's first frame, filled in the port by frame 600); its contents follow when the reads land."
+    },
+    {
+      "start": "0x6B97C0",
+      "end": "0x6C5FC0",
+      "name": "ADX stream buffer (port)",
+      "reason": "An ADX stream's buffer (a CRI header at its start) the port's run had in use at the event, PCSX2's run another (below): which buffer of the pool is current follows the stream's timing."
+    },
+    {
+      "start": "0x6E3240",
+      "end": "0x6EB56C",
+      "name": "ADX stream buffer (PCSX2)",
+      "reason": "The pool's buffer PCSX2's run had in use, as above."
+    },
+    {
+      "start": "0x1FF0000",
+      "end": "0x2000000",
+      "name": "main stack",
+      "reason": "The top of RAM holds the main thread's stack: words left by earlier calls differ by route and timing."
+    },
+    {
+      "start": "0x1D00000",
+      "end": "0x1EFD000",
+      "name": "session stubs",
+      "reason": "The comparison session's stubs, their data and rings, in the region the game leaves empty (session.py)."
+    }
+  ]
+}
