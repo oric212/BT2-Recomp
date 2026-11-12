@@ -19,6 +19,14 @@ changes a0 to a3, t0 to t3 (before the call) or v0, v1 (after it) at the site's 
 can steer the game (the demo battle's fighters, stage and kind). `--idle S` ends the session S
 seconds after the last checkpoint (sites a run does not reach are reported).
 
+`--log NAME:COUNT[,word=ADDR][,sum=START-END][,press=FIRST/HOLD/ADDR/VALUE]` adds a logging site (step 9, the
+input delay): after each of the first COUNT calls its stub writes the call's number, the EE's cycle counter, up to two
+words and three checksums of RAM ranges to a ring and goes on without waiting (a checkpoint's wait would let PCSX2's
+VBlanks pass), and it can press a button by ORing VALUE into the word at ADDR after calls FIRST to FIRST + HOLD - 1.
+The records go to <site>.log.json; the site counts as done for `--until` once COUNT calls are logged.
+`--set %FUNC:CALL:REG=VALUE[,REG=VALUE...]` changes registers at a function's CALL-th entry inside its stub, without
+waiting (as `--edit` steers the game, but leaving PCSX2's timing alone, so two sessions stay alike).
+
 Usage: python tools/pcsx2_compare/session.py --pcsx2 <pcsx2-qt.exe> --bios <bios> --disc <iso> --card <Mcd001.ps2>
        --session <name> --site think:200:3:350:after [--site ...] [--timeout 1800]
 """
@@ -155,6 +163,49 @@ def parse_edit(text, sites):
     return name, edits
 
 
+def parse_log(text, catalogue):
+    """NAME:COUNT[,word=ADDR][,sum=START-END][,press=FIRST/HOLD/ADDR/VALUE] (addresses in hex)."""
+    head, *options = text.split(',')
+    name, _, count = head.rpartition(':')
+    if not name or not count.isdigit() or int(count) < 1:
+        raise ValueError(f'A log site is NAME:COUNT[,option...], not {text!r}')
+    site = parse_site(f'{name}:1:1:1', catalogue)
+    if site['entry']:
+        raise ValueError('A log site is a call site (a catalogue name or @<call address>).')
+    site.update(log=True, count=int(count), words=[], sums=[], press=None)
+    for option in options:
+        key, _, value = option.partition('=')
+        if key == 'word':
+            site['words'].append(int(value, 16))
+        elif key == 'sum':
+            start, _, end = value.partition('-')
+            site['sums'].append((int(start, 16), int(end, 16)))
+        elif key == 'press':
+            first, hold, address, button = value.split('/')
+            site['press'] = (int(first), int(hold), int(address, 16), int(button, 16))
+        else:
+            raise ValueError(f'{option!r}: a log option is word=, sum= or press=')
+    if len(site['words']) > 2 or len(site['sums']) > cb.LOG_CHECKSUMS:
+        raise ValueError(f'A log site takes at most two words and {cb.LOG_CHECKSUMS} checksums.')
+    return site
+
+
+def parse_set(text, catalogue):
+    """%FUNC:CALL:REG=VALUE[,REG=VALUE...]: registers set at the function's CALL-th entry, without waiting."""
+    parts = text.split(':')
+    if len(parts) != 3 or not parts[0].startswith('%') or not parts[1].isdigit():
+        raise ValueError(f'A set is %FUNC:CALL:REG=VALUE[,...], not {text!r}')
+    site = parse_site(f'{parts[0]}:1:1:1', catalogue)
+    values = {}
+    for item in parts[2].split(','):
+        register, _, value = item.partition('=')
+        if register not in REGISTERS or register in AFTER_REGISTERS or not value:
+            raise ValueError(f'{item!r}: registers are a0 to a3 and t0 to t3')
+        values[REGISTERS[register]] = int(value, 0)
+    site.update(set=True, set_call=int(parts[1]), values=values, name=f'set{parts[0]}')
+    return site
+
+
 def callees(data, text):
     """FUNC:FIRST:COUNT:STRIDE[:after] as one site per movable jal inside the function (its extent from the generation
     map, work/bt2-generation/candidates.csv)."""
@@ -182,10 +233,12 @@ def instrument(data, sites):
     metadata = ce.inspect(data)
     if metadata['sha256'] != ce.EXPECTED_SHA:
         raise ValueError('Instrumentation requires the validated local BT2 executable.')
-    if any(s['virtual_address'] < SEGMENT + len(sites) * cb.SLOT and SEGMENT < s['virtual_address'] + s['memory_size']
+    rings = SEGMENT + len(sites) * cb.SLOT                    # Each logging site's ring, after the stubs.
+    end = rings + sum(1 for s in sites if s.get('log')) * cb.LOG_ENTRIES * cb.LOG_ENTRY
+    if any(s['virtual_address'] < end and SEGMENT < s['virtual_address'] + s['memory_size']
            for s in metadata['load_segments']):
         raise ValueError('The added segment overlaps the game.')
-    if SEGMENT + len(sites) * cb.SLOT > 0x01EFD000:
+    if end > 0x01EFD000:
         raise ValueError('Too many sites for the region the game leaves empty (0x1D00000 to 0x1EFD000).')
     patched, segment = bytearray(data), bytearray()
     for k, site in enumerate(sites):
@@ -197,6 +250,25 @@ def instrument(data, sites):
         offset = seg['file_offset'] + hook - seg['virtual_address']
         call, delay = struct.unpack_from('<2I', data, offset)
         slot = SEGMENT + k * cb.SLOT
+        if site.get('log'):
+            if target is None and call >> 26 == 3:
+                target = site['target'] = (call & 0x3FFFFFF) << 2
+            if target is None or call != 0x0C000000 | (target >> 2):
+                raise ValueError(f'{site["name"]}: the instruction at {hook:#x} is not jal {target:#x}.')
+            site['ring'] = rings
+            rings += cb.LOG_ENTRIES * cb.LOG_ENTRY
+            count_word = slot + cb.DATA + cb.COUNT
+            words = (site['words'] + [count_word, count_word])[:2]                 # Unused words read the stub's count.
+            sums = (site['sums'] + [(0, 0)] * cb.LOG_CHECKSUMS)[:cb.LOG_CHECKSUMS]
+            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            segment += cb.log_stub_words(slot, target, delay, hook + 8, site['ring'], words, sums, site['press'])
+            site['slot'] = slot
+            continue
+        if site.get('set'):
+            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            segment += cb.set_stub_words(slot, target, [call, delay], site['set_call'], site['values'])
+            site['slot'] = slot
+            continue
         if site['entry']:
             struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
             segment += cb.stub_words(slot, target, 0, target + 8, site['first'] - 1, site['after'], entry=[call, delay])
@@ -216,6 +288,7 @@ def instrument(data, sites):
     if len(empty) != 1:
         raise ValueError('Expected one unused ELF load record.')
     file_offset = (len(patched) + 4095) & ~4095
+    segment += bytes(end - SEGMENT - len(segment))             # The rings, zero.
     patched.extend(bytes(file_offset - len(patched)) + segment)
     struct.pack_into('<8I', patched, empty[0], 1, file_offset, SEGMENT, SEGMENT, len(segment), len(segment), 7, 4096)
     return bytes(patched)
@@ -253,6 +326,24 @@ def prepare(folder, pcsx2, bios, card):
     return package / pcsx2.name
 
 
+def drain(memory, ee, site):
+    """Reads the logging site's new records out of its ring (records are written whole, their number last)."""
+    count, = struct.unpack('<I', memory.read(ee + site['slot'] + cb.DATA + cb.COUNT, 4))
+    done = site['entries'][-1][0] if site['entries'] else 0
+    count = min(count, site['count'])
+    if count <= done:
+        return
+    if count - done > cb.LOG_ENTRIES:
+        raise RuntimeError(f'{site["name"]}: {count - done - cb.LOG_ENTRIES} records lost; the ring was not read in time.')
+    ring = memory.read(ee + site['ring'], cb.LOG_ENTRIES * cb.LOG_ENTRY)
+    for number in range(done + 1, count + 1):
+        at = (number % cb.LOG_ENTRIES) * cb.LOG_ENTRY
+        entry = cb.parse_log_entry(ring[at:at + cb.LOG_ENTRY])
+        if entry[0] != number:
+            return                                                     # Not written whole yet; next time.
+        site['entries'].append(entry)
+
+
 def run(args, sites):
     folder = ROOT / 'work/pcsx2-compare' / args.session
     folder.mkdir(parents=True, exist_ok=True)
@@ -268,10 +359,17 @@ def run(args, sites):
     started = time.monotonic()
     process = subprocess.Popen(command, cwd=folder, creationflags=subprocess.CREATE_NO_WINDOW)
     memory, taken, store = None, [], ram_store.Writer()
-    left = {s['name']: s['count'] for s in sites}
+    left = {s['name']: s['count'] for s in sites if not s.get('log') and not s.get('set')}
     try:
         def busy(site):
+            if site.get('set'):
+                return False
+            if site.get('log'):
+                return len(site['entries']) < site['count']
             return left[site['name']] or site.get('pending_after')
+        for site in sites:
+            if site.get('log'):
+                site['entries'] = []
         while any(busy(s) for s in sites if not args.until or s['name'] == args.until):
             if taken and args.idle and time.monotonic() - started - taken[-1]['seconds'] > args.idle:
                 print(f'No checkpoint for {args.idle} s; not reached: '
@@ -297,6 +395,11 @@ def run(args, sites):
                 continue
             found = False
             for site in sites:
+                if site.get('set'):
+                    continue
+                if site.get('log'):
+                    drain(memory, ee, site)
+                    continue
                 data = ee + site['slot'] + cb.DATA
                 count, _, _, _, mark = struct.unpack('<5I', memory.read(data, 20))
                 if mark not in (cb.MARK_BEFORE, cb.MARK_AFTER):
@@ -339,7 +442,14 @@ def run(args, sites):
             memory.close()
         process.kill()
         process.wait()
-        summary = {'sites': [{k: (f'{v:#x}' if k in ('call', 'target', 'slot') else v) for k, v in s.items() if k != 'pending_after'} for s in sites],
+        for site in sites:
+            if site.get('log'):
+                (folder / f'{site["name"]}.log.json').write_text(json.dumps(
+                    [dict(zip(('call', 'cycles', 'word1', 'word2', 'sum1', 'sum2', 'sum3'), e)) for e in site.get('entries', [])]),
+                    encoding='utf-8')
+                print(f'{site["name"]}: {len(site.get("entries", []))} calls logged', flush=True)
+        summary = {'sites': [{k: (f'{v:#x}' if k in ('call', 'target', 'slot', 'ring') else v) for k, v in s.items()
+                              if k not in ('pending_after', 'entries')} for s in sites],
                    'segment': [SEGMENT, len(sites) * cb.SLOT], 'checkpoints': taken,
                    'pcsx2': str(args.pcsx2), 'seconds': round(time.monotonic() - started, 1)}
         (folder / 'session.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
@@ -357,6 +467,10 @@ def main():
     parser.add_argument('--callees-of', action='append', default=[], help='FUNC:FIRST:COUNT:STRIDE[:after]: every call inside a function.')
     parser.add_argument('--timeout', type=float, default=1800)
     parser.add_argument('--edit', action='append', default=[], help='SITE:REG=VALUE[/VALUE...][,REG=...]: registers changed at its checkpoints.')
+    parser.add_argument('--log', action='append', default=[],
+                        help='NAME:COUNT[,word=ADDR][,sum=START-END][,press=FIRST/HOLD/ADDR/VALUE]: a logging site.')
+    parser.add_argument('--set', action='append', default=[],
+                        help='%%FUNC:CALL:REG=VALUE[,...]: registers set at a function entry without waiting.')
     parser.add_argument('--until', help='End the session when this site has taken its checkpoints (others may be left).')
     parser.add_argument('--idle', type=float, default=0, help='End the session this many seconds after the last checkpoint.')
     args = parser.parse_args()
@@ -364,9 +478,10 @@ def main():
     try:
         executable = (ROOT / 'rom/SLUS_214.41').read_bytes()
         texts = args.site + [t for spec in args.callees_of for t in callees(executable, spec)]
-        if not texts:
-            parser.error('Give --site or --callees-of.')
-        sites = [parse_site(text, catalogue) for text in texts]
+        if not texts and not args.log and not args.set:
+            parser.error('Give --site, --callees-of or --log.')
+        sites = [parse_site(text, catalogue) for text in texts] + [parse_log(text, catalogue) for text in args.log] \
+            + [parse_set(text, catalogue) for text in args.set]
     except ValueError as error:
         parser.error(str(error))
     if len({s['name'] for s in sites}) != len(sites):
@@ -382,7 +497,7 @@ def main():
     taken = run(args, sites)
     print(f'{len(taken)} checkpoints in work/pcsx2-compare/{args.session}/')
     done = {(c['site'], c['when']) for c in taken}
-    return 0 if all((s['name'], 'before') in done for s in sites) else 1
+    return 0 if all((s['name'], 'before') in done for s in sites if not s.get('log') and not s.get('set')) else 1
 
 
 if __name__ == '__main__':

@@ -37,6 +37,8 @@ void registerSelectedStartup(EeRuntime& runtime);  // selected_bindings.cpp
 void registerSelectedOverlays(EeRuntime& runtime); // overlay_bindings.cpp
 // BT2_REPLAY_CALL: one guest function on a state captured from PCSX2 (call_replay.cpp).
 void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::string& spec);
+// BT2_EE_CALL_SUMS: the field, flips, a word and range checksums at every call from one call address (call_sums.cpp).
+void installCallSums(EeRuntime& runtime,const std::string& spec);
 
 // Checkpoint validation (checkpoint_checks.cpp): each throws if the reached state differs.
 void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop);

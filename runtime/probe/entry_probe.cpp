@@ -352,6 +352,9 @@ int main(int argc, char** argv) {
                 call_trace << '\n';
             };
         }
+        // BT2_EE_CALL_SUMS=<file>:<hex call address>[,...]:<hex word>[:<start>-<end>...]: the field, flips, a word and
+        // checksums at every call from that address, as the PCSX2 comparison's logging sites write them (call_sums.cpp).
+        if (const char* sums = std::getenv("BT2_EE_CALL_SUMS")) installCallSums(runtime, sums);
         // BT2_EE_WATCH_QUADWORD=<file>:<from flip>:<hex address>: one line per 128-bit store to that EE
         // address from that display flip on: the flip, main's program counter and return address, the
         // last call (source and target) and the four floats stored. Local evidence, not committed.

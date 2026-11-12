@@ -136,6 +136,115 @@ def stub_words(slot, target, delay, resume, first_skip, want_after, entry=None):
     return bytes(image)
 
 
+# A logging site (step 9, the input delay): after each call the stub writes one LOG_ENTRY-byte record to a ring
+# and goes on without waiting, so PCSX2's timing stays the game's (a checkpoint's wait lets VBlanks pass). The
+# record: the call's number, COP0 Count (the EE's cycle counter), two words read from RAM, three checksums of RAM
+# ranges (each word added and the sum rotated left by one), then a zero. The stub can also press a button: from call
+# PRESS_FIRST for PRESS_HOLD calls it ORs PRESS_VALUE into the word at PRESS_ADDR after the call (the pad record
+# the game reads its buttons from). Its data (offsets from DATA) as below; the ring lies outside the slot.
+LOG_RING, LOG_WORDS, LOG_SUMS, LOG_PRESS, LOG_SAVE = 0x20, 0x24, 0x2C, 0x44, 0x80
+LOG_ENTRY, LOG_ENTRIES, LOG_CHECKSUMS = 32, 4096, 3
+A0, A1, A2, A3 = 4, 5, 6, 7
+
+
+def _r(rs, rt, rd, funct, shamt=0):
+    return (rs << 21) | (rt << 16) | (rd << 11) | (shamt << 6) | funct
+
+
+def log_stub_words(slot, target, delay, resume, ring, words, sums, press=None):
+    """The logging stub at `slot` for the call site `jal target` (delay slot `delay`, returning to `resume`).
+    `words`: two RAM addresses; `sums`: three (start, end) ranges, end exclusive, 4-byte aligned (an empty range
+    gives 0); `press`: (first call, calls held, address, value) or None."""
+    check_delay_slot(delay)
+    data = slot + DATA
+    code, labels, fixups = [], {}, []
+
+    def branch(opcode, rs, rt, label):                       # beq/bne to a label, with a nop in the delay slot.
+        fixups.append((len(code), label))
+        code.extend([_i(opcode, rs, rt, 0), 0])
+
+    def load_word(rt, address):                              # rt = the word at address (t8 = DATA).
+        code.append(_store(0x23, rt, address))
+
+    code += [delay, 0x0C000000 | ((target >> 2) & 0x3FFFFFF), 0]                          # the call itself
+    code += [_i(0x0F, 0, T8, data >> 16), _i(0x0D, T8, T8, data & 0xFFFF)]                # t8 = DATA
+    code += [_store(0x1F, r, LOG_SAVE + 16 * (r - A0)) for r in (A0, A1, A2, A3)]          # sq a0..a3
+    code += [_store(0x23, T9, COUNT), _i(0x09, T9, T9, 1), _store(0x2B, T9, COUNT)]        # count += 1
+    # The press: (count - first) < hold, unsigned.
+    load_word(A0, LOG_PRESS)
+    code.append(_r(T9, A0, A0, 0x23))                                                      # subu a0, t9, a0
+    load_word(A1, LOG_PRESS + 4)
+    code.append(_r(A0, A1, A0, 0x2B))                                                      # sltu a0, a0, a1
+    branch(4, A0, 0, 'record')
+    load_word(A0, LOG_PRESS + 8)
+    load_word(A1, LOG_PRESS + 12)
+    code += [_i(0x23, A0, A2, 0), _r(A2, A1, A2, 0x25), _i(0x2B, A0, A2, 0)]               # lw; or; sw
+    labels['record'] = len(code)
+    # a3 = the ring's entry for this call.
+    code += [_i(0x0C, T9, A0, LOG_ENTRIES - 1), _r(0, A0, A0, 0x00, 5)]                    # andi; sll 5
+    load_word(A1, LOG_RING)
+    code.append(_r(A0, A1, A3, 0x21))                                                      # addu a3, a0, a1
+    code += [0x40000000 | (A0 << 16) | (9 << 11), _i(0x2B, A3, A0, 4)]                    # mfc0 a0, Count; sw
+    for k in range(2):
+        load_word(A0, LOG_WORDS + 4 * k)
+        code += [_i(0x23, A0, A0, 0), _i(0x2B, A3, A0, 8 + 4 * k)]                         # lw a0, 0(a0); sw
+    for k in range(LOG_CHECKSUMS):
+        load_word(A0, LOG_SUMS + 8 * k)
+        load_word(A1, LOG_SUMS + 8 * k + 4)
+        code.append(_r(0, 0, A2, 0x25))                                                    # or a2, zero, zero
+        labels[f'loop{k}'] = len(code)
+        branch(4, A0, A1, f'done{k}')
+        code += [_i(0x23, A0, T9, 0), _r(A2, T9, A2, 0x21),                                # lw t9; addu a2
+                 _r(0, A2, T9, 0x00, 1), _r(0, A2, A2, 0x02, 31), _r(A2, T9, A2, 0x25),    # rotate left by one
+                 _i(0x09, A0, A0, 4)]                                                      # addiu a0, 4
+        branch(4, 0, 0, f'loop{k}')
+        labels[f'done{k}'] = len(code)
+        code.append(_i(0x2B, A3, A2, 16 + 4 * k))                                  # sw a2
+    code += [_store(0x23, T9, COUNT), _i(0x2B, A3, T9, 0)]                                 # the number last
+    code += [_store(0x1E, r, LOG_SAVE + 16 * (r - A0)) for r in (A0, A1, A2, A3)]          # lq a0..a3
+    code += [0x08000000 | ((resume >> 2) & 0x3FFFFFF), 0]                                   # j resume; nop
+    for at, label in fixups:
+        code[at] |= (labels[label] - (at + 1)) & 0xFFFF
+    if len(code) * 4 > DATA:
+        raise ValueError('The stub is longer than its code area.')
+    for start, end in sums:
+        if start % 4 or end % 4 or end < start:
+            raise ValueError(f'A checksum range must be 4-byte aligned: {start:#x}-{end:#x}')
+    image = bytearray(SLOT)
+    struct.pack_into(f'<{len(code)}I', image, 0, *code)
+    first, hold, address, value = press or (0, 0, data, 0)
+    struct.pack_into('<I2I6I4I', image, DATA + LOG_RING, ring, *words, *[v for s in sums for v in s],
+                     first, hold, address, value)
+    return bytes(image)
+
+
+SET_CALL, SET_VALUES = 0x20, 0x24     # The setting stub's data, from DATA: the call, then one word per register.
+
+
+def set_stub_words(slot, target, entry, call, registers):
+    """A stub at a function's entry that, at its `call`-th call, sets the given registers ({number: 32-bit value},
+    loaded sign-extended as LW does) before the function runs, without waiting for the host. `entry`: the
+    function's first two words, run in the stub after the change."""
+    check_entry_words(entry)
+    if not 1 <= call < 0x8000:
+        raise ValueError('The call to change is 1 to 32767.')
+    data = slot + DATA
+    code = [_i(0x0F, 0, T8, data >> 16), _i(0x0D, T8, T8, data & 0xFFFF)]
+    code += [_store(0x23, T9, COUNT), _i(0x09, T9, T9, 1), _store(0x2B, T9, COUNT)]
+    code += [_i(0x09, T9, T9, -call), _i(5, T9, 0, len(registers) + 1), 0]               # bne t9,zero,skip
+    code += [_store(0x23, r, SET_VALUES + 4 * k) for k, r in enumerate(registers)]
+    code += list(entry) + [0x08000000 | (((target + 8) >> 2) & 0x3FFFFFF), 0]
+    image = bytearray(SLOT)
+    struct.pack_into(f'<{len(code)}I', image, 0, *code)
+    struct.pack_into(f'<I{len(registers)}I', image, DATA + SET_CALL, call, *[v & 0xFFFFFFFF for v in registers.values()])
+    return bytes(image)
+
+
+def parse_log_entry(entry):
+    """One ring record: (call number, Count, word 1, word 2, checksum 1, checksum 2, checksum 3)."""
+    return struct.unpack_from('<7I', entry)
+
+
 def parse(block):
     """The register block as a dict of named values (for reports)."""
     if len(block) != BLOCK_SIZE:

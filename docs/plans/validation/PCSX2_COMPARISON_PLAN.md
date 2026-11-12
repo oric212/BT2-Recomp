@@ -165,7 +165,37 @@ code computes gives PCSX2's words. A free run of the port over those frames diff
 the replay does not cross (the pad read, the VBlank wait, the SIF DMA, hardware registers), which steps 8 and 9
 compare; chaining the port's own results from frame to frame adds nothing while every frame is equal.
 
-**Next:** the input lag (step 9), loaded data (step 5).
+**Step 9, first part: the game's own delay (2026-11-12).** A checkpoint's wait lets PCSX2's VBlanks pass, so the
+fields are measured with **logging sites** instead (`session.py --log`): after each call the stub writes the call's
+number, COP0 Count (the EE's cycles), two words and three checksums of RAM ranges to a ring and goes on at once, and
+it can press a button itself by ORing it into the word the game reads (player 1's buttons in the pad library's
+record, `0x3B0C2C`, after the pad update `0x28BDA0` returns; the fight's reader `0x207630` takes them from there).
+The battle is set up by `--set` (registers changed inside the stub at a function's entry, without waiting): the
+title's demo turned into a versus battle with side 0 on the controller (`battle_set` `0x101A60` as before,
+`side_control` `0x101AB0` third argument 0, `fighter_set` `0x101AF8` CPU level 0, the port starter's settings). The
+demo's fight is character 8 against 120, stage index 9 (game stage 15), music 23 (captured from the setters).
+Logged per fight frame: the pad update (cycles, buttons) and the frame end (`0x2711E8`'s return: cycles, checksums
+of the two display-list buffers the frames alternate between, `0x430000` and `0x530000`, 160 KB each, and of VU1's
+data memory). The port logs the same at the same points (`BT2_EE_CALL_SUMS`), and `input_delay.py` compares each
+run with a run without the press.
+
+- **PCSX2 repeats itself:** every pair of sessions was identical in every frame before the press (up to 600 frames).
+- **The intro ignores input:** the controlled and CPU sides split at fight frame 474 in PCSX2, 471 in the port
+  (their starts differ: save data, load timing, random state); a press at frame 300 changed nothing in either.
+- **A press at fight frame 480**, Cross and d-pad up each held two frames, in both programs: the display lists
+  change in the frame whose pad update returned the press (at its end, 2.0 fields from the start of the read's
+  field), VU1's memory a frame later (4.0 fields). Identical in PCSX2 and the port, and as the port's own
+  measurement of 2026-11-11 found. PCSX2's frames are 2.0 fields apart throughout (1.97 to 2.03 by the cycles), and
+  its pad update runs 0.1 to 0.2 field into a frame's first field, as the port's.
+- A press at frame 600 in the port's run found the fighter under the CPU's attack and changed nothing; in PCSX2's
+  run (other random numbers) it acted as at 480. The two runs' fights differ from the start, so the comparison is
+  each program's own response to the same press, not the same frames.
+
+**Not covered by this part:** from VU1's memory to the picture (the GS and the display), and the port's reading of
+a press that arrives in a fight frame's second field (the game reads the pad once per frame in both programs; when
+the host samples it is the port's). Both are the black-box tester's (press to screen, the second part).
+
+**Next:** the press-to-screen tester (step 9, second part), loaded data (step 5).
 
 ## Unknowns
 
@@ -173,6 +203,8 @@ compare; chaining the port's own results from frame to frame adds nothing while 
   the game's VU1 programs).
 - How many of the fight's steps can be replayed without reaching a service or DMA (step 2 finds out).
 - Whether the save state's GS memory can be taken while the stub spins without changing what is drawn next.
+- Which word of the display shows when a drawn frame reaches the screen in PCSX2 (GS memory and its privileged
+  registers are not exported; the tester sees the screen instead).
 - Whether the desktop duplication API sees a fullscreen program's pictures when they bypass the compositor (if not,
   fullscreen press-to-screen needs a camera, and the user's).
 - Whether PCSX2's software renderer and paraLLEl-GS agree exactly on BT2's draws (paraLLEl-GS documents some

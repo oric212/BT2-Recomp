@@ -6,7 +6,9 @@ Updated: 2026-11-12. Finished work: [November history](2026-11.md).
 
 No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it. The release package (`dist/BT2-Recomp-8227c74`) is unchanged by this pass (tools and the replay only).
 
-**Next:** that plan's step 9 (input lag and latency: a pad hook in PCSX2's run and a checkpoint at the frame's end each frame), then step 5 (loaded data). Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+Also done (the same day): step 9's first part, the game's own input delay: logging sites that do not wait (`session.py --log`, `--set`), `BT2_EE_CALL_SUMS` for the port, `input_delay.py`; a press at fight frame 480 changes the lists in its frame and VU1 a frame later in both programs (sessions `delay-base`, `delay-x480`, `delay-u480`; port runs in `work/latency/`).
+
+**Next:** step 9's second part (the press-to-screen tester: `SendInput` and the desktop duplication API, for PCSX2 and the port), then step 5 (loaded data). Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 
@@ -25,6 +27,7 @@ No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validat
 - **The CPU fight headless:** `BT2_START_BATTLE=0,1,0` with `run_startup_probe.py --config Release --frames 2000 --pad-script ""`; with HD `BT2_HD_TEXTURES=<absolute path of the pack subfolder>`; a story fight `BT2_START_EPISODE=0,0,marker:14`.
 - **Saving:** `BT2_CARD_FOLDER=<card folder>`; the title's New Game with Yes to "create a save file" (pad script: the gate's starts, then `2500:cross,2650:left,2700:cross`). Original saves: `tools/saves/card_image.py` reads PCSX2 card images, `import_save.py` `.cbs` files.
 - **Online over loopback:** `BT2_NET=host:7411` and `BT2_NET=join:127.0.0.1:7411`, each its own `--report` and `--pad-script` (two runs at once are allowed here).
+- **Input delay:** `session.py ... --set %101A60:1:a0=0,a2=0,a3=1 --set %101AB0:1:a2=0 --set %101AF8:1:a3=0 --log "@102EE0:700,word=3B0C2C[,press=480/2/3B0C2C/4000]" --log @102F08:700,word=3B0A84,word=3B0A80,sum=430000-457000,sum=1100C000-11010000,sum=530000-557000 --until @102F08` (about 4 minutes); the port: `BT2_START_BATTLE=8,120,9,23 BT2_START_BATTLE_PLAYER=1 BT2_EE_CALL_SUMS="<file>:102ee8,102ec8:3b0c2c:430000-457000:1100c000-11010000:530000-557000"`, frame 480's read at field 1489; then `input_delay.py`. Presses during the intro (before frame 471) do nothing.
 - **PCSX2 comparison sessions:** `tools/pcsx2_compare/session.py` with the PCSX2 copy, BIOS and card copy under `work/pcsx2-capture/ai-think-before-200/` (`package/pcsx2-qt.exe`, `profile/PCSX2/bios/scph39001.bin`, `profile/PCSX2/memcards/Mcd001.ps2`); about 200 s to the demo battle, which `--site %101A60:1:1:1 --edit %101A60:a0=0,a2=0,a3=1` makes a full versus battle; end with `--until <site>`; each checkpoint 32 MB under `work/pcsx2-compare/`; then `compare_calls.py --session <name>` ([TOOLS.md](../guides/TOOLS.md), "PCSX2 comparison sessions").
 - **Pictures:** `BT2_GPU_GS_SNAPSHOT="<flip>:<absolute path>.ppm;…"`; 60 fps: `BT2_SIXTY_FPS_SNAPSHOT`, `BT2_SIXTY_FPS=check`. Other tools: [TOOLS.md](../guides/TOOLS.md).
 
