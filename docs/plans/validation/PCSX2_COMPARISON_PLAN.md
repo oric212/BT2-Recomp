@@ -29,7 +29,7 @@ existing captures) whose stub publishes the full register state, waits until the
 continues. One session yields many checkpoints, and "before" and "after" a call come from the same run.
 
 - **Registers published:** all 32 GPRs at 128 bits, HI/LO and HI1/LO1, SA, the 32 FPRs and FCR31, VU0's 32 VF and
-  16 VI registers and its Q, R, I and clip registers. Not readable without changing them: the FPU's ACC and VU0's
+  16 VI registers and its Q, R (the game's random numbers), I and clip registers. Not readable without changing them: the FPU's ACC and VU0's
   ACC (a function that reads them before writing them shows as a difference). `t8` and `t9` are the stub's own.
 - **Memory read:** EE RAM (32 MB, `EEmem`), VU0 and VU1 micro and data memory (`VUmem`), and when a picture is
   compared, GS memory from a PCSX2 save state (PINE), with the software renderer.
@@ -149,7 +149,23 @@ renderer now. The fighters stay the demo's (the picker also passes three of its 
 frames from 600 to 6,000: all 20 equal (3,000 to 45,000 words written each). Sessions end with `--until SITE` and
 minimize PCSX2's window (the software renderer shows one).
 
-**Next:** trajectories (step 3: consecutive frames), the input lag (step 9), loaded data (step 5).
+**Step 3, consecutive frames (2026-11-12).** One session took frames 600 to 899 of that versus battle without a
+gap: every call of the fight loop `0x102E80` the replay can run (`0x2A8678`, `0x297978`, `0x1057F8`, the logic step
+`0x102AA0` and the draw step `0x102C40`), before and after, 3,001 checkpoints in 644 s. Checkpoints now keep the
+4 KB pages changed since the previous one (`ram_store.py`; about 110 of 8,192 pages a call, a whole RAM every 64th):
+2.3 GB instead of 96. Replayed: 1,459 of the 1,500 calls equal; the other 41 are `0x297978` reaching system call
+0x77 (`SifSetDma`, its sound requests to the IOP), a service boundary for step 8, listed as such. One finding, in
+the replay, not the port: the logic step differed at frame 600, the one frame of the 300 that drew random numbers
+(a burst of ten particles, each at angle −π in the port). The game's random numbers are VU0's R register (`VRNEXT`);
+the replay loaded PCSX2's R into the context's unused field instead of the runtime's (`EeRuntime::vu0_random_`).
+With R loaded and saved where the runtime keeps it, and compared, all 300 frames are equal.
+
+What this shows: from PCSX2's state at any of 300 consecutive frames, every step of the fight frame the game's own
+code computes gives PCSX2's words. A free run of the port over those frames differs from PCSX2 only through what
+the replay does not cross (the pad read, the VBlank wait, the SIF DMA, hardware registers), which steps 8 and 9
+compare; chaining the port's own results from frame to frame adds nothing while every frame is equal.
+
+**Next:** the input lag (step 9), loaded data (step 5).
 
 ## Unknowns
 

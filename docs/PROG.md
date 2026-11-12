@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
+- **2026-11-12 — 300 consecutive fight frames equal to PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 3): every call of the fight frame the replay can run, at frames 600 to 899 of a versus battle, gives PCSX2's words (1,459 calls; 41 stop at the sound requests' system call, a service boundary). The replay now loads the game's random numbers (VU0's R register) where the runtime keeps them.
 - **2026-11-12 — one comparison with PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the port runs the game's code from PCSX2's own state, compared byte for byte. It found three faults in the recompiled code (`sqrt.s` read the wrong register and must round to nearest; `movn`/`movz` copied 128 bits), now fixed. Since then the fight frame's logic and draw steps match PCSX2 at every frame compared, a full versus battle to its K.O. included (about 330 calls).
 - **2026-11-12:** the Namek lava fix at 60 fps (the user still sees a flicker, below); HD packs found in nested folders; the launcher as Play / Online / Settings; one window to an online battle; no freeze on the online connect screen.
 - **2026-11-11:** online rounds start locked on; "Low input lag" (a picture shown when drawn, 18.7 ms sooner in a 30 fps fight); fighters' HD textures no longer pop.
@@ -71,12 +72,12 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): consecutive fight frames, input lag and latency, loaded data, then VU1, GS memory and pictures, the services.
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): input lag and latency, loaded data, then VU1, GS memory and pictures, the services.
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.
 5. **The user's decisions:** a matchmaking server and rollback for online; publishing the release.
 
-**Not compared with the original yet:** consecutive frames, other screens' logic, loaded data, VU1 memory, GS memory and pictures, the services after the boot.
+**Not compared with the original yet:** other screens' logic, loaded data, VU1 memory, GS memory and pictures, the services after the boot.
 
 [Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)

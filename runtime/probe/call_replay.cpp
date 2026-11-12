@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -29,25 +30,27 @@ std::vector<char> readFile(const std::string& path,std::size_t size) {
 template<class T> T field(const std::vector<char>& block,std::size_t offset) {T value;std::memcpy(&value,block.data()+offset,sizeof value);return value;}
 template<class T> void put(std::vector<char>& block,std::size_t offset,const T& value) {std::memcpy(block.data()+offset,&value,sizeof value);}
 
-void load(R5900Context& c,const std::vector<char>& b) {
+// R lives in the runtime (EeRuntime::vu0_random_, the exponent of 1.0 above its 23 bits), the block holds the 23
+// bits as CFC2 reads them; R5900Context::vu0_r is the raw generated code's storage, unused once it is prepared.
+void load(EeRuntime& runtime,R5900Context& c,const std::vector<char>& b) {
     for(int i=0;i<32;++i)std::memcpy(&c.r[i],b.data()+gprs+16*i,16);
     for(int i=0;i<32;++i)c.f[i]=field<float>(b,fprs+4*i);
     c.hi=field<std::uint64_t>(b,hilo);c.lo=field<std::uint64_t>(b,hilo+8);
     c.hi1=field<std::uint64_t>(b,hilo+16);c.lo1=field<std::uint64_t>(b,hilo+24);
     c.sa=field<std::uint32_t>(b,sa);c.fcr31=field<std::uint32_t>(b,fcr31);
     c.vu0_clip_flags=field<std::uint32_t>(b,clip);
-    c.vu0_r=_mm_set_ss(field<float>(b,rand));c.vu0_q=field<float>(b,q);
+    runtime.vu0_random_=0x3F800000u|(field<std::uint32_t>(b,rand)&0x7FFFFFu);c.vu0_q=field<float>(b,q);
     for(int i=0;i<16;++i)c.vi[i]=static_cast<std::uint16_t>(field<std::uint32_t>(b,vis+4*i));
     for(int i=0;i<32;++i)c.vu0_vf[i]=_mm_loadu_ps(reinterpret_cast<const float*>(b.data()+vfs+16*i));
 }
 
-std::vector<char> save(const R5900Context& c) {
+std::vector<char> save(const EeRuntime& runtime,const R5900Context& c) {
     std::vector<char> b(block_size);
     for(int i=0;i<32;++i)std::memcpy(b.data()+gprs+16*i,&c.r[i],16);
     for(int i=0;i<32;++i)put(b,fprs+4*i,c.f[i]);
     put(b,hilo,c.hi);put(b,hilo+8,c.lo);put(b,hilo+16,c.hi1);put(b,hilo+24,c.lo1);
     put(b,sa,c.sa);put(b,fcr31,c.fcr31);put(b,clip,c.vu0_clip_flags);
-    put(b,rand,_mm_cvtss_f32(c.vu0_r));put(b,q,c.vu0_q);
+    put(b,rand,runtime.vu0_random_&0x7FFFFFu);put(b,q,c.vu0_q);
     for(int i=0;i<16;++i)put(b,vis+4*i,std::uint32_t{c.vi[i]});
     for(int i=0;i<32;++i)_mm_storeu_ps(reinterpret_cast<float*>(b.data()+vfs+16*i),c.vu0_vf[i]);
     return b;
@@ -73,14 +76,20 @@ void replayCall(EeRuntime& runtime,const R5900Context& prepared,const std::strin
     }
     constexpr std::uint32_t sentinel=0xFFFFFFFC;
     R5900Context call=prepared;
-    load(call,readFile(part[1],block_size));
+    load(runtime,call,readFile(part[1],block_size));
     call.r[31].low=sentinel;call.r[31].high=0;
     runtime.expected_return=sentinel;
-    runtime.callFunction(static_cast<std::uint32_t>(std::stoul(part[2],nullptr,16)),call);
+    try {runtime.callFunction(static_cast<std::uint32_t>(std::stoul(part[2],nullptr,16)),call);}
+    catch(const UnsupportedSyscall& stop) {
+        // A boundary the replay does not cross (the kernel); named, so the comparison can list it as such.
+        std::ostringstream text;
+        text<<std::hex<<"BT2_REPLAY_CALL: stopped at system call 0x"<<stop.selector<<" at 0x"<<stop.resume_pc;
+        throw std::runtime_error(text.str());
+    }
     if(static_cast<std::uint32_t>(call.pc)!=sentinel)throw std::runtime_error("BT2_REPLAY_CALL: the function did not return to the sentinel");
     std::ofstream out(part[3],std::ios::binary);
     out.write(reinterpret_cast<const char*>(ram.data()),std::streamsize(ram.size()));
-    const auto registers=save(call);
+    const auto registers=save(runtime,call);
     std::ofstream(part[3]+".registers",std::ios::binary).write(registers.data(),std::streamsize(registers.size()));
     std::cout<<std::hex<<"Replayed call: v0 "<<static_cast<std::uint32_t>(call.r[2].low)<<std::dec<<std::endl;
 }

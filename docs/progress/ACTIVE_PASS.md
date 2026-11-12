@@ -4,9 +4,9 @@ Updated: 2026-11-12. Finished work: [November history](2026-11.md).
 
 ## State
 
-No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 and 2: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps and a full versus battle equal to PCSX2; the battle baseline rerecorded; the release package rebuilt (`dist/BT2-Recomp-8227c74`).
+No pass is open. Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it. The release package (`dist/BT2-Recomp-8227c74`) is unchanged by this pass (tools and the replay only).
 
-**Next:** that plan's step 3 (consecutive frames: one session of the logic and draw steps at successive frames, each replayed), then step 9 (input lag and latency), step 5 (loaded data). Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
+**Next:** that plan's step 9 (input lag and latency: a pad hook in PCSX2's run and a checkpoint at the frame's end each frame), then step 5 (loaded data). Then the [implementation plan](../project/IMPLEMENTATION_PLAN.md)'s order.
 
 ## Waiting for the user
 

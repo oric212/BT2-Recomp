@@ -9,7 +9,8 @@ the register block out of the PCSX2 process, tells the stub how many calls to le
 PCSX2 runs unthrottled with a null renderer, no sound and a copy of a memory card holding a BT2 save (no prompts),
 so the title's demo battle (CPU against CPU) starts by itself. Everything stays under ignored
 work/pcsx2-compare/<session>/: session.json and a folder per checkpoint (<site>-<call>-<before|after>) holding
-ee-ram.bin, vu-mem.bin and registers.bin.
+vu-mem.bin, registers.bin and EE RAM, whole (ee-ram.bin) or as the pages changed since the previous checkpoint
+(ram_store.py).
 
 `--callees-of FUNC:FIRST:COUNT:STRIDE[:after]` adds a site for every call inside a function (the step that splits
 a differing function into its callees). NAME may be @<hex address> of any `jal` in the executable, or %<hex function> (the function's entry: every call of
@@ -37,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / 'tools/capture_ee'))
 import context_block as cb  # noqa: E402
+import ram_store  # noqa: E402
 import capture_ee as ce  # noqa: E402  (the ELF check and the PE export reader)
 
 SITES = ROOT / 'config/pcsx2_compare_sites.json'
@@ -265,7 +267,7 @@ def run(args, sites):
     print(f'PCSX2 log: {log}', flush=True)
     started = time.monotonic()
     process = subprocess.Popen(command, cwd=folder, creationflags=subprocess.CREATE_NO_WINDOW)
-    memory, taken = None, []
+    memory, taken, store = None, [], ram_store.Writer()
     left = {s['name']: s['count'] for s in sites}
     try:
         def busy(site):
@@ -305,7 +307,7 @@ def run(args, sites):
                 block = ram[site['slot'] + cb.DATA + cb.BLOCK:site['slot'] + cb.DATA + cb.BLOCK + cb.BLOCK_SIZE]
                 out = folder / f'{site["name"]}-{count}-{when}'
                 out.mkdir(exist_ok=True)
-                (out / 'ee-ram.bin').write_bytes(ram)
+                store.store(out, ram)
                 (out / 'vu-mem.bin').write_bytes(vu_memory)
                 (out / 'registers.bin').write_bytes(block)
                 taken.append({'site': site['name'], 'call': count, 'when': when, 'folder': out.name,
