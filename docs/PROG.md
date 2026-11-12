@@ -88,7 +88,8 @@ In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 1. Online: the user's play of the start locked on (and whether lock is still lost too often after it), the Dragon Rush's prompts ([online plan](plans/online/ONLINE_BATTLE_PLAN.md), "Left for later"); then the user's play of the items above.
 2. Final validation: the [PCSX2 comparison plan](plans/validation/PCSX2_COMPARISON_PLAN.md) (next: the fight frame's draw steps, a scripted fight with super attacks, frame-by-frame trajectories, input lag); the exhaustive battle sweep; 3D frames compared with the original.
 3. Picture: an edge filter ([image quality plan](plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)).
-4. The user's decisions: a matchmaking server and rollback for online; publishing the release.
+4. Later (the user, 2026-11-12): textures the HD pack lacks (the ki blasts' and specials' effects) upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)).
+5. The user's decisions: a matchmaking server and rollback for online; publishing the release.
 
 **Not compared with the original yet:** GS readback pixels, 3D frames, VU1 memory.
 
