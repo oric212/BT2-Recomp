@@ -19,6 +19,8 @@ BT2 Recomp is a native Windows port of the PS2 game (North American release, **S
 
 Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles and fast loading.
 
+**Download:** [BT2 Recomp v0.1](https://github.com/oric212/BT2-Recomp/releases/tag/v0.1): unzip it, put your USA disc image (`.iso`) into its `data` folder, start `bt2-launcher.exe`. Its `README.txt` has the details and the known issues.
+
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
 ## Progress
