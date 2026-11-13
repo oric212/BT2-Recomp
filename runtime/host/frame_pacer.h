@@ -30,7 +30,8 @@ public:
     unsigned late_fields=0;  // Fields whose deadline had passed when they asked.
     bool free_run=false;     // Fast forward: nothing is waited for; pacing starts afresh when it ends.
     bool loading_run=false;  // Fast loading (host/loading_skip.h): the same, while the game loads in silence.
-    bool freeRun() const {return free_run || loading_run;}
+    bool starting_run=false; // Quick start (probe/quick_start.h): the same, from the start to the main menu.
+    bool freeRun() const {return free_run || loading_run || starting_run;}
 
     FramePacer() {
         timeBeginPeriod(1);

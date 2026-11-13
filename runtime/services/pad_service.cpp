@@ -121,7 +121,11 @@ void EeRuntime::nativePadVblank(std::uint8_t* rdram) {
         if(state.second)write32(rdram,state.table+4,1);
     }
     const auto buffer=state.buffers[state.transfers%2];checkMemory(rdram,buffer,128);
+    // Presses made for the player go into what the game reads this field only (the buttons are active low).
+    const std::uint16_t own=state.pad.buttons;
+    if(pad_presses)state.pad.buttons&=std::uint16_t(~pad_presses());
     const auto block=nativePadBlock(state.pad,state.transfers);
+    state.pad.buttons=own;
     for(unsigned n=0;n<block.size();++n)write32(rdram,buffer+n*4,block[n]);
     ++state.transfers;++native_pad_transfers;
     if(state.open2) {

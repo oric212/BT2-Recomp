@@ -49,8 +49,10 @@ def main():
         report([run('build Debug',msvc,env),run('build Debug entry probe',msvc+['--target','bt2-entry-probe'],env),run('build Release',release,env)])
         if failed:sys.exit('Gate failed: '+', '.join(failed))
     probe=[sys.executable,str(ROOT/'tools/ps2recomp/run_startup_probe.py'),'--disc',str(disc)]
-    steps=[('ctest',['ctest','--test-dir','build/probe','-C','Debug','-j',str(a.jobs),'--output-on-failure'],env),
-           ('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe,env)]
+    # The unit tests first, without the probe runs beside them: the frame pacer's and the lockstep's tests measure the
+    # host's timing, and beside six probe runs on a busy PC their waits came back 90 ms late (2026-11-13).
+    report([run('ctest',['ctest','--test-dir','build/probe','-C','Debug','-j',str(a.jobs),'--output-on-failure'],env)])
+    steps=[('probe: sound worker',probe+['--sound-worker'],env),('probe: full run',probe,env)]
     steps+=[(f'probe: phase {ph}',probe+['--report',str(WORK/f'phase-{ph}/entry-stop.json')],dict(env,BT2_PHASE_STOP=ph)) for ph in PHASES]
     steps.append(('battle run (Release)',[sys.executable,str(ROOT/'tools/gate/battle_run.py'),'--disc',str(disc)],env))
     # The map holds everything the programs name or build, and every address inside a function has a label.
@@ -65,6 +67,9 @@ def main():
         checks+=[(f'compare at {ph}: {n}',verifier_command(n,WORK/f'phase-{ph}/entry-stop.json',disc),env) for ph,names in PHASES.items() for n in names]
         results=list(pool.map(lambda s:run(*s),checks));report(results,verbose=False)
         print(f'{sum(ok for _,ok,_,_ in results)}/{len(results)} comparisons pass')
+    # Quick start: a save created on an empty card, Continue with it as by hand, the card left alone (Release, about 15 s
+    # alone). After the rest, alone: its six runs beside the timing tests (frame pacer, lockstep) made those miss.
+    report([run('quick start (Release)',[sys.executable,str(ROOT/'tools/ps2recomp/quick_start_check.py'),'--disc',str(disc)],env)])
     print(f"{'GATE FAILED: '+', '.join(failed) if failed else 'GATE PASSED'} ({time.monotonic()-began:.0f} s)")
     sys.exit(1 if failed else 0)
 if __name__=='__main__':main()

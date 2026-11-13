@@ -43,13 +43,14 @@ int main() {
         Settings s;check(Settings::parse(s.text())==s,"defaults read back");
         s.disc="a disc = image.iso";s.integer_scaling=false;s.fullscreen=true;s.window_scale=3;s.show_frame_rate=true;
         s.master_volume=80;s.music_volume=0;s.effects_volume=55;s.fast_forward_key='F';s.fast_forward_button=GamepadState::RightTrigger;
-        s.fast_forward_toggle=true;s.fast_loading=false;s.struggle_buttons=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
+        s.fast_forward_toggle=true;s.fast_loading=false;s.quick_start=true;s.struggle_buttons=false;s.overlay_start_select=true;s.memory_card="Card 1";s.mapping.keys[14]='K';s.mapping.buttons[14]=GamepadState::East;
         s.mapping.stick_sensitivity=150;s.window_scale=9;s.hd_textures=true;s.super_sampling=16;s.widescreen=true;s.sixty_fps=true;s.hd_outline=false;s.light_depth_of_field=true;s.variable_refresh=true;s.low_input_lag=false;s.second_controller=true;
         s.online_port=65000;s.online_address="my-host.example.net";s.online_delay=4;s.online_upnp=false;
         check(Settings::parse(s.text())==s,"changed settings read back");
         check(Settings{}.hd_outline && Settings::parse("disc =\n").hd_outline,"the HD outline is on by default, also in older files");
         check(!Settings{}.light_depth_of_field && !Settings::parse("disc =\n").light_depth_of_field,"the game's own depth of field by default");
         check(Settings{}.fast_loading && Settings::parse("disc =\n").fast_loading,"fast loading is on by default, also in older files");
+        check(!Settings{}.quick_start && !Settings::parse("disc =\n").quick_start,"quick start off by default, also in older files");
         check(Settings{}.struggle_buttons && Settings::parse("disc =\n").struggle_buttons,"beam struggles by buttons on by default, also in older files");
         check(!Settings{}.variable_refresh && !Settings::parse("disc =\n").variable_refresh,"variable refresh off by default (other displays would tear)");
         check(Settings{}.low_input_lag && Settings::parse("disc =\n").low_input_lag,"low input lag on by default, also in older files");
@@ -65,7 +66,7 @@ int main() {
             check(labels(menu_screens::graphicsMore(group_host,e,[]{}))==std::vector<std::string>{"Window size","Integer scaling","Variable refresh rate","Low input lag","HD outline",
                   "Light depth of field","Button art","Frame rate display"},"the rest under More");
             // Fast loading is with the game's files, not fast forward; beam struggles by buttons with the controls.
-            check(labels(menu_screens::gameFiles(e,[]{}))==std::vector<std::string>{"Fast loading"},"game files in the in-game menu: fast loading");
+            check(labels(menu_screens::gameFiles(e,[]{}))==std::vector<std::string>{"Fast loading","Quick start"},"game files in the in-game menu: fast loading and quick start");
             const auto controls=labels(menu_screens::controls(group_host,e,[]{}));
             check(std::find(controls.begin(),controls.end(),"Beam struggles by buttons")!=controls.end(),"beam struggles by buttons among the controls");
         }
@@ -264,7 +265,7 @@ int main() {
         for(int n=0;n<3;++n)host.menu.press(MenuKey::Right);
         check(host.menu.screen().highlighted==3,"Right along the cards to Game files");
         host.menu.press(MenuKey::Confirm);host.settle();
-        check(labels(host.menu.screen())==std::vector<std::string>{"Game disc","Memory card","Fast loading"},"game files: the disc, the card, fast loading");
+        check(labels(host.menu.screen())==std::vector<std::string>{"Game disc","Memory card","Fast loading","Quick start"},"game files: the disc, the card, fast loading, quick start");
         host.menu.press(MenuKey::Confirm);host.settle();
         check(host.menu.screen().title=="Game disc" && labels(host.menu.screen())==std::vector<std::string>{"No disc image yet"},"an empty data folder");
         picture(host,"2-no-disc");

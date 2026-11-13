@@ -36,8 +36,15 @@ public:
     explicit ViewerWindow(Scaling scaling=Scaling::Integer):scaling_(scaling) {}
     ~ViewerWindow() {if(hwnd_)DestroyWindow(hwnd_);}
     void present(const DisplayFrame& frame,unsigned flip) {
-        present(frame,"BT2 Recomp - frame "+std::to_string(flip)+(frame.unwritten?" (unwritten pixels)":""));
+        present(covered_?cover_:frame,"BT2 Recomp - frame "+std::to_string(flip)+(frame.unwritten?" (unwritten pixels)":""));
     }
+    // While covered the game's pictures are shown as black (the status line stays): quick start passes the logos, the
+    // films and the title unseen (probe/quick_start.h). Menus drawn by the port are not covered.
+    void setCovered(bool covered) {
+        covered_=covered;
+        if(covered && cover_.bgra.empty()) {cover_.width=640;cover_.height=448;cover_.bgra.assign(std::size_t(640)*448,0xFF000000u);}
+    }
+    bool covered() const {return covered_;}
     void present(const DisplayFrame& frame,const std::string& title) {
         if(closed_)return;
         if(!hwnd_)create();
@@ -58,7 +65,7 @@ public:
         if(!presenter_)throw std::runtime_error("Viewer: the renderer's picture needs a GPU presenter");
         if(!hwnd_)create();
         setTitle("BT2 Recomp - frame "+std::to_string(flip));
-        showOnGpu(nullptr,width,height);
+        if(covered_)showOnGpu(&cover_,cover_.width,cover_.height);else showOnGpu(nullptr,width,height);
         pump();
     }
     // Fast forward or fast loading (WindowPresenter::freeRun).
@@ -142,6 +149,7 @@ private:
     unsigned scale_=2;bool fullscreen_=false,widescreen_=false;std::string title_,status_;
     WindowPresenter* presenter_=nullptr;
     std::string status_drawn_;DisplayFrame status_image_; // The status text as a picture, for the presenter.
+    bool covered_=false;DisplayFrame cover_; // setCovered: black at the game's size.
     void setTitle(const std::string& title) {if(title!=title_) {title_=title;SetWindowTextA(hwnd_,title.c_str());}}
     // Where a picture of width x height goes in a client area: in a window with integer scaling, whole
     // multiples of its shown size; otherwise (the whole screen, scaling off, or a picture larger than the

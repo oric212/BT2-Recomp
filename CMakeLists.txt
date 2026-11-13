@@ -278,7 +278,7 @@ if(BT2_BUILD_GENERATED_PROBE)
     add_executable(bt2-entry-probe EXCLUDE_FROM_ALL runtime/probe/entry_probe.cpp
         runtime/probe/probe_inputs.cpp runtime/probe/startup_bindings.cpp
         runtime/probe/selected_bindings.cpp runtime/probe/overlay_bindings.cpp
-        runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/game_starter.cpp runtime/probe/call_replay.cpp runtime/probe/call_sums.cpp runtime/probe/call_ram.cpp
+        runtime/probe/checkpoint_checks.cpp runtime/probe/probe_reports.cpp runtime/probe/game_starter.cpp runtime/probe/quick_start.cpp runtime/probe/call_replay.cpp runtime/probe/call_sums.cpp runtime/probe/call_ram.cpp
         runtime/probe/online_session.cpp runtime/host/net_lockstep.cpp runtime/host/upnp_port.cpp
         runtime/game/bt2_game.rc # The game window's icon.
         "${CMAKE_CURRENT_SOURCE_DIR}/game/generated/bt2-runtime/FUN_00100008_0x100008.cpp"

@@ -34,6 +34,7 @@ struct Settings {
     unsigned fast_forward_button=GamepadState::Count;
     bool fast_forward_toggle=false;
     bool fast_loading=true; // Silent loading waits run as fast as the machine allows (host/loading_skip.h), from the next start.
+    bool quick_start=false; // The game starts at its main menu with the save loaded, logos, films and title passed unseen (probe/quick_start.h).
     bool struggle_buttons=true; // Beam struggles pushed by Square or Cross as well as the sticks (ee/struggle_buttons.h), from the next start.
     // What opens the in-game menu on a gamepad besides the DualSense's PS button and Escape:
     // the two stick buttons together, or Start with Select.
@@ -59,7 +60,7 @@ struct Settings {
         out<<"disc = "<<disc<<"\nstick_sensitivity = "<<mapping.stick_sensitivity<<"\ninteger_scaling = "<<integer_scaling<<"\nfullscreen = "<<fullscreen<<"\nwindow_scale = "<<window_scale
            <<"\nshow_frame_rate = "<<show_frame_rate<<"\nvariable_refresh = "<<variable_refresh<<"\nlow_input_lag = "<<low_input_lag<<"\nmaster_volume = "<<master_volume<<"\nmusic_volume = "<<music_volume
            <<"\neffects_volume = "<<effects_volume<<"\nhd_textures = "<<hd_textures<<"\nsuper_sampling = "<<super_sampling<<"\nwidescreen = "<<widescreen<<"\nhd_outline = "<<hd_outline<<"\nlight_depth_of_field = "<<light_depth_of_field<<"\nsixty_fps = "<<sixty_fps<<"\nplaystation_buttons = "<<playstation_buttons<<"\nfast_forward_key = "<<fast_forward_key
-           <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nstruggle_buttons = "<<struggle_buttons
+           <<"\nfast_forward_button = "<<buttonName(fast_forward_button)<<"\nfast_forward_toggle = "<<fast_forward_toggle<<"\nfast_loading = "<<fast_loading<<"\nquick_start = "<<quick_start<<"\nstruggle_buttons = "<<struggle_buttons
            <<"\noverlay_start_select = "<<overlay_start_select<<"\nsecond_controller = "<<second_controller<<"\nmemory_card = "<<memory_card
            <<"\nonline_port = "<<online_port<<"\nonline_address = "<<online_address<<"\nonline_delay = "<<online_delay<<"\nonline_upnp = "<<online_upnp<<"\n";
         for(unsigned n=0;n<16;++n)out<<"key_"<<PadScript::names[n]<<" = "<<unsigned(mapping.keys[n])<<"\n";
@@ -114,6 +115,7 @@ struct Settings {
             else if(key=="fast_forward_button")s.fast_forward_button=button(true);
             else if(key=="fast_forward_toggle")s.fast_forward_toggle=number(0,1);
             else if(key=="fast_loading")s.fast_loading=number(0,1);
+            else if(key=="quick_start")s.quick_start=number(0,1);
             else if(key=="struggle_buttons")s.struggle_buttons=number(0,1);
             else if(key=="overlay_start_select")s.overlay_start_select=number(0,1);
             else if(key=="second_controller")s.second_controller=number(0,1);

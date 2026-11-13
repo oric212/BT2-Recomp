@@ -9,6 +9,7 @@
 #include "probe_state.h"
 #include "game_starter.h"
 #include "online_session.h"
+#include "quick_start.h"
 #include "host/audio_device.h"
 #include "host/early_picture.h"
 #include "host/frame_pacer.h"
@@ -1022,6 +1023,18 @@ int main(int argc, char** argv) {
             if (screen) installScreenStarter(runtime, parseScreenStart(screen), std::getenv("BT2_START_SCREEN_PLAYERS") && std::string_view(std::getenv("BT2_START_SCREEN_PLAYERS")) == "1");
             if (episode) installEpisodeStarter(runtime, parseEpisodeStart(episode));
         }
+#ifdef _WIN32
+        // BT2_QUICK_START=1 (the setting "Quick start"): to the main menu with the card's save loaded, the logos, films and
+        // title passed by the game's own skips, unseen and in fast forward (probe/quick_start.h). Not with the starters,
+        // an online session or the return to the title (BT2_QUICK_TITLE: the player asked for the title).
+        if (const char* quick = std::getenv("BT2_QUICK_START"); quick && std::string_view(quick) == "1" && !std::getenv("BT2_QUICK_TITLE")) {
+            for (const char* name : {"BT2_START_BATTLE", "BT2_START_SCREEN", "BT2_START_EPISODE", "BT2_NET", "BT2_REPLAY_CALL"})
+                if (std::getenv(name)) throw std::runtime_error(std::string("BT2_QUICK_START cannot be used with ") + name);
+            static struct QuickStartEnd {bool on = false;~QuickStartEnd() {if (on && quick_start::running()) std::cerr << quick_start::summary() << std::endl;}} quick_start_end;
+            quick_start_end.on = true;
+            quick_start::install(runtime, {[](bool on) {if (pacer) pacer->starting_run = on;}, [viewer_mode](bool on) {if (viewer_mode) viewer.setCovered(on);}});
+        }
+#endif
         // BT2_FIGHT_UNCAPPED (tool runs; the 60 fps study, docs/plans/graphics/HIGH_FRAME_RATE_PLAN.md): the fight's
         // frame wait (0x28C790: until Timer 1 has counted 400 lines, which makes a fight frame two fields) finds the
         // count reached and returns at once, so the fight steps once per field. Shows whether the engine steps by

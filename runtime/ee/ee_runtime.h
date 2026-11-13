@@ -558,6 +558,10 @@ public:
     std::function<void()> on_field_end; // At each VBLANK, before anything of the next field runs (state hash); never changes guest state.
     std::function<PadInput()> on_pad_input; // Live controller input, asked once per field; unset for scripted runs.
     std::function<PadInput()> on_pad2_input; // Live input of a controller in port 2, asked before on_pad_input (none: port 2 empty, or BT2_PAD2_SCRIPT).
+    // Buttons pressed for the player in port 1 this field (a PadScript bit each, as PadInput::pressed), asked once per field
+    // after the controller's own input; added to what the game reads, not to the controller's state (quick start,
+    // probe/quick_start.h). padButtonsHeld still tells the player's own buttons.
+    std::function<std::uint16_t()> pad_presses;
     std::function<void(unsigned field,const PadInput& input)> on_pad2_change; // Port 2's live input that changed, as on_pad_change.
     bool padButtonsHeld() const; // A button of the controller in port 1 is held now (live or scripted).
     std::function<void(unsigned field,const PadInput& input)> on_pad_change; // Live input whose buttons or sticks changed, with the pad script's field number.

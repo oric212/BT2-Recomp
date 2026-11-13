@@ -74,6 +74,8 @@ DWORD runGame(const fs::path& root,const fs::path& settings_path,const Settings&
     SetEnvironmentVariableA("BT2_NATIVE_PASSES",settings.hd_outline?nullptr:"-ink-edges"); // gs/gpu/native/native_passes.h
     SetEnvironmentVariableA("BT2_DOF_STRENGTH",settings.light_depth_of_field?"25":nullptr); // gs/gpu/native/dof_weight.cpp
     SetEnvironmentVariableA("BT2_FAST_LOADING",settings.fast_loading?"1":nullptr); // host/loading_skip.h
+    // Quick start (probe/quick_start.h): not for an online battle; the return to the title (BT2_QUICK_TITLE) keeps the title.
+    SetEnvironmentVariableA("BT2_QUICK_START",settings.quick_start && online.empty()?"1":nullptr);
     SetEnvironmentVariableA("BT2_VARIABLE_REFRESH",settings.variable_refresh?"1":nullptr); // gs/gpu/gpu_window_presenter.cpp
     SetEnvironmentVariableA("BT2_LOW_INPUT_LAG",settings.low_input_lag?"1":nullptr); // host/early_picture.h
     SetEnvironmentVariableA("BT2_STRUGGLE_BUTTONS",settings.struggle_buttons?"1":nullptr); // ee/struggle_buttons.h

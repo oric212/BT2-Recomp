@@ -259,6 +259,7 @@ inline MenuScreen gameFiles(Settings& s,std::function<void()> changed,std::vecto
     MenuScreen screen;screen.title="Game files";
     screen.entries=std::move(files);
     screen.entries.push_back(toggle("Fast loading",s.fast_loading,changed,"Silent loading waits (black screens while the game reads the disc) pass as fast as the machine allows. From the next start."));
+    screen.entries.push_back(toggle("Quick start",s.quick_start,changed,"The game starts at its main menu with your save loaded; the logos, the opening film and the title pass unseen. Without a save it stops at the title. From the next start."));
     return screen;
 }
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {

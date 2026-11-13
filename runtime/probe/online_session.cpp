@@ -244,7 +244,7 @@ void prepareOnlineSession() {
     setSwitch("BT2_START_SCREEN_PLAYERS","1");
     setSwitch("BT2_UNLOCK_ROSTER","1");
     if(!std::getenv("BT2_ONLINE_VIEW"))setSwitch("BT2_ONLINE_VIEW",address.host?"1":"2");
-    for(const char* name:{"BT2_CARD_FOLDER","BT2_FAST_LOADING","BT2_FAST_FORWARD","BT2_QUICK_TITLE"})setSwitch(name,nullptr);
+    for(const char* name:{"BT2_CARD_FOLDER","BT2_FAST_LOADING","BT2_FAST_FORWARD","BT2_QUICK_TITLE","BT2_QUICK_START"})setSwitch(name,nullptr);
 }
 
 void startOnlineSession(EeRuntime& runtime,ViewerWindow* window,HostInput* input,PlayerSession* player,FramePacer* pacer) {
