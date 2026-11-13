@@ -1,12 +1,12 @@
 {
-  "updated": "2026-11-09",
+  "updated": "2026-11-13",
   "flow": [
     {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
     {"name": "Pad & card", "status": "verified", "note": "Native checks"},
     {"name": "Films", "status": "working", "note": "Play with sound"},
     {"name": "Title & menus", "status": "working", "note": "All modes run"},
     {"name": "Versus battle", "status": "working", "note": "130 fighters"},
-    {"name": "Story mode", "status": "working", "note": "200 parts, towns"},
+    {"name": "Story mode", "status": "working", "note": "Partly played"},
     {"name": "Saves", "status": "verified", "note": "Same as original"},
     {"name": "Online battle", "status": "working", "note": "Works across homes", "current": true}
   ],
@@ -48,7 +48,7 @@
         {"name": "Code generation", "status": "verified", "note": "11,139 + 494 functions"},
         {"name": "Game coverage", "status": "working", "note": "All modes; final sweep left"},
         {"name": "Tests", "status": "verified", "note": "Unit tests, Python suites pass"},
-        {"name": "Original comparisons", "status": "incomplete", "note": "31/31, AI, saves; no 3D"}
+        {"name": "Original comparisons", "status": "incomplete", "note": "Fight, VU1, GS, services"}
       ]
     }
   ]

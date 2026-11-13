@@ -5,7 +5,7 @@ PCSX2's side is a session's rpc.log.json (session.py --rpc-log), the port's a BT
 request to sceSifCallRpc and every synchronous reply with its buffer's checksum. The two programs do not take the
 same time, so the calls are compared per client (one per service: the game's client structures lie at the same
 addresses in both) in their order, not by when they came: the function number, the sizes and the checksums of the
-send and receive buffers. For each client the first difference is listed with its neighbours. A run that went
+send and receive buffers, and their first words where both logs carry them (24 a record; older logs fewer or none). For each client the first difference is listed with its neighbours. A run that went
 further than the other leaves calls over; they are counted, not judged.
 """
 import argparse
@@ -26,7 +26,8 @@ def pcsx2_records(path):
         reply = bool(entry['mode'] & rpc_log.REPLY)
         out.append({'kind': 'R' if reply else 'Q', 'function': entry['function'],
                     'client': entry['client'], 'mode': entry['mode'] & ~rpc_log.REPLY, 'size': entry['size'],
-                    'address': entry['address'], 'checksum': entry['checksum'], 'when': entry['count']})
+                    'address': entry['address'], 'checksum': entry['checksum'], 'when': entry['count'],
+                    'words': shown(entry.get('words'), entry['size'])})
     return out
 
 
@@ -34,21 +35,36 @@ def port_records(path):
     """The port's records, and {client: service ID} from its binds (B lines)."""
     out, services = [], {}
     for line in path.read_text(encoding='utf-8').splitlines():
-        kind, function, client, mode, size, address, total, field = line.split()
+        kind, function, client, mode, size, address, total, field, *words = line.split()
         if kind == 'B':
             services[int(client, 16)] = int(function, 16)
             continue
         out.append({'kind': kind, 'function': int(function, 16), 'client': int(client, 16), 'mode': int(mode, 16),
-                    'size': int(size, 16), 'address': int(address, 16), 'checksum': int(total, 16), 'when': int(field)})
+                    'size': int(size, 16), 'address': int(address, 16), 'checksum': int(total, 16), 'when': int(field),
+                    'words': shown([int(w, 16) for w in words] or None, int(size, 16))})
     return out, services
 
 
 KEY = ('kind', 'function', 'mode', 'size', 'address', 'checksum')
 
 
+def shown(words, size):
+    """The logged words that lie inside the buffer (a record holds 24 whatever its size), or None for a log
+    written before records held words."""
+    return None if words is None else tuple(words[:size // 4])
+
+
+def same(a, b):
+    """Two records agree: the KEY fields, and the words where both logs hold them."""
+    return (all(a[f] == b[f] for f in KEY)
+            and (a['words'] is None or b['words'] is None
+                 or a['words'][:len(b['words'])] == b['words'][:len(a['words'])]))
+
+
 def describe(r):
+    words = ' '.join(f'{w:08x}' for w in r['words'] or ())
     return (f"{r['kind']} fn {r['function']:#x} mode {r['mode']} size {r['size']:#x} at {r['address']:#x} "
-            f"sum {r['checksum']:08x}")
+            f"sum {r['checksum']:08x}" + (f" [{words}]" if words else ''))
 
 
 def compare(pcsx2, port):
@@ -61,8 +77,8 @@ def compare(pcsx2, port):
     for client in sorted(by):
         a, b = by[client]
         n = min(len(a), len(b))
-        first = next((k for k in range(n) if tuple(a[k][f] for f in KEY) != tuple(b[k][f] for f in KEY)), None)
-        differ = sum(1 for k in range(n) if tuple(a[k][f] for f in KEY) != tuple(b[k][f] for f in KEY))
+        first = next((k for k in range(n) if not same(a[k], b[k])), None)
+        differ = sum(1 for k in range(n) if not same(a[k], b[k]))
         result[client] = {'pcsx2': len(a), 'port': len(b), 'compared': n, 'differ': differ,
                           'equal': n if first is None else first, 'first_difference': first,
                           'context': None if first is None else

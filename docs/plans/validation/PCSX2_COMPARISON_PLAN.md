@@ -408,13 +408,26 @@ Session `rpc2` (PCSX2, boot to the demo's first fight frame) against the port bo
 | Sound driver (`0x80000701`), SOUNDS (`0x2000004`) | 6, 10 | requests 0x80D0 and 0x80F0 differ; SOUNDS's reply to function 0x20 (64 bytes) differs |
 | Disc (`0x80000597`) | 12 | 1 request (300 bytes) differs |
 
-Not yet told apart: which of these differences are timing (stream positions, counters, the pads) and which are the
-port's replies (the LOADFILE reply is the first candidate: module numbers the port invents). A checksum cannot say;
-**next** the records carry their buffers' first words (or a checkpoint at the call holds the whole buffer), and each
-difference gets its explanation or its fix.
+**Step 8, the differences explained (2026-11-13).** The records now carry their buffers' first 24 words (PCSX2's
+records 128 bytes, the port's lines the same words; `rpc_compare.py` compares the words inside each buffer). Session
+`rpc4` (PCSX2, boot to the demo's first fight frame, 37,291 records) against the port's log `work/rpc/port-rpc6.txt`
+(the same card, 3,000 flips):
 
-**Next:** the service differences above, one by one; the globals' 152 ranges by route (or the port through the
-same route). Press to sound and fullscreen when wanted.
+| Service | Found | Now |
+| --- | --- | --- |
+| LOADFILE | The port numbered modules from 1; PCSX2's IOP from 0x19 (24 modules registered by the boot and the IOP reboot) | Fixed (`services/module_loads.h`, with a test): every reply equal |
+| CRI | Every handle the port gave was PCSX2's plus 0xEF0D0: the port's base for CRI_ADXI's work area came from an older trace; the original's is 0xB7F30 (October's notes had its first handle, 0xC67F0) | Fixed: all 90 calls equal |
+| FILEIO | The port's first file descriptor was 1; the IOP's file manager takes the lowest free slot, 0 and 1 being the console's input and output | Fixed: all 12 calls equal |
+| SOUNDS | Status block words 8 and 13 (a thread ID and an address in SOUNDS): 0xF9F239 and 0xA5870 in every reply of this session; the October capture without cards had SOUNDS at another base (0xA3430). They follow where the IOP placed the module, which depends on the cards' state | Explained: module-local; the port keeps its own module base's values (this session's broke the comparison without cards). All other words equal |
+| Disc commands | Sector reads of one stream in different chunks | Timing: the same 13,403 sectors in the same order |
+| Sound driver 0x80D0, 0x80F0 | Request words the caller does not set: the request builder (`0x314DC0`, variadic) stores a2, a3 and t0 to t3; the callers at 0x297B58 and 0x297B74 leave t3, and t0 to t3, as earlier code left them | Explained: leftover registers, not read by the driver |
+| LOADFILE requests, disc search | Bytes past a reply up to its 16-byte unit: PCSX2's SIF DMA moves whole quadwords, so the IOP's buffer follows the reply ({receive address, an IOP word, 0x10} after every short reply of every service; the IOP word 0x8001F930, for disc control also 0x8001F970, 0x8001F9B0, 0x8001A1F0). The port leaves EE memory there unchanged. The first search's name has `;1` after its NUL in PCSX2 (the IOP's buffer) | Explained: IOP leftovers the game does not read; not reproduced |
+| Controller ports | The polls are asynchronous; the port echoes each at once, PCSX2's DBCMAN replies later and not as an echo: after its reply word 9 is 0 (the game wrote 0xC after the call) and from the second poll words 5 and 6 are 2048.0 and 4096.0 | **Open**: the reply's timing and content to model |
+
+Memory card, disc control, CD init, controller main, IOP heap: equal as before.
+
+**Next:** the controller ports' replies (DBCMAN's reply content and when it lands); then the globals' 152 ranges by
+route (or the port through the same route). Press to sound and fullscreen when wanted.
 
 ## Unknowns
 

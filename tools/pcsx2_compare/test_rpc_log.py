@@ -41,8 +41,8 @@ class RpcMachine(Machine):
 
 
 def record(m, number):
-    at = RING - SLOT + cb.LOG_ENTRY * (number % cb.LOG_ENTRIES)
-    return rpc_log.parse_entry(m.mem[at:at + cb.LOG_ENTRY])
+    at = RING - SLOT + rpc_log.ENTRY * (number % cb.LOG_ENTRIES)
+    return rpc_log.parse_entry(m.mem[at:at + rpc_log.ENTRY])
 
 
 class RpcLogTest(unittest.TestCase):
@@ -66,6 +66,7 @@ class RpcLogTest(unittest.TestCase):
                          (1, False, 0x10, 0x3B1230, 1, 18, RAM))
         self.assertEqual(r['checksum'], checksum(self.send[:4]))
         self.assertEqual(r['checksum'], rpc_log.checksum(struct.pack('<5I', *self.send)[:18]))
+        self.assertEqual(r['words'][:5], self.send)                             # the buffer's first words
         self.assertGreater(r['count'], 1000)
 
     def test_reply_records_the_receive_buffer(self):
@@ -81,6 +82,7 @@ class RpcLogTest(unittest.TestCase):
         self.assertEqual((r['number'], r['reply'], r['function'], r['client'], r['size'], r['address']),
                          (6, True, 0x80001363, 0x3B1230, 12, RAM + 4))
         self.assertEqual(r['checksum'], checksum(self.send[1:4]))
+        self.assertEqual(r['words'][:4], self.send[1:])
 
     def test_empty_buffer_and_patches(self):
         m = self.m

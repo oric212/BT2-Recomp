@@ -18,6 +18,7 @@ namespace {
 constexpr std::uint32_t fileio_open=0,fileio_close=1,fileio_read=2,fileio_lseek=4,fileio_init=0xFF;
 constexpr std::uint32_t fileio_command=0x80000011,fileio_handler=0x333378,fileio_handler_argument=0x3AC780;
 constexpr std::uint32_t fileio_version=0x30303033;
+constexpr std::uint32_t first_fd=2;
 }
 
 bool EeRuntime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const SifRpcRequest& r,const NativeServer& server) {
@@ -41,7 +42,10 @@ bool EeRuntime::nativeFileioCall(std::uint8_t* rdram,R5900Context* context,const
         try{found=DiscMetadata(local_disc_path).lookup(name.substr(7));}catch(const std::exception&){throw UnsupportedSyscall(0x77,context->pc);}
         if(!found){result=static_cast<std::uint32_t>(-2);break;} // ENOENT
         NativeFile f;std::memcpy(&f.lba,found->data(),4);std::memcpy(&f.size,found->data()+4,4);
-        result=native_next_fd_++;native_files_[result]=f;break;
+        // The IOP's file manager takes the lowest free slot of its table; 0 and 1 are the console's input and
+        // output, so the first file is 2 (PCSX2, docs/plans/validation/PCSX2_COMPARISON_PLAN.md, step 8).
+        result=first_fd;while(native_files_.contains(result))++result;
+        native_files_[result]=f;break;
     }
     case fileio_close: {
         if(!native_files_.erase(in(3)))throw UnsupportedSyscall(0x77,context->pc);

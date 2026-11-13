@@ -9,7 +9,10 @@
 //   sound block from IOP memory to sound RAM and returns its size (word 5); 0x80F0 returns 1.
 // - SOUNDS: 256-byte commands, 64-byte replies. 0x10 initializes (zeros). From 0x20 on every reply is
 //   the module's status block: words 4 and 12 are 1 and 2, word 5 counts the loaded sound banks, words
-//   8 and 13 are module-local values (the worker's IOP thread ID and an IOP address; opaque).
+//   8 and 13 are module-local values (the worker's IOP thread ID and an address in SOUNDS, opaque): they follow
+//   where the IOP placed the module, which differs with the memory cards' state (PCSX2 without cards: SOUNDS's
+//   base 0xA3430; with a card: word 13 0xA5870 and word 8 0xF9F239, docs/plans/validation/PCSX2_COMPARISON_PLAN.md,
+//   step 8). The port's are its own module base's (0x1C0000).
 //   PCSX2 call log 2026-10-12 (capture_ee.py --sounds-log, 40 calls from boot into the menus):
 //   0x20 loads a bank (word 5 + 1) and starts the worker on the first; 0x30 unloads one (word 5 - 1);
 //   0x40 (request a sound), 0x50 and 0x200 leave the block unchanged; so do 0x70 and 0x100, whose

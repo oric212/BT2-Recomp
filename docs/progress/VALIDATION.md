@@ -55,7 +55,7 @@ Every difference is therefore the port's own, and each one found is either fixed
 | Loaded data | All 32 MB of memory at the first frame of the same battle | Fighters and stage (22 MB) equal but 2.7 KB of positions and leftovers; the rest explained (below) | 2026-11-12 |
 | VU1 | VU1 memory after the fight frame's VIF1 chain, frames 300, 600, 900 | Equal (16 KB), after 1 fix; also against PCSX2's VU1 interpreter | 2026-11-12 |
 | GS memory | Fight frames 300, 900, 1500, 1800, 2100, 2400, 2700, 3000: GS memory after the frame, PCSX2's software renderer on one thread | Textures, palettes, uploads equal; depth equal; picture: 36 to 59% of pixels equal, most others 1 to 2 levels apart, 1 to 53 of 229,376 more than 16 (thin lines); the port 0.1 to 0.5 levels brighter on average, up to 16 where glows stack; the blur buffers up to 7 levels apart | 2026-11-13 |
-| Services | Every SIF RPC request and synchronous reply from boot to the title demo, the same card's save | Memory card (the save read), disc control, CD init, controller and IOP heap equal; LOADFILE, FILEIO, CRI, sound driver, SOUNDS and disc reads differ, not yet explained (timing or the port's replies) | 2026-11-13 |
+| Services | Every SIF RPC request and synchronous reply from boot to the title demo (37,291), the same card's save, with each buffer's first 24 words | Memory card, disc control, CD init, controller, IOP heap, LOADFILE, FILEIO and CRI equal (three faults in the port's replies fixed: module IDs, CRI handles, the first file descriptor); SOUNDS equal but for two module-local words that follow the IOP's layout; disc reads the same sectors in other chunks (timing); the sound driver's and LOADFILE's other differences are leftover registers and IOP bytes the game does not read; the controller ports' asynchronous replies differ (open) | 2026-11-13 |
 | Input delay in fields | A press at fight frame 480 (Cross, d-pad up) | The display lists change in the frame that read it, VU1 a frame later: same in both | 2026-11-12 |
 | Press to screen | 30 unpauses per setup, windowed, screen read every 7 ms | PCSX2 108 ms; port 104 ms (Low input lag, default), 111 ms (60 fps), 133 ms (Low input lag off); 105 and 117 ms with HD, 16x, widescreen | 2026-11-12 |
 | Saves | A new save written by the port's title New Game | Byte-identical to the original's | 2026-11-09 |
@@ -85,7 +85,7 @@ Every difference is therefore the port's own, and each one found is either fixed
 
 - Whose rounding the console has: single draws (a modulated texture, an additive blend, a bilinear sprite) on both renderers.
 - Other screens' logic and pictures: menus, character select, the story map, towns.
-- The services' differences: LOADFILE's load reply, FILEIO's seeks, CRI, the sound driver, SOUNDS, the disc's reads (timing or the port's replies).
+- The services: the controller ports' asynchronous replies (DBCMAN's reply content and when it lands); the services after the title demo.
 - Fullscreen press to screen; press to sound.
 
 ## The port against itself (Exact)

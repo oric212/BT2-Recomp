@@ -35,7 +35,7 @@ Target: *Dragon Ball Z: Budokai Tenkaichi 2*, North American PS2 release SLUS-21
 | Launcher, settings, in-game menu, release package | 🟢 Operational |
 | Enhancements: HD textures, super-sampling, widescreen, 60 fps battles, fast loading, Low input lag | 🟢 Operational |
 | Online battle | 🟢 Operational |
-| Final validation: the PCSX2 comparison, the exhaustive battle sweep | ⏳ In progress (the fight frame's logic and draw steps match PCSX2, 300 consecutive frames; the loaded data and VU1's memory after a frame's chain) |
+| Final validation: the PCSX2 comparison, the exhaustive battle sweep | ⏳ In progress (the fight frame's logic and draw steps match PCSX2, 300 consecutive frames; the loaded data, VU1's memory after a frame's chain, the fight's GS memory; the services from boot to the title demo) |
 
 ## Current next step
 
@@ -43,7 +43,7 @@ Done: native services, GPU rendering, films, the 3D pipeline, sound, controller,
 
 Next, in order:
 
-1. **The PCSX2 comparison** ([plan](../plans/validation/PCSX2_COMPARISON_PLAN.md); the user, 2026-11-12): steps 1 to 3 done (the fight frame, a full versus battle and 300 consecutive frames equal), step 9 (the game's own input delay equal; press to screen as PCSX2's with Low input lag), step 5 started (the loaded fighters and stage equal at a fight's first frame), step 6 (VU1's memory after a fight frame's chain equal; the I-bit fault fixed). step 7 started (one fight frame's GS memory: textures exact, the picture within the renderers' rounding). Next: step 7 at frames with the fighters and effects, the rest of step 5 (the globals by route), then the services, and the comparisons into the gate.
+1. **The PCSX2 comparison** ([plan](../plans/validation/PCSX2_COMPARISON_PLAN.md); the user, 2026-11-12): steps 1 to 3 done (the fight frame, a full versus battle and 300 consecutive frames equal), step 9 (the game's own input delay equal; press to screen as PCSX2's with Low input lag), step 5 started (the loaded fighters and stage equal at a fight's first frame), step 6 (VU1's memory after a fight frame's chain equal; the I-bit fault fixed). step 7 (fight frames' GS memory: textures exact, the pictures within the renderers' rounding), step 8 (the services from boot to the title demo: three reply faults fixed, the rest explained). Next: the controller ports' asynchronous replies, the rest of step 5 (the globals by route), step 4 (other screens' logic), steps 6 and 7 on other screens, and the comparisons into the gate (step 10).
 2. **The user's open reports**, as detail comes: the destroyed Namek's flicker at 60 fps ([60 fps plan](../plans/graphics/HIGH_FRAME_RATE_PLAN.md)); Frieza over the ocean and characters under water with HD ([HD textures plan](../plans/graphics/HD_TEXTURES_PLAN.md)). Stops in the user's play are mapped with `discovery_loop.py --player-stop`.
 3. **Picture and responsiveness:** an edge filter ([image quality plan](../plans/graphics/IMAGE_QUALITY_PLAN.md)); 60 fps load work ([native fight rendering plan](../plans/graphics/NATIVE_FIGHT_RENDERING_PLAN.md)); responsiveness steps 7 and 8 ([plan](../plans/ee/RESPONSIVENESS_PLAN.md); waiting for the user's go).
 4. **Online, left for later** ([online plan](../plans/online/ONLINE_BATTLE_PLAN.md)): the Dragon Rush's prompts; lock-on in play.

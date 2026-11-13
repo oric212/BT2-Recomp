@@ -4,7 +4,7 @@
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
-<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-11-09 · last measured checkpoint</text>
+<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-11-13 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
 <text x="41" y="63" font-size="12" fill="#475569">Verified</text>
 <circle cx="199" cy="59" r="4" fill="#2b78b8"/>
@@ -42,10 +42,10 @@
 <text x="537.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
 <text x="537.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">130 fighters</text>
 </g>
-<g><title>Story mode: Operational. 200 parts, towns</title>
+<g><title>Story mode: Operational. Partly played</title>
 <rect x="601.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
 <text x="653.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Story mode</text>
-<text x="653.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">200 parts, towns</text>
+<text x="653.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Partly played</text>
 </g>
 <g><title>Saves: Verified. Same as original</title>
 <rect x="717.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
@@ -175,10 +175,10 @@
 <circle cx="738.5" cy="416" r="3.5" fill="#16835d"/>
 <text x="749.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Tests</text>
 <text x="734.5" y="438" font-size="11.5" fill="#64748b">Unit tests, Python suites pass</text></g>
-<g><title>Original comparisons: Incomplete. 31/31, AI, saves; no 3D</title>
+<g><title>Original comparisons: Incomplete. Fight, VU1, GS, services</title>
 <rect x="721.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="721.5" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
 <circle cx="738.5" cy="478" r="3.5" fill="#b77912"/>
 <text x="749.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Original comparisons</text>
-<text x="734.5" y="500" font-size="11.5" fill="#64748b">31/31, AI, saves; no 3D</text></g>
+<text x="734.5" y="500" font-size="11.5" fill="#64748b">Fight, VU1, GS, services</text></g>
 </g></svg>

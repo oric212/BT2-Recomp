@@ -10,9 +10,10 @@ its counter and one ring of LOG_ENTRY-byte records (context_block's data layout)
   was sent, where s1 holds the client, s6 the function number, fp the mode, s4 the receive buffer and the command
   packet (s0) the receive size at +44.
 
-A record: its number (written last), COP0 Count, the function number, the client, the mode (REPLY set for a reply:
-function numbers use bit 31 themselves, the controller's 0x80001363), the buffer's size,
-its address and the checksum of its whole words (each word added, the sum rotated left by one).
+A record (ENTRY bytes): its number (written last), COP0 Count, the function number, the client, the mode (REPLY set
+for a reply: function numbers use bit 31 themselves, the controller's 0x80001363), the buffer's size, its address,
+the checksum of its whole words (each word added, the sum rotated left by one), then the buffer's first
+BUFFER_WORDS words as they are (words past its size included; the comparison ignores them).
 The stubs use only registers the function does not hold there (t4 to t9, v0 and v1 at the entry; at the reply
 also the argument registers), so a call on any thread is logged.
 """
@@ -26,6 +27,7 @@ DONE = 0x00332B3C                                  # daddu v0, zero, zero: the s
 DONE_WORDS = (0x0000102D, 0xDFBF00B0)              # ... and ld ra, 176(sp) at 0x332B40, the return path
 REPLY = 0x80000000
 REPLY_CODE = 0x800                                 # The reply stub's offset in the slot.
+ENTRY, BUFFER_WORDS = 128, 24                      # A record's bytes (a power of two); the buffer words (from +32).
 
 V0, V1, A0, A1, A2, A3, T0 = 2, 3, 4, 5, 6, 7, 8
 T4, T5, T6, T7, S0, S1, S4, S6, FP = 12, 13, 14, 15, 16, 17, 20, 22, 30
@@ -45,9 +47,17 @@ def _record_start(code, data):
     _i, _r, _s = cb._i, cb._r, cb._store
     code += [_i(0x0F, 0, cb.T8, data >> 16), _i(0x0D, cb.T8, cb.T8, data & 0xFFFF)]
     code += [_s(0x23, cb.T9, cb.COUNT), _i(0x09, cb.T9, cb.T9, 1), _s(0x2B, cb.T9, cb.COUNT)]
-    code += [_i(0x0C, cb.T9, V0, cb.LOG_ENTRIES - 1), _r(0, V0, V0, 0x00, 5), _s(0x23, V1, cb.LOG_RING),
-             _r(V0, V1, V0, 0x21)]                                                   # andi; sll 5; lw; addu
+    code += [_i(0x0C, cb.T9, V0, cb.LOG_ENTRIES - 1), _r(0, V0, V0, 0x00, ENTRY.bit_length() - 1),
+             _s(0x23, V1, cb.LOG_RING), _r(V0, V1, V0, 0x21)]                        # andi; sll (ENTRY); lw; addu
     code += [0x40000000 | (V1 << 16) | (9 << 11), _i(0x2B, V0, V1, 4)]                # mfc0 v1, Count; sw
+
+
+def _buffer_words(code, address, size):
+    """The buffer's first BUFFER_WORDS words to the record's +32 (uses t7); none for an empty buffer."""
+    copy = []
+    for k in range(BUFFER_WORDS):
+        copy += [cb._i(0x23, address, T7, 4 * k), cb._i(0x2B, V0, T7, 32 + 4 * k)]
+    code += [cb._i(4, size, 0, len(copy) + 1), 0] + copy               # beq size, zero, past the copy
 
 
 def _checksum(code, address, size):
@@ -73,6 +83,7 @@ def stub_words(slot, ring):
     _record_start(request, data)
     request += [_i(0x2B, V0, A1, 8), _i(0x2B, V0, A0, 12), _i(0x2B, V0, A2, 16), _i(0x2B, V0, T0, 20),
                 _i(0x2B, V0, A3, 24)]
+    _buffer_words(request, A3, T0)
     _checksum(request, A3, T0)
     request += [_i(0x2B, V0, cb.T9, 0)]                                                   # the number last
     request += list(ENTRY_WORDS) + [0x08000000 | (((CALL + 8) >> 2) & 0x3FFFFFF), 0]
@@ -82,6 +93,7 @@ def stub_words(slot, ring):
               _i(0x0F, 0, V1, REPLY >> 16), _r(FP, V1, V1, 0x25), _i(0x2B, V0, V1, 16),            # mode | REPLY
               _i(0x23, S0, T0, 44), _i(0x2B, V0, T0, 20),
               _i(0x2B, V0, S4, 24)]
+    _buffer_words(reply, S4, T0)
     _checksum(reply, S4, T0)
     reply += [_i(0x2B, V0, cb.T9, 0), DONE_WORDS[0], 0x08000000 | (((DONE + 4) >> 2) & 0x3FFFFFF), 0]
     if len(request) * 4 > REPLY_CODE or REPLY_CODE + len(reply) * 4 > cb.DATA:
@@ -100,12 +112,13 @@ def patches(slot):
             DONE: (DONE_WORDS[:1], (0x08000000 | ((slot + REPLY_CODE) >> 2),))}
 
 
-FIELDS = ('number', 'count', 'function', 'client', 'mode', 'size', 'address', 'checksum')   # rpc.log.json
+FIELDS = ('number', 'count', 'function', 'client', 'mode', 'size', 'address', 'checksum', 'words')   # rpc.log.json
 
 
 def unpack(entry):
-    """One record's eight words (the number first, as the session's ring reader expects)."""
-    return struct.unpack_from('<8I', entry)
+    """One record: its eight header words (the number first, as the session's ring reader expects) and the list
+    of its buffer words."""
+    return struct.unpack_from('<8I', entry) + (list(struct.unpack_from(f'<{BUFFER_WORDS}I', entry, 32)),)
 
 
 def parse_entry(entry):

@@ -35,6 +35,26 @@ class RpcCompareTest(unittest.TestCase):
         self.assertIn('sum 00000007', result[0x3B0000]['context'][1][0])
         self.assertIn('sum 00000008', result[0x3B0000]['context'][1][1])
 
+    def test_buffer_words_inside_the_size_are_compared(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pcsx2_file, port_file = Path(folder) / 'rpc.log.json', Path(folder) / 'port.txt'
+            pcsx2_file.write_text(json.dumps([
+                {'number': 1, 'count': 10, 'function': 0, 'client': 0x3B0000, 'mode': rpc_log.REPLY, 'size': 8,
+                 'address': 0x500, 'checksum': 0x64, 'words': [0x19, 0, 7, 7, 7, 7, 7, 7]},
+                {'number': 2, 'count': 11, 'function': 0, 'client': 0x3B0000, 'mode': rpc_log.REPLY, 'size': 8,
+                 'address': 0x500, 'checksum': 0x64, 'words': [0x19, 0, 0, 0, 0, 0, 0, 0]},
+            ]), encoding='utf-8')
+            port_file.write_text('R 0 3b0000 0 8 500 64 41 19 0 1 2 3 4 5 6\n'      # words past 8 bytes ignored
+                                 'R 0 3b0000 0 8 500 64 42 1a 0 0 0 0 0 0 0\n', encoding='utf-8')
+            pcsx2, (port, _) = rc.pcsx2_records(pcsx2_file), rc.port_records(port_file)
+        self.assertEqual(port[0]['words'], (0x19, 0))
+        result = rc.compare(pcsx2, port)[0x3B0000]
+        self.assertEqual((result['first_difference'], result['differ']), (1, 1))
+        self.assertIn('[00000019 00000000]', result['context'][1][0])
+        self.assertIn('[0000001a 00000000]', result['context'][1][1])
+        old = [dict(r, words=None) for r in pcsx2]                    # a log without words: checksums only
+        self.assertEqual(rc.compare(old, port)[0x3B0000]['first_difference'], None)
+
 
 if __name__ == '__main__':
     unittest.main()

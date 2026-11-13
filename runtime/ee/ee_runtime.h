@@ -28,6 +28,7 @@
 #include "ipu_device.h"
 #include "services/sif_rpc.h"
 #include "services/iop_heap.h"
+#include "services/module_loads.h"
 #include "services/cri_audio.h"
 #include "services/audio_mixer.h"
 #include "services/card_folder.h"
@@ -473,7 +474,7 @@ public:
     PostResetSif post_sif;
     PostResetCd post_cd;
     PostResetLoadfile post_loadfile;
-    unsigned native_module_loads=0;
+    ModuleLoads module_loads;
     std::string native_module_request,native_iop_error;
     unsigned native_iop_steps=0,native_iop_targets=0,native_iop_waiters=0;
     std::uint32_t native_iop_pc=0;
@@ -622,7 +623,7 @@ public:
             throw std::runtime_error("IOP heap bind evidence differs or repeated");
         heap_bind_supplied=true;
     }
-    unsigned serviceOperations() const {return cri_rpc_calls+cri_rpc_binds+ncmd_ready_calls+ncmd_rpc_binds+disc_rpc_calls+disc_rpc_binds+mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+native_module_loads+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
+    unsigned serviceOperations() const {return cri_rpc_calls+cri_rpc_binds+ncmd_ready_calls+ncmd_rpc_binds+disc_rpc_calls+disc_rpc_binds+mc_rpc_binds+mc_rpc_calls+ post_cd.operations()+post_loadfile.operations()+module_loads.loads()+heap_binds+heap_calls+heap_frees+sound_rpc_binds+sound_rpc_calls+sounds_rpc_binds+sounds_rpc_calls+dbc_rpc_binds+dbc_rpc_calls;}
     // The GS library's reset path (ee_gs_privileged.cpp). The four counters mark the first reset's steps
     // (the startup checks read them); gs_resets counts every CSR reset.
     unsigned gs_csr_reset_writes=0,gs_csr_reads=0,gs_imr_writes=0,gs_crt_calls=0,gs_resets=0;
@@ -888,7 +889,7 @@ private:
     bool native_sounds_started_=false;
     unsigned native_sounds_banks_=0; // Sound banks loaded by SOUNDS 0x20 and not unloaded by 0x30 (status word 5).
     std::uint32_t native_cri_players_=0; // Live 0x408 player slots (bit n); a new player takes the lowest free one.
-    std::map<std::uint32_t,NativeFile> native_files_;std::uint32_t native_next_fd_=1;
+    std::map<std::uint32_t,NativeFile> native_files_;
     std::array<std::uint32_t,2> native_fileio_buffers_{};std::uint32_t native_fileio_next_buffer_=0;
 public:
     unsigned native_disc_requests=0,native_fileio_requests=0,native_card_requests=0,native_pad_requests=0,native_pad_transfers=0,native_other_binds=0;

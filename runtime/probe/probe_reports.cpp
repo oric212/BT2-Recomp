@@ -101,7 +101,7 @@ void writeRuntimeBoundaryReport(EeRuntime& runtime,R5900Context& context,const P
         << ",\"sif_smflag\":" << runtime.sif_smflag << ",\"iop_epoch\":" << runtime.iop_epoch
         << ",\"halfwords\":" << runtime.halfword_writes << ",\"gs_reset_writes\":" << runtime.gs_csr_reset_writes
         << ",\"gs_imr_writes\":" << runtime.gs_imr_writes << ",\"gs_crt_calls\":" << runtime.gs_crt_calls
-        << ",\"native_module_loads\":" << runtime.native_module_loads
+        << ",\"native_module_loads\":" << runtime.module_loads.loads()
         << ",\"native_module_request\":" << std::quoted(runtime.native_module_request)
         << ",\"heap_transfers\":" << runtime.heap_transfers << ",\"heap_dma_polls\":" << runtime.heap_dma_polls
         << ",\"console_messages\":" << runtime.ee_console_messages.size()

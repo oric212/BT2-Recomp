@@ -235,13 +235,18 @@ def callees(data, text):
     return out
 
 
+def entry_size(site):
+    """The bytes of one record in a logging site's ring."""
+    return rpc_log.ENTRY if site.get('rpc') else cb.LOG_ENTRY
+
+
 def instrument(data, sites):
     """The executable with each site's call sent to its stub, the stubs in one added load segment."""
     metadata = ce.inspect(data)
     if metadata['sha256'] != ce.EXPECTED_SHA:
         raise ValueError('Instrumentation requires the validated local BT2 executable.')
     rings = SEGMENT + len(sites) * cb.SLOT                    # Each logging site's ring, after the stubs.
-    end = rings + sum(1 for s in sites if s.get('log')) * cb.LOG_ENTRIES * cb.LOG_ENTRY
+    end = rings + sum(entry_size(s) for s in sites if s.get('log')) * cb.LOG_ENTRIES
     if any(s['virtual_address'] < end and SEGMENT < s['virtual_address'] + s['memory_size']
            for s in metadata['load_segments']):
         raise ValueError('The added segment overlaps the game.')
@@ -259,7 +264,7 @@ def instrument(data, sites):
         slot = SEGMENT + k * cb.SLOT
         if site.get('rpc'):
             site['ring'] = rings
-            rings += cb.LOG_ENTRIES * cb.LOG_ENTRY
+            rings += cb.LOG_ENTRIES * rpc_log.ENTRY
             for address, (expected, new) in rpc_log.patches(slot).items():
                 at = seg['file_offset'] + address - seg['virtual_address']
                 if struct.unpack_from(f'<{len(expected)}I', data, at) != expected:
@@ -369,10 +374,11 @@ def drain(memory, ee, site):
         return
     if count - done > cb.LOG_ENTRIES:
         raise RuntimeError(f'{site["name"]}: {count - done - cb.LOG_ENTRIES} records lost; the ring was not read in time.')
-    ring = memory.read(ee + site['ring'], cb.LOG_ENTRIES * cb.LOG_ENTRY)
+    size = entry_size(site)
+    ring = memory.read(ee + site['ring'], cb.LOG_ENTRIES * size)
     for number in range(done + 1, count + 1):
-        at = (number % cb.LOG_ENTRIES) * cb.LOG_ENTRY
-        entry = (rpc_log.unpack if site.get('rpc') else cb.parse_log_entry)(ring[at:at + cb.LOG_ENTRY])
+        at = (number % cb.LOG_ENTRIES) * size
+        entry = (rpc_log.unpack if site.get('rpc') else cb.parse_log_entry)(ring[at:at + size])
         if entry[0] != number:
             return                                                     # Not written whole yet; next time.
         site['entries'].append(entry)

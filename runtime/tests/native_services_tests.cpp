@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include "services/iop_heap.h"
+#include "services/module_loads.h"
 #include "services/pad_block.h"
 #include "services/cri_stream.h"
 #include <cstring>
@@ -11,7 +12,7 @@
 #include <stdexcept>
 #include <vector>
 
-// Native service logic that runs without game code: IOP heap placement and the pad block layout.
+// Native service logic that runs without game code: IOP heap placement, LOADFILE replies and the pad block layout.
 // The full request paths run in the startup probe.
 
 namespace {
@@ -33,6 +34,15 @@ int main() {
     require(heap.allocate(0x2C0)==0x196100 && heap.allocate(0x180)==0x196400,"bank blocks reuse the freed block");
     require(heap.covers(0xCE500,0x16640) && !heap.covers(0x196400,0x201) && !heap.covers(0xCE400,16),"upload coverage");
     require(!heap.allocate(0) && !heap.allocate(0x200000),"empty and oversized requests");
+
+    // LOADFILE: module IDs from 0x19 in load order, as PCSX2's IOP numbers the game's loads; the residency
+    // result per module; unknown paths refused.
+    ModuleLoads modules;
+    const auto sio2man=modules.byPath("cdrom0:\\IRX\\SIO2MAN.IRX;1"),mcman=modules.byPath("cdrom0:\\IRX\\MCMAN.IRX;1");
+    require(sio2man && sio2man->id==0x19 && sio2man->result==0 && mcman && mcman->id==0x1A && mcman->result==2,"module IDs and results");
+    require(!modules.byPath("cdrom0:\\IRX\\OTHER.IRX;1") && modules.loads()==2,"an unknown module is refused and takes no ID");
+    const auto embedded=modules.fromBuffer();
+    require(embedded.id==0x1B && embedded.result==1 && modules.loads()==3,"a load from a buffer takes the next ID");
 
     // Pad block: first transfer zero; neutral, Left and Cross as DBCMAN wrote them.
     DualShock2 pad;

@@ -3,7 +3,7 @@
 *Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441) as a native Windows x64 port: recompiled game code on a minimal native layer ([implementation plan](project/IMPLEMENTATION_PLAN.md)). How each part was checked: [VALIDATION.md](progress/VALIDATION.md). Dated detail: [November](progress/2026-11.md), [October](progress/2026-10.md).
 
 <!-- progress-summary:start -->
-![BT2 port status](progress/dashboard.svg?v=bd120b04)
+![BT2 port status](progress/dashboard.svg?v=f80871b5)
 
 | Milestone | Status |
 | --- | --- |
@@ -12,7 +12,7 @@
 | Films | 🟢 Operational — logo and opening films with sound |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
 | Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the fight's logic and draw steps and the AI match PCSX2 exactly at every frame compared |
-| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
+| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; partly played by hand |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
 | Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
@@ -25,18 +25,11 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
-- **2026-11-13 — the game's service calls against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 8, started): every SIF RPC request and synchronous reply logged in both programs and compared per service. From boot to the title demo the memory card (the save read), disc control, controller and IOP heap services give PCSX2's requests and replies; the other services' differences are listed and being explained.
-- **2026-11-13 — fight pictures with fighters and effects against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): seven more fight frames (a combo, a ki aura, a ki blast with a large glow, a hit) replayed on PCSX2's GS state: every texture, upload and palette word and the depth equal; the pictures within the two renderers' rounding (1 to 53 of 229,376 pixels more than 16 levels apart, thin lines), the port 0.1 to 0.5 levels brighter on average where additive layers stack. PCSX2's threaded software renderer drew the radar half done in some frames; sessions now run it on one thread.
-- **2026-11-13 — Quick start** ([launcher plan](plans/launcher/LAUNCHER_PLAN.md), "Quick start"): a launcher setting that starts at the main menu with the card's save loaded, or a save file created when the card has none; the game's own skips, Continue and New Game pressed by the port where the game's state allows them, the logos, film and title unseen. Checked in the gate (a save as made by hand, the same progress structure as Continue by hand, the card unchanged); 7.1 s to the main menu in a window with the user's save.
-- **2026-11-12 — after the user's online match** ([history](progress/2026-11.md)): leaving an online battle no longer leaves the game stuck (the other player's leaving ends the game at once, with the reason on the launcher's online page); fighters' faces stay HD where the game lights them brighter than the pack's variants; under water on Namek the picture keeps its super-sampled detail (native pass `underwater`). The "press O to recover" prompt online: the game decides it the same way on both machines and the port draws it in every picture tested; waiting for the user's details.
-- **2026-11-12 — GS memory and the picture against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): the fight frame's chain replayed on PCSX2's GS state (from a save state) leaves every texture, palette and work-buffer word as PCSX2's; the Z buffer differs in 1 word; the frame's pixels are 36% equal and 63% one or two levels apart (paraLLEl-GS's rounding against PCSX2's software renderer), 26 of 229,376 more than 16 levels apart (rain streaks, edges).
-- **2026-11-12 — VU1 equal to PCSX2 after a frame's chain; a VU1 fault fixed** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 6): the fight's VIF1 chain replayed from PCSX2's state (VIF1's and VU1's registers taken from PCSX2) leaves VU1's whole data memory equal to PCSX2's at frames 300, 600 and 900. Found on the way: an I-bit pair's upper instruction must read the I before the pair; the port's reading pushed clipped triangles out from a wrong centre.
-- **2026-11-12 — loaded data against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 5): at the first frame of the same versus battle, the loaded fighters and stage (22 MB from `0x700000`) equal PCSX2's but for 2.7 KB of positions and leftovers; the rest differs by route (the port's starter skips the title), the streams' timing and the kernel. Sticks rest at `0x80` in the port, `0x7F` in PCSX2; the fight is the same with either (1,427 frames).
-- **2026-11-12 — press to screen against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 9): windowed, a press shown in 104 ms median by the port with Low input lag (the default), 108 ms by PCSX2, 111 ms by the port at 60 fps, 133 ms by the port without Low input lag.
-- **2026-11-12 — the game's input delay equal to PCSX2's** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 9, first part): a press (Cross, d-pad up) at the same fight frame changes the display lists in the frame that read it and VU1's memory a frame later (2 and 4 fields), in PCSX2 and the port alike. Measured in PCSX2 with logging sites that do not wait, so its timing stays the game's.
-- **2026-11-12 — 300 consecutive fight frames equal to PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 3): every call of the fight frame the replay can run, at frames 600 to 899 of a versus battle, gives PCSX2's words (1,459 calls; 41 stop at the sound requests' system call, a service boundary). The replay now loads the game's random numbers (VU0's R register) where the runtime keeps them.
-- **2026-11-12 — one comparison with PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the port runs the game's code from PCSX2's own state, compared byte for byte. It found three faults in the recompiled code (`sqrt.s` read the wrong register and must round to nearest; `movn`/`movz` copied 128 bits), now fixed. Since then the fight frame's logic and draw steps match PCSX2 at every frame compared, a full versus battle to its K.O. included (about 330 calls).
-- **2026-11-12:** the Namek lava fix at 60 fps (the user still sees a flicker, below); HD packs found in nested folders; the launcher as Play / Online / Settings; one window to an online battle; no freeze on the online connect screen.
+- **2026-11-13 — v0.1 prepared:** the first release package with a short player's guide (install, play, known issues) and release notes, waiting for the user's review before it is published.
+- **2026-11-13 — the game's service calls against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 8): every SIF RPC request and synchronous reply from boot to the title demo, with each buffer's first 24 words. Three faults in the port's native replies fixed (LOADFILE's module IDs, CRI's handles, FILEIO's first file descriptor); memory card, disc control, controller, IOP heap, LOADFILE, FILEIO and CRI now equal PCSX2's, SOUNDS but for two words that follow the IOP's layout. The disc reads are the same sectors in other chunks (timing); the remaining request differences are registers and IOP bytes the game does not read. Open: the controller ports' asynchronous replies.
+- **2026-11-12 to 13 — the fight against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 9): the port runs the game's code from PCSX2's own state, compared byte for byte. The fight frame's logic and draw steps match at every frame compared (300 consecutive frames, a full versus battle to its K.O.); VU1's memory after a frame's chain, every texture and palette word of GS memory and the loaded fighters and stage equal; the pictures within the two renderers' rounding. Four faults found and fixed on the way (`sqrt.s`'s register and rounding, `movn`/`movz`'s width, VU1's I-bit pairs). The game's own input delay equal; press to screen 104 ms in the port with Low input lag, 108 ms in PCSX2.
+- **2026-11-13 — Quick start** ([launcher plan](plans/launcher/LAUNCHER_PLAN.md), "Quick start"): straight to the main menu with the card's save loaded (a save created when the card has none); 7.1 s to the main menu.
+- **2026-11-12 — after the user's online match:** leaving an online battle no longer leaves the other game stuck; fighters' faces stay HD; under water on Namek keeps its super-sampled detail. Also: the Namek lava fix at 60 fps, HD packs in nested folders, the launcher as Play / Online / Settings.
 - **2026-11-11:** online rounds start locked on; "Low input lag" (a picture shown when drawn, 18.7 ms sooner in a 30 fps fight); fighters' HD textures no longer pop.
 - Earlier: [November](progress/2026-11.md), [October](progress/2026-10.md).
 
@@ -69,7 +62,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 | Subsystem | Status | Scope |
 | --- | --- | --- |
 | EE CPU and kernel | 🟢 Operational | Every mapped function compiled; EE floating-point rounding and register widths checked against PCSX2; threads, semaphores, interrupts |
-| IOP services | 🟢 Operational | Native disc, file, controller, memory card, sound and CRI services; no IOP code runs ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
+| IOP services | 🟢 Operational | Native disc, file, controller, memory card, sound and CRI services; no IOP code runs; their replies equal PCSX2's from boot to the title demo but for the controller ports' asynchronous ones and module-local words ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
 | GS and display | 🟢 Operational | paraLLEl-GS on its own threads, native passes for the outline, glow and depth of field |
 | GIF / VIF / VU | 🟢 Operational | DMA as the game uses it; VU1 programs native, checked in the gate |
 | IPU / video | 🟢 Operational | Both films decode through the game's Sofdec library |
@@ -82,12 +75,12 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the services' differences one by one; the rest of loaded data (the globals by route).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the controller ports' asynchronous replies; the rest of loaded data (the globals by route); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.
 5. **The user's decisions:** a matchmaking server and rollback for online; publishing the release.
 
-**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GS memory and pictures on other screens, the services after the boot.
+**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GS memory and pictures on other screens, the services after the title demo.
 
 [Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)

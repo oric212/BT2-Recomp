@@ -15,7 +15,8 @@
 // buffer's size, its address and the checksum of its whole words as the PCSX2 stub computes it (each word added,
 // the sum rotated left by one), then the field (VBlanks delivered). Each bind (sceSifBindRpc, 0x332790) is a B line
 // with the service's ID in the function's place, which names the client's service. Another guest-call hook
-// installed before keeps running.
+// installed before keeps running. Each Q and R line ends with the buffer's first 24 words, as the PCSX2 records hold
+// them (zeros for an empty buffer).
 namespace {
 constexpr std::uint32_t call_rpc=0x332970,after_wait=0x332B34,bind_rpc=0x332790;
 
@@ -30,6 +31,16 @@ std::uint32_t checksum(EeRuntime& runtime,std::uint32_t address,std::uint32_t si
         total+=word;total=(total<<1)|(total>>31);
     }
     return total;
+}
+
+void bufferWords(std::ostream& out,EeRuntime& runtime,std::uint32_t address,std::uint32_t size) {
+    const auto ram=runtime.memory();
+    const auto start=address&0x1FFFFFFF;
+    for(std::uint32_t at=0;at<96;at+=4) {
+        std::uint32_t word=0;
+        if(size && start+at+4<=ram.size())std::memcpy(&word,ram.data()+start+at,4);
+        out<<' '<<word;
+    }
 }
 }
 
@@ -51,6 +62,8 @@ void installRpcLog(EeRuntime& runtime,const std::string& file) {
             kind='R';function=reg(22);client=reg(17);mode=reg(30);size=receive_size;address=reg(20);
         } else return;
         *out<<static_cast<char>(kind)<<std::hex<<' '<<function<<' '<<client<<' '<<mode<<' '<<size<<' '<<address<<' '
-            <<checksum(runtime,address,size)<<std::dec<<' '<<runtime.vblank_deliveries<<'\n';
+            <<checksum(runtime,address,size)<<std::dec<<' '<<runtime.vblank_deliveries<<std::hex;
+        bufferWords(*out,runtime,address,size);
+        *out<<std::dec<<'\n';
     };
 }

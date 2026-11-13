@@ -23,7 +23,7 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 
 ## Progress
 <!-- progress-summary:start -->
-![BT2 port status](docs/progress/dashboard.svg?v=bd120b04)
+![BT2 port status](docs/progress/dashboard.svg?v=f80871b5)
 
 | Milestone | Status |
 | --- | --- |
@@ -32,7 +32,7 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 | Films | 🟢 Operational — logo and opening films with sound |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
 | Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the fight's logic and draw steps and the AI match PCSX2 exactly at every frame compared |
-| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; not yet played through |
+| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; partly played by hand |
 | Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
 | Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
 | Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
