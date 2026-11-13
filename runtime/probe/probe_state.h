@@ -44,6 +44,8 @@ extern std::function<std::vector<std::uint32_t>()> probe_gs_memory;
 void installCallSums(EeRuntime& runtime,const std::string& spec);
 // BT2_EE_CALL_RAM: EE RAM written whole before the n-th call from one call address (call_ram.cpp).
 void installCallRam(EeRuntime& runtime,const std::string& spec);
+// BT2_RPC_LOG: every SIF RPC request and synchronous reply, as a comparison session's service log (rpc_log.cpp).
+void installRpcLog(EeRuntime& runtime,const std::string& file);
 
 // Checkpoint validation (checkpoint_checks.cpp): each throws if the reached state differs.
 void checkRuntimeBoundary(EeRuntime& runtime,R5900Context& context,const ProbeStop& stop);

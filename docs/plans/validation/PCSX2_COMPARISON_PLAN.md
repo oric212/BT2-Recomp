@@ -347,9 +347,10 @@ aura), 2700 (a ki blast and a large glow), 3000 (a hit with its lights). Session
   depth itself is equal where only depth was written (frame 1500: none of 10,496 differ).
 - **The blur pyramid (frame 2400).** The frame is filtered down to 256 × 256 (block `0x2A00`), 128 × 128
   (`0x2E00`) and 64 × 64 (`0x3EC0`), blurred back and forth between `0x3EC0` and `0x3F00` with one-texel offsets and
-  added back up. The 128 × 128 level is equal; the 64 × 64 buffers differ by up to 7 levels in their lit lower rows
-  (mean 0.75 in the port, 0.48 in PCSX2): bilinear rounding summed over the passes. That is the frame's 2,348 and
-  3,349 "rest" words.
+  added back up. Later in the frame textures are uploaded over the 256 × 256 and 128 × 128 levels, so only the
+  64 × 64 buffers and the 256 × 256 level's last rows survive to the frame's end: the 64 × 64 buffers differ by up to
+  7 levels in their lit lower rows (mean 0.75 in the port, 0.48 in PCSX2), the bilinear passes' rounding summed.
+  That is the frame's 2,348 and 3,349 "rest" words.
 - **Stacked additive layers.** Where glows overlap (2700) pixels differ by 3 to 16 levels, the port brighter; over
   each frame the port is brighter by 0.09 to 0.51 levels on average. Every texture, upload and palette word is
   equal, so this is how paraLLEl-GS and PCSX2's software renderer round blending, modulation and filtering. Which
@@ -365,9 +366,55 @@ aura), 2700 (a ki blast and a large glow), 3000 (a hit with its lights). Session
 Pictures in `work/frames/pcsx2-compare/` (`gs4-102ED8-*`, `gs5b-102ED8-*`, `gs5b-*-side.png`, `gs5b-2400-pyramid.png`).
 The fight's frame is the same picture as PCSX2's at every frame compared, within the two renderers' rounding.
 
-**Next:** the rounding rules by single draws (one modulated texture, one additive blend, one bilinear sprite) on both
-renderers, to tell whose rounding the port has; the globals' 152 ranges by route (or the port through the same
-route); step 8, the services. Press to sound and fullscreen when wanted.
+**The port's rounding rules (2026-11-13).** Measured by one crafted GIF packet through `BT2_REPLAY_CALL` (function 0,
+no game code: a texture whose first two texels per row are pairs such as 0 and 1, 255 and 0, then a 16-pixel bilinear
+sprite per row with the filter's weight stepping by 1/16): every result is the exact weighted mean **rounded to
+nearest, ties to even** (0 and 1 at 8/16 give 0; 1 and 2 give 2; 255 and 0 give 128), where truncation would give
+0, 1 and 127. paraLLEl-GS filters with the GPU's sampler and rounds (`roundEven(255 · c)`), blends as
+`floor((A - B) · C / 128) + D` and modulates as `floor(Cf · Ct / 128)`, the GS manual's integer formulas. PCSX2's
+rule could not be measured here: the pyramid's intermediate levels are overwritten before the frame's end and a
+checkpoint cannot stop inside the chain. **Whose rounding the console has is not known** and not decidable here:
+paraLLEl-GS's author notes that PCSX2's software renderer is not bit-exact with the console either and that no
+public hardware tests of the GS's interpolation exist. The port keeps paraLLEl-GS's rules; the differences above
+stay measured (0.1 to 0.5 levels a frame).
+
+**Step 8, the services: the log and a first comparison (2026-11-13).** Every service call the game makes goes
+through the library's `sceSifCallRpc` (0x332970: client a0, function a1, mode a2, send buffer and size a3 and t0,
+receive buffer and size t1 and t2; the services are bound by `sceSifBindRpc`, 0x332790, client a0, service a1).
+`session.py --rpc-log COUNT` patches it twice (`rpc_log.py`): its entry logs each request, and 0x332B3C, reached only
+after the semaphore wait of a synchronous call that was sent, logs the reply (s1 the client, s6 the function, fp the
+mode, s4 the receive buffer, the packet's +44 its size). Each record holds the function, client, mode, the buffer's
+size, address and checksum; the stubs use only registers the function does not hold there, so calls on any thread
+are logged, and the host drains the ring while PCSX2 runs (37,311 records from boot to the title demo's first
+fight frame, none lost). The reply mark is bit 31 of the mode, as the controller's function numbers use bit 31
+(0x80001363). The port's side is `BT2_RPC_LOG=<file>` (`runtime/probe/rpc_log.cpp`): the same function runs there
+as recompiled code, so the same points are logged (its call from 0x332B34 right after the wait), and binds as `B`
+lines name each client's service. `rpc_compare.py` compares the two per client in order (the programs' timing
+differs, each service's order does not).
+
+Session `rpc2` (PCSX2, boot to the demo's first fight frame) against the port booted with the same card's save
+(`card-pcsx2`, no input, 3,000 flips; without the save the game polls the card and the route differs):
+
+| Service | Calls compared | Result |
+| --- | --- | --- |
+| Memory card (`0x80000400`) | 14 | equal: card info, the save opened and read |
+| Disc control (`0x80000593`), CD init (`0x80000592`) | 706, 4 | equal |
+| Controller (`0x80001300`), IOP heap (`0x80000003`) | 18, 22 | equal |
+| Disc commands (`0x80000595`) | 1,056 | equal to call 562; then 165 sector-read requests differ by small amounts in one word |
+| Controller ports (`0x8000131E`, `0x8000131F`) | 2,991 each | all but the first differ: the polls carry the pads' timing |
+| LOADFILE (`0x80000006`) | 32 | 18 differ: the load reply's 8 bytes (checksum 0x64 in PCSX2, 0x4 in the port), then the next request, which shares its buffer |
+| FILEIO (`0x80000001`) | 12 | 4 seek requests (28 bytes) differ in one word |
+| CRI (`0x90000200`) | 90 | 65 differ, from the first reply of function 2 (4 bytes) |
+| Sound driver (`0x80000701`), SOUNDS (`0x2000004`) | 6, 10 | requests 0x80D0 and 0x80F0 differ; SOUNDS's reply to function 0x20 (64 bytes) differs |
+| Disc (`0x80000597`) | 12 | 1 request (300 bytes) differs |
+
+Not yet told apart: which of these differences are timing (stream positions, counters, the pads) and which are the
+port's replies (the LOADFILE reply is the first candidate: module numbers the port invents). A checksum cannot say;
+**next** the records carry their buffers' first words (or a checkpoint at the call holds the whole buffer), and each
+difference gets its explanation or its fix.
+
+**Next:** the service differences above, one by one; the globals' 152 ranges by route (or the port through the
+same route). Press to sound and fullscreen when wanted.
 
 ## Unknowns
 

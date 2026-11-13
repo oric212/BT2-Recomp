@@ -53,6 +53,7 @@ import context_block as cb  # noqa: E402
 import ram_store  # noqa: E402
 import vu_registers as vr  # noqa: E402
 import pine  # noqa: E402
+import rpc_log  # noqa: E402
 import capture_ee as ce  # noqa: E402  (the ELF check and the PE export reader)
 
 SITES = ROOT / 'config/pcsx2_compare_sites.json'
@@ -256,6 +257,17 @@ def instrument(data, sites):
         offset = seg['file_offset'] + hook - seg['virtual_address']
         call, delay = struct.unpack_from('<2I', data, offset)
         slot = SEGMENT + k * cb.SLOT
+        if site.get('rpc'):
+            site['ring'] = rings
+            rings += cb.LOG_ENTRIES * cb.LOG_ENTRY
+            for address, (expected, new) in rpc_log.patches(slot).items():
+                at = seg['file_offset'] + address - seg['virtual_address']
+                if struct.unpack_from(f'<{len(expected)}I', data, at) != expected:
+                    raise ValueError(f"rpc: the words at {address:#x} are not sceSifCallRpc's.")
+                struct.pack_into(f'<{len(new)}I', patched, at, *new)
+            segment += rpc_log.stub_words(slot, site['ring'])
+            site['slot'] = slot
+            continue
         if site.get('log'):
             if target is None and call >> 26 == 3:
                 target = site['target'] = (call & 0x3FFFFFF) << 2
@@ -360,7 +372,7 @@ def drain(memory, ee, site):
     ring = memory.read(ee + site['ring'], cb.LOG_ENTRIES * cb.LOG_ENTRY)
     for number in range(done + 1, count + 1):
         at = (number % cb.LOG_ENTRIES) * cb.LOG_ENTRY
-        entry = cb.parse_log_entry(ring[at:at + cb.LOG_ENTRY])
+        entry = (rpc_log.unpack if site.get('rpc') else cb.parse_log_entry)(ring[at:at + cb.LOG_ENTRY])
         if entry[0] != number:
             return                                                     # Not written whole yet; next time.
         site['entries'].append(entry)
@@ -511,11 +523,11 @@ def run(args, sites):
         process.wait()
         for site in sites:
             if site.get('log'):
+                fields = rpc_log.FIELDS if site.get('rpc') else ('call', 'cycles', 'word1', 'word2', 'sum1', 'sum2', 'sum3')
                 (folder / f'{site["name"]}.log.json').write_text(json.dumps(
-                    [dict(zip(('call', 'cycles', 'word1', 'word2', 'sum1', 'sum2', 'sum3'), e)) for e in site.get('entries', [])]),
-                    encoding='utf-8')
+                    [dict(zip(fields, e)) for e in site.get('entries', [])]), encoding='utf-8')
                 print(f'{site["name"]}: {len(site.get("entries", []))} calls logged', flush=True)
-        summary = {'sites': [{k: (f'{v:#x}' if k in ('call', 'target', 'slot', 'ring') else v) for k, v in s.items()
+        summary = {'sites': [{k: (f'{v:#x}' if k in ('call', 'target', 'slot', 'ring') and v is not None else v) for k, v in s.items()
                               if k not in ('pending_after', 'entries')} for s in sites],
                    'segment': [SEGMENT, len(sites) * cb.SLOT], 'checkpoints': taken,
                    'pcsx2': str(args.pcsx2), 'seconds': round(time.monotonic() - started, 1)}
@@ -544,6 +556,9 @@ def main():
     parser.add_argument('--idle', type=float, default=0, help='End the session this many seconds after the last checkpoint.')
     parser.add_argument('--save-state', action='append', default=[],
                         help="SITE: PCSX2's save state at each of that site's checkpoints (state.p2s; GS memory, step 7).")
+    parser.add_argument('--rpc-log', type=int, metavar='COUNT',
+                        help='Log the first COUNT records of the SIF RPC calls (requests and synchronous replies) to '
+                             'rpc.log.json, without waiting (step 8, the services).')
     parser.add_argument('--vu1-interpreter', action='store_true',
                         help="PCSX2's VU1 interpreter instead of its microVU recompiler (to tell the two apart).")
     args = parser.parse_args()
@@ -551,10 +566,13 @@ def main():
     try:
         executable = (ROOT / 'rom/SLUS_214.41').read_bytes()
         texts = args.site + [t for spec in args.callees_of for t in callees(executable, spec)]
-        if not texts and not args.log and not args.set:
-            parser.error('Give --site, --callees-of or --log.')
+        if not texts and not args.log and not args.set and not args.rpc_log:
+            parser.error('Give --site, --callees-of, --log or --rpc-log.')
         sites = [parse_site(text, catalogue) for text in texts] + [parse_log(text, catalogue) for text in args.log] \
             + [parse_set(text, catalogue) for text in args.set]
+        if args.rpc_log:
+            sites.append({'name': 'rpc', 'rpc': True, 'log': True, 'count': args.rpc_log, 'call': rpc_log.CALL,
+                          'target': None})
     except ValueError as error:
         parser.error(str(error))
     if len({s['name'] for s in sites}) != len(sites):
