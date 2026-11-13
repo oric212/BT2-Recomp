@@ -324,15 +324,58 @@ exact, and the frame is the same picture within the GS renderers' rounding. **No
 fighters in view (frame 300 is the intro's stage pan), frames with the port's native passes on (they are the
 port's, not the original's), super-sampling and the enhancements (not the original's), other screens.
 
-**Next:** the same at fight frames with the fighters, super attacks and effects; the globals' 152 ranges by route
-(or the port through the same route). Press to sound and fullscreen when wanted.
+**Step 7 at frames with the fighters and effects (2026-11-13).** The same comparison at seven more frames of the
+versus battle: 900 (a fighter far off, the radar shown), 1500 (both fighters close, a combo), 1800, 2100, 2400 (a ki
+aura), 2700 (a ki blast and a large glow), 3000 (a hit with its lights). Sessions `gs4` (900, 1500) and `gs5b`
+(the rest), PCSX2's software renderer on one thread:
+
+| Frame | Rest differ | Z differ | Pixels equal | by 1 | by 2 | 3 to 16 | over 16 | largest |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 900 | 0 of 0 | 7,514 of 15,671 | 85,388 | 121,985 | 21,304 | 698 | 1 | 26 |
+| 1500 | 0 of 61 | 0 of 10,496 | 124,292 | 100,784 | 3,339 | 942 | 19 | 52 |
+| 1800 | 0 of 118 | 4,434 of 28,061 | 121,855 | 99,954 | 6,744 | 786 | 37 | 189 |
+| 2100 | 0 of 181 | 4,466 of 18,309 | 135,535 | 88,103 | 4,505 | 1,194 | 39 | 222 |
+| 2400 | 3,177 of 2,348 | 4,565 of 23,934 | 109,801 | 97,530 | 15,513 | 6,502 | 30 | 61 |
+| 2700 | 0 of 4,171 | 5,278 of 21,192 | 102,133 | 76,379 | 16,586 | 34,225 | 53 | 134 |
+| 3000 | 0 of 74 | 5,599 of 47,198 | 91,863 | 115,291 | 16,920 | 5,285 | 17 | 138 |
+
+("of" is the words PCSX2 changed.) What the differences are:
+
+- **The Z buffer's pages are also a work area.** The game composes the radar in the first 32 lines of the Z buffer's
+  pages (four 128 × 32 pieces, as colour) and copies them into the frame; the Z words that differ are there, a level
+  or two per channel as in the frame, and on the radar's thin lines (its ring and grid fall a pixel apart). The
+  depth itself is equal where only depth was written (frame 1500: none of 10,496 differ).
+- **The blur pyramid (frame 2400).** The frame is filtered down to 256 × 256 (block `0x2A00`), 128 × 128
+  (`0x2E00`) and 64 × 64 (`0x3EC0`), blurred back and forth between `0x3EC0` and `0x3F00` with one-texel offsets and
+  added back up. The 128 × 128 level is equal; the 64 × 64 buffers differ by up to 7 levels in their lit lower rows
+  (mean 0.75 in the port, 0.48 in PCSX2): bilinear rounding summed over the passes. That is the frame's 2,348 and
+  3,349 "rest" words.
+- **Stacked additive layers.** Where glows overlap (2700) pixels differ by 3 to 16 levels, the port brighter; over
+  each frame the port is brighter by 0.09 to 0.51 levels on average. Every texture, upload and palette word is
+  equal, so this is how paraLLEl-GS and PCSX2's software renderer round blending, modulation and filtering. Which
+  of the two the console agrees with these programs cannot tell; a single-draw test of each rule would.
+- **PCSX2's software renderer with threads is not a reference for this.** In the first sessions (`gs5`, PCSX2's
+  default threads) the radar's strips at 2400 and 3000 were drawn from the work area half done (horizontal bands of
+  the background), pixels up to 245 levels apart, and two sessions with different sites gave different GS memory at
+  the same frame. PCSX2 had finished (its frame did not change up to the next frame's kick, VIF1's DMA idle). With
+  `extrathreads = 0` (now set by `session.py`) every radar is whole and the large differences are gone. `gif_dump_draws.py`
+  now also lists a replay's draws (a dump without a final flip), which is how the targets above were found
+  (`BT2_GIF_DUMP=0:2:<file>` with `gs_compare.py`'s replay).
+
+Pictures in `work/frames/pcsx2-compare/` (`gs4-102ED8-*`, `gs5b-102ED8-*`, `gs5b-*-side.png`, `gs5b-2400-pyramid.png`).
+The fight's frame is the same picture as PCSX2's at every frame compared, within the two renderers' rounding.
+
+**Next:** the rounding rules by single draws (one modulated texture, one additive blend, one bilinear sprite) on both
+renderers, to tell whose rounding the port has; the globals' 152 ranges by route (or the port through the same
+route); step 8, the services. Press to sound and fullscreen when wanted.
 
 ## Unknowns
 
 
 - How many of the fight's steps can be replayed without reaching a service or DMA (step 2 finds out).
 - Whether a save state taken while the stub waits changes what PCSX2 draws afterwards (states are taken there and
-  the session goes on; a change to later frames has not been looked for).
+  the session goes on; a change to later frames has not been looked for). Sessions with different sites reach
+  different GS memory at the same frame; with PCSX2's renderer on one thread whether they still do is not checked.
 - Which word of the display shows when a drawn frame reaches the screen in PCSX2 (GS memory and its privileged
   registers are not exported; the tester sees the screen instead).
 - Whether the desktop duplication API sees a fullscreen program's pictures when they bypass the compositor (if not,

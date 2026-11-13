@@ -20,7 +20,7 @@ validated. The current status is in [PROG.md](../PROG.md); the details of each c
 | --- | --- | --- | --- |
 | Fight logic and AI | Every replayable step of 300 consecutive fight frames equal to PCSX2 | Original | 2026-11-12 |
 | 3D pipeline (VU1) | VU1 memory after a fight frame's chain equal to PCSX2 | Original | 2026-11-12 |
-| Pictures (GS) | One fight frame: textures exact, picture within 1 to 2 levels | Original | 2026-11-12 |
+| Pictures (GS) | Eight fight frames, fighters and effects included: textures exact, picture within the renderers' rounding | Original | 2026-11-13 |
 | Loaded data | Fighters and stage in memory equal to PCSX2 at a fight's start | Original | 2026-11-12 |
 | Input delay | Same delay in fields as PCSX2; press to screen as fast as PCSX2 | Original, Measured | 2026-11-12 |
 | Saves | A new save byte-identical to the one the original wrote in PCSX2 | Original | 2026-11-09 |
@@ -54,7 +54,7 @@ Every difference is therefore the port's own, and each one found is either fixed
 | Draw step | `0x102C40` at frames 150, 450, 750 and every 600 frames of a full battle | Equal | 2026-11-12 |
 | Loaded data | All 32 MB of memory at the first frame of the same battle | Fighters and stage (22 MB) equal but 2.7 KB of positions and leftovers; the rest explained (below) | 2026-11-12 |
 | VU1 | VU1 memory after the fight frame's VIF1 chain, frames 300, 600, 900 | Equal (16 KB), after 1 fix; also against PCSX2's VU1 interpreter | 2026-11-12 |
-| GS memory | Fight frame 300: GS memory after the frame, PCSX2's software renderer | Textures, palettes, work buffers equal; Z buffer 1 word apart; picture: 36% of pixels equal, 63% 1 to 2 levels apart, 26 of 229,376 more than 16 | 2026-11-12 |
+| GS memory | Fight frames 300, 900, 1500, 1800, 2100, 2400, 2700, 3000: GS memory after the frame, PCSX2's software renderer on one thread | Textures, palettes, uploads equal; depth equal; picture: 36 to 59% of pixels equal, most others 1 to 2 levels apart, 1 to 53 of 229,376 more than 16 (thin lines); the port 0.1 to 0.5 levels brighter on average, up to 16 where glows stack; the blur buffers up to 7 levels apart | 2026-11-13 |
 | Input delay in fields | A press at fight frame 480 (Cross, d-pad up) | The display lists change in the frame that read it, VU1 a frame later: same in both | 2026-11-12 |
 | Press to screen | 30 unpauses per setup, windowed, screen read every 7 ms | PCSX2 108 ms; port 104 ms (Low input lag, default), 111 ms (60 fps), 133 ms (Low input lag off); 105 and 117 ms with HD, 16x, widescreen | 2026-11-12 |
 | Saves | A new save written by the port's title New Game | Byte-identical to the original's | 2026-11-09 |
@@ -74,7 +74,7 @@ Every difference is therefore the port's own, and each one found is either fixed
 
 | Difference | Reason |
 | --- | --- |
-| Picture pixels 1 to 2 levels apart; rare larger ones on thin lines | paraLLEl-GS rounds some interpolation differently from PCSX2's software renderer (documented as not bit-exact) |
+| Picture pixels 1 to 2 levels apart; rare larger ones on thin lines; the port slightly brighter where additive layers stack | paraLLEl-GS rounds some interpolation, blending and filtering differently from PCSX2's software renderer (documented as not bit-exact); which agrees with the console is not known |
 | Memory below `0x100000` | The kernel: PCSX2 runs the BIOS's, the port answers it natively |
 | Stream and display-list buffers, stack, counters | Timing and route: the port loads faster and its starter skips the logos, films and title |
 | 23 KB of game globals | Same route difference; not explained one by one |
@@ -82,7 +82,7 @@ Every difference is therefore the port's own, and each one found is either fixed
 
 ### Not compared with PCSX2 yet
 
-- GS memory at fight frames with the fighters and effects in view (only frame 300, the intro's stage pan, so far).
+- Whose rounding the console has: single draws (a modulated texture, an additive blend, a bilinear sprite) on both renderers.
 - Other screens' logic and pictures: menus, character select, the story map, towns.
 - The services' requests and replies after the boot (sound, CRI, card, disc).
 - Fullscreen press to screen; press to sound.

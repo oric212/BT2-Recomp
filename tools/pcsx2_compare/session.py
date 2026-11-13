@@ -336,9 +336,12 @@ def prepare(folder, pcsx2, bios, card, realtime=False, vu1_interpreter=False):
         # Realtime sessions keep PCSX2's defaults: its automatic renderer, the frame limiter and sound.
         # VU1 on the EE's thread (MTVU off): with its own thread VU1's memory, read from outside the process, need
         # not hold the work of a chain that has finished (step 6).
+        # The software renderer on one thread (extrathreads 0): with its worker threads a draw that samples what
+        # the frame drew just before was sometimes read half done (the radar's strips, step 7, fight frames
+        # 2400 and 3000 of session gs5), and its GS memory differed between runs.
         + ('[InputSources]\nKeyboard = true\n[Pad1]\nType = DualShock2\n'
            + ''.join(f'{button} = Keyboard/{key}\n' for button, key in KEYS.items()) if realtime else
-           '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\n[SPU2/Output]\nOutputModule = nullout\n'
+           '[EmuCore/GS]\nRenderer = 13\nFrameLimitEnable = false\nextrathreads = 0\n[SPU2/Output]\nOutputModule = nullout\n'
            '[EmuCore/Speedhacks]\nvuThread = false\n'
            + ('[EmuCore/CPU/Recompiler]\nEnableVU1 = false\n' if vu1_interpreter else ''))
         + '[MemoryCards]\nSlot1_Enable = true\nSlot1_Filename = Mcd001.ps2\nSlot2_Enable = false\n', encoding='utf-8')

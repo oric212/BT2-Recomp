@@ -297,6 +297,10 @@ def main():
             draws.lines = []
         else:
             raise SystemExit(f"bad record at {at - 1}")
+    draws.end()                                   # A dump without a final flip (a replayed call, BT2_REPLAY_CALL).
+    if draws.lines and args.flip is None:
+        print("after the last flip")
+        sys.stdout.write('\n'.join(draws.lines) + '\n')
 
 
 if __name__ == '__main__':

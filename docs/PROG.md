@@ -25,6 +25,7 @@ Status: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · �
 
 ## Latest
 
+- **2026-11-13 — fight pictures with fighters and effects against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): seven more fight frames (a combo, a ki aura, a ki blast with a large glow, a hit) replayed on PCSX2's GS state: every texture, upload and palette word and the depth equal; the pictures within the two renderers' rounding (1 to 53 of 229,376 pixels more than 16 levels apart, thin lines), the port 0.1 to 0.5 levels brighter on average where additive layers stack. PCSX2's threaded software renderer drew the radar half done in some frames; sessions now run it on one thread.
 - **2026-11-13 — Quick start** ([launcher plan](plans/launcher/LAUNCHER_PLAN.md), "Quick start"): a launcher setting that starts at the main menu with the card's save loaded, or a save file created when the card has none; the game's own skips, Continue and New Game pressed by the port where the game's state allows them, the logos, film and title unseen. Checked in the gate (a save as made by hand, the same progress structure as Continue by hand, the card unchanged); 7.1 s to the main menu in a window with the user's save.
 - **2026-11-12 — after the user's online match** ([history](progress/2026-11.md)): leaving an online battle no longer leaves the game stuck (the other player's leaving ends the game at once, with the reason on the launcher's online page); fighters' faces stay HD where the game lights them brighter than the pack's variants; under water on Namek the picture keeps its super-sampled detail (native pass `underwater`). The "press O to recover" prompt online: the game decides it the same way on both machines and the port draws it in every picture tested; waiting for the user's details.
 - **2026-11-12 — GS memory and the picture against PCSX2** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md), step 7): the fight frame's chain replayed on PCSX2's GS state (from a save state) leaves every texture, palette and work-buffer word as PCSX2's; the Z buffer differs in 1 word; the frame's pixels are 36% equal and 63% one or two levels apart (paraLLEl-GS's rounding against PCSX2's software renderer), 26 of 229,376 more than 16 levels apart (rain streaks, edges).
@@ -80,12 +81,12 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): GS memory and pictures at frames with the fighters and effects, the services; the rest of loaded data (the globals by route).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the renderers' rounding by single draws, the services; the rest of loaded data (the globals by route).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.
 5. **The user's decisions:** a matchmaking server and rollback for online; publishing the release.
 
-**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GS memory beyond one fight frame, GS memory and pictures, the services after the boot.
+**Not compared with the original yet:** other screens' logic, loaded data at other events than a fight's first frame, VU1 memory on other screens, GS memory and pictures on other screens, the services after the boot.
 
 [Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)

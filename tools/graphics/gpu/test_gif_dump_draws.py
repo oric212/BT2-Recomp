@@ -60,6 +60,16 @@ class GifDumpDrawsTest(unittest.TestCase):
         self.assertIn('draw sprite', self.run_tool(dump))
         self.assertNotIn('draw sprite', self.run_tool(dump, '--touching-y', '447'))
 
+    def test_dump_without_a_flip_lists_its_draws(self):
+        # A replayed call (BT2_REPLAY_CALL) writes no flip record: its draws come after the last flip.
+        state = [ad(0x4C, 0xE00 // 32), ad(0x00, 6)]
+        vertices = [ad(0x05, (10 << 4) | ((10 << 4) << 16)), ad(0x05, (20 << 4) | ((20 << 4) << 16))]
+        dump = transfer(giftag(len(state + vertices), 1, [0xE]) + b''.join(state + vertices))
+        out = self.run_tool(dump)
+        self.assertIn('after the last flip', out)
+        self.assertIn('draw sprite x2', out)
+        self.assertNotIn('after the last flip', self.run_tool(dump + b'F' + struct.pack('<I', 1)))
+
     def test_area_counts_triangles_and_sprites(self):
         # A sprite of 10 x 10 pixels, then a strip of two triangles over a 4 x 2 rectangle, then a triangle half outside
         # the scissor (x 0..63): 32 x 32 of its 64 x 32 counted.
