@@ -313,6 +313,23 @@ def press_stub_words(slot, target, entry, presses):
     return bytes(image)
 
 
+def installer_stub_words(slot, target, delay, resume, writes):
+    """A stub for one call site (`jal target`, delay slot `delay`, returning to `resume`) that first stores each
+    (address, word) of `writes` with plain EE stores, then makes the call: sites in code the game loads at run time
+    (the overlay), written after the load and before that code first runs. Uses t8 and t9 only (free at a call)."""
+    check_delay_slot(delay)
+    code = []
+    for address, word in writes:
+        code += [_i(0x0F, 0, T8, address >> 16), _i(0x0D, T8, T8, address & 0xFFFF),
+                 _i(0x0F, 0, T9, (word >> 16) & 0xFFFF), _i(0x0D, T9, T9, word & 0xFFFF), _i(0x2B, T8, T9, 0)]
+    code += [delay, 0x0C000000 | ((target >> 2) & 0x3FFFFFF), 0, 0x08000000 | ((resume >> 2) & 0x3FFFFFF), 0]
+    if len(code) * 4 > DATA:
+        raise ValueError('Too many overlay sites for the installer stub.')
+    image = bytearray(SLOT)
+    struct.pack_into(f'<{len(code)}I', image, 0, *code)
+    return bytes(image)
+
+
 def parse_log_entry(entry):
     """One ring record: (call number, Count, word 1, word 2, checksum 1, checksum 2, checksum 3)."""
     return struct.unpack_from('<7I', entry)

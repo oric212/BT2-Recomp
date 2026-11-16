@@ -513,11 +513,24 @@ Continue), Cross at 1,500, the title released at 1,539. At field 2,806 the progr
 as the port's quick start at its main menu) and the mode 4. Timeline found with `--log "@28BF54:N,word=4213B0,
 word=<title+0xCC>"`; a session's timing repeats from run to run with the same script.
 
-**Next:** sites in overlay code: the menus' frame steps are overlay functions (DBZP.BIN, loaded after boot), which
-the executable's patching cannot reach and PCSX2 compiles from RAM; a stub hooked after the overlay's load would
-write the overlay sites from EE code (EE stores make PCSX2 drop its compiled blocks). Then step 4's replays from the
-main menu, character select and the story map; steps 6 and 7 on other screens; step 10. Press to sound and
-fullscreen when wanted.
+**Step 4, overlay sites and the main menu (2026-11-16).** Sites may now lie in the overlay (DBZP.BIN at
+`0x3B3100`, loaded by main's first frame step): `session.py` builds their stubs from the local overlay image
+(`work/overlay/dbzp`, its pinned identity checked) and an installer stub on main's one call into the overlay
+(`jal 0x3B7FA8` at `0x100688`) writes their jumps with EE stores before that code first runs, so PCSX2 has none of
+it compiled. `--callees-of` takes overlay functions (the overlay's generation map). `compare_calls.py` puts the
+overlay's original words back at those sites in the replay's RAM (the port runs overlay code only while RAM holds
+the bytes it was generated from) and leaves every patched word out of the comparison (now both words of a call
+site, its delay slot too, also in `loaded_data.py`).
+
+The main menu (`0x3B4250`) loops once a frame through the frame's work in the executable (the pad update, kicks,
+the flip) and two overlay steps, `0x3B3E50` (at `0x3B42B0`) and `0x3B37A8` (at `0x3B42B8`), found with
+`BT2_FIELD_CALLS` at a main-menu field of the port's quick start. Session `menus7` (the main-menu route above, both
+steps before and after at the menu's frames 60 to 62): **all six calls equal** in the port's replay (28 to 69 words
+written; registers equal). PCSX2 changed 5,000 to 12,000 other words during each call (interrupts, DMA and other
+threads while it waited at the checkpoint), none of them written by the port.
+
+**Next:** the routes to character selection, the story map and a town (pad scripts as the main menu's), their steps
+replayed the same way; steps 6 and 7 on other screens; step 10. Press to sound and fullscreen when wanted.
 
 ## Unknowns
 

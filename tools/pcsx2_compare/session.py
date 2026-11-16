@@ -284,14 +284,20 @@ def callees(data, text):
     map, work/bt2-generation/candidates.csv)."""
     function, rest = text.split(':', 1)
     start = int(function, 16)
-    rows = [line.split(',') for line in (ROOT / 'work/bt2-generation/candidates.csv').read_text().splitlines()[1:]]
+    overlay = in_overlay(start)                                # The overlay's own map and image (sites written at run time).
+    table = ROOT / ('work/bt2-generation/dbzp/candidates.csv' if overlay else 'work/bt2-generation/candidates.csv')
+    rows = [line.split(',') for line in table.read_text().splitlines()[1:]]
     end = next((int(r[2], 16) for r in rows if int(r[1], 16) == start), None)
     if end is None:
         raise ValueError(f'{start:#x} is not a function of the generation map.')
-    seg = next(s for s in ce.inspect(data)['load_segments'] if s['flags'] & 1 and s['virtual_address'] <= start < s['virtual_address'] + s['file_size'])
+    if overlay:
+        image, base = overlay_image(), OVERLAY_BASE
+    else:
+        seg = next(s for s in ce.inspect(data)['load_segments'] if s['flags'] & 1 and s['virtual_address'] <= start < s['virtual_address'] + s['file_size'])
+        image, base = data, seg['virtual_address'] - seg['file_offset']
     out = []
     for address in range(start, end, 4):
-        word, delay = struct.unpack_from('<2I', data, seg['file_offset'] + address - seg['virtual_address'])
+        word, delay = struct.unpack_from('<2I', image, address - base)
         if word >> 26 == 3:
             try:
                 cb.check_delay_slot(delay)
@@ -306,29 +312,68 @@ def entry_size(site):
     return rpc_log.ENTRY if site.get('rpc') else cb.LOG_ENTRY
 
 
+# The overlay (DBZP.BIN, tools/ps2recomp/overlay_programs.py): loaded by main's first frame step and entered by the
+# jal at OVERLAY_CALL. Sites in it are built from its local image and written at run time by an installer stub.
+OVERLAY_CALL, OVERLAY_ENTRY = 0x100688, 0x3B7FA8
+OVERLAY_BASE, OVERLAY_SIZE = 0x3B3100, 0x7D48F
+
+
+def in_overlay(address):
+    return OVERLAY_BASE <= address < OVERLAY_BASE + OVERLAY_SIZE
+
+
+def overlay_image():
+    """The overlay's local image (work/overlay/dbzp, checked against its pinned identity)."""
+    sys.path.insert(0, str(ROOT / 'tools/ps2recomp'))
+    import overlay_programs
+    program = overlay_programs.PROGRAMS['dbzp']
+    if (program['base'], program['size'], program['entry']) != (OVERLAY_BASE, OVERLAY_SIZE, OVERLAY_ENTRY):
+        raise ValueError('The overlay table changed; update session.py.')
+    return overlay_programs.load('dbzp')[0]
+
+
 def instrument(data, sites):
     """The executable with each site's call sent to its stub, the stubs in one added load segment."""
     metadata = ce.inspect(data)
     if metadata['sha256'] != ce.EXPECTED_SHA:
         raise ValueError('Instrumentation requires the validated local BT2 executable.')
-    rings = SEGMENT + len(sites) * cb.SLOT                    # Each logging site's ring, after the stubs.
+    overlay = overlay_image() if any(in_overlay(s['call']) for s in sites) else None
+    slots = len(sites) + (1 if overlay else 0)                 # The overlay's installer takes a slot of its own.
+    rings = SEGMENT + slots * cb.SLOT                          # Each logging site's ring, after the stubs.
     end = rings + sum(entry_size(s) for s in sites if s.get('log')) * cb.LOG_ENTRIES
     if any(s['virtual_address'] < end and SEGMENT < s['virtual_address'] + s['memory_size']
            for s in metadata['load_segments']):
         raise ValueError('The added segment overlaps the game.')
     if end > 0x01EFD000:
         raise ValueError('Too many sites for the region the game leaves empty (0x1D00000 to 0x1EFD000).')
-    patched, segment = bytearray(data), bytearray()
-    for k, site in enumerate(sites):
-        hook, target = site['call'], site['target']
+    patched, segment, overlay_writes = bytearray(data), bytearray(), []
+
+    def code_segment(hook):
         seg = next((s for s in metadata['load_segments']
                     if s['flags'] & 1 and s['virtual_address'] <= hook < s['virtual_address'] + s['file_size']), None)
         if seg is None:
-            raise ValueError(f'{site["name"]}: {hook:#x} is not in the executable (overlay sites are not supported yet).')
-        offset = seg['file_offset'] + hook - seg['virtual_address']
-        call, delay = struct.unpack_from('<2I', data, offset)
+            raise ValueError(f'{hook:#x} is neither in the executable nor in the overlay.')
+        return seg
+
+    def words_at(hook):                                       # The two original words at a site.
+        if in_overlay(hook):
+            return struct.unpack_from('<2I', overlay, hook - OVERLAY_BASE)
+        seg = code_segment(hook)
+        return struct.unpack_from('<2I', data, seg['file_offset'] + hook - seg['virtual_address'])
+
+    def send_to(hook, slot):                                  # The site's words become j slot; nop.
+        if in_overlay(hook):                                  # Written by the installer once the overlay is loaded.
+            overlay_writes.extend([(hook, 0x08000000 | (slot >> 2)), (hook + 4, 0)])
+            return
+        seg = code_segment(hook)
+        struct.pack_into('<2I', patched, seg['file_offset'] + hook - seg['virtual_address'], 0x08000000 | (slot >> 2), 0)
+
+    for k, site in enumerate(sites):
+        hook, target = site['call'], site['target']
+        call, delay = words_at(hook)
         slot = SEGMENT + k * cb.SLOT
         if site.get('rpc'):
+            seg = code_segment(hook)
             site['ring'] = rings
             rings += cb.LOG_ENTRIES * rpc_log.ENTRY
             for address, (expected, new) in rpc_log.patches(slot).items():
@@ -349,22 +394,22 @@ def instrument(data, sites):
             count_word = slot + cb.DATA + cb.COUNT
             words = (site['words'] + [count_word, count_word])[:2]                 # Unused words read the stub's count.
             sums = (site['sums'] + [(0, 0)] * cb.LOG_CHECKSUMS)[:cb.LOG_CHECKSUMS]
-            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            send_to(hook, slot)
             segment += cb.log_stub_words(slot, target, delay, hook + 8, site['ring'], words, sums, site['press'])
             site['slot'] = slot
             continue
         if site.get('pad'):
-            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            send_to(hook, slot)
             segment += cb.press_stub_words(slot, target, [call, delay], site['presses'])
             site['slot'] = slot
             continue
         if site.get('set'):
-            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            send_to(hook, slot)
             segment += cb.set_stub_words(slot, target, [call, delay], site['set_call'], site['values'])
             site['slot'] = slot
             continue
         if site['entry']:
-            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            send_to(hook, slot)
             segment += cb.stub_words(slot, target, 0, target + 8, site['first'] - 1, site['after'], entry=[call, delay])
             site['slot'] = slot
             continue
@@ -372,9 +417,23 @@ def instrument(data, sites):
             target = site['target'] = (call & 0x3FFFFFF) << 2
         if target is None or call != 0x0C000000 | (target >> 2):
             raise ValueError(f'{site["name"]}: the instruction at {hook:#x} is not jal {target:#x}.')
-        struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+        send_to(hook, slot)
         segment += cb.stub_words(slot, target, delay, hook + 8, site['first'] - 1, site['after'])
         site['slot'] = slot
+    if overlay_writes:
+        # Main enters the overlay once, right after its first frame step loaded it: the installer there writes the
+        # overlay sites (EE stores, before that code first runs, so PCSX2 has nothing of it compiled yet).
+        if any(s['call'] == OVERLAY_CALL for s in sites):
+            raise ValueError(f'{OVERLAY_CALL:#x} carries the overlay installer.')
+        slot = SEGMENT + len(sites) * cb.SLOT
+        call, delay = words_at(OVERLAY_CALL)
+        if call != 0x0C000000 | (OVERLAY_ENTRY >> 2):
+            raise ValueError(f'The instruction at {OVERLAY_CALL:#x} is not jal {OVERLAY_ENTRY:#x}.')
+        send_to(OVERLAY_CALL, slot)
+        segment += cb.installer_stub_words(slot, OVERLAY_ENTRY, delay, OVERLAY_CALL + 8, overlay_writes)
+        sites.append({'name': 'overlay-installer', 'call': OVERLAY_CALL, 'target': OVERLAY_ENTRY, 'first': 1,
+                      'count': 1, 'stride': 1, 'after': False, 'entry': False, 'set': True, 'slot': slot,
+                      'writes': len(overlay_writes)})
     phoff, = struct.unpack_from('<I', data, 28)
     phsize, count = struct.unpack_from('<HH', data, 42)
     empty = [phoff + k * phsize for k in range(count)

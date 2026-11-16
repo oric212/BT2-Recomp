@@ -29,16 +29,16 @@ def load_regions(path: Path = REGIONS):
 
 
 def session_patches(checkpoint: Path):
-    """The words the session's instrumented executable changed: each call site's jal (4 bytes), each function entry
-    a site takes or sets registers at (its first two words), from session.json next to the checkpoint."""
+    """The words the session's instrumented executable changed: each site's two words (a call site's jal and delay
+    slot, or a function's first two), in the executable or written into the overlay at run time, from session.json
+    next to the checkpoint."""
     path = Path(checkpoint).parent / 'session.json'
     if not path.exists():
         return []
     out = []
     for site in json.loads(path.read_text(encoding='utf-8'))['sites']:
         call = int(site['call'], 16)
-        size = 8 if site.get('entry') or call == int(site['target'], 16) else 4
-        out.append((call, call + size, 'session patches', 'The session sends these calls to its stubs.'))
+        out.append((call, call + 8, 'session patches', 'The session sends these calls to its stubs.'))
     return out
 
 

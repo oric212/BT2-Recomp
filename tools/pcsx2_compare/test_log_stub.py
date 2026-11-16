@@ -171,6 +171,19 @@ class LogStubTest(unittest.TestCase):
             seen.append((m.word(buttons), m.word(pressure)))
         self.assertEqual(seen, [(0x7F7FFFFF, 0), (0x7F7FBFFF, 0xFF00), (0x7F7FBFFF, 0xFF00), (0x7F7FFFFF, 0)])
 
+    def test_installer_writes_then_calls(self):
+        # The overlay installer stores its words (as the overlay's sites: j slot; nop), then makes the call it took.
+        writes = [(RAM, 0x08000000 | (SLOT >> 2)), (RAM + 4, 0), (RAM + 8, 0xFFFFFFFF)]
+        image = cb.installer_stub_words(SLOT, TARGET, DELAY, RESUME, writes)
+        m = Machine(image)
+        for address in (RAM, RAM + 4, RAM + 8):
+            m.put(address, 0x12345678)
+        m.gpr[5] = 0x5555
+        m.call()
+        self.assertEqual([m.word(a) for a in (RAM, RAM + 4, RAM + 8)], [0x08000000 | (SLOT >> 2), 0, 0xFFFFFFFF])
+        self.assertEqual(m.calls, 1)
+        self.assertEqual(m.gpr[5], 0)                                     # The delay slot (daddu a1, zero, zero) ran.
+
     def test_ring_wraps(self):
         image = cb.log_stub_words(SLOT, TARGET, DELAY, RESUME, RING, (RAM, RAM), ((RAM, RAM),) * 3)
         m = Machine(image)

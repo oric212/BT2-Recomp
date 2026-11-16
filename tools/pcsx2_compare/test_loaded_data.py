@@ -47,7 +47,7 @@ class LoadedDataTest(unittest.TestCase):
                 {'call': '0x200000', 'target': '0x300000', 'entry': True}]}), encoding='utf-8')
             patches = loaded_data.session_patches(session / 'checkpoint')
         self.assertEqual([(s, e) for s, e, _, _ in patches],
-                         [(0x102EF8, 0x102EFC), (0x101A60, 0x101A68), (0x200000, 0x200008)])
+                         [(0x102EF8, 0x102F00), (0x101A60, 0x101A68), (0x200000, 0x200008)])
 
 
 if __name__ == '__main__':

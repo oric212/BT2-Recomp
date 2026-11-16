@@ -47,8 +47,31 @@ def ranges(addresses, gap=16):
     return out
 
 
-def replay(disc, config, target, before, out):
+def overlay_restores(sites):
+    """(address, original bytes) of each site the session wrote into the overlay: the replay puts them back, as the
+    port runs overlay code only while RAM holds the bytes it was generated from."""
+    import session
+    image = None
+    out = []
+    for site in sites:
+        call = int(site['call'], 16)
+        if session.in_overlay(call):
+            image = image if image is not None else session.overlay_image()
+            out.append((call, image[call - session.OVERLAY_BASE:call - session.OVERLAY_BASE + 8]))
+    return out
+
+
+def replay(disc, config, target, before, out, restores=()):
     ram = ram_store.materialize(before, out.with_suffix('.in.bin'))
+    if restores:
+        if ram == before / 'ee-ram.bin':                       # The checkpoint's own file: change a copy.
+            copy = out.with_suffix('.in.bin')
+            copy.write_bytes(ram.read_bytes())
+            ram = copy
+        with open(ram, 'r+b') as file:
+            for address, original in restores:
+                file.seek(address)
+                file.write(original)
     parts = [str(ram), str(before / 'registers.bin'), f'{target:x}', str(out), str(before / 'vu-mem.bin')]
     if (before / 'hardware.bin').exists():                     # VIF1's registers (sessions since step 6).
         parts.append(str(before / 'hardware.bin'))
@@ -91,7 +114,8 @@ def check(disc, config, session, site, call):
     folder = ROOT / 'work/pcsx2-compare' / session
     before, after = folder / f'{site["name"]}-{call}-before', folder / f'{site["name"]}-{call}-after'
     out = folder / f'{site["name"]}-{call}-port.bin'
-    error = replay(disc, config, int(site['target'], 16), before, out)
+    sites = json.loads((folder / 'session.json').read_text())['sites']
+    error = replay(disc, config, int(site['target'], 16), before, out, overlay_restores(sites))
     if error:
         # A system call ends the replay by design (the kernel and the services are compared at their own level).
         stop = re.search(r'stopped at system call 0x[0-9a-f]+ at 0x[0-9a-f]+', error)
@@ -102,6 +126,7 @@ def check(disc, config, session, site, call):
     sp = cb.parse((before / 'registers.bin').read_bytes())['gpr'][29] & 0xFFFFFFFF
     segment = json.loads((folder / 'session.json').read_text())['segment']
     excluded = [(segment[0], segment[0] + segment[1]), (sp - STACK, sp)]
+    excluded += [(int(s['call'], 16), int(s['call'], 16) + 8) for s in sites]   # The words the session patched.
     differ, port_wrote, pcsx2_wrote = compare(start, pcsx2, port, excluded)
     findings, activity = [], []
     for low, high in ranges(differ.tolist()):
