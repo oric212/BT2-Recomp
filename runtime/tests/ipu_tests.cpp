@@ -170,6 +170,14 @@ int main() {
         // The inverse DCT of a lone DC coefficient is flat; quantiser scales follow both mappings.
         std::array<int,64> flat{};flat[0]=80;ipuInverseDct(flat);
         check(flat[0]==10 && flat[63]==10);
+        // The integer IDCT's own rounding (PCSX2's arithmetic): DC -40 with 17 at (0,1) gives every row
+        // -2 -2 -3 -4 -6 -7 -7 -8, where the exact transform rounded to nearest gives -3 in the second column.
+        std::array<int,64> ramp{};ramp[0]=-40;ramp[1]=17;ipuInverseDct(ramp);
+        check(ramp[0]==-2 && ramp[1]==-2 && ramp[2]==-3 && ramp[3]==-4 && ramp[4]==-6 && ramp[5]==-7 && ramp[6]==-7 && ramp[7]==-8);
+        check(ramp[56]==-2 && ramp[57]==-2 && ramp[63]==-8);
+        // A row with one AC coefficient: 10 at (0,1) gives 2 1 1 0 0 -1 -1 -2 (worked by hand through both passes).
+        std::array<int,64> one{};one[1]=10;ipuInverseDct(one);
+        check(one[0]==2 && one[1]==1 && one[2]==1 && one[3]==0 && one[4]==0 && one[5]==-1 && one[6]==-1 && one[7]==-2);
         check(ipuQuantiserScale(8,false)==16 && ipuQuantiserScale(8,true)==8 && ipuQuantiserScale(31,true)==112);
         // IDEC, CSC and PACK stay refused.
         IpuDevice other;

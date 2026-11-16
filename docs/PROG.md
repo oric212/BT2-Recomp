@@ -9,7 +9,7 @@
 | --- | --- |
 | Startup | ✅ Verified — boot to the frame loop; key states match captures of the original |
 | Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
-| Films | 🟢 Operational — logo and opening films with sound |
+| Films | 🟢 Operational — logo and opening films with sound; the decoder computes as PCSX2's (the opening film's last picture data byte-identical) |
 | Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
 | Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the fight's logic and draw steps and the AI match PCSX2 exactly at every frame compared |
 | Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; partly played by hand |
@@ -75,7 +75,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the IPU's rounding against PCSX2 (one film picture in both; the last unexplained difference at a fight's first frame); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.

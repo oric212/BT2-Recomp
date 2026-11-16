@@ -1,5 +1,4 @@
 #include "ipu_block.h"
-#include <cmath>
 #include <cstddef>
 #include <string>
 
@@ -109,7 +108,7 @@ void coefficientsInto(Bits& bits,const IpuBlockParameters& p,bool intra,std::arr
     const auto* matrix=intra?p.intra_matrix:p.nonintra_matrix;
     for(unsigned position=intra?1:0;;++position) {
         const auto next=bits.peek(17);
-        unsigned run=0;int level=0;bool negative=false;
+        unsigned run=0;int level=0;bool negative=false,escape=false;
         const bool one=intra && p.intra_table_one;
         if(!intra && position==0 && (next>>16)) {bits.input.skip(1);level=1;negative=bits.take(1);}
         else if(one?(next>>13)==6:(next>>15)==2) {bits.input.skip(one?4:2);return;} // End of block.
@@ -120,7 +119,7 @@ void coefficientsInto(Bits& bits,const IpuBlockParameters& p,bool intra,std::arr
                 if(level==0)level=int(bits.take(8)); else if(level==-128)level=int(bits.take(8))-256;
             } else level=int(bits.take(12)<<20)>>20;
             if(!level)throw std::runtime_error("IPU BDEC: escape with level 0");
-            negative=level<0;if(negative)level=-level;
+            negative=level<0;if(negative)level=-level;escape=true;
         } else {
             const Coefficient* found=nullptr;
             if(one)for(const auto& entry:coefficients_one)if((next>>(17-entry.length))==entry.code){found=&entry;break;}
@@ -131,25 +130,26 @@ void coefficientsInto(Bits& bits,const IpuBlockParameters& p,bool intra,std::arr
         }
         position+=run;
         if(position>63)throw std::runtime_error("IPU BDEC: coefficient run past the block");
-        // Inverse quantisation on the magnitude (truncating toward zero), MPEG-1 results made odd.
         const int weight=int(p.quantiser_scale)*matrix[position];
-        int value=intra?(level*weight)>>4:((2*level+1)*weight)>>5;
-        if(p.mpeg1 && value && !(value&1))--value;
-        block[scan[position]]=clampCoefficient(negative?-value:value);
+        int value;
+        if(escape) {
+            // Escapes: the signed level scaled with an arithmetic shift (negatives round down); MPEG-1's made odd
+            // toward zero.
+            const int signed_level=negative?-level:level;
+            const int scaled=(2*(signed_level+(signed_level<0?-1:0))+1)*weight;
+            if(intra)value=(signed_level*weight)>>4;
+            else value=p.mpeg1?scaled/32:scaled>>5; // MPEG-1's divides (toward zero), MPEG-2's shifts.
+            if(p.mpeg1)value=(value+(value<0?0:-1))|1;
+        } else {
+            // Table codes: the magnitude scaled; intra MPEG-1 made odd as (v - 1) | 1 (0 becomes 1); then the sign.
+            value=intra?(level*weight)>>4:((2*level+1)*weight)>>5;
+            if(p.mpeg1 && intra)value=(value-1)|1;
+            if(negative)value=-value;
+        }
+        block[scan[position]]=clampCoefficient(value);
     }
 }
 
-// Inverse DCT basis: basis[x][u] = C(u)/2 * cos((2x+1) u pi / 16).
-const std::array<std::array<double,8>,8>& dctBasis() {
-    static const auto basis=[] {
-        std::array<std::array<double,8>,8> table{};
-        const double pi=std::acos(-1.0);
-        for(unsigned x=0;x<8;++x)for(unsigned u=0;u<8;++u)
-            table[x][u]=(u?1.0:std::sqrt(0.5))*0.5*std::cos((2*x+1)*u*pi/16.0);
-        return table;
-    }();
-    return basis;
-}
 }
 
 unsigned ipuQuantiserScale(unsigned code,bool nonlinear) {
@@ -157,19 +157,48 @@ unsigned ipuQuantiserScale(unsigned code,bool nonlinear) {
     return nonlinear?table[code&31]:(code&31)*2;
 }
 
+namespace {
+// The integer fast IDCT (11-bit constants W_k = round(2048 * sqrt(2) * cos(k * pi / 16))), two 8-point passes
+// with 16-bit storage between them. `rotate` gives a * w_high + b * w_low and a * w_low - b * w_high from one
+// shared product.
+constexpr int w1=2841,w2=2676,w3=2408,w5=1609,w6=1108,w7=565;
+void rotate(int& first,int& second,int w_low,int w_high,int low_input,int high_input) {
+    const int shared=w_low*(low_input+high_input);
+    first=shared+(w_high-w_low)*high_input;second=shared-(w_high+w_low)*low_input;
+}
+// One pass over d[0], d[step], ... d[7*step] (frequencies 0..7 in, samples 0..7 out). The row pass rounds with
+// 128 and shifts by 8, scaling the odd half's middle terms before its shift; the column pass rounds with 65536
+// and shifts by 17, shifting those terms by 8 before scaling.
+void idctPass(std::int16_t* d,unsigned step,bool column) {
+    const auto at=[&](unsigned n)->int {return d[n*step];};
+    const int even_dc=(at(0)<<11)+(column?65536:128),even_four=at(4)<<11;
+    int two_six_sum,two_six_difference;rotate(two_six_sum,two_six_difference,w6,w2,at(6),at(2));
+    const int a0=even_dc+even_four+two_six_sum,a3=even_dc+even_four-two_six_sum;
+    const int a1=even_dc-even_four+two_six_difference,a2=even_dc-even_four-two_six_difference;
+    int p0,p1,q0,q1;
+    rotate(p0,p1,w7,w1,at(7),at(1));
+    rotate(q0,q1,w3,w5,at(3),at(5));
+    const int b0=p0+q0,b3=p1+q1;
+    int b1,b2;
+    if(column) {const int m0=(p0-q0)>>8,m1=(p1-q1)>>8;b1=(m0+m1)*181;b2=(m0-m1)*181;}
+    else {const int m0=p0-q0,m1=p1-q1;b1=((m0+m1)*181)>>8;b2=((m0-m1)*181)>>8;}
+    const unsigned shift=column?17:8;
+    const int out[8]={a0+b0,a1+b1,a2+b2,a3+b3,a3-b3,a2-b2,a1-b1,a0-b0};
+    for(unsigned n=0;n<8;++n)d[n*step]=std::int16_t(out[n]>>shift);
+}
+}
+
 void ipuInverseDct(std::array<int,64>& block) {
-    const auto& basis=dctBasis();
-    double rows[64];
-    for(unsigned v=0;v<8;++v)for(unsigned x=0;x<8;++x) {
-        double sum=0;
-        for(unsigned u=0;u<8;++u)sum+=basis[x][u]*block[v*8+u];
-        rows[v*8+x]=sum;
+    std::int16_t d[64];
+    for(unsigned n=0;n<64;++n)d[n]=std::int16_t(block[n]);
+    for(unsigned row=0;row<8;++row) {
+        std::int16_t* r=d+row*8;
+        bool only_dc=true;for(unsigned n=1;n<8;++n)if(r[n])only_dc=false;
+        if(only_dc) {const auto value=std::int16_t(std::uint16_t(r[0]<<3));for(unsigned n=0;n<8;++n)r[n]=value;continue;}
+        idctPass(r,1,false);
     }
-    for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x) {
-        double sum=0;
-        for(unsigned v=0;v<8;++v)sum+=basis[y][v]*rows[v*8+x];
-        block[y*8+x]=int(std::floor(sum+0.5));
-    }
+    for(unsigned column=0;column<8;++column)idctPass(d+column,8,true);
+    for(unsigned n=0;n<64;++n)block[n]=d[n];
 }
 
 void ipuDecodeMacroblock(IpuInput& input,const IpuBlockParameters& p,std::array<int,3>& dc_predictors,IpuMacroblock& out) {
@@ -202,7 +231,7 @@ void ipuDecodeMacroblock(IpuInput& input,const IpuBlockParameters& p,std::array<
         } else {base+=256+(index-4)*64;stride=8;}
         for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x) {
             const int value=block[y*8+x];
-            base[y*stride+x]=std::int16_t(p.intra?(value<0?0:value>255?255:value):(value<-256?-256:value>255?255:value));
+            base[y*stride+x]=std::int16_t(p.intra?(value<0?0:value>255?255:value):value);
         }
     }
 }

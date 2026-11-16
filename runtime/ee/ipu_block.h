@@ -1,6 +1,9 @@
 // MPEG-1/2 macroblock decoding for the IPU's BDEC command (docs/plans/video/IPU_PLAN.md): DC and AC
 // coefficient codes, inverse quantisation, inverse DCT. Written from ISO/IEC 11172-2 and 13818-2
-// (tables B-9, B-12 to B-15; scans; inverse quantisation arithmetic).
+// (tables B-9, B-12 to B-15; scans). The inverse quantisation's rounding and the inverse DCT follow PCSX2's IPU,
+// the comparison's reference (2026-11-16: the opening film's decoded data then equals PCSX2's byte for byte):
+// escapes scaled signed (negatives round down; MPEG-1 non-intra divides), MPEG-1 made odd only for intra table
+// codes ((v - 1) | 1, so 0 gives 1) and for escapes, non-intra residuals not clamped.
 #pragma once
 #include "ipu_input.h"
 #include <array>
@@ -30,5 +33,6 @@ using IpuMacroblock=std::array<std::int16_t,384>;
 void ipuDecodeMacroblock(IpuInput& input,const IpuBlockParameters& parameters,std::array<int,3>& dc_predictors,IpuMacroblock& out);
 // quantiser_scale_code (1-31) to the scale: twice the code, or the non-linear table (QST).
 unsigned ipuQuantiserScale(unsigned code,bool nonlinear);
-// 8x8 inverse DCT of coefficients in row order (index = row*8 + column), rounded to nearest.
+// 8x8 inverse DCT of coefficients in row order (index = row*8 + column): the integer fast IDCT with
+// 16-bit storage between its passes, as PCSX2's IPU computes it (the decoded films equal PCSX2's, 2026-11-16).
 void ipuInverseDct(std::array<int,64>& block);

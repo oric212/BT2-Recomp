@@ -483,18 +483,23 @@ runs, by cause, each found by its writer (`BT2_EE_WATCH_WORD`, now several addre
   (`0x3A2814` DBCMAN's handles; `0x3B0E04`, `0x6350B0`, `0x6351A0` SOUNDS's, as in step 8).
 - **Session and controller:** the session's program name `host:capture.elf` (`0x38B980`, now a region); the sticks'
   rest value (`0x3B0B1C`, step 5's finding).
-- **Open: picture data one step apart.** The 16 KB at `0x38FD40` are a saved copy of the scratchpad (`0x2B7828` sends
-  the scratchpad there by DMA channel 8 and loads 16 KB from `0x38BD40` back by channel 9; the last swap at flips
-  7,966 to 7,974, the screen before the demo). 668 of its 16,384 bytes differ, by +1 (475), −1 (181) or +2 (12);
-  bytes of 8-bit samples and 16-bit ones at `0x393358`. The colour at `0xD23F78` (computed by `0x317964` at the same
-  flips) differs the same way (`80B3B2B5` against `80B4B3B6`). The bias points at decoding rounding: the port's IPU
-  computes the inverse DCT exactly and rounds to nearest (`runtime/ee/ipu_block.cpp`), PCSX2's IPU uses an integer
-  fast IDCT; not yet shown.
+- **Picture data one step apart (resolved, below).** The 16 KB at `0x38FD40` are a saved copy of the scratchpad
+  (`0x2B7828` sends the scratchpad there by DMA channel 8 and loads 16 KB from `0x38BD40` back by channel 9; the last
+  swap at flips 7,966 to 7,974). 668 of its 16,384 bytes differed, by +1 (475), −1 (181) or +2 (12); the colour at
+  `0xD23F78` (computed by `0x317964` at the same flips) the same way (`80B3B2B5` against `80B4B3B6`).
 
-**Next:** the open item: compare one decoded film picture in both programs (a session checkpoint after the decode,
-the port's RAM at the same call) and, if the IDCT is the cause, decide with the user whether the port's IPU takes
-PCSX2's arithmetic (the IPU plan chose the specification's where public documentation is silent). Press to sound and
-fullscreen when wanted.
+**The film decoder's rounding (2026-11-16).** The field log's new column (the IPU's decoded macroblocks) places the
+opening film at flips 1,502 to 7,972 (2,419,844 macroblocks; the logo film at 748 to 1,047): the scratchpad copy and
+the colour are the film decoder's data at its last picture. PCSX2's IPU computes the inverse DCT with the integer fast
+transform (16-bit storage between passes) and rounds its inverse quantisation its own way (escapes scaled signed,
+MPEG-1 made odd only for intra table codes and escapes, residuals not clamped); the port computed the exact transform
+rounded to nearest and followed the specification. With PCSX2's arithmetic in `runtime/ee/ipu_block.cpp` (the
+user's decision) the same route run gives the scratchpad copy and the colour **byte-identical to PCSX2's** (668 → 0
+bytes), and outside the explained regions 81 ranges (5,732 bytes) are left, all of the causes listed above. The IPU
+tests pass, with two new vectors of the integer transform.
+
+**Next:** step 4 (other screens' logic); steps 6 and 7 on other screens; step 10 (the comparisons into the gate).
+Press to sound and fullscreen when wanted.
 
 ## Unknowns
 

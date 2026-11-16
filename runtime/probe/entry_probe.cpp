@@ -131,14 +131,14 @@ int main(int argc, char** argv) {
             };
         }
         // BT2_FIELD_LOG=<path>: one line per field (where loading time goes): the field, flips, the disc's
-        // sector reads, file and CRI stream requests, the load-wait idle points so far, and the peak of the
-        // field's mixed audio (0: silent).
+        // sector reads, file and CRI stream requests, the load-wait idle points so far, the peak of the
+        // field's mixed audio (0: silent), and the IPU's decoded macroblocks so far (the films).
         static std::ofstream field_log;
         static int field_audio_peak = -1;
         if (const char* path = std::getenv("BT2_FIELD_LOG")) {
             field_log.open(path);
             if (!field_log) throw std::runtime_error(std::string("Cannot write the field log ") + path);
-            field_log << "field,microseconds,calls,flips,sector_reads,file_requests,stream_transfers,load_idles,audio_peak\n";
+            field_log << "field,microseconds,calls,flips,sector_reads,file_requests,stream_transfers,load_idles,audio_peak,ipu_macroblocks\n";
             auto previous = std::move(runtime.on_field_end);
             runtime.on_field_end = [&runtime, previous] {
                 if (previous) previous();
@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
                 const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now - last).count();last = now;
                 field_log << runtime.vblank_deliveries + 1 << ',' << microseconds << ',' << runtime.guest_calls << ',' << runtime.gs_display_flips << ',' << runtime.ncmd_read_calls << ','
                     << runtime.fileio_calls << ',' << runtime.cri_stream_transfers << ','
-                    << runtime.load_poll_idles + runtime.file_load_idles + runtime.asset_poll_idles << ',' << field_audio_peak << '\n';
+                    << runtime.load_poll_idles + runtime.file_load_idles + runtime.asset_poll_idles << ',' << field_audio_peak << ',' << runtime.ipu.macroblocks << '\n';
                 field_audio_peak = -1;
             };
         }
