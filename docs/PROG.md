@@ -75,7 +75,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the rest of loaded data (the globals by route); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the IPU's rounding against PCSX2 (one film picture in both; the last unexplained difference at a fight's first frame); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.

@@ -300,22 +300,33 @@ int main(int argc, char** argv) {
                 for (const auto& [total, target, source, top] : rows) out << std::hex << target << std::dec << ' ' << total << ' ' << std::hex << source << std::dec << ' ' << top << '\n';
             };
         }
-        // BT2_EE_WATCH_WORD=<file>:<hex address>: one line each time the word there is found changed at a guest call:
-        // the flip, the call (source and target) it changed before, and the old and new words in hex. Finds which
-        // function wrote a scalar (the store watch below sees 128-bit stores only). Not with BT2_EE_CALL_TRACE.
+        // BT2_EE_WATCH_WORD=<file>:<hex address>[,<hex address>...]: one line each time a word there is found changed at
+        // a guest call: the flip, the call (source and target) it changed before, the old and new words in hex, and with
+        // several addresses the address first. Finds which function wrote a scalar (the store watch below sees 128-bit
+        // stores only). Not with BT2_EE_CALL_TRACE.
         static std::ofstream word_watch;
         if (const char* watch = std::getenv("BT2_EE_WATCH_WORD")) {
             const std::string text = watch;
             const auto colon = text.rfind(':');
-            if (colon == std::string::npos || colon < 2) throw std::runtime_error("BT2_EE_WATCH_WORD needs <file>:<address>");
+            if (colon == std::string::npos || colon < 2) throw std::runtime_error("BT2_EE_WATCH_WORD needs <file>:<address>[,<address>...]");
             word_watch.open(text.substr(0, colon));
             if (!word_watch) throw std::runtime_error("Cannot write the word watch " + text.substr(0, colon));
-            const std::uint32_t address = static_cast<std::uint32_t>(std::stoul(text.substr(colon + 1), nullptr, 16));
-            runtime.on_guest_call = [&runtime, address, last = std::optional<std::uint32_t>()](const R5900Context&, std::uint32_t source, std::uint32_t target) mutable {
-                std::uint32_t now;std::memcpy(&now, runtime.memory().data() + address, 4);
-                if (last && *last != now)
-                    word_watch << std::dec << runtime.gs_display_flips << std::hex << " before " << source << "->" << target << ' ' << *last << ' ' << now << std::endl;
-                last = now;
+            std::vector<std::uint32_t> addresses;
+            for (std::size_t at = colon + 1; at < text.size();) {
+                const auto end = std::min(text.find(',', at), text.size());
+                addresses.push_back(static_cast<std::uint32_t>(std::stoul(text.substr(at, end - at), nullptr, 16)));
+                at = end + 1;
+            }
+            if (addresses.empty()) throw std::runtime_error("BT2_EE_WATCH_WORD needs an address");
+            runtime.on_guest_call = [&runtime, addresses, last = std::vector<std::optional<std::uint32_t>>(addresses.size())](const R5900Context&, std::uint32_t source, std::uint32_t target) mutable {
+                for (std::size_t n = 0; n < addresses.size(); ++n) {
+                    std::uint32_t now;std::memcpy(&now, runtime.memory().data() + addresses[n], 4);
+                    if (last[n] && *last[n] != now) {
+                        if (addresses.size() > 1) word_watch << std::hex << addresses[n] << ' ';
+                        word_watch << std::dec << runtime.gs_display_flips << std::hex << " before " << source << "->" << target << ' ' << *last[n] << ' ' << now << std::endl;
+                    }
+                    last[n] = now;
+                }
             };
         }
         // BT2_EE_CALL_TRACE=<file>:<from flip>:<hex address>[,<hex address>...]: one line per call of those
@@ -358,6 +369,8 @@ int main(int argc, char** argv) {
         if (const char* sums = std::getenv("BT2_EE_CALL_SUMS")) installCallSums(runtime, sums);
         // BT2_EE_CALL_RAM=<file>:<hex call address>:<n>: EE RAM before the n-th call from that address (call_ram.cpp).
         if (const char* ram = std::getenv("BT2_EE_CALL_RAM")) installCallRam(runtime, ram);
+        // BT2_EE_CALL_SET=%<hex function>:<n>:<reg>=<value>,...[;...]: a comparison session's --set (call_set.cpp).
+        if (const char* set = std::getenv("BT2_EE_CALL_SET")) installCallSet(runtime, set);
         // BT2_RPC_LOG=<file>: every SIF RPC request and synchronous reply with its buffer's checksum (rpc_log.cpp).
         if (const char* rpc = std::getenv("BT2_RPC_LOG")) installRpcLog(runtime, rpc);
         // BT2_EE_WATCH_QUADWORD=<file>:<from flip>:<hex address>: one line per 128-bit store to that EE

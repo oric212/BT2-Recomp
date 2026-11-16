@@ -11,6 +11,7 @@
 // the N-th guest call made from one call address, the port's side of a comparison session's checkpoint at the
 // same call (tools/pcsx2_compare/loaded_data.py compares the two by region). The spec:
 // "<file>:<hex call address>:<call number, from 1>". Another guest-call hook installed before keeps running.
+// The threads' stacks at that moment go to <file>.threads.txt.
 void installCallRam(EeRuntime& runtime,const std::string& spec) {
     // The file may hold a drive letter's colon: the two fields are the last two.
     const auto last=spec.rfind(':');
@@ -29,6 +30,13 @@ void installCallRam(EeRuntime& runtime,const std::string& spec) {
         const auto ram=runtime.memory();
         out.write(reinterpret_cast<const char*>(ram.data()),static_cast<std::streamsize>(ram.size()));
         if(!out)throw std::runtime_error("Cannot write the call's RAM "+file);
+        // Beside it, the threads' stacks (`<file>.threads.txt`): RAM there is each thread's own leftovers.
+        std::ofstream threads(file+".threads.txt");
+        threads<<"id entry stack_base stack_size exited\n";
+        for(const auto& t:runtime.threads) {
+            char line[96];std::snprintf(line,sizeof line,"%u %X %X %X %d\n",t.id,t.entry,t.stack_base,t.stack_size,t.exited?1:0);
+            threads<<line;
+        }
         std::fprintf(stderr,"BT2_EE_CALL_RAM: call %lu from 0x%X at field %u written\n",count,source,runtime.vblank_deliveries);
     };
 }

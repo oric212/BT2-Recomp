@@ -542,6 +542,9 @@ public:
     // Diagnostic call trace (probe: BT2_EE_CALL_TRACE): called before each guest call or jump the
     // dispatcher sees, with the source and target addresses. Never changes guest state.
     std::function<void(const R5900Context&,std::uint32_t,std::uint32_t)> on_guest_call;
+    // Comparison runs only (probe: BT2_EE_CALL_SET): called before on_guest_call and may change the call's argument
+    // registers, as a PCSX2 comparison session's --set steers the game.
+    std::function<void(R5900Context&,std::uint32_t,std::uint32_t)> on_guest_call_edit;
     // Diagnostic store watch (probe: BT2_EE_WATCH_QUADWORD): called before each 128-bit store to the address.
     std::uint32_t quadword_watch_address=0;std::function<void(const ProbeGpr&)> on_watched_quadword;
     const R5900Context* mainContext() const {return main_context_;}

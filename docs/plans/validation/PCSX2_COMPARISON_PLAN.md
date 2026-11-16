@@ -442,8 +442,59 @@ with `0x3A0460` for port 0), the RPC number 0 or 1 by turn. Found:
   (6.5%) its DBCMAN had not answered yet, so that field's motor command was dropped. The caller ignores the result and
   clears its motor words either way, so no EE state differs; the port has no vibration output.
 
-**Next:** the globals' 152 ranges by route (or the port through the same route). Press to sound and fullscreen when
-wanted.
+**Step 5, the route run (2026-11-16).** The port now takes PCSX2's own route to the `loaded` checkpoint: it boots
+with a copy of the session's card (`card-pcsx2`), plays the logos, films and title into the demo, and at the demo
+picker's calls (`0x3B9710`) sets the same arguments as the session's `--set` (`BT2_EE_CALL_SET`, the same text). It
+also pins the picks the port's demo makes otherwise by its own random numbers: both `fighter_set` calls' character
+(a1 72 and 1,080), a2 and t0 to t3 (the starter's 0, 0, 0, 1, 1, which matched PCSX2 on 11-12), `stage_choice`'s a0 9,
+`battle_set`'s music a1 23. RAM was written before the same call (`step-b` 1). The port reaches it at field 11,199,
+PCSX2 at 11,799 (the fields-since-boot counters `0x34AED8` and others: 0x2BBF against 0x2E17): **PCSX2 takes 600
+fields (10 s) longer along the route**, the loads' timing (the port completes disc reads in logical time).
+
+| Compared with PCSX2 | Starter (11-16) | Route |
+| --- | --- | --- |
+| Display lists A and B | 50,696 bytes each | 4,288 and 4,136 |
+| Stream buffer | 414,116 bytes | 6,144 |
+| Outside the explained regions | 163 ranges, 25,280 bytes | 118 ranges, 16,308 bytes |
+
+With the regions added below, 100 ranges (10,672 bytes, 1,078 differing words) are left outside. 65 of those words
+equal PCSX2's in the starter run: the demo's own picks the register edits cannot set (the picker passes three
+per-character values on the stack, from a table at `s5 + character × 16`, so `0x76BB3C` and `0x17E9E58` hold the
+port's own pick's 50,000 against 40,000; `0x76BDE0` is written by the picker too). The 1,013 that differ in both
+runs, by cause, each found by its writer (`BT2_EE_WATCH_WORD`, now several addresses at once):
+
+- **Time:** the fields-since-boot counters and their half-field and IOP-tick forms (`0x346C00`, `0x34AED8` to
+  `0x34BBC0`, `0x36057C`, `0x36643C`, `0x369F44`, `0x3A2890`, `0x3AAFC0`, `0x3B0A84`, `0x3B0B7C`, `0x3B0BFC`); the
+  random generator's state (`0x36A3B8`, changed about 450,000 times along the route, before calls of `0x325388`) and
+  what the fight placed with it (`0x19CE154`, `0x19CF414`, `0x1BB2D90` to `0x1BBF3BC`: positions and counters); the
+  stream and sound engines' state machines, caught mid-cycle (`0x353490`, 40,306 changes by `0x2EDC64`; `0x353F90`,
+  16,912 by the library at `0x2F1xxx`; `0x355338`, 4,460 by `0x30A6B4`: the port's values are among PCSX2's cycle),
+  their buffer positions and current pool buffers (`0x347C40`, `0x347E48`, `0x353624`, `0x354F48`, `0x354FC0`,
+  `0x355390` to `0x355C74`, `0x35D580` to `0x35E080`, `0x35FD00`, `0x364B1C` to `0x3694C8`), the CRI and disc
+  services' progress words (`0x3A03C4`, `0x3A5C84`, `0x3A6F84`, `0x3AC744` to `0x3ACC04`).
+- **Other threads' stacks** (added as regions, with the random state and the session's program name; before them
+  118 ranges, 16,308 bytes): threads 2 to 7 at the addresses the game gives CreateThread, read from the port
+  (`BT2_EE_CALL_RAM` writes `<file>.threads.txt`): residue below their frames and where each waits (PCSX2's BIOS
+  kernel, the port's native one); PCSX2's own thread stack pointers at the checkpoint are not read.
+- **IOP-side words:** the 16-byte tails after short replies (`0x3683F4`, `0x369580`, `0x39DD84`, `0x3A8544`,
+  `0x3A8744`, `0x3ABC84`, `0x3ACA08`; as in step 8), the SIF command buffers PCSX2's SIF builds and the port's native
+  SIF does not (`0x3A94C0` to `0x3A9FC0`, `0x3AC124`, `0x356B30`, `0x39D800`, `0x3A7480`), the last request's text in
+  the file service's buffer (`0x3A8624`), IOP addresses the port's services give from their own module layout
+  (`0x3A2814` DBCMAN's handles; `0x3B0E04`, `0x6350B0`, `0x6351A0` SOUNDS's, as in step 8).
+- **Session and controller:** the session's program name `host:capture.elf` (`0x38B980`, now a region); the sticks'
+  rest value (`0x3B0B1C`, step 5's finding).
+- **Open: picture data one step apart.** The 16 KB at `0x38FD40` are a saved copy of the scratchpad (`0x2B7828` sends
+  the scratchpad there by DMA channel 8 and loads 16 KB from `0x38BD40` back by channel 9; the last swap at flips
+  7,966 to 7,974, the screen before the demo). 668 of its 16,384 bytes differ, by +1 (475), −1 (181) or +2 (12);
+  bytes of 8-bit samples and 16-bit ones at `0x393358`. The colour at `0xD23F78` (computed by `0x317964` at the same
+  flips) differs the same way (`80B3B2B5` against `80B4B3B6`). The bias points at decoding rounding: the port's IPU
+  computes the inverse DCT exactly and rounds to nearest (`runtime/ee/ipu_block.cpp`), PCSX2's IPU uses an integer
+  fast IDCT; not yet shown.
+
+**Next:** the open item: compare one decoded film picture in both programs (a session checkpoint after the decode,
+the port's RAM at the same call) and, if the IDCT is the cause, decide with the user whether the port's IPU takes
+PCSX2's arithmetic (the IPU plan chose the specification's where public documentation is silent). Press to sound and
+fullscreen when wanted.
 
 ## Unknowns
 

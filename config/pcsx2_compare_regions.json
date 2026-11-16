@@ -8,6 +8,42 @@
       "reason": "The EE kernel's memory: PCSX2 runs the BIOS kernel there, the port answers the kernel natively and keeps its state in the runtime."
     },
     {
+      "start": "0x34BC90",
+      "end": "0x34C490",
+      "name": "thread 4 stack",
+      "reason": "A thread's stack (thread 4, entry 0x2EDE58), at the address the game gives CreateThread (read from the port's threads, BT2_EE_CALL_RAM's .threads.txt, 2026-11-16): what lies below its frames is left by earlier calls, and where each thread waits differs (PCSX2 runs the BIOS kernel, the port answers the kernel natively)."
+    },
+    {
+      "start": "0x34D490",
+      "end": "0x351490",
+      "name": "threads 5 to 7 stacks",
+      "reason": "A thread's stack (threads 5, 6 and 7, entries 0x2EDF48, 0x2EE050, 0x2EE140; one after another), at the address the game gives CreateThread (read from the port's threads, BT2_EE_CALL_RAM's .threads.txt, 2026-11-16): what lies below its frames is left by earlier calls, and where each thread waits differs (PCSX2 runs the BIOS kernel, the port answers the kernel natively)."
+    },
+    {
+      "start": "0x36A3B8",
+      "end": "0x36A3C0",
+      "name": "random state",
+      "reason": "The random generator's state (two words, changed before about 450,000 calls of 0x325388 along the route): it advances with time, and PCSX2 reaches the fight 600 fields later than the port (2026-11-16)."
+    },
+    {
+      "start": "0x38B980",
+      "end": "0x38B9D4",
+      "name": "session program name",
+      "reason": "The game's argument block: PCSX2's session boots the game as host:capture.elf (the session's own ELF), the port without arguments."
+    },
+    {
+      "start": "0x3A5CC0",
+      "end": "0x3A6CC0",
+      "name": "thread 3 stack",
+      "reason": "A thread's stack (thread 3, entry 0x315380), at the address the game gives CreateThread (read from the port's threads, BT2_EE_CALL_RAM's .threads.txt, 2026-11-16): what lies below its frames is left by earlier calls, and where each thread waits differs (PCSX2 runs the BIOS kernel, the port answers the kernel natively)."
+    },
+    {
+      "start": "0x3A8840",
+      "end": "0x3A8C40",
+      "name": "thread 2 stack",
+      "reason": "A thread's stack (thread 2, entry 0x32F960), at the address the game gives CreateThread (read from the port's threads, BT2_EE_CALL_RAM's .threads.txt, 2026-11-16): what lies below its frames is left by earlier calls, and where each thread waits differs (PCSX2 runs the BIOS kernel, the port answers the kernel natively)."
+    },
+    {
       "start": "0x430000",
       "end": "0x457000",
       "name": "display lists A",
@@ -38,16 +74,16 @@
       "reason": "The pool's buffer PCSX2's run had in use, as above."
     },
     {
-      "start": "0x1FF0000",
-      "end": "0x2000000",
-      "name": "main stack",
-      "reason": "The top of RAM holds the main thread's stack: words left by earlier calls differ by route and timing."
-    },
-    {
       "start": "0x1D00000",
       "end": "0x1EFD000",
       "name": "session stubs",
       "reason": "The comparison session's stubs, their data and rings, in the region the game leaves empty (session.py)."
+    },
+    {
+      "start": "0x1FF0000",
+      "end": "0x2000000",
+      "name": "main stack",
+      "reason": "The top of RAM holds the main thread's stack: words left by earlier calls differ by route and timing."
     }
   ]
 }
