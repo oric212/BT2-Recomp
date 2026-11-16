@@ -149,11 +149,14 @@ def stub_words(slot, target, delay, resume, first_skip, want_after, entry=None):
 # A logging site (step 9, the input delay): after each call the stub writes one LOG_ENTRY-byte record to a ring
 # and goes on without waiting, so PCSX2's timing stays the game's (a checkpoint's wait lets VBlanks pass). The
 # record: the call's number, COP0 Count (the EE's cycle counter), two words read from RAM, three checksums of RAM
-# ranges (each word added and the sum rotated left by one), then a zero. The stub can also press a button: from call
-# PRESS_FIRST for PRESS_HOLD calls it ORs PRESS_VALUE into the word at PRESS_ADDR after the call (the pad record
-# the game reads its buttons from). Its data (offsets from DATA) as below; the ring lies outside the slot.
-LOG_RING, LOG_WORDS, LOG_SUMS, LOG_PRESS, LOG_SAVE = 0x20, 0x24, 0x2C, 0x44, 0x80
+# ranges (each word added and the sum rotated left by one), then a zero. The stub can also press buttons: a table of
+# presses (first call, calls held, value), each ORing its value into the word at the press address after the calls
+# first to first + held - 1 (the pad record the game reads its buttons from; a pad script is such a table). Its data
+# (offsets from DATA) as below: LOG_PRESS holds the presses' count and address, LOG_TABLE the presses; the ring lies
+# outside the slot.
+LOG_RING, LOG_WORDS, LOG_SUMS, LOG_PRESS, LOG_SAVE, LOG_TABLE = 0x20, 0x24, 0x2C, 0x44, 0x80, 0x100
 LOG_ENTRY, LOG_ENTRIES, LOG_CHECKSUMS = 32, 4096, 3
+LOG_PRESSES = (SLOT - DATA - LOG_TABLE) // 12
 A0, A1, A2, A3 = 4, 5, 6, 7
 
 
@@ -164,7 +167,7 @@ def _r(rs, rt, rd, funct, shamt=0):
 def log_stub_words(slot, target, delay, resume, ring, words, sums, press=None):
     """The logging stub at `slot` for the call site `jal target` (delay slot `delay`, returning to `resume`).
     `words`: two RAM addresses; `sums`: three (start, end) ranges, end exclusive, 4-byte aligned (an empty range
-    gives 0); `press`: (first call, calls held, address, value) or None."""
+    gives 0); `press`: (address, [(first call, calls held, value), ...]) or None."""
     check_delay_slot(delay)
     data = slot + DATA
     code, labels, fixups = [], {}, []
@@ -180,15 +183,21 @@ def log_stub_words(slot, target, delay, resume, ring, words, sums, press=None):
     code += [_i(0x0F, 0, T8, data >> 16), _i(0x0D, T8, T8, data & 0xFFFF)]                # t8 = DATA
     code += [_store(0x1F, r, LOG_SAVE + 16 * (r - A0)) for r in (A0, A1, A2, A3)]          # sq a0..a3
     code += [_store(0x23, T9, COUNT), _i(0x09, T9, T9, 1), _store(0x2B, T9, COUNT)]        # count += 1
-    # The press: (count - first) < hold, unsigned.
-    load_word(A0, LOG_PRESS)
-    code.append(_r(T9, A0, A0, 0x23))                                                      # subu a0, t9, a0
-    load_word(A1, LOG_PRESS + 4)
-    code.append(_r(A0, A1, A0, 0x2B))                                                      # sltu a0, a0, a1
-    branch(4, A0, 0, 'record')
-    load_word(A0, LOG_PRESS + 8)
-    load_word(A1, LOG_PRESS + 12)
-    code += [_i(0x23, A0, A2, 0), _r(A2, A1, A2, 0x25), _i(0x2B, A0, A2, 0)]               # lw; or; sw
+    # The presses: for each table entry with (count - first) < held (unsigned), word |= value. a1 counts the entries
+    # left, a2 walks the table; t9 holds the count and is reloaded after a press used it.
+    load_word(A1, LOG_PRESS)
+    code.append(_i(0x09, T8, A2, LOG_TABLE))                                               # addiu a2, t8, table
+    labels['press'] = len(code)
+    branch(4, A1, 0, 'record')
+    code += [_i(0x23, A2, A0, 0), _r(T9, A0, A0, 0x23)]                                    # lw first; subu
+    code += [_i(0x23, A2, A3, 4), _r(A0, A3, A0, 0x2B)]                                    # lw held; sltu
+    branch(4, A0, 0, 'next')
+    load_word(A0, LOG_PRESS + 4)
+    code += [_i(0x23, A0, A3, 0), _i(0x23, A2, T9, 8), _r(A3, T9, A3, 0x25),               # lw word; lw value; or
+             _i(0x2B, A0, A3, 0), _store(0x23, T9, COUNT)]                                 # sw; reload the count
+    labels['next'] = len(code)
+    code += [_i(0x09, A2, A2, 12), _i(0x09, A1, A1, -1)]                                   # next entry
+    branch(4, 0, 0, 'press')
     labels['record'] = len(code)
     # a3 = the ring's entry for this call.
     code += [_i(0x0C, T9, A0, LOG_ENTRIES - 1), _r(0, A0, A0, 0x00, 5)]                    # andi; sll 5
@@ -222,9 +231,13 @@ def log_stub_words(slot, target, delay, resume, ring, words, sums, press=None):
             raise ValueError(f'A checksum range must be 4-byte aligned: {start:#x}-{end:#x}')
     image = bytearray(SLOT)
     struct.pack_into(f'<{len(code)}I', image, 0, *code)
-    first, hold, address, value = press or (0, 0, data, 0)
-    struct.pack_into('<I2I6I4I', image, DATA + LOG_RING, ring, *words, *[v for s in sums for v in s],
-                     first, hold, address, value)
+    address, presses = press or (data, [])
+    if len(presses) > LOG_PRESSES:
+        raise ValueError(f'A log site takes at most {LOG_PRESSES} presses.')
+    struct.pack_into('<I2I6I2I', image, DATA + LOG_RING, ring, *words, *[v for s in sums for v in s],
+                     len(presses), address)
+    for n, (first, hold, value) in enumerate(presses):
+        struct.pack_into('<3I', image, DATA + LOG_TABLE + 12 * n, first, hold, value)
     return bytes(image)
 
 
@@ -247,6 +260,56 @@ def set_stub_words(slot, target, entry, call, registers):
     image = bytearray(SLOT)
     struct.pack_into(f'<{len(code)}I', image, 0, *code)
     struct.pack_into(f'<I{len(registers)}I', image, DATA + SET_CALL, call, *[v & 0xFFFFFFFF for v in registers.values()])
+    return bytes(image)
+
+
+PRESS_COUNT, PRESS_SAVE, PRESS_TABLE, PRESS_ENTRY = 0x20, 0x40, 0x80, 20
+PRESS_ENTRIES = (SLOT - DATA - PRESS_TABLE) // PRESS_ENTRY
+
+
+def press_stub_words(slot, target, entry, presses):
+    """A stub at a function's entry that changes RAM words before the function runs, without waiting for the host:
+    each press (first call, calls held, address, AND mask, OR mask) sets word = (word & AND) | OR at the function's
+    calls first to first + held - 1 (a pad script: the controller's raw block before the game parses it). `entry`:
+    the function's first two words, run in the stub after the presses. a0 to a3 are kept; t8 and t9 are the stub's."""
+    check_entry_words(entry)
+    if len(presses) > PRESS_ENTRIES:
+        raise ValueError(f'A press stub takes at most {PRESS_ENTRIES} presses.')
+    data = slot + DATA
+    code, labels, fixups = [], {}, []
+
+    def branch(opcode, rs, rt, label):
+        fixups.append((len(code), label))
+        code.extend([_i(opcode, rs, rt, 0), 0])
+
+    code += [_i(0x0F, 0, T8, data >> 16), _i(0x0D, T8, T8, data & 0xFFFF)]                # t8 = DATA
+    code += [_store(0x1F, r, PRESS_SAVE + 16 * (r - A0)) for r in (A0, A1, A2, A3)]        # sq a0..a3
+    code += [_store(0x23, T9, COUNT), _i(0x09, T9, T9, 1), _store(0x2B, T9, COUNT)]        # count += 1
+    code += [_store(0x23, A1, PRESS_COUNT), _i(0x09, T8, A2, PRESS_TABLE)]                 # a1 = presses, a2 = table
+    labels['press'] = len(code)
+    branch(4, A1, 0, 'done')
+    code += [_i(0x23, A2, A0, 0), _r(T9, A0, A0, 0x23)]                                    # lw first; subu
+    code += [_i(0x23, A2, A3, 4), _r(A0, A3, A0, 0x2B)]                                    # lw held; sltu
+    branch(4, A0, 0, 'next')
+    code += [_i(0x23, A2, A0, 8), _i(0x23, A0, A3, 0),                                     # a0 = address; a3 = word
+             _i(0x23, A2, T9, 12), _r(A3, T9, A3, 0x24),                                   # and
+             _i(0x23, A2, T9, 16), _r(A3, T9, A3, 0x25),                                   # or
+             _i(0x2B, A0, A3, 0), _store(0x23, T9, COUNT)]                                 # sw; reload the count
+    labels['next'] = len(code)
+    code += [_i(0x09, A2, A2, PRESS_ENTRY), _i(0x09, A1, A1, -1)]
+    branch(4, 0, 0, 'press')
+    labels['done'] = len(code)
+    code += [_store(0x1E, r, PRESS_SAVE + 16 * (r - A0)) for r in (A0, A1, A2, A3)]        # lq a0..a3
+    code += list(entry) + [0x08000000 | (((target + 8) >> 2) & 0x3FFFFFF), 0]
+    for at, label in fixups:
+        code[at] |= (labels[label] - (at + 1)) & 0xFFFF
+    if len(code) * 4 > DATA:
+        raise ValueError('The stub is longer than its code area.')
+    image = bytearray(SLOT)
+    struct.pack_into(f'<{len(code)}I', image, 0, *code)
+    struct.pack_into('<I', image, DATA + PRESS_COUNT, len(presses))
+    for n, press in enumerate(presses):
+        struct.pack_into('<5I', image, DATA + PRESS_TABLE + PRESS_ENTRY * n, *[v & 0xFFFFFFFF for v in press])
     return bytes(image)
 
 

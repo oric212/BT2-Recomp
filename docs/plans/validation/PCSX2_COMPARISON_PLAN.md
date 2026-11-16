@@ -498,8 +498,26 @@ user's decision) the same route run gives the scratchpad copy and the colour **b
 bytes), and outside the explained regions 81 ranges (5,732 bytes) are left, all of the causes listed above. The IPU
 tests pass, with two new vectors of the integer transform.
 
-**Next:** step 4 (other screens' logic); steps 6 and 7 on other screens; step 10 (the comparisons into the gate).
-Press to sound and fullscreen when wanted.
+**Step 4, input for other screens (2026-11-16).** Sessions can now play a pad script: `session.py --pad-script`
+(the port's syntax, `N:cross+up,N:-`, or `@file`) puts a stub at the entry of the pad update `0x28BDA0` (every screen's
+loop calls it, about once a field) that changes port 1's raw controller block before the game parses it: both
+receive buffers the game registers in its slot-open request (`0x3B0B00`, `0x3B0B80`; PCSX2's blocks have the port's
+layout), the buttons cleared in word 7 (active low) and each pressed button's pressure byte set, so the game derives
+its held, new and repeated buttons itself. (A first try ORed the game's processed button word `0x3B0C2C` after
+`0x28BF54`: the word held the buttons, but no new press reached the logos.) The stub's table takes 198 word changes.
+
+`config/pcsx2_pad_main_menu.txt` takes PCSX2 from boot to the **main menu** with the card's save: Start every 30
+calls from 250 to 780 (logos and opening film skipped), Start at 900 ("press start"), the title from call 918 (its
+object at `0xAA11C0`), Start every 30 calls from 1,100 (the title's menu shown at 1,129, flags 0xC, the cursor on
+Continue), Cross at 1,500, the title released at 1,539. At field 2,806 the progress flags are 0xC08 (the save loaded,
+as the port's quick start at its main menu) and the mode 4. Timeline found with `--log "@28BF54:N,word=4213B0,
+word=<title+0xCC>"`; a session's timing repeats from run to run with the same script.
+
+**Next:** sites in overlay code: the menus' frame steps are overlay functions (DBZP.BIN, loaded after boot), which
+the executable's patching cannot reach and PCSX2 compiles from RAM; a stub hooked after the overlay's load would
+write the overlay sites from EE code (EE stores make PCSX2 drop its compiled blocks). Then step 4's replays from the
+main menu, character select and the story map; steps 6 and 7 on other screens; step 10. Press to sound and
+fullscreen when wanted.
 
 ## Unknowns
 

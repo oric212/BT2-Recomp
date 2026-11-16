@@ -189,12 +189,78 @@ def parse_log(text, catalogue):
             site['sums'].append((int(start, 16), int(end, 16)))
         elif key == 'press':
             first, hold, address, button = value.split('/')
-            site['press'] = (int(first), int(hold), int(address, 16), int(button, 16))
+            site['press'] = (int(address, 16), [(int(first), int(hold), int(button, 16))])
         else:
             raise ValueError(f'{option!r}: a log option is word=, sum= or press=')
     if len(site['words']) > 2 or len(site['sums']) > cb.LOG_CHECKSUMS:
         raise ValueError(f'A log site takes at most two words and {cb.LOG_CHECKSUMS} checksums.')
     return site
+
+
+# The pad script's buttons, as the port's (runtime/services/devices/pad_script.h): bit n of the controller's button
+# field (active low in the raw block, set in the game's own button words).
+PAD_BUTTONS = ('select', 'l3', 'r3', 'start', 'up', 'right', 'down', 'left',
+               'l2', 'r2', 'l1', 'r1', 'triangle', 'circle', 'cross', 'square')
+# The game parses port 1's raw 128-byte block (DBCMAN writes one of its two receive buffers each VBlank, the game
+# registers them in its slot-open request) in 0x28BDA0, the pad update every screen's loop calls; presses are made in
+# both buffers at that function's entry. In the block (as runtime/services/pad_block.h): the buttons in word 7's low
+# half (active low), the pressures from byte 34 (0xFF pressed) in this button order.
+PAD_FUNCTION, PAD_BUFFERS, PAD_WORD = 0x28BDA0, (0x3B0B00, 0x3B0B80), 0x3B0C2C
+PAD_PRESSURES = (5, 7, 4, 6, 12, 13, 14, 15, 10, 11, 8, 9)
+
+
+def pad_steps(text):
+    """The port's pad script syntax, 'N:button[+button...],N:-' (no sticks): (call, buttons) steps, each held until the
+    next; it ends with a release."""
+    steps = []
+    for item in (s.strip() for s in text.split(',') if s.strip()):
+        count, _, buttons = item.partition(':')
+        if not count.isdigit() or not buttons:
+            raise ValueError(f'{item!r}: a pad script step is N:buttons or N:-')
+        value = 0
+        if buttons != '-':
+            for name in buttons.split('+'):
+                if name not in PAD_BUTTONS:
+                    raise ValueError(f'{name!r} is not a button ({", ".join(PAD_BUTTONS)}); sticks are not scripted here')
+                value |= 1 << PAD_BUTTONS.index(name)
+        steps.append((int(count), value))
+    steps.sort()
+    if any(a[0] == b[0] for a, b in zip(steps, steps[1:])):
+        raise ValueError('Two pad script steps at one call.')
+    if steps and steps[-1][1]:
+        raise ValueError('A pad script ends with a release (N:-).')
+    return steps
+
+
+def pad_presses(text):
+    """The script as presses (first call, calls held, buttons), counted in calls of the pad update."""
+    steps = pad_steps(text)
+    return [(n, nxt - n, v) for (n, v), (nxt, _) in zip(steps, steps[1:]) if v]
+
+
+def block_presses(presses):
+    """Presses as the press stub's word changes (first, held, address, AND, OR) in both receive buffers: the buttons
+    cleared in word 7, each pressed button's pressure byte set."""
+    out = []
+    for first, hold, buttons in presses:
+        for buffer in PAD_BUFFERS:
+            out.append((first, hold, buffer + 28, 0xFFFF0000 | (~buttons & 0xFFFF), 0))
+            words = {}
+            for index, bit in enumerate(PAD_PRESSURES):
+                if buttons >> bit & 1:
+                    byte = 34 + index
+                    words[byte // 4] = words.get(byte // 4, 0) | 0xFF << (8 * (byte % 4))
+            out += [(first, hold, buffer + 4 * word, 0xFFFFFFFF, mask) for word, mask in sorted(words.items())]
+    if len(out) > cb.PRESS_ENTRIES:
+        raise ValueError(f'The script needs {len(out)} word changes; the press stub holds {cb.PRESS_ENTRIES}.')
+    return out
+
+
+def pad_site(text):
+    """--pad-script: the press stub at the pad update's entry."""
+    presses = pad_presses(Path(text[1:]).read_text(encoding='utf-8') if text.startswith('@') else text)
+    return {'name': 'pad', 'call': PAD_FUNCTION, 'target': PAD_FUNCTION, 'first': 1, 'count': 1, 'stride': 1,
+            'after': False, 'entry': True, 'pad': True, 'set': True, 'presses': block_presses(presses)}
 
 
 def parse_set(text, catalogue):
@@ -285,6 +351,11 @@ def instrument(data, sites):
             sums = (site['sums'] + [(0, 0)] * cb.LOG_CHECKSUMS)[:cb.LOG_CHECKSUMS]
             struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
             segment += cb.log_stub_words(slot, target, delay, hook + 8, site['ring'], words, sums, site['press'])
+            site['slot'] = slot
+            continue
+        if site.get('pad'):
+            struct.pack_into('<2I', patched, offset, 0x08000000 | (slot >> 2), 0)
+            segment += cb.press_stub_words(slot, target, [call, delay], site['presses'])
             site['slot'] = slot
             continue
         if site.get('set'):
@@ -556,6 +627,10 @@ def main():
                         help='NAME:COUNT[,word=ADDR][,sum=START-END][,press=FIRST/HOLD/ADDR/VALUE]: a logging site.')
     parser.add_argument('--set', action='append', default=[],
                         help='%%FUNC:CALL:REG=VALUE[,...]: registers set at a function entry without waiting.')
+    parser.add_argument('--pad-script',
+                        help="Buttons pressed as the port's pad script syntax (N:cross+up,N:-; or @file), N counting "
+                             "the game's calls of its pad update 0x28BDA0: the raw controller block changed before the "
+                             'game parses it (a site named pad; follow the game with --log @28BF54:COUNT,word=...).')
     parser.add_argument('--until', help='End the session when this site has taken its checkpoints (others may be left).')
     parser.add_argument('--realtime', action='store_true',
                         help='Full speed, default renderer, window shown, keyboard as pad 1; READY/STOP markers.')
@@ -572,10 +647,12 @@ def main():
     try:
         executable = (ROOT / 'rom/SLUS_214.41').read_bytes()
         texts = args.site + [t for spec in args.callees_of for t in callees(executable, spec)]
-        if not texts and not args.log and not args.set and not args.rpc_log:
-            parser.error('Give --site, --callees-of, --log or --rpc-log.')
+        if not texts and not args.log and not args.set and not args.rpc_log and not args.pad_script:
+            parser.error('Give --site, --callees-of, --log, --pad-script or --rpc-log.')
         sites = [parse_site(text, catalogue) for text in texts] + [parse_log(text, catalogue) for text in args.log] \
             + [parse_set(text, catalogue) for text in args.set]
+        if args.pad_script:
+            sites.append(pad_site(args.pad_script))
         if args.rpc_log:
             sites.append({'name': 'rpc', 'rpc': True, 'log': True, 'count': args.rpc_log, 'call': rpc_log.CALL,
                           'target': None})

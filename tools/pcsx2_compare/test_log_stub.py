@@ -75,6 +75,8 @@ class Machine:
             g[rd] = int(g[rs] < g[rt])
         elif op == 0 and fn == 0x25:
             g[rd] = g[rs] | g[rt]
+        elif op == 0 and fn == 0x24:
+            g[rd] = g[rs] & g[rt]
         elif op == 0 and fn == 0x00:
             g[rd] = (g[rt] << sh) & 0xFFFFFFFF
         elif op == 0 and fn == 0x02:
@@ -116,7 +118,7 @@ class LogStubTest(unittest.TestCase):
         button = RAM
         words = (RAM + 4, RAM + 8)
         sums = ((RAM + 0x10, RAM + 0x30), (RAM + 0x40, RAM + 0x40), (RAM + 0x10, RAM + 0x14))
-        image = cb.log_stub_words(SLOT, TARGET, DELAY, RESUME, RING, words, sums, press=(3, 2, button, 0x4000))
+        image = cb.log_stub_words(SLOT, TARGET, DELAY, RESUME, RING, words, sums, press=(button, [(3, 2, 0x4000), (4, 3, 0x0008)]))
         m = Machine(image)
         for k in range(8):
             m.put(RAM + 0x10 + 4 * k, 0x80000001 * (k + 1))
@@ -137,7 +139,37 @@ class LogStubTest(unittest.TestCase):
             self.assertEqual(s3, checksum([0x80000001]))
             self.assertGreater(count, 1000)
         self.assertEqual(m.calls, 6)
-        self.assertEqual(presses, [0x10, 0x10, 0x4010, 0x4010, 0x10, 0x10])   # Calls 3 and 4.
+        self.assertEqual(presses, [0x10, 0x10, 0x4010, 0x4018, 0x18, 0x18])   # Cross at calls 3 and 4, Start 4 to 6.
+
+    def test_press_stub_changes_words_before_the_function(self):
+        # At the function's entry: Cross held at calls 2 and 3 (the buttons word's bit cleared, active low), its
+        # pressure byte set; a0..a3 kept; then the function's first two words and its body at target + 8.
+        buttons, pressure = RAM, RAM + 4
+        entry = [0x27BDFFF0, 0x0080302D]                               # addiu sp, sp, -16; daddu a2, a0, zero
+        image = cb.press_stub_words(SLOT, TARGET, entry, [(2, 2, buttons, 0xFFFFBFFF, 0), (2, 2, pressure, 0xFFFFFFFF, 0xFF00)])
+        m = Machine(image)
+        seen = []
+        for call in range(1, 5):
+            m.put(buttons, 0x7F7FFFFF)                                 # The raw block as DBCMAN wrote it.
+            m.put(pressure, 0)
+            m.gpr[4:8] = [0x1111, 0x2222, 0x3333, 0x4444]
+            m.gpr[29] = 0x01FFF000
+            pc = SLOT
+            for _ in range(10000):
+                if pc == TARGET + 8:
+                    break
+                jump = m.step(pc)
+                if jump is not None:
+                    assert m.step(pc + 4) is None, 'a jump in a delay slot'
+                    pc = jump
+                else:
+                    pc += 4
+            else:
+                self.fail('the stub did not reach the body')
+            self.assertEqual(m.gpr[4:8], [0x1111, 0x2222, 0x1111, 0x4444])  # a2 from the entry's daddu
+            self.assertEqual(m.gpr[29], 0x01FFEFF0)
+            seen.append((m.word(buttons), m.word(pressure)))
+        self.assertEqual(seen, [(0x7F7FFFFF, 0), (0x7F7FBFFF, 0xFF00), (0x7F7FBFFF, 0xFF00), (0x7F7FFFFF, 0)])
 
     def test_ring_wraps(self):
         image = cb.log_stub_words(SLOT, TARGET, DELAY, RESUME, RING, (RAM, RAM), ((RAM, RAM),) * 3)
