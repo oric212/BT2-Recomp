@@ -529,8 +529,21 @@ steps before and after at the menu's frames 60 to 62): **all six calls equal** i
 written; registers equal). PCSX2 changed 5,000 to 12,000 other words during each call (interrupts, DMA and other
 threads while it waited at the checkpoint), none of them written by the port.
 
-**Next:** the routes to character selection, the story map and a town (pad scripts as the main menu's), their steps
-replayed the same way; steps 6 and 7 on other screens; step 10. Press to sound and fullscreen when wanted.
+**Step 4, Dueling and character selection (2026-11-16).** Each screen's loop was found in the port (quick start, the
+same presses, `BT2_FIELD_CALLS` at a field of the screen, a picture to see it) and its once-a-frame overlay steps
+checkpointed in PCSX2 at the screen's frames 60 to 62:
+
+| Screen | Route (calls of the pad update, after the main menu's) | Steps | Result |
+| --- | --- | --- | --- |
+| Dueling (mode 30, cursor on 1P VS COM) | Down at 1,700, 1,720, 1,740; Cross at 1,780 | `0x41B6A8` (at `0x41BDA8`), `0x41AE58` (at `0x41BDB0`) | session `menus8`: 6 of 6 equal |
+| Character selection (1P VS COM, Single Battle) | then Cross at 1,950 and 2,050 (`config/pcsx2_pad_character_select.txt`) | `0x405898`, `0x407AC8`, `0x406CA0`, `0x409698`, `0x407BE0` (at `0x409C20`, `0x409C48`, `0x409C50`, `0x409C60`, `0x409F8C`) | session `menus9`: 15 of 15 equal |
+
+On the selection screen three steps wrote nothing in those frames on either side (no button pressed): equal, but
+little exercised; frames with the cursor moving are left to check.
+
+**Next:** the selection screen with the cursor moving and a fighter chosen; the story map and a town (their routes
+from the main menu's first entry); steps 6 and 7 on other screens; step 10. Press to sound and fullscreen when
+wanted.
 
 ## Unknowns
 
