@@ -1,7 +1,6 @@
-// Host input for the game and the menus (Win32): the keyboard, the first connected XInput pad and a
-// DualSense read directly over HID (USB or Bluetooth, no wrapper needed). `gamepad()` returns the
-// XInput pad when one is connected, otherwise the DualSense. A DualSense is read on its own thread,
-// because HID reports arrive when the controller sends them.
+// Host input for the game and the menus (Win32): the keyboard, the XInput pads (Xbox controllers) and
+// the pads read directly over HID: DualSense, DualShock 4 and generic HID gamepads (hid_gamepads.h).
+// `gamepad()` returns the first XInput pad when one is connected, otherwise the first HID pad.
 #pragma once
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -12,12 +11,8 @@
 #endif
 #include <windows.h>
 #include <xinput.h>
-#include <setupapi.h>
-extern "C" {
-#include <hidsdi.h>
-}
-#include "host/dualsense_report.h"
 #include "host/gamepad.h"
+#include "host/hid_gamepads.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -29,99 +24,14 @@ extern "C" {
 #include <thread>
 #include <vector>
 
-class DualSenseReader {
-public:
-    DualSenseReader():thread_([this]{run();}) {}
-    DualSenseReader(const DualSenseReader&)=delete;
-    DualSenseReader& operator=(const DualSenseReader&)=delete;
-    ~DualSenseReader() {
-        stop_=true;
-        {std::lock_guard lock(mutex_);if(device_!=INVALID_HANDLE_VALUE)CancelIoEx(device_,nullptr);}
-        thread_.join();
-    }
-    GamepadState state() {std::lock_guard lock(mutex_);return state_;}
-    // The buttons held in any report since the last call (each report arrives on this reader's thread).
-    std::uint32_t takeSeen() {std::lock_guard lock(mutex_);const auto seen=seen_|state_.buttons;seen_=0;return seen;}
-    // BT2_PAD_TIMING=1 (a diagnostic): how old the newest report is when the game reads it, and whether reports waited
-    // in Windows' queue before the reader took them (each read that returns at once was waiting).
-    struct Timing {unsigned reports=0,waited=0;double longest_gap_ms=0;};
-    Timing timing() {std::lock_guard lock(mutex_);return timing_;}
-    std::chrono::steady_clock::time_point received() {std::lock_guard lock(mutex_);return received_;}
-
-private:
-    // Opens the first present DualSense (Sony 054C: 0CE6, or the Edge 0DF2).
-    HANDLE open(bool& bluetooth,unsigned& report_bytes) {
-        GUID hid;HidD_GetHidGuid(&hid);
-        const HDEVINFO set=SetupDiGetClassDevsA(&hid,nullptr,nullptr,DIGCF_PRESENT|DIGCF_DEVICEINTERFACE);
-        if(set==INVALID_HANDLE_VALUE)return INVALID_HANDLE_VALUE;
-        HANDLE found=INVALID_HANDLE_VALUE;
-        SP_DEVICE_INTERFACE_DATA item{};item.cbSize=sizeof item;
-        for(DWORD n=0;found==INVALID_HANDLE_VALUE && SetupDiEnumDeviceInterfaces(set,nullptr,&hid,n,&item);++n) {
-            DWORD needed=0;SetupDiGetDeviceInterfaceDetailA(set,&item,nullptr,0,&needed,nullptr);
-            std::vector<char> storage(needed);
-            auto* detail=reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(storage.data());detail->cbSize=sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
-            if(!needed || !SetupDiGetDeviceInterfaceDetailA(set,&item,detail,needed,nullptr,nullptr))continue;
-            const HANDLE device=CreateFileA(detail->DevicePath,GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,0,nullptr);
-            if(device==INVALID_HANDLE_VALUE)continue;
-            HIDD_ATTRIBUTES attributes{};attributes.Size=sizeof attributes;
-            PHIDP_PREPARSED_DATA parsed=nullptr;HIDP_CAPS caps{};
-            if(HidD_GetAttributes(device,&attributes) && attributes.VendorID==0x054C && (attributes.ProductID==0x0CE6 || attributes.ProductID==0x0DF2)
-                && HidD_GetPreparsedData(device,&parsed)) {
-                if(HidP_GetCaps(parsed,&caps)==HIDP_STATUS_SUCCESS && caps.InputReportByteLength>=10) {
-                    report_bytes=caps.InputReportByteLength;bluetooth=report_bytes>64;
-                    // Over Bluetooth the controller sends its full report only after this feature report was read.
-                    if(bluetooth) {std::vector<std::uint8_t> feature(caps.FeatureReportByteLength?caps.FeatureReportByteLength:64);feature[0]=0x05;HidD_GetFeature(device,feature.data(),ULONG(feature.size()));}
-                    found=device;
-                }
-                HidD_FreePreparsedData(parsed);
-            }
-            if(found==INVALID_HANDLE_VALUE)CloseHandle(device);
-        }
-        SetupDiDestroyDeviceInfoList(set);
-        return found;
-    }
-    void run() {
-        while(!stop_) {
-            bool bluetooth=false;unsigned report_bytes=0;
-            const HANDLE device=open(bluetooth,report_bytes);
-            if(device==INVALID_HANDLE_VALUE) {
-                for(unsigned n=0;n<10 && !stop_;++n)std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Look again in a second.
-                continue;
-            }
-            {std::lock_guard lock(mutex_);device_=device;}
-            std::vector<std::uint8_t> report(report_bytes);
-            auto last=std::chrono::steady_clock::now();
-            while(!stop_) {
-                DWORD read=0;
-                const auto asked=std::chrono::steady_clock::now();
-                if(!ReadFile(device,report.data(),DWORD(report.size()),&read,nullptr))break; // Unplugged, or cancelled at shutdown.
-                const auto now=std::chrono::steady_clock::now();
-                if(const auto parsed=parseDualSenseReport(std::span<const std::uint8_t>(report.data(),read),bluetooth)) {
-                    std::lock_guard lock(mutex_);state_=*parsed;received_=now;seen_|=parsed->buttons;
-                    ++timing_.reports;
-                    if(now-asked<std::chrono::microseconds(500))++timing_.waited;
-                    timing_.longest_gap_ms=std::max(timing_.longest_gap_ms,std::chrono::duration<double,std::milli>(now-last).count());
-                    last=now;
-                }
-            }
-            {std::lock_guard lock(mutex_);device_=INVALID_HANDLE_VALUE;state_={};}
-            CloseHandle(device);
-        }
-    }
-    std::mutex mutex_;GamepadState state_;std::uint32_t seen_=0;HANDLE device_=INVALID_HANDLE_VALUE;
-    std::chrono::steady_clock::time_point received_{};Timing timing_;
-    std::atomic<bool> stop_{false};
-    std::thread thread_; // Last member: it starts in the constructor and uses the others.
-};
-
 class HostInput {
 public:
-    // The first connected XInput pad, otherwise the DualSense, otherwise a disconnected state.
+    // The first connected XInput pad, otherwise the first HID pad, otherwise a disconnected state.
     GamepadState gamepad() {
         const auto pads=gamepads();
         return pads.empty()?GamepadState{}:pads.front();
     }
-    // Every connected gamepad: the XInput pads in their slots' order, then the DualSense.
+    // Every connected gamepad: the XInput pads in their slots' order, then the HID pads in the order they were found.
     std::vector<GamepadState> gamepads() {
         std::vector<GamepadState> pads;
         unsigned slots=0;
@@ -131,18 +41,22 @@ public:
             pads.push_back(xinputState(x.Gamepad));slots|=1u<<user;
         }
         xinput_slots_=slots;
-        if(const auto dualsense=dualsense_.state();dualsense.connected) {
-            pads.push_back(dualsense);
-            if(timing_) {
-                const double age=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-dualsense_.received()).count();
-                ++reads_;age_sum_+=age;age_max_=std::max(age_max_,age);if(age>8)++old_reads_;
-            }
+        auto hid=hid_.connected();
+        std::erase_if(hid,[&pads](const HidGamepads::Pad& pad) {
+            const auto state=pad.reader->state();
+            if(state.connected)pads.push_back(state);
+            return !state.connected; // Gone since connected() looked.
+        });
+        {std::lock_guard lock(seen_mutex_);hid_listed_=hid;}
+        if(timing_ && !hid.empty()) {
+            const double age=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-hid.front().reader->received()).count();
+            ++reads_;age_sum_+=age;age_max_=std::max(age_max_,age);if(age>8)++old_reads_;
         }
         return pads;
     }
     // Sampling between fields (press_latch.h): from the first call on, a thread reads the connected XInput pads and
     // `keys` (virtual-key codes) about every millisecond; takeSeen gives what was held at any moment since its last call,
-    // in gamepads()' order (the pads connected at its last call; the DualSense's own reader sees each report).
+    // in gamepads()' order (the pads connected at its last call; each HID pad's own reader sees each report).
     void sampleBetweenFields(std::vector<std::uint8_t> keys) {
         {std::lock_guard lock(seen_mutex_);watched_keys_=std::move(keys);}
         if(!sampler_.joinable())sampler_=std::thread([this]{sample();});
@@ -152,7 +66,7 @@ public:
         Seen out;
         std::lock_guard lock(seen_mutex_);
         for(DWORD user=0;user<XUSER_MAX_COUNT;++user)if(xinput_slots_>>user&1) {out.pads.push_back(seen_pads_[user]);seen_pads_[user]=0;}
-        if(dualsense_.state().connected)out.pads.push_back(dualsense_.takeSeen());
+        for(const auto& pad:hid_listed_)out.pads.push_back(pad.reader->takeSeen());
         out.keys=seen_keys_;seen_keys_={};
         return out;
     }
@@ -160,9 +74,11 @@ public:
         stop_sampling_=true;
         if(sampler_.joinable())sampler_.join();
         if(!timing_ || !reads_)return;
-        const auto t=dualsense_.timing();
-        std::fprintf(stderr,"DualSense timing: %u reports, %u had waited in the queue, longest gap %.1f ms; %u game reads, newest report %.2f ms old on average, %.1f ms at most, %u over 8 ms\n",
-                     t.reports,t.waited,t.longest_gap_ms,reads_,age_sum_/reads_,age_max_,old_reads_);
+        for(const auto& pad:hid_.all()) {
+            const auto t=pad.reader->timing();
+            std::fprintf(stderr,"%s timing: %u reports, %u had waited in the queue, longest gap %.1f ms\n",pad.reader->name(),t.reports,t.waited,t.longest_gap_ms);
+        }
+        std::fprintf(stderr,"First HID pad: %u game reads, newest report %.2f ms old on average, %.1f ms at most, %u over 8 ms\n",reads_,age_sum_/reads_,age_max_,old_reads_);
     }
     // Whether a key (virtual-key code) is down right now.
     static bool keyDown(std::uint8_t key) {return (GetAsyncKeyState(key)&0x8000)!=0;}
@@ -208,7 +124,8 @@ private:
     std::vector<std::uint8_t> watched_keys_;
     std::atomic<bool> stop_sampling_{false};
     std::thread sampler_;
-    DualSenseReader dualsense_;
+    std::vector<HidGamepads::Pad> hid_listed_; // The HID pads at gamepads()' last call (under seen_mutex_).
+    HidGamepads hid_;
     const bool timing_=std::getenv("BT2_PAD_TIMING")!=nullptr;
     unsigned reads_=0,old_reads_=0;double age_sum_=0,age_max_=0;
 };

@@ -32,7 +32,7 @@ Requested by the user on 2026-10-13 as the final stage before play-testing: a la
 | --- | --- |
 | Window | `runtime/host/viewer_window.h`: a Win32 window that shows each frame, with integer or stretched scaling (`BT2_VIEWER_SCALE`). No input, no fullscreen. |
 | Sound | Live output on the audio device, which holds the run at the game's speed (`--sound`). Fixed levels. |
-| Controller | The native controller service answers the game from a pad script or from live input (keyboard, XInput pad, DualSense) with a fixed default mapping. |
+| Controller | The native controller service answers the game from a pad script or from live input (keyboard, XInput pads, DualSense, DualShock 4, generic HID gamepads) with a fixed default mapping. |
 | Memory card | The native card service reports an empty slot. No card image. |
 | Settings | Environment variables read by the probe. No settings file. |
 | HD textures | Nothing. The GPU renderer draws from GS memory as the game wrote it. |
@@ -123,7 +123,7 @@ An optional entry under Display, off by default ([60 fps plan](../graphics/HIGH_
 
 ## Order of work
 
-1. **Host input and controller support — done 2026-10-13:** the keyboard, the first XInput pad and a DualSense read directly over HID (USB and Bluetooth) feed the native controller service (`runtime/host/host_input.h`, `input_mapping.h`, `dualsense_report.h`). Not checked: an XInput pad and a DualSense on real hardware (the user tries them).
+1. **Host input and controller support — done 2026-10-13:** the keyboard, the first XInput pad and a DualSense read directly over HID (USB and Bluetooth) feed the native controller service (`runtime/host/host_input.h`, `input_mapping.h`, `playstation_report.h`). Not checked: an XInput pad and a DualSense on real hardware (the user tries them).
 2. **Launcher shell — done 2026-10-13:** settings file (`settings.h`), menu model (`menu_model.h`), presses from held buttons (`menu_input.h`), renderer (`menu_renderer.h`), the loop and the shared settings screens (`menu_host.h`), the launcher (`launcher.h`), the two programs. Screens: Main, Controls, Display (integer scaling, fullscreen, window size, frame rate display), Sound, Game disc.
 3. **In-game menu — done 2026-10-13** (`overlay.h`, `player_session.h`): the combination, pause, Resume, Sound, Display, Fast forward, Controls, Quit to the launcher, Quit game. Volumes are the mixer's (`AudioMixer::master_percent`, `stream_percent`, `extra_percent`). Fast forward: the pacer stops waiting and the sound is not sent to the device.
 4. **Controls screen — done 2026-10-13:** each PS2 button's key and gamepad button, the fast forward key and button (held or switching), the choice between both stick buttons and Start + Select for the in-game menu, reset to defaults.
@@ -146,7 +146,7 @@ An optional entry under Display, off by default ([60 fps plan](../graphics/HIGH_
 
 - **HD textures:** whether the GPU renderer can substitute textures at all (step 6 starts with this).
 - **Card file formats:** the target is the card file PCSX2 writes (to my knowledge a raw image of the card that includes each page's spare bytes; to be confirmed on a real file when the Saves step starts). Folder-based cards and other layouts are refused by name unless the user needs one.
-- **Gamepads:** XInput pads and the DualSense are read. A DualShock 4 has a different report layout and is not read; it is added if the user needs it.
+- **Gamepads (2026-11-16):** XInput pads (Xbox controllers, 8BitDo in X-input mode), and over HID the DualSense, the DualShock 4 (USB, Bluetooth, Sony's wireless adapter) and generic HID gamepads (8BitDo in D-input mode, the Switch Pro Controller's simple report, plain USB pads), several at once, in the order found after the XInput pads (`runtime/host/hid_gamepads.h`, `playstation_report.h`, `generic_gamepad.h`). Generic pads' buttons are placed by a layout per maker (8BitDo, Nintendo, otherwise the common PC layout); the button mapping screen changes the rest. Not counted twice: XInput devices' HID interfaces (`IG_` paths), Microsoft's pads over Bluetooth, keyboards that declare a gamepad (a Keychron keyboard does). Checked on this PC: an 8BitDo in X-input mode read once (XInput), its HID interface read by the generic reader at rest (about 300 reports a second). Not checked on hardware: a DualShock 4, an 8BitDo in D-input mode, button presses through the generic reader.
 
 ### One window from the launcher to the game (2026-11-12)
 

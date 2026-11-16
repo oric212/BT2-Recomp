@@ -422,12 +422,28 @@ records 128 bytes, the port's lines the same words; `rpc_compare.py` compares th
 | Disc commands | Sector reads of one stream in different chunks | Timing: the same 13,403 sectors in the same order |
 | Sound driver 0x80D0, 0x80F0 | Request words the caller does not set: the request builder (`0x314DC0`, variadic) stores a2, a3 and t0 to t3; the callers at 0x297B58 and 0x297B74 leave t3, and t0 to t3, as earlier code left them | Explained: leftover registers, not read by the driver |
 | LOADFILE requests, disc search | Bytes past a reply up to its 16-byte unit: PCSX2's SIF DMA moves whole quadwords, so the IOP's buffer follows the reply ({receive address, an IOP word, 0x10} after every short reply of every service; the IOP word 0x8001F930, for disc control also 0x8001F970, 0x8001F9B0, 0x8001A1F0). The port leaves EE memory there unchanged. The first search's name has `;1` after its NUL in PCSX2 (the IOP's buffer) | Explained: IOP leftovers the game does not read; not reproduced |
-| Controller ports | The polls are asynchronous; the port echoes each at once, PCSX2's DBCMAN replies later and not as an echo: after its reply word 9 is 0 (the game wrote 0xC after the call) and from the second poll words 5 and 6 are 2048.0 and 4096.0 | **Open**: the reply's timing and content to model |
+| Controller ports | The polls are asynchronous; the port echoes each at once, PCSX2's DBCMAN replies later; request words 5 to 12 differ | **Explained (2026-11-16)**, below: stack leftovers and a dropped motor command; nothing to model |
 
 Memory card, disc control, CD init, controller main, IOP heap: equal as before.
 
-**Next:** the controller ports' replies (DBCMAN's reply content and when it lands); then the globals' 152 ranges by
-route (or the port through the same route). Press to sound and fullscreen when wanted.
+**The controller ports explained (2026-11-16).** Each field `0x28C890` sends both ports' motor (actuator) values
+through `0x3206F8` and the pad library's sender `0x313F58`: the request is {port, command 0x0103400B, length 0x28,
+40 bytes from the caller's stack}, of which the caller writes only the first 11 (the counts 1 and 2, then 2 + 1 data
+bytes). Requests alternate between two buffers and clients (`0x3A2640` with client `0x3A0438` for port 1, `0x3A2700`
+with `0x3A0460` for port 0), the RPC number 0 or 1 by turn. Found:
+
+- **Counted bytes equal:** words 0 to 4 and word 5's low three bytes are equal in all 2,991 polls of each port
+  (session `rpc4` against `work/rpc/port-rpc6.txt`). Every other word is stack left by earlier calls (return
+  addresses of the SIF library, floats, pointers; in PCSX2 more than six patterns that follow the scene); the
+  differences in words 5 to 12 are these leftovers, not DBCMAN's reply.
+- **The reply is not read:** the sender writes words 0 to 12 afresh each time and reads nothing back; it only asks
+  whether the client's previous call is done (`0x332B70`) and, when it is not, prints a message and skips the send.
+- **Timing:** PCSX2 polls once per field as the port does (gaps of 4.92 million cycles), and in 662 of 10,236 fields
+  (6.5%) its DBCMAN had not answered yet, so that field's motor command was dropped. The caller ignores the result and
+  clears its motor words either way, so no EE state differs; the port has no vibration output.
+
+**Next:** the globals' 152 ranges by route (or the port through the same route). Press to sound and fullscreen when
+wanted.
 
 ## Unknowns
 

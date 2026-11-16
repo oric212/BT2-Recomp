@@ -67,7 +67,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 | GIF / VIF / VU | 🟢 Operational | DMA as the game uses it; VU1 programs native, checked in the gate |
 | IPU / video | 🟢 Operational | Both films decode through the game's Sofdec library |
 | Audio | 🟢 Operational | ADX streams and a native effects sampler, 48 kHz stereo ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)) |
-| Input | 🟢 Operational | Keyboard, XInput and DualSense; mapping in the launcher and the in-game menu |
+| Input | 🟢 Operational | Keyboard, XInput pads, and over HID the DualSense, DualShock 4 and generic gamepads (8BitDo in D-input mode and the like); mapping in the launcher and the in-game menu |
 | Memory card | ✅ Verified | A host folder per card; saves byte-identical to the original's ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
 | Disc / filesystem | ✅ Verified | ISO reads; archive table and overlay byte-identical to the original |
 
@@ -75,7 +75,7 @@ One PC (Core i9-10900K, Radeon RX 9070 XT), Release, a fight with every enhancem
 
 In the [implementation plan](project/IMPLEMENTATION_PLAN.md)'s order:
 
-1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the controller ports' asynchronous replies; the rest of loaded data (the globals by route); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
+1. **The PCSX2 comparison** ([plan](plans/validation/PCSX2_COMPARISON_PLAN.md)): the rest of loaded data (the globals by route); other screens' logic (step 4); VU1 and GS memory on other screens; the comparisons into the gate (step 10).
 2. **The open reports** above, as the user gives detail.
 3. **Picture and speed:** an edge filter, 60 fps load work, responsiveness steps 7 and 8 (waiting for the user's go).
 4. **Later:** textures the HD pack lacks upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); the exhaustive battle sweep.

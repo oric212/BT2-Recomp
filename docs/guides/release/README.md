@@ -24,7 +24,7 @@ Play
    Next time you can start bt2-game.exe: it goes straight into the game
    with your settings.
 
-- Controls: keyboard or gamepad (Xbox controllers and DualSense).
+- Controls: keyboard or gamepad (Xbox controllers, DualSense, DualShock 4, and generic USB or Bluetooth gamepads such as 8BitDo pads in D-input mode; remap their buttons under Settings, Controls).
   See and change the buttons in the launcher under Settings, Controls; a second
   controller plays 2P on the same PC.
 - In the game, Escape (or the PS button) opens the in-game menu.

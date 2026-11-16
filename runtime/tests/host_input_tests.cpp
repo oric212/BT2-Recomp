@@ -1,6 +1,7 @@
-// Host input: the mapping from keys and a gamepad to the game's controller, the DualSense report
-// layouts, and live input on the DualShock 2 device (synthetic data only).
-#include "host/dualsense_report.h"
+// Host input: the mapping from keys and a gamepad to the game's controller, the DualSense and
+// DualShock 4 report layouts, generic HID pads, and live input on the DualShock 2 device (synthetic data only).
+#include "host/generic_gamepad.h"
+#include "host/playstation_report.h"
 #include "host/input_mapping.h"
 #include "host/press_latch.h"
 #include "services/devices/dualshock2.h"
@@ -79,6 +80,47 @@ int main() {
     // Other reports and short ones are not input.
     usb[0]=0x02;check(!parseDualSenseReport(usb,false),"another report id is refused");
     check(!parseDualSenseReport(std::vector<std::uint8_t>{0x01,0,0},false) && !parseDualSenseReport({},false),"a short report is refused");
+
+    // DualShock 4 over USB (or before Bluetooth's full report): report 0x01, sticks at 1..4, buttons at 5..7.
+    std::vector<std::uint8_t> ds4(64);ds4[0]=0x01;ds4[1]=0x12;ds4[2]=0x34;ds4[3]=0x56;ds4[4]=0x78;
+    ds4[5]=0x40|0x02;ds4[6]=0x01|0x10;ds4[7]=0x01; // Circle, d-pad right; L1, share; PS.
+    state=parseDualShock4Report(ds4);
+    check(state && state->lx==0x12 && state->ly==0x34 && state->rx==0x56 && state->ry==0x78,"DualShock 4 USB sticks");
+    check(state->buttons==(1u<<GamepadState::East|1u<<GamepadState::Right|1u<<GamepadState::LeftShoulder|1u<<GamepadState::Back|1u<<GamepadState::Guide),"DualShock 4 USB buttons");
+    // Over Bluetooth: report 0x11, everything two bytes later.
+    std::vector<std::uint8_t> ds4bt(78);ds4bt[0]=0x11;ds4bt[3]=0x9A;ds4bt[6]=0xBC;ds4bt[7]=0x20|0x04;ds4bt[8]=0x08|0x80;
+    state=parseDualShock4Report(ds4bt);
+    check(state && state->lx==0x9A && state->ry==0xBC && state->buttons==(1u<<GamepadState::South|1u<<GamepadState::Down|1u<<GamepadState::RightTrigger|1u<<GamepadState::RightStick),"DualShock 4 Bluetooth report");
+    ds4[0]=0x05;check(!parseDualShock4Report(ds4) && !parseDualShock4Report(std::vector<std::uint8_t>{0x11,0,0,0,0}),"DualShock 4: other or short reports refused");
+
+    // Generic HID pads: buttons placed by the maker's layout, axes scaled from their ranges, the hat as the d-pad.
+    {
+        GenericReport r;
+        r.buttons=1u<<0|1u<<1|1u<<9; // HID buttons 1, 2, 10.
+        r.x=GenericValue{0,0,255};r.y=GenericValue{255,0,255};r.z=GenericValue{-32768,-32768,32767};r.rz=GenericValue{32767,-32768,32767};
+        r.hat=GenericValue{2,0,7};    // Right.
+        auto pc=decodeGenericReport(genericLayout(0x0079,0x0006),r);
+        check(pc.connected && pc.buttons==(1u<<GamepadState::West|1u<<GamepadState::South|1u<<GamepadState::Start|1u<<GamepadState::Right),"generic PC layout");
+        check(pc.lx==0 && pc.ly==0xFF && pc.rx==0 && pc.ry==0xFF,"generic axes scaled from their ranges");
+        // 8BitDo in D-input: 1 is the bottom button, 2 the right one, 10 R2.
+        auto bitdo=decodeGenericReport(genericLayout(0x2DC8,0x6012),r);
+        check(bitdo.buttons==(1u<<GamepadState::South|1u<<GamepadState::East|1u<<GamepadState::RightTrigger|1u<<GamepadState::Right),"8BitDo D-input layout");
+        // The hat's null state (outside its range) is no direction; a range from 1 counts from 1.
+        r.buttons=0;r.hat=GenericValue{8,0,7};check(!decodeGenericReport(genericLayout(0,0),r).buttons,"hat at rest");
+        r.hat=GenericValue{8,1,8};check(decodeGenericReport(genericLayout(0,0),r).buttons==(1u<<GamepadState::Up|1u<<GamepadState::Left),"hat from 1: up-left");
+        r.hat=GenericValue{3,0,3};check(decodeGenericReport(genericLayout(0,0),r).buttons==1u<<GamepadState::Left,"four-way hat");
+        // Rx and Ry are the right stick only without Z and Rz; a missing axis is at rest.
+        GenericReport rxry;rxry.rx=GenericValue{0,0,1023};rxry.ry=GenericValue{1023,0,1023};
+        const auto right=decodeGenericReport(genericLayout(0,0),rxry);
+        check(right.rx==0 && right.ry==0xFF && right.lx==0x80 && right.ly==0x80,"Rx and Ry as the right stick");
+        check(GenericValue{5,5,5}.axis()==0x80 && GenericValue{300,0,255}.axis()==0xFF,"empty range at rest, values clamp");
+        // Every layout places each button at most once (so remapping reaches each one).
+        for(const auto& layout:{genericLayout(0,0),genericLayout(0x2DC8,0),genericLayout(0x057E,0x2009)}) {
+            std::set<unsigned> used;unsigned placed=0;
+            for(const auto b:layout.buttons)if(b<GamepadState::Count){used.insert(b);++placed;}
+            check(used.size()==placed,"a layout places each button once");
+        }
+    }
 
     // The pad device: live input replaces the script's buttons and sets the sticks; a poll reports them.
     DualShock2 device;device.script=PadScript::parse("1:cross");
