@@ -17,7 +17,9 @@
 
 BT2 Recomp is a native Windows port of the PS2 game (North American release, **SLUS-21441**): its code is recompiled to C++ with PS2Recomp and runs on a small native layer, not an emulator.
 
-Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles and fast loading.
+Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. The port is checked against PCSX2 running the original game, step by step: the fight, its graphics and the first menus match exactly so far ([comparison](docs/plans/validation/PCSX2_COMPARISON_PLAN.md)).
+
+Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles, fast loading and quick start. Controls: keyboard, Xbox controllers, DualSense, DualShock 4 and generic gamepads such as 8BitDo, with every button remappable.
 
 **Download:** [BT2 Recomp v0.1](https://github.com/oric212/BT2-Recomp/releases/tag/v0.1): unzip it, put your USA disc image (`.iso`) into its `data` folder, start `bt2-launcher.exe`. Its `README.txt` has the details and the known issues.
 
@@ -25,25 +27,25 @@ Every mode runs. Versus battles play at the original's speed, the story and the 
 
 ## Progress
 <!-- progress-summary:start -->
-![BT2 port status](docs/progress/dashboard.svg?v=f80871b5)
+![BT2 port status](docs/progress/dashboard.svg?v=8989bf9b)
 
-| Milestone | Status |
-| --- | --- |
-| Startup | ✅ Verified — boot to the frame loop; key states match captures of the original |
-| Controller and card checks | ✅ Verified — native services; the no-card prompt matches the original |
-| Films | 🟢 Operational — logo and opening films with sound; the decoder computes as PCSX2's (the opening film's last picture data byte-identical) |
-| Title and menus | 🟢 Operational — every main-menu mode; all Ultimate Battle Z courses, tournaments and training lessons run without input |
-| Versus battle | 🟢 Operational — playable with a controller; all 130 fighters and 16 stages sampled; the fight's logic and draw steps and the AI match PCSX2 exactly at every frame compared |
-| Story mode | 🟢 Operational — all 200 parts and 73 towns run without input; partly played by hand |
-| Audio | 🟢 Operational — music, voices and effects; confirmed by listening |
-| Saves | ✅ Verified — loading, saving and overwriting; the saves byte-identical to the original's in PCSX2 |
-| Enhancements | 🟢 Operational — HD textures, super-sampling to 16x, widescreen, 60 fps battles, fast loading, beam struggles by buttons; full speed with all of them |
-| Online battle | 🟢 Operational — lockstep over UDP with connection codes, no port to open; played between two homes; each player sees their own view, radar and prompts; rounds start locked on |
+| Part of the game | Status | In short |
+| --- | --- | --- |
+| Startup | ✅ Verified | Boots to the game's frame loop; key states match the original |
+| Controller and card checks | ✅ Verified | Native services; the no-card prompt matches the original |
+| Films | 🟢 Operational | Logo and opening films with sound, decoded exactly as PCSX2 does |
+| Title and menus | 🟢 Operational | Every mode runs; main menu, Dueling and character selection match PCSX2 |
+| Versus battle | 🟢 Operational | Playable; all 130 fighters and 16 stages; the fight matches PCSX2 frame by frame |
+| Story mode | 🟢 Operational | All 200 parts and 73 towns run; partly played by hand |
+| Audio | 🟢 Operational | Music, voices and effects; confirmed by listening |
+| Saves | ✅ Verified | Byte-identical to the original's |
+| Enhancements | 🟢 Operational | HD textures, up to 16x super-sampling, widescreen, 60 fps battles, fast loading, quick start |
+| Online battle | 🟢 Operational | Lockstep over the internet with connection codes; played between two homes |
 
-**Code:** 11,139 EE functions plus 494 in the `DBZP.BIN` overlay, all compiled natively; nothing interpreted in the gate's runs · **Gate:** unit tests, Python suites, 31/31 comparisons with the original, the battle run against its baseline.
+**Code:** 11,139 game functions plus 494 in the `DBZP.BIN` overlay, all compiled natively · **Checks:** every change passes the gate (unit tests, 31 startup comparisons with the original, a scripted fight against its recorded result).
 <!-- progress-summary:end -->
 
-Statuses: ✅ Verified · 🟢 Operational · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached. [Full progress](docs/PROG.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
+Statuses: ✅ Verified (checked against the original) · 🟢 Operational (works, not fully checked) · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached. [Full progress](docs/PROG.md) · [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
 
 ## Enhancements
 
@@ -99,7 +101,7 @@ flowchart LR
 | **EE runtime** | Memory, kernel, threads, timers, DMA, IPU, VU1 |
 | **Native services** | The game's IOP requests answered on the host (disc, files, controller, memory card, sound, CRI); no IOP code runs |
 | **GS** | GPU rendering through paraLLEl-GS (Vulkan); packets checked on the processor |
-| **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results compared with the original game |
+| **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results compared with the original game running in PCSX2 |
 
 ## Documentation
 
@@ -107,6 +109,7 @@ flowchart LR
 | --- | --- |
 | [Build and test](docs/guides/BUILDING.md) | Host build, game-file preparation, startup probe |
 | [Progress](docs/PROG.md) | Status, measurements, next steps |
+| [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) | What matches the original, what was fixed, what is left |
 | [Implementation plan](docs/project/IMPLEMENTATION_PLAN.md) | Goals, direction and working rules |
 | [Runtime layout](docs/guides/RUNTIME_LAYOUT.md) · [Tools](docs/guides/TOOLS.md) | Where code lives; local tooling |
 | [Reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md) | Reference projects and how they are used |

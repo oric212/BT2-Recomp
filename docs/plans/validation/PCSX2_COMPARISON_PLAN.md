@@ -1,109 +1,92 @@
-# One comparison with PCSX2, across the game
+# The comparison with PCSX2
 
-The user's request (2026-11-12): a cohesive comparison of the port with PCSX2, planned and started. It is the
-"final validation" milestone's comparison half ([implementation plan](../../project/IMPLEMENTATION_PLAN.md), step 6).
+The port is checked against PCSX2 running the original game: PCSX2 stops at a chosen point, the port runs the same
+game code from PCSX2's own state, and what both leave behind is compared byte for byte. Started 2026-11-12 at the
+user's request; it is the "final validation" milestone's comparison half
+([implementation plan](../../project/IMPLEMENTATION_PLAN.md), step 6). The dated detail is in the
+[record](#record-by-date) below.
 
-## Where the comparisons stand
+## At a glance (2026-11-16)
 
-- **Startup:** 46 scripts compare single trap points of the boot with PCSX2 captures; 31 of them in the gate.
-- **The AI:** three calls replayed on PCSX2's RAM, byte-exact after four rounding fixes
-  ([AI plan](../ee/AI_VERIFICATION_PLAN.md)).
-- **Saves:** byte-identical to the original's; **films:** first pictures and sound timing.
-- **Not compared:** the fight beyond those three calls, menus and the story map's logic, loaded data after the boot,
-  VU1 memory, GIF packets, GS memory and pictures, the services' replies after the boot.
+| Step | What is compared | Status | Result | Left |
+| --- | --- | --- | --- | --- |
+| 1. Harness | Sessions, checkpoints, replays | ✅ Done | Many sites per run; button scripts; sites in the overlay | — |
+| 2. Fight frame | The fight's logic and draw steps | ✅ Done | Every call equal, at every frame compared | — |
+| 3. Trajectories | 300 consecutive fight frames | ✅ Done | All 300 equal; a full versus battle to its K.O. | — |
+| 4. Other screens | The menus' own per-frame steps | 🔧 Partly | Main menu, Dueling, character selection: 27 calls, all equal | Character selection with input; story map; a town; Ultimate Battle Z; the tournament |
+| 5. Loaded data | All RAM at a fight's first frame | 🔧 Partly | Fighters and stage byte-equal; every other difference explained | Other moments (a story map shown, a menu entered) |
+| 6. VU1 | A frame's VU1 programs and memory | 🔧 Partly | Fight frames: VU1's memory equal after every chain | Other screens; the GIF packets themselves |
+| 7. GS and pictures | Graphics memory and the drawn frame | 🔧 Partly | Fight frames: textures and uploads exact; pictures within the renderers' rounding | Other screens |
+| 8. Services | Every request to the disc, sound, card and controller services | 🔧 Partly | Boot to the title demo: equal or explained | After the title demo |
+| 9. Input lag | The game's own delay; press to screen | 🔧 Partly | Delay equal; press to screen 104 ms (port) against 108 ms (PCSX2) | Fullscreen; press to sound (if wanted) |
+| 10. In the gate | Stored comparisons run in every gate | ⏳ Not started | — | All of it |
 
-Each of these was its own tool with its own trap. The comparison below is one method for all of them.
+### Faults found and fixed
 
-## Why not compare two runs frame by frame
+| Found by | Fault | Fix |
+| --- | --- | --- |
+| Step 2 | `sqrt.s` took the root of the wrong register | The recompiler's rewrite reads `ft` |
+| Step 2 | `sqrt.s` rounded toward zero; PCSX2 rounds to nearest | FPU and VU0 roots apart |
+| Step 2 | `movn` / `movz` copied 128 bits; the EE copies 64 | 4,657 sites rewritten |
+| Step 6 | VU1: a pair with the I bit gave its upper instruction the new I | Interpreter, translator and hand-written clipper |
+| Step 8 | LOADFILE numbered modules from 1; PCSX2's IOP from 0x19 | Module IDs from 0x19 |
+| Step 8 | CRI's handles were 0xEF0D0 too high | The original's work-area base |
+| Step 8 | FILEIO's first file descriptor was 1 | The lowest free slot from 2 |
+| Step 5 | The film decoder rounded as the MPEG specification, PCSX2 otherwise | PCSX2's integer IDCT and rounding (the user's choice) |
 
-PCSX2 and the port do not take the same time: loads finish sooner in the port, its services answer sooner, so the
-game's frame counters and random numbers drift apart within seconds of the boot. A comparison over time compares
-two different games. The method is therefore **the port started from PCSX2's state**: PCSX2 halts at a chosen point,
-its state is read out, the port runs the same code from that state, and what both leave is compared byte for byte.
-Drift cannot enter, and every difference is the port's.
+### Differences that are not faults
 
-## The method
+- **Pictures:** paraLLEl-GS and PCSX2's software renderer round filtering and blending differently: most pixels
+  equal or one level apart, the port slightly brighter where glows stack. Whose rounding the console has is not known.
+- **Timing:** the port loads faster (it reaches a fight from boot 600 fields sooner), so counters, random numbers and
+  stream buffers differ wherever the two programs got to a point by their own timing.
+- **The kernel and the IOP:** PCSX2 runs the console's own kernel and IOP modules, the port answers them natively:
+  their memory, other threads' stack leftovers, IOP addresses and bytes the game does not read.
+- **Stick rest value:** `0x7F` in PCSX2's pad data, `0x80` in the port's; the game treats them alike (measured).
 
-**A session** is one PCSX2 run with **checkpoints**: call sites in an instrumented copy of the executable (as the
-existing captures) whose stub publishes the full register state, waits until the host has read the state out, and
-continues. One session yields many checkpoints, and "before" and "after" a call come from the same run.
+## How it works
 
-- **Registers published:** all 32 GPRs at 128 bits, HI/LO and HI1/LO1, SA, the 32 FPRs and FCR31, VU0's 32 VF and
-  16 VI registers and its Q, R (the game's random numbers), I and clip registers. Not readable without changing them: the FPU's ACC and VU0's
-  ACC (a function that reads them before writing them shows as a difference). `t8` and `t9` are the stub's own.
-- **Memory read:** EE RAM (32 MB, `EEmem`), VU0 and VU1 micro and data memory (`VUmem`), and when a picture is
-  compared, GS memory from a PCSX2 save state (PINE), with the software renderer.
-- **Resume:** the stub spins on a word the host clears with a process write; the host also writes how many calls
-  to let pass before the next checkpoint. Interrupt handlers and other threads keep running meanwhile: words they
-  change are told apart as before (a difference counts where the port wrote).
-- **Input:** a pad hook in the game's reader plays a script keyed to the game's own pad reads, so a session reaches
-  menus and fights without a user, and the port's starters are not needed in PCSX2.
+**Why not compare two runs over time:** loads and services take different times in the two programs, so frame
+counters and random numbers drift apart within seconds of the boot. Instead **the port starts from PCSX2's state**:
+drift cannot enter, and every difference found is the port's.
 
-**The replay** loads a checkpoint's RAM, registers and VU memory into the probe, runs the recompiled function to a
-return sentinel, and writes the RAM and registers it leaves (`BT2_REPLAY_CALL`). A function that reaches a service,
-a DMA channel or the kernel stops at that boundary with its name (fail explicitly); such functions are compared at
-the level the plan's later steps give them.
-
-**The verdict** per checkpoint: the words the port wrote equal PCSX2's after the same call, the return registers
-equal, and no word PCSX2 wrote in the function's own data is missing in the port. Differences are listed by address
-range with the function that wrote them (store watch).
+- **A session** is one PCSX2 run with **checkpoints** (`tools/pcsx2_compare/session.py`): call sites in an
+  instrumented copy of the executable whose stub publishes every register, waits while the host reads RAM, VU
+  memory and (when asked) a save state for GS memory, and continues. Sites can be any call, any function's entry, a
+  function's every call (`--callees-of`), and since 2026-11-16 also code in the overlay `DBZP.BIN`.
+- **Steering:** `--set` changes a call's arguments without stopping (the title's demo becomes a versus battle);
+  `--pad-script` presses buttons in the controller's raw data, so a session reaches menus and screens by itself.
+- **The replay** (`BT2_REPLAY_CALL`, `compare_calls.py`): the port loads a checkpoint's state, runs the same function
+  and writes what it leaves. A call that reaches a system call stops at that boundary by design.
+- **The verdict:** the words the port wrote equal PCSX2's after the same call, and the return registers equal.
+  Words only PCSX2 changed (interrupts and other threads while it waited) are listed apart.
+- **Other comparisons:** whole RAM by region (`loaded_data.py`), GS memory and pictures (`gs_compare.py`), the
+  service log (`rpc_compare.py`), timing logs (`input_delay.py`, `press_to_screen.py`).
+  [TOOLS.md](../../guides/TOOLS.md), "PCSX2 comparison sessions", has the commands.
 
 ## Steps
 
-1. **The session harness** (started 2026-11-12): resumable checkpoints with the full register block, several sites
-   per run, EE RAM and VU memory per checkpoint, the full-context replay, and the comparison. Check: the AI's three
-   calls again from one session, equal as in November; two sessions with the same script give the same fighter data
-   (PCSX2 repeats itself).
-2. **The fight frame, step by step:** checkpoints at each call of the fight loop (`0x102F30`, `0x102E80`): the logic
-   step `0x102AA0` (AI, motion, collisions, damage), the camera and effects steps, the draw builders `0x102C40` and
-   `0x102D20`. Each step replayed for 100 frames spread over the demo battle and a scripted fight with super attacks,
-   beam struggles and a stage destroyed. Steps that reach a boundary are split into their callees.
-3. **Trajectories:** one session takes the logic step at consecutive frames (K = 300); each frame replayed from
-   PCSX2's state of that frame; then the port run free for K frames from the first and the frame where it first
-   differs found. This is the claim "the fight plays as the original's", frame by frame.
-4. **Other screens' logic:** the same for the menus' frame steps, character and stage selection, the story map, a
-   town, Ultimate Battle Z's course logic, the tournament's draw.
-5. **Loaded data:** at events that follow a load (a fight's first frame, a story map shown, a menu entered) EE RAM
-   compared in whole, by region: every loaded and unpacked file, the stage's and fighters' data, the tables. Regions
-   that differ by timing (counters, the sound and stream buffers, the stacks, the kernel's own memory) are listed
-   once with their reason; anything else is a finding.
-6. **VU1 and the GIF stream:** at a frame's VIF1 kick, PCSX2's chain (in RAM) and VU memory; the port's VIF1 and
-   native VU1 programs run the same chain; VU1 memory at the chain's end and the GIF packets compared with PCSX2's
-   (VU memory at each `XGKICK`, or a PCSX2 GS dump of the frame).
-7. **GS memory and pictures:** a PCSX2 save state at a frame's start and at the next (software renderer) gives GS
-   memory; the port's renderer, started from the first with the frame's packets, is compared with the second:
-   textures and palettes byte for byte, the drawn frame by pixel statistics, the two pictures saved to
-   `work/frames/pcsx2-compare/` for the user. Differences of paraLLEl-GS's own rounding are measured, not judged by
-   eye alone.
-8. **Services:** the requests and replies of the sound, CRI, card and disc services over a session (the PCSX2 side
-   logged by hooks in the game's call wrappers, as `--sounds-log` does) against the port's log for the same
-   checkpoints' state.
-9. **Input lag and latency** (the user, 2026-11-12). Three parts, each measured the same way in both programs:
-   - **The game's own delay, in fields.** The port's (2026-11-11, [responsiveness plan](../ee/RESPONSIVENESS_PLAN.md)):
-     a press changes the game's state in the field whose pad read saw it, VU1's memory a frame later, the picture
-     7 fields after the read. In PCSX2 the same: a pad hook in the game's reader presses at a chosen read, a
-     checkpoint at the frame's end (`0x2711E8`) every frame for 20 frames records the game's field counter, the
-     fighter's state, the display-list buffer (`0x430000` to `0x457000`) and VU memory, and the field of the first
-     changed picture comes from the flips (the display buffer switched to the frame drawn after the change). Both
-     must give the same count for a stick push, Cross, Circle and Square (on its release), in either field of a
-     fight frame. A difference is a finding about the port's timing of pad reads, kicks or flips.
-   - **Press to screen, in milliseconds.** One black-box tester for both: a key sent to the program's window
-     (`SendInput`), the screen read with the desktop duplication API (each frame's present time), the first
-     picture whose fighter area changed. 100 presses spread over a fight frame's phase, in a CPU fight on the same
-     stage, windowed and fullscreen; PCSX2 at its defaults and at its lowest-latency settings (its frame pacing
-     and vsync options), the port with and without Low input lag and 60 fps. Report median and spread per setup.
-     The tester sees what the player sees, so it also checks the port's own flip-to-screen numbers.
-   - **Press to sound, and the pictures' evenness.** The same tester records the audio device (WASAPI loopback)
-     and finds the first sound of the move (a swing or a hit) after each press; and from the presents' times it
-     gives each program's picture intervals (a field apart or not) over the same fight. The game's own sound delay
-     (the field its sound request is made) comes from the same checkpoints as the game's picture delay.
-10. **In the gate:** every comparison whose captures exist locally runs in the gate from the stored captures (no
-   PCSX2 run), as the startup comparisons do.
+1. **The harness:** sessions, checkpoints, replays, comparisons.
+2. **The fight frame:** each call of the fight loop's logic and draw steps replayed at frames spread over a battle;
+   a step that differs is split into its callees until the fault shows.
+3. **Trajectories:** every frame of a long stretch, to claim "the fight plays as the original's" frame by frame.
+4. **Other screens' logic:** the same for the menus, character and stage selection, the story map, a town,
+   Ultimate Battle Z's course logic and the tournament's draw.
+5. **Loaded data:** all of RAM at events that follow a load (a fight's first frame, a story map shown, a menu
+   entered), by region; regions that differ for a known reason are listed once
+   (`config/pcsx2_compare_regions.json`), anything else is a finding.
+6. **VU1:** a frame's VIF1 chain run through the port's VIF1 and VU1 from PCSX2's state; VU1's memory compared.
+7. **GS memory and pictures:** GS memory from PCSX2's save states against the port's renderer after the same
+   frame: textures and palettes byte for byte, the frame by how far pixels differ.
+8. **Services:** every request and synchronous reply of the game's IOP services, logged in both programs.
+9. **Input lag:** the game's own delay in fields (logging sites, a scripted press), press to screen in milliseconds
+   (one black-box tester for both programs), and if wanted press to sound.
+10. **In the gate:** every comparison whose captures exist locally runs in the gate from stored captures, without
+    PCSX2, as the startup comparisons do.
 
-Each difference found gets its fix, a test of its own, and the gate's battle baseline rerecorded when the fight
-changes (as the rounding fixes did).
+Each fault found gets its fix and a test of its own; the gate's battle baseline is rerecorded when the fight changes.
 
-## Results
+## Record, by date
 
 **Step 1, the harness (2026-11-12).** One session took the AI's `think` calls 200, 550 and 900 and the fight's
 logic step `0x102AA0` (fight loop `0x102E80`, the one the title's demo battle runs) at frames 150, 450 and 750, all
@@ -547,8 +530,6 @@ wanted.
 
 ## Unknowns
 
-
-- How many of the fight's steps can be replayed without reaching a service or DMA (step 2 finds out).
 - Whether a save state taken while the stub waits changes what PCSX2 draws afterwards (states are taken there and
   the session goes on; a change to later frames has not been looked for). Sessions with different sites reach
   different GS memory at the same frame; with PCSX2's renderer on one thread whether they still do is not checked.
