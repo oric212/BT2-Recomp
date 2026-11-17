@@ -14,7 +14,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             targets=[target for _,target in package.plan(*self.fake(Path(folder)))]
             for name in ('bt2-game.exe','bt2-launcher.exe','bt2-entry-probe.exe','vcruntime140.dll','assets/struggle-buttons/xbox/a.dds',
-                         'README.txt','ONLINE-SETUP.txt','LICENSE.txt','data/PUT YOUR GAME HERE.txt'):
+                         'README.txt','ONLINE-SETUP.txt','SAVES.txt','LICENSE.txt','data/PUT YOUR GAME HERE.txt'):
                 self.assertIn(name,targets)
             self.assertEqual(len(targets),len(set(targets)))
             self.assertNotIn('assets/logo.png',targets) # The game's title logo is not the project's to ship.

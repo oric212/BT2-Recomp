@@ -21,7 +21,7 @@ For BT2's port that means: the compiled runtime ships (as `bt2-entry-probe.exe` 
 | `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll` | Visual Studio's redistributable C runtime (what the programs import besides Windows' own; Vulkan comes with the graphics driver) |
 | `assets/` | the port's beam struggle art (the launcher's logo is left out: the game's title logo) |
 | `data/`, `data/textures/` | empty, with a note each: the player's disc image, the player's HD texture pack |
-| `README.txt`, `ONLINE-SETUP.txt` | `docs/guides/release/` |
+| `README.txt`, `SAVES.txt`, `ONLINE-SETUP.txt` | `docs/guides/release/` |
 | `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt`, `SOURCE.txt` | GPL-3.0; paraLLEl-GS (LGPL-3.0), Granite, volk, the Vulkan headers, xxHash, the C runtime; the source's address and commit |
 
 The tool refuses disc images, the game's executable, debug files and missing inputs by name (`tools/build/test_package.py`).

@@ -1,48 +1,62 @@
 Online battles
 ==============
 
-Two players on two PCs fight 1P vs 2P. One hosts, the other joins. Both need
-the same version of BT2 Recomp and their own copy of the game in the "data"
-folder. Nothing to set up on your router.
+Play 1P vs 2P against a friend on another PC. One of you hosts and the other
+joins. You don't need to change anything on your router.
 
-1. Host: bt2-launcher.exe, "Online battle", "Host a battle".
-   Your code (such as SC07-3ZKY) is copied by itself: paste it (Ctrl+V) into
-   a chat to your friend.
-2. Friend: copy the code from the chat, then "Online battle",
-   "Join with a code", Enter. A reply code is shown and copied by itself:
-   paste it into the chat.
-3. Host: copy the reply code from the chat (select it, Ctrl+C), then press
-   Ctrl+V in the game's window: a "reply code" box opens with it pasted in.
-   Press Enter. The battle starts by itself.
+Before you start, both of you need:
+- the same version of BT2 Recomp, and
+- your own copy of the game in the "data" folder.
 
-The first time, Windows may ask whether bt2-entry-probe.exe may use the
-network: allow it.
 
-On the same home network the friend can use the host's "Home code" instead;
-no reply code is needed then.
+Connecting
+----------
+You swap two codes through any chat app (Discord, WhatsApp and so on).
+
+1. Host: open bt2-launcher.exe, choose Online battle, then Host a battle.
+   A code like SC07-3ZKY is copied for you. Paste it (Ctrl+V) into the chat.
+
+2. Friend: copy the host's code from the chat. In the launcher choose
+   Online battle, then Join with a code, and press Enter.
+   A reply code is copied for you. Paste it into the chat.
+
+3. Host: copy the reply code from the chat. Click on the game's window and
+   press Ctrl+V. A box opens with the code in it. Press Enter.
+
+The battle starts by itself.
+
+The first time, Windows may ask whether bt2-entry-probe.exe can use the
+network. Choose Allow.
+
+On the same home network it's even easier: the friend can use the host's
+"Home code" instead, and no reply code is needed.
+
 
 In the battle
 -------------
-Both games open on the Dueling screen with every fighter unlocked: choose
-"1P vs 2P". The host is 1P, the friend 2P; a line at the top says which you
-are. The controller works even while the game's window is in the background
-(when you are in the chat); the keyboard only when the game's window is in
-front.
+Both games open on the Dueling screen with every fighter unlocked. Choose
+1P vs 2P. The host is 1P and the friend is 2P. A line at the top of the
+screen tells you which one you are.
 
-Escape (or the menu button) opens the online menu: Resume, or End online
-battle. Both games wait while it is open.
+A controller keeps working while you are typing in the chat. The keyboard
+only works while the game's window is in front.
 
-If it does not connect
-----------------------
-- Check that the host pasted the friend's latest reply code (Ctrl+V in the
-  game's window).
-- "different build" or "gameplay settings differ": both need the same
-  version and the same "Beam struggles by buttons" setting (Settings, Controls).
-  Everything else (HD, widescreen, 60 fps) may differ.
-- Still nothing: swap roles (the friend hosts). Some mobile and office
-  networks cannot be reached this way.
-- "Connection slow" or frequent waits: the host raises "Input delay" under
+Escape (or the controller's menu button) opens the online menu. Choose Resume
+to carry on, or End online battle to stop. The game waits for both players
+while the menu is open.
+
+
+If it won't connect
+-------------------
+- Make sure the host pasted the friend's newest reply code.
+- "different build" or "gameplay settings differ": you both need the same
+  version, and the same "Beam struggles by buttons" setting (Settings,
+  Controls). Other settings, like HD textures, widescreen or 60 fps, can be
+  different.
+- Still nothing? Swap roles so the friend hosts. Some mobile and work
+  networks can't be reached this way.
+- "Connection slow" or lots of pauses: the host can raise Input delay under
   Online battle, Connection settings.
 
-If a battle stops with "the two games went apart", please report it with
-both players' user\last-run.log.
+If a battle stops with "the two games went apart", please report it and
+attach both players' user\last-run.log files.

@@ -77,7 +77,7 @@ Estimated from one PC (Core i9-10900K, Radeon RX 6800 XT and RX 9070 XT); other 
 
 ## Building
 
-**Windows 10/11 x64 · Visual Studio 2022 with C++ tools · CMake.** The [build guide](docs/guides/BUILDING.md) prepares the game files from your disc image, generates the code and builds it. Then put the `.iso` into the `data` folder next to `bt2-game.exe` and start it; memory cards live in `saves` beside it, and `bt2-launcher.exe` opens the launcher any time.
+**Windows 10/11 x64 · Visual Studio 2022 with C++ tools · CMake.** The [build guide](docs/guides/BUILDING.md) prepares the game files from your disc image, generates the code and builds it. Then put the `.iso` into the `data` folder next to `bt2-game.exe` and start it; memory cards live in `saves` beside it ([saves guide](docs/guides/release/SAVES.md): backups, moving saves, bringing them in from PCSX2), and `bt2-launcher.exe` opens the launcher any time.
 
 ## Architecture
 
@@ -107,7 +107,8 @@ flowchart LR
 
 | Document | Contents |
 | --- | --- |
-| [Build and test](docs/guides/BUILDING.md) | Host build, game-file preparation, startup probe |
+| [Build from source](docs/guides/BUILDING.md) | Tools, game files, generating the code, building and checking |
+| [Player guide](docs/guides/release/README.md), [saves](docs/guides/release/SAVES.md), [online](docs/guides/release/ONLINE_SETUP.md) | The guides that come with the release |
 | [Progress](docs/PROG.md) | Status, measurements, next steps |
 | [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) | What matches the original and what was fixed |
 | [Implementation plan](docs/project/IMPLEMENTATION_PLAN.md) | Goals, direction and working rules |

@@ -5,7 +5,7 @@
 The folder holds what a player needs besides their own game: the game program, the launcher and the runtime
 (build/probe/<config>), the MSVC runtime DLLs they load (Visual Studio's redistributable files, shipped next to the
 programs), the launcher's pictures, empty data folders with a note each (the player's disc image, HD texture packs),
-the release readme and online setup guide, the license, the third-party notices and where the source is. No disc
+the release readme, saves guide and online setup guide, the license, the third-party notices and where the source is. No disc
 image, game executable, texture pack, save, setting or capture of the console goes in.
 
 Releases follow BT3-Recomp's model (docs/project/LEGAL.md, docs/plans/launcher/RELEASE_PLAN.md): the runtime ships
@@ -53,7 +53,7 @@ def plan(build,crt):
     """(source, path in the package) for every file; text files as (str contents, path)."""
     files=[(build/name,name) for name in PROGRAMS]+[(crt/name,name) for name in CRT]
     files+=[(path,'assets/'+path.relative_to(build/'assets').as_posix()) for path in sorted((build/'assets').rglob('*')) if path.is_file() and path.name not in LEFT_OUT]
-    files+=[(ROOT/'docs/guides/release/README.md','README.txt'),(ROOT/'docs/guides/release/ONLINE_SETUP.md','ONLINE-SETUP.txt'),(ROOT/'LICENSE','LICENSE.txt')]
+    files+=[(ROOT/'docs/guides/release/README.md','README.txt'),(ROOT/'docs/guides/release/ONLINE_SETUP.md','ONLINE-SETUP.txt'),(ROOT/'docs/guides/release/SAVES.md','SAVES.txt'),(ROOT/'LICENSE','LICENSE.txt')]
     files+=[(DATA_NOTE,'data/PUT YOUR GAME HERE.txt'),(TEXTURE_NOTE,'data/textures/PUT HD TEXTURE PACKS HERE.txt')]
     for source,target in files:
         if FORBIDDEN.search(Path(target).name):raise SystemExit(f'Refused: {target} looks like game content or a build leftover')
