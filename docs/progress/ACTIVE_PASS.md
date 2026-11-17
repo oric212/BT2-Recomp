@@ -1,6 +1,6 @@
 # Resume handoff
 
-Updated: 2026-11-16. Finished work: [November history](2026-11.md).
+Updated: 2026-11-17. Finished work: [November history](2026-11.md).
 
 ## State
 
@@ -14,7 +14,7 @@ Before it (2026-11-13, evening): step 8 started (`session.py --rpc-log`, `BT2_RP
 
 Before that, the same day: Last done (2026-11-12): the [PCSX2 comparison](../plans/validation/PCSX2_COMPARISON_PLAN.md), steps 1 to 3: sessions with resumable checkpoints (`tools/pcsx2_compare/`); three code faults fixed (SQRT.S's register and rounding, MOVN/MOVZ's width); the fight frame's logic and draw steps, a full versus battle and 300 consecutive frames (session `trajectory`, every replayable call of the fight loop) equal to PCSX2; checkpoints stored as changed pages; the replay loads VU0's R register where the runtime keeps it.
 
-**Release package:** v0.2 prepared (release notes, player's guide); its package `dist/BT2-Recomp-v0.2.zip` and GitHub release `v0.2` wait for the user's word. `v0.1` published 2026-11-13.
+**Release package:** `dist/BT2-Recomp-v0.2.zip` (2026-11-17, published as GitHub release `v0.2` at the user's word, tag on `d0d7c8e`; smoke-tested from `D:/bt2-pkgtest/v0.2` with v0.1's settings, 40 s without an error). `v0.1` from 2026-11-13. The folder `D:/bt2-pkgtest` is left for the user to delete (it holds only hard links to the disc image).
 
 Also done (the same day): step 9's first part, the game's own input delay: logging sites that do not wait (`session.py --log`, `--set`), `BT2_EE_CALL_SUMS` for the port, `input_delay.py`; a press at fight frame 480 changes the lists in its frame and VU1 a frame later in both programs (sessions `delay-base`, `delay-x480`, `delay-u480`; port runs in `work/latency/`).
 
