@@ -15,13 +15,15 @@
   <a href="#credits--license">Credits &amp; license</a>
 </p>
 
-BT2 Recomp is a native Windows port of the PS2 game (North American release, **SLUS-21441**): its code is recompiled to C++ with PS2Recomp and runs on a small native layer, not an emulator.
+BT2 Recomp lets you play the PS2 game *Dragon Ball Z: Budokai Tenkaichi 2* (USA version, **SLUS-21441**) as a normal Windows program. It is not an emulator: the game's own code is translated into C++ with PS2Recomp, and a small layer stands in for the parts of the PS2 the game uses.
 
-Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. The port was checked against PCSX2 running the original game, step by step: the fight, its graphics, the first menus and the services match ([comparison](docs/plans/validation/PCSX2_COMPARISON_PLAN.md)). It has been played on several PCs and online between two homes.
+Every mode can be played. Versus battles run at the original speed, story mode and the other modes play through, saves are identical to the original game's, and two players can fight each other online.
 
-Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles, fast loading and quick start. Controls: keyboard, Xbox controllers, DualSense, DualShock 4 and generic gamepads such as 8BitDo, with every button remappable.
+The port has been checked carefully against the original game running in PCSX2. The fight, its graphics, the first menus and the game's requests to the PS2 all give the same results ([how it was compared](docs/plans/validation/PCSX2_COMPARISON_PLAN.md)). It has also been played on several PCs, and online between two homes.
 
-**Download:** [BT2 Recomp v0.2](https://github.com/oric212/BT2-Recomp/releases/tag/v0.2): unzip it, put your USA disc image (`.iso`) into its `data` folder, start `bt2-launcher.exe`. Its `README.txt` has the details and the known issues.
+You can turn on optional extras: HD textures, a sharper picture, widescreen, 60 fps battles, fast loading and quick start. It works with a keyboard, Xbox controllers, DualSense, DualShock 4 and most other gamepads (such as 8BitDo), and every button can be changed.
+
+**Download:** get [BT2 Recomp v0.2](https://github.com/oric212/BT2-Recomp/releases/tag/v0.2), unzip it, put your USA disc image (`.iso`) into its `data` folder and start `bt2-launcher.exe`. The `README.txt` inside explains the rest and lists the known problems.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
@@ -29,42 +31,54 @@ Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles, 
 <!-- progress-summary:start -->
 ![BT2 port status](docs/progress/dashboard.svg?v=fc124425)
 
-| Part of the game | Status | In short |
+| Part of the game | Status | What this means |
 | --- | --- | --- |
-| Startup | ✅ Matches the original | Boots to the game's frame loop; key states equal to PCSX2's |
-| Controller and card checks | ✅ Matches the original | Native services; the no-card prompt as the original's |
-| Films | ✅ Matches the original | Logo and opening films with sound, decoded exactly as PCSX2 does |
-| Title and menus | ✅ Matches the original | Main menu, Dueling and character selection equal to PCSX2; every mode played |
-| Versus battle | ✅ Matches the original | The fight equal to PCSX2 frame by frame; all 130 fighters and 16 stages run |
-| Story mode | 🟢 Tested | Partly played; all 200 parts and 73 towns run |
-| Audio | 🟢 Tested | Music, voices and effects mixed as the original's driver does; confirmed by listening |
-| Saves | ✅ Matches the original | Byte-identical to the original's |
-| Enhancements | 🟢 Tested | HD textures, up to 16x super-sampling, widescreen, 60 fps battles, fast loading, quick start |
-| Online battle | 🟢 Tested | Lockstep over the internet with connection codes; played between two homes |
+| Startup | ✅ Matches the original | The game starts and reaches its main loop. Its state at key moments is the same as in PCSX2. |
+| Controller and memory card checks | ✅ Matches the original | The checks at boot work, and the "no memory card" message appears as on the PS2. |
+| Films | ✅ Matches the original | The logo and opening films play with sound. Every picture is decoded exactly as PCSX2 decodes it. |
+| Title and menus | ✅ Matches the original | The main menu, the Dueling menu and character selection behave exactly as in PCSX2. Every mode has been played. |
+| Versus battle | ✅ Matches the original | A fight runs exactly as in PCSX2, frame by frame. All 130 fighters and all 16 stages have been run. |
+| Story mode | 🟢 Tested | Partly played. All 200 story parts and 73 towns have been run. |
+| Sound | 🟢 Tested | Music, voices and effects are mixed the way the game's own sound driver mixes them. Checked by listening. |
+| Saves | ✅ Matches the original | Save files are identical, byte for byte, to the ones the original game writes. |
+| Enhancements | 🟢 Tested | HD textures, super-sampling up to 16x, widescreen, 60 fps battles, fast loading and quick start. |
+| Online battle | 🟢 Tested | Two players on different PCs fight over the internet, joined by a code. Played between two homes. |
 
-**Code:** 11,139 game functions plus 494 in the `DBZP.BIN` overlay, all compiled natively · **Checks:** every change passes the gate (unit tests, 31 startup comparisons with the original, a scripted fight against its recorded result).
+**Code:** all 11,139 functions of the game's main program, and the 494 in its `DBZP.BIN` file, are compiled to
+native code. **Checks:** every change must pass the gate before it is committed: the unit tests, 31 comparisons of
+startup with the original game, and a scripted fight whose result must equal a recorded one.
 <!-- progress-summary:end -->
 
-Statuses, by evidence: ✅ Matches the original (compared with PCSX2 for the scope noted) · 🟢 Tested (played or listened to by the user, on several PCs; not compared) · 🔵 Runs (reached by automated runs only) · 🔧 Incomplete · ⛔ Blocking · ⏳ Not reached. [Full progress](docs/PROG.md) · [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
+What the statuses mean:
+
+- ✅ **Matches the original:** compared with the original game running in PCSX2, for the part described.
+- 🟢 **Tested:** played or listened to on several PCs, but not compared with PCSX2.
+- 🔵 **Runs:** reached by automated runs only.
+- 🔧 **Incomplete**, ⛔ **Blocking**, ⏳ **Not reached yet.**
+
+More: [full progress](docs/PROG.md) · [comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) · [what has been checked](docs/progress/VALIDATION.md) · [history](docs/progress/2026-11.md)
 
 ## Enhancements
 
-All optional, set in the launcher or the in-game menu (Escape or the PS button); they apply from the next start. **Gameplay never changes:** fights keep the original speed and physics, and an enhancement the PC cannot keep up with gives way instead of slowing the game.
+All of these are optional. Turn them on in the launcher, or in the in-game menu (Escape, or the PS button on a PlayStation controller); they take effect the next time the game starts.
+
+**None of them changes how the game plays.** Fights keep the original speed and physics. If your PC can't keep up with an enhancement, the enhancement steps back instead of slowing the game down.
 
 | Enhancement | What it does |
 | --- | --- |
-| **HD textures** | A PCSX2 texture pack's replacements, found by PCSX2's names, the fighters' bodies HD through the game's relighting. Supported: [Sal9im's AI-upscaled pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included), its folder in `data/textures`. |
-| **Super-sampling** | 2x to 16x samples per pixel; from 4x twice the PS2's resolution. |
-| **Widescreen** | 16:9 fights, cut-scenes and story map. |
-| **60 fps battles** | A picture between each two of the game's 30 frames; the fight itself runs as on the PS2. |
-| **Fast loading** · **Beam struggles by buttons** | Shorter loading screens; Square instead of turning the stick. Both on by default. |
-| **Quick start** | Straight to the main menu with your save loaded (a save file is created when the card has none); the logos, the opening film and the title pass unseen. Off by default. |
-| **Display** | Integer or smooth scaling, window size, fullscreen, **Variable refresh rate** for VRR displays, **Low input lag** (each picture shown as soon as it is drawn, on by default); **Tab** fast-forwards. |
-| **Online battle** | 1P vs 2P with a player on another PC: one hosts, the other joins with the host's code ([setup](docs/guides/release/ONLINE_SETUP.md)). |
+| **HD textures** | Replaces the game's textures with sharper ones from a PCSX2 texture pack. The fighters' bodies get HD textures too, lit by the game as usual. Supported pack: [Sal9im's AI-upscaled pack](https://gbatemp.net/threads/dragon-ball-z-tenkaichi-budokai-2-slus-21441-ai-upscaled-texture-pack.658938/) (not included). Put its folder in `data/textures`. |
+| **Super-sampling** | A sharper, smoother picture: each pixel is drawn 2 to 16 times. From 4x up, the picture is twice the PS2's resolution. |
+| **Widescreen** | Fights, cut-scenes and the story map in 16:9. |
+| **60 fps battles** | Adds a picture between each two of the game's 30 frames a second. The fight itself still runs exactly as on the PS2. |
+| **Fast loading** | Shorter loading screens. On by default. |
+| **Beam struggles by buttons** | Press Square in a beam struggle instead of turning the stick. On by default. |
+| **Quick start** | Skips the logos, the opening film and the title screen, and goes straight to the main menu with your save loaded. If the memory card has no save yet, one is created. Off by default. |
+| **Display** | Sharp (integer) or smooth scaling, window size, fullscreen, **Variable refresh rate** for displays that support it, and **Low input lag**, which shows each picture as soon as it is drawn (on by default). Hold **Tab** to fast-forward. |
+| **Online battle** | Fight a player on another PC: one of you hosts and the other joins with the host's code ([setup guide](docs/guides/release/ONLINE_SETUP.md)). |
 
 ## System requirements
 
-Estimated from one PC (Core i9-10900K, Radeon RX 6800 XT and RX 9070 XT); other processors stood in for by limiting cores, other graphics cards scaled from its timings. One core's speed matters most; lower super-sampling on a weaker graphics card.
+These are estimates. They were measured on one PC (Core i9-10900K, with a Radeon RX 6800 XT and an RX 9070 XT). Slower processors were simulated by turning off cores, and other graphics cards were estimated from its timings. The speed of a single processor core matters most. On a weaker graphics card, choose a lower super-sampling setting.
 
 | | Minimum (original picture) | Recommended (every enhancement) |
 | --- | --- | --- |
@@ -77,11 +91,13 @@ Estimated from one PC (Core i9-10900K, Radeon RX 6800 XT and RX 9070 XT); other 
 
 ## Building
 
-**Windows 10/11 x64 · Visual Studio 2022 with C++ tools · CMake.** The [build guide](docs/guides/BUILDING.md) prepares the game files from your disc image, generates the code and builds it. Then put the `.iso` into the `data` folder next to `bt2-game.exe` and start it; memory cards live in `saves` beside it ([saves guide](docs/guides/release/SAVES.md): backups, moving saves, bringing them in from PCSX2), and `bt2-launcher.exe` opens the launcher any time.
+You need Windows 10 or 11 (64-bit), Visual Studio 2022 with its C++ tools, and CMake. The [build guide](docs/guides/BUILDING.md) takes you through it: it prepares the game files from your disc image, turns the game's code into C++ and builds the programs.
+
+When the build is done, put your `.iso` into the `data` folder next to `bt2-game.exe` and start `bt2-launcher.exe`. Your memory cards are kept in the `saves` folder beside it; the [saves guide](docs/guides/release/SAVES.md) explains backups, moving saves and bringing them over from PCSX2.
 
 ## Architecture
 
-The game's code is recompiled ahead of time into native C++; a small handwritten layer provides what it asks of the PS2.
+The game's code is translated into C++ once, before it runs. A small hand-written layer then answers everything the game asks of the PS2.
 
 ```mermaid
 flowchart LR
@@ -98,10 +114,10 @@ flowchart LR
 
 | Part | Role |
 | --- | --- |
-| **EE runtime** | Memory, kernel, threads, timers, DMA, IPU, VU1 |
-| **Native services** | The game's IOP requests answered on the host (disc, files, controller, memory card, sound, CRI); no IOP code runs |
-| **GS** | GPU rendering through paraLLEl-GS (Vulkan); packets checked on the processor |
-| **Checked boundaries** | Unsupported behavior stops the run instead of guessing; results compared with the original game running in PCSX2 |
+| **EE runtime** | Stands in for the PS2's main processor and its surroundings: memory, system calls, threads, timers, data transfers (DMA), the video decoder (IPU) and the vector unit (VU1). |
+| **Native services** | The PS2 has a second processor (the IOP) for the disc, files, controllers, memory card, sound and the CRI middleware. The port answers those requests directly on the PC and runs no IOP code. |
+| **GS** | The PS2's graphics chip. Its drawing commands are checked and then drawn on your graphics card by paraLLEl-GS (Vulkan). |
+| **Checked boundaries** | If the game asks for something the port does not support, the run stops and names it instead of guessing. Results are compared with the original game running in PCSX2. |
 
 ## Documentation
 

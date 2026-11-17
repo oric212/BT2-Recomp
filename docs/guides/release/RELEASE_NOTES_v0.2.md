@@ -6,9 +6,9 @@
 
 ## New in v0.2
 
-- **Voices fixed:** spoken lines (the announcer, the characters' dialogue) were far too quiet against the music and effects. Streams are now mixed as the original game's sound driver mixes them, each at the volume and position the game asks for.
-- **A separate volume for voices:** Settings, Sound now has Master, Music, Voices and Effects.
-- **More controllers:** the DualShock 4 (USB, Bluetooth or Sony's wireless adapter) and generic USB or Bluetooth gamepads, such as 8BitDo pads in D-input or Switch mode, alongside Xbox controllers and the DualSense. Several pads at once for two players on one PC; every button can be remapped.
+- **Voices fixed:** spoken lines (the announcer and the characters' dialogue) were far too quiet compared with the music and effects. They are now mixed the way the original game's sound driver mixes them, each at the volume and position the game asks for.
+- **A separate volume for voices:** Settings > Sound now has Master, Music, Voices and Effects.
+- **More controllers:** the DualShock 4 (by USB, Bluetooth or Sony's wireless adapter) and other USB or Bluetooth gamepads, such as 8BitDo pads in D-input or Switch mode, now work alongside Xbox controllers and the DualSense. Two players on one PC can each use any of them, and every button can be changed.
 - **Films** are decoded with exactly the same arithmetic as PCSX2.
 - **Checked against the original:** the port was compared step by step with the original game running in PCSX2. The fight's logic and graphics, the first menus and the game's requests to its services match. It has also been played on several PCs, and online between two homes.
 

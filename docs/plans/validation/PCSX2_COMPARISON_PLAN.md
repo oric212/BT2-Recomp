@@ -1,18 +1,28 @@
 # The comparison with PCSX2
 
-The port is checked against PCSX2 running the original game: PCSX2 stops at a chosen point, the port runs the same
-game code from PCSX2's own state, and what both leave behind is compared byte for byte. Started 2026-11-12 at the
-user's request; it is the "final validation" milestone's comparison half
-([implementation plan](../../project/IMPLEMENTATION_PLAN.md), step 6). The dated detail is in the
-[record](#record-by-date) below.
+This page explains how the port was checked against the original game running in PCSX2, and what the check found.
+
+The method: PCSX2 runs the original game and pauses at a chosen moment. The port loads PCSX2's exact state from that
+moment and runs the same piece of game code. Then the memory and registers both leave behind are compared byte for
+byte.
+
+The comparison started on 2026-11-12 at the project owner's request. It is the comparison half of the "final
+validation" milestone ([implementation plan](../../project/IMPLEMENTATION_PLAN.md), step 6). The day-by-day detail
+is in the [record](#record-by-date) at the end.
 
 ## At a glance (2026-11-16)
 
-**Closed on 2026-11-16 at the user's decision; the plan was wider than the port needs.** What it set out to show is
-shown: the fight plays as PCSX2's frame by frame, the menus reached so far step as PCSX2's, and what the game loads
-and asks of its services equals PCSX2's or is explained. The other screens' graphics and memory, services after the
-title demo, Ultimate Battle Z, the tournament and further lag measurements are dropped. Two small items stay,
-optional: the story map's and a town's per-frame logic, and the stored fight comparisons in the gate.
+**The comparison was closed on 2026-11-16 by the project owner's decision**, because the original plan went further
+than the port needs. What it set out to show has been shown:
+
+- A fight runs exactly as in PCSX2, frame by frame.
+- The menus compared so far (main menu, Dueling, character selection) run exactly as in PCSX2.
+- Everything the game loads, and every request it makes to the PS2's services, is the same as in PCSX2, or the
+  difference is explained.
+
+Dropped from the plan: the graphics and memory of the other screens, the services after the title demo, Ultimate
+Battle Z, the tournament, and more input-lag measurements. Two small items remain, both optional: comparing the
+story map and a town frame by frame, and adding the stored fight comparisons to the gate.
 
 | Step | What was compared | Status | Result |
 | --- | --- | --- | --- |
@@ -27,8 +37,8 @@ optional: the story map's and a town's per-frame logic, and the stored fight com
 | 9. Input lag | The game's own delay; press to screen | ✅ Done | Delay equal; press to screen 104 ms (port) against 108 ms (PCSX2) |
 | Optional | The story map's and a town's logic; the fight comparisons in the gate | ⏳ Not started | — |
 
-**Beyond PCSX2:** the port has also been played on several PCs besides the development machine, and online battles
-between two homes (the user's tests).
+**Beyond PCSX2:** the project owner has also played the port on several PCs besides the development machine, and in
+online battles between two homes.
 
 ### Faults found and fixed
 
@@ -45,19 +55,22 @@ between two homes (the user's tests).
 
 ### Differences that are not faults
 
-- **Pictures:** paraLLEl-GS and PCSX2's software renderer round filtering and blending differently: most pixels
-  equal or one level apart, the port slightly brighter where glows stack. Whose rounding the console has is not known.
-- **Timing:** the port loads faster (it reaches a fight from boot 600 fields sooner), so counters, random numbers and
-  stream buffers differ wherever the two programs got to a point by their own timing.
-- **The kernel and the IOP:** PCSX2 runs the console's own kernel and IOP modules, the port answers them natively:
-  their memory, other threads' stack leftovers, IOP addresses and bytes the game does not read.
-- **Stick rest value:** `0x7F` in PCSX2's pad data, `0x80` in the port's; the game treats them alike (measured).
+- **Pictures:** the port's renderer (paraLLEl-GS) and PCSX2's software renderer round texture filtering and
+  blending slightly differently. Most pixels are equal or one shade apart; where glows stack up, the port's picture
+  is a little brighter. Which of the two rounds like a real PS2 is not known.
+- **Timing:** the port loads faster than PCSX2. From boot it reaches a fight 600 fields (about 10 seconds) sooner.
+  So wherever each program reached a moment at its own pace, frame counters, random numbers and stream buffers
+  differ.
+- **The PS2's system software:** PCSX2 runs the console's own kernel and IOP modules, while the port answers their
+  requests itself. Their memory therefore differs: the system's own data, leftovers on other threads' stacks, IOP
+  addresses, and bytes the game never reads.
+- **The analog stick at rest:** PCSX2 reports `0x7F` and the port `0x80`. Measured: the game treats both the same.
 
 ## How it works
 
-**Why not compare two runs over time:** loads and services take different times in the two programs, so frame
-counters and random numbers drift apart within seconds of the boot. Instead **the port starts from PCSX2's state**:
-drift cannot enter, and every difference found is the port's.
+**Why not just run both programs side by side?** Loading and the PS2 services take different amounts of time in the
+two programs, so frame counters and random numbers drift apart within seconds of the boot. Instead, **the port
+starts from PCSX2's state**. Then nothing can drift, and every difference found is the port's own.
 
 - **A session** is one PCSX2 run with **checkpoints** (`tools/pcsx2_compare/session.py`): call sites in an
   instrumented copy of the executable whose stub publishes every register, waits while the host reads RAM, VU
@@ -71,7 +84,7 @@ drift cannot enter, and every difference found is the port's.
   Words only PCSX2 changed (interrupts and other threads while it waited) are listed apart.
 - **Other comparisons:** whole RAM by region (`loaded_data.py`), GS memory and pictures (`gs_compare.py`), the
   service log (`rpc_compare.py`), timing logs (`input_delay.py`, `press_to_screen.py`).
-  [TOOLS.md](../../guides/TOOLS.md), "PCSX2 comparison sessions", has the commands.
+  The [tools guide](../../guides/TOOLS.md#comparing-with-pcsx2) has the commands.
 
 ## Steps
 

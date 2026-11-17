@@ -1,121 +1,143 @@
 # Current progress
 
-*Dragon Ball Z: Budokai Tenkaichi 2* (SLUS-21441) as a native Windows x64 port: the game's own code recompiled to C++
-on a small native layer, not an emulator ([implementation plan](project/IMPLEMENTATION_PLAN.md)).
+BT2 Recomp is a port of *Dragon Ball Z: Budokai Tenkaichi 2* (USA version, SLUS-21441) to Windows. The game's own
+code is translated into C++ and runs as an ordinary PC program, on a small layer that stands in for the PS2. It is
+not an emulator. The [implementation plan](project/IMPLEMENTATION_PLAN.md) explains the approach.
 
 <!-- progress-summary:start -->
 ![BT2 port status](progress/dashboard.svg?v=fc124425)
 
-| Part of the game | Status | In short |
+| Part of the game | Status | What this means |
 | --- | --- | --- |
-| Startup | ✅ Matches the original | Boots to the game's frame loop; key states equal to PCSX2's |
-| Controller and card checks | ✅ Matches the original | Native services; the no-card prompt as the original's |
-| Films | ✅ Matches the original | Logo and opening films with sound, decoded exactly as PCSX2 does |
-| Title and menus | ✅ Matches the original | Main menu, Dueling and character selection equal to PCSX2; every mode played |
-| Versus battle | ✅ Matches the original | The fight equal to PCSX2 frame by frame; all 130 fighters and 16 stages run |
-| Story mode | 🟢 Tested | Partly played; all 200 parts and 73 towns run |
-| Audio | 🟢 Tested | Music, voices and effects mixed as the original's driver does; confirmed by listening |
-| Saves | ✅ Matches the original | Byte-identical to the original's |
-| Enhancements | 🟢 Tested | HD textures, up to 16x super-sampling, widescreen, 60 fps battles, fast loading, quick start |
-| Online battle | 🟢 Tested | Lockstep over the internet with connection codes; played between two homes |
+| Startup | ✅ Matches the original | The game starts and reaches its main loop. Its state at key moments is the same as in PCSX2. |
+| Controller and memory card checks | ✅ Matches the original | The checks at boot work, and the "no memory card" message appears as on the PS2. |
+| Films | ✅ Matches the original | The logo and opening films play with sound. Every picture is decoded exactly as PCSX2 decodes it. |
+| Title and menus | ✅ Matches the original | The main menu, the Dueling menu and character selection behave exactly as in PCSX2. Every mode has been played. |
+| Versus battle | ✅ Matches the original | A fight runs exactly as in PCSX2, frame by frame. All 130 fighters and all 16 stages have been run. |
+| Story mode | 🟢 Tested | Partly played. All 200 story parts and 73 towns have been run. |
+| Sound | 🟢 Tested | Music, voices and effects are mixed the way the game's own sound driver mixes them. Checked by listening. |
+| Saves | ✅ Matches the original | Save files are identical, byte for byte, to the ones the original game writes. |
+| Enhancements | 🟢 Tested | HD textures, super-sampling up to 16x, widescreen, 60 fps battles, fast loading and quick start. |
+| Online battle | 🟢 Tested | Two players on different PCs fight over the internet, joined by a code. Played between two homes. |
 
-**Code:** 11,139 game functions plus 494 in the `DBZP.BIN` overlay, all compiled natively · **Checks:** every change passes the gate (unit tests, 31 startup comparisons with the original, a scripted fight against its recorded result).
+**Code:** all 11,139 functions of the game's main program, and the 494 in its `DBZP.BIN` file, are compiled to
+native code. **Checks:** every change must pass the gate before it is committed: the unit tests, 31 comparisons of
+startup with the original game, and a scripted fight whose result must equal a recorded one.
 <!-- progress-summary:end -->
 
-Statuses, by evidence: ✅ Matches the original (compared with PCSX2 for the scope noted) · 🟢 Tested (played or
-listened to by the user, on several PCs; not compared) · 🔵 Runs (reached by automated runs only) · 🔧 Incomplete ·
-⛔ Blocking · ⏳ Not reached ([definitions](project/PROGRESS_TRACKING.md)). How each part was checked:
-[VALIDATION.md](progress/VALIDATION.md).
+What the statuses mean ([full definitions](project/PROGRESS_TRACKING.md), [how each part was checked](progress/VALIDATION.md)):
+
+- ✅ **Matches the original:** compared with the original game running in PCSX2, for the part described.
+- 🟢 **Tested:** played or listened to on several PCs, but not compared with PCSX2.
+- 🔵 **Runs:** reached by automated runs only.
+- 🔧 **Incomplete**, ⛔ **Blocking**, ⏳ **Not reached yet.**
 
 ## Where things stand
 
-- **Playable:** every mode, with a keyboard, Xbox pads, DualSense, DualShock 4 or generic gamepads. The current release is
-  [v0.2](https://github.com/oric212/BT2-Recomp/releases/tag/v0.2).
-- **Checked against PCSX2:** the [comparison](plans/validation/PCSX2_COMPARISON_PLAN.md) is closed: the fight,
-  the menus reached and the services equal PCSX2's or are explained.
-- **Tested on several PCs** besides the development machine, and online between two homes.
-- **Waiting on the player's reports:** a few graphics glitches (below).
+Every mode of the game can be played. The current release is
+[v0.2](https://github.com/oric212/BT2-Recomp/releases/tag/v0.2). It works with a keyboard, Xbox controllers,
+DualSense, DualShock 4 and most other gamepads.
+
+The port has been checked against the original game running in PCSX2, the PS2 emulator. The fight, the menus
+checked so far and the PS2 services all match, and wherever something differs, the reason is known. The next
+section has the details.
+
+Besides the development PC, the port has been played on several other PCs, and online between two homes.
+
+What remains are a few graphics glitches that players reported (see [Open reports](#open-reports)).
 
 ## Comparison with PCSX2
 
-The port runs the game's code from PCSX2's own state and the results are compared byte for byte
-([plan and record](plans/validation/PCSX2_COMPARISON_PLAN.md)).
+**How it was done:** PCSX2 runs the original game and pauses at a chosen moment. The port then loads PCSX2's exact
+state from that moment, runs the same piece of game code, and the two results are compared byte for byte. Because
+both start from the same state, any difference is a fault in the port and not a matter of timing.
+The [comparison page](plans/validation/PCSX2_COMPARISON_PLAN.md) has the full plan and record.
 
-| Area | Status | Result |
-| --- | --- | --- |
-| Fight logic | ✅ Done | Every step of the fight frame equal, 300 consecutive frames and a full battle |
-| Fight graphics (VU1, GS) | ✅ Done | VU1's memory and all textures equal; pictures within the two renderers' rounding |
-| Memory at a fight's start | ✅ Done | Fighters and stage byte-equal; every other difference explained |
-| Services (disc, sound, card, controllers) | ✅ Done | Boot to the title demo: equal or explained |
-| Menus | ✅ Done | Main menu, Dueling and character selection equal |
-| Input lag | ✅ Done | The game's own delay equal; press to screen 104 ms (port) against 108 ms (PCSX2) |
+| What was compared | Result |
+| --- | --- |
+| The fight's logic | Every step of a fight frame is identical, for 300 frames in a row and for a whole battle. |
+| The fight's graphics | The graphics programs (VU1) leave identical memory, and all textures are identical. The finished pictures differ only by small rounding differences between the two renderers. |
+| Memory when a fight starts | The fighters' and the stage's data are identical. Every other difference has a known, harmless cause. |
+| PS2 services (disc, sound, memory card, controllers) | From boot to the title demo, every answer the game receives is identical or the difference is explained. |
+| Menus | The main menu, the Dueling menu and character selection are identical. |
+| Input lag | The game's own delay is the same. From button press to screen: 104 ms in the port, 108 ms in PCSX2. |
 
-Closed on 2026-11-16: the plan was wider than the port needs. Optional, if wanted later: the story map's and a
-town's logic, and the stored fight comparisons in the gate.
+The comparison was finished on 2026-11-16, because it covers everything the port needs. Two optional items are left
+for later: comparing the story map and a town, and adding the stored fight comparisons to the gate.
 
-Faults it found, all fixed: three CPU instruction faults (`sqrt.s` twice, `movn`/`movz`), one in VU1, three in the
-native services' replies, and the film decoder's rounding.
+It found eight faults, all now fixed: three in how CPU instructions were translated (`sqrt.s` twice, and
+`movn`/`movz`), one in the VU1 graphics programs, three in the answers of the port's PS2 services, and one in the
+film decoder's rounding.
 
 ## Latest
 
-- **2026-11-16 — v0.2 released:** voices fixed (streams mixed as the original's sound driver does: each player's
-  volume and pan; speech had been far too quiet) with their own volume setting; DualShock 4 and generic gamepads;
-  the PCSX2 comparison closed; the port played on several PCs and online.
-- **2026-11-16 — controllers:** the DualShock 4 and generic gamepads (8BitDo in D-input mode and the like) work
-  alongside Xbox pads and the DualSense; several at once for two players.
-- **2026-11-16 — comparison with PCSX2:** the last unexplained differences at a fight's start are explained or fixed
-  (the film decoder now rounds as PCSX2); PCSX2 sessions press buttons and reach the menus by script; the main menu,
-  Dueling and character selection match PCSX2.
-- **2026-11-13 — v0.1 released:** the first package, with a player's guide and known issues; **Quick start**
-  (straight to the main menu with the save loaded).
-- **2026-11-12 to 13 — the fight against PCSX2:** the fight's logic and graphics match; four emulation faults fixed;
-  the services' replies equal from boot to the title demo after three fixes.
-- Earlier: [November](progress/2026-11.md), [October](progress/2026-10.md).
+- **2026-11-16: v0.2 released.** Voices were far too quiet. They are now mixed the way the game's sound driver mixes
+  them, with each voice's own volume and position, and they have their own volume slider. The release also adds the
+  DualShock 4 and generic gamepads, and it was tested on several PCs and online.
+- **2026-11-16: more controllers.** The DualShock 4 and generic gamepads (for example 8BitDo pads in D-input mode)
+  now work alongside Xbox controllers and the DualSense. Two players can use any mix of them.
+- **2026-11-16: comparison with PCSX2 finished.** The last unexplained differences at the start of a fight were
+  explained or fixed; the film decoder now rounds the way PCSX2 does. PCSX2 can now press buttons from a script and
+  reach the menus by itself; the main menu, Dueling and character selection match.
+- **2026-11-13: v0.1 released.** The first download, with a player's guide and a list of known problems. It added
+  **Quick start**, which goes straight to the main menu with your save loaded.
+- **2026-11-12 and 13: the fight compared with PCSX2.** The fight's logic and graphics match. Four translation
+  faults were fixed, and after three fixes the services' answers match from boot to the title demo.
+- Older entries: [November](progress/2026-11.md), [October](progress/2026-10.md).
 
-## Open reports (the player's, not yet investigated)
+## Open reports
 
-- **The destroyed Namek still flickers** at 60 fps after the lava fix ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
-- **Frieza over the ocean with HD:** a doubled outline, broken lines, blocky water ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md)).
-- **Characters under water** drawn without HD textures (same plan).
-- **"Press O to recover" not always shown online:** no port fault found ([online plan](plans/online/ONLINE_BATTLE_PLAN.md)); which fighters, attack and side?
-- A texture glitch in the first HD fight (not reproduced).
+Problems that players reported and that are not fixed yet:
 
-**Waiting for the player's try:** the new controllers (DualShock 4, 8BitDo in D-input mode); online on two PCs with
-the release package; Low input lag; Variable refresh rate; beam struggles by buttons; the second controller.
+- At 60 fps, the **destroyed Namek** stage still flickers, even after the lava fix
+  ([60 fps plan](plans/graphics/HIGH_FRAME_RATE_PLAN.md)).
+- With HD textures, **Frieza over the ocean** shows a doubled outline, broken lines and blocky water
+  ([HD textures plan](plans/graphics/HD_TEXTURES_PLAN.md)).
+- With HD textures, **characters under water** are drawn without them (same plan).
+- Online, **"Press O to recover"** sometimes does not appear. No fault has been found in the port yet. It would help
+  to know which fighters, which attack and which side ([online plan](plans/online/ONLINE_BATTLE_PLAN.md)).
+- A texture looked wrong once in the first fight with HD textures. It has not happened again.
+
+**Not yet tried by a player:** the new controllers (DualShock 4, 8BitDo in D-input mode), online between two PCs with
+the release download, Low input lag, Variable refresh rate, beam struggles by buttons, and a second controller.
 
 ## Measurements
 
-One PC (Core i9-10900K, Radeon RX 9070 XT), Release build, a fight with every enhancement on
-([performance findings](reference/PERFORMANCE_FINDINGS.md)).
+Measured on one PC (Core i9-10900K, Radeon RX 9070 XT) with the Release build, during a fight with every
+enhancement on. More in the [performance findings](reference/PERFORMANCE_FINDINGS.md).
 
-| Item | Value |
+| What | Result |
 | --- | --- |
-| Fight speed | 29.97 frames a second, super attacks included; 60 fps adds a picture between frames, 6.3 ms each |
-| Game thread | 10 to 14 ms of a 33 ms frame |
-| Graphics card | 6 ms a frame plain, 8 to 10 ms with 16x, HD and widescreen |
-| Press to screen | 104 ms with Low input lag (PCSX2: 108 ms); 111 ms at 60 fps; 133 ms without Low input lag |
-| Memory | 0.7 to 0.85 GB; 0.8 to 1.2 GB of video memory |
+| Game speed | 29.97 frames a second, the PS2's own speed, including during super attacks. |
+| 60 fps battles | One extra picture between each two game frames, 6.3 ms to draw. |
+| Processor time for the game | 10 to 14 ms of each 33 ms frame. |
+| Graphics card time | 6 ms a frame with no enhancements; 8 to 10 ms with 16x super-sampling, HD textures and widescreen. |
+| Button press to screen | 104 ms with Low input lag on (PCSX2: 108 ms); 111 ms at 60 fps; 133 ms with Low input lag off. |
+| Memory | 0.7 to 0.85 GB of RAM, and 0.8 to 1.2 GB of video memory. |
 
-## Subsystems
+## Parts of the port
 
-| Subsystem | Status | Scope |
+For developers: the PS2's parts, and how the port handles each one.
+
+| Part | Status | What it is, and how the port handles it |
 | --- | --- | --- |
-| EE CPU and kernel | 🟢 Tested | Every mapped function compiled; floating-point rounding and register widths checked against PCSX2; threads, semaphores, interrupts |
-| IOP services | ✅ Matches the original | Native disc, file, controller, memory card, sound and CRI services; no IOP code runs; replies equal PCSX2's from boot to the title demo ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)) |
-| GS and display | 🟢 Tested | paraLLEl-GS on its own threads; native passes for the outline, glow and depth of field |
-| GIF / VIF / VU | ✅ Matches the original | DMA as the game uses it; VU1 programs native, VU1 memory equal to PCSX2's in fight frames, checked in the gate |
-| IPU / video | ✅ Matches the original | Both films decode through the game's Sofdec library, with PCSX2's arithmetic |
-| Audio | 🟢 Tested | ADX streams mixed as the original's CRI driver does and a native effects sampler, 48 kHz stereo ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)) |
-| Input | 🟢 Tested | Keyboard, XInput pads, and over HID the DualSense, DualShock 4 and generic gamepads; remapping in the launcher and the in-game menu |
-| Memory card | ✅ Matches the original | A host folder per card; saves byte-identical to the original's ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)) |
-| Disc / filesystem | ✅ Matches the original | ISO reads; archive table and overlay byte-identical to the original |
+| EE CPU and kernel | 🟢 Tested | The PS2's main processor and its system calls. Every game function is compiled to native code. Floating-point rounding and register sizes were checked against PCSX2. Threads, semaphores and interrupts are handled natively. |
+| IOP services | ✅ Matches the original | The PS2's second processor handles the disc, files, controllers, memory card, sound and the CRI middleware. The port answers these requests itself and runs no IOP code. Its answers equal PCSX2's from boot to the title demo ([plan](plans/iop/NATIVE_SERVICES_PLAN.md)). |
+| GS and display | 🟢 Tested | The PS2's graphics chip. Its commands are drawn on your graphics card by paraLLEl-GS, on its own threads. The outline, glow and depth-of-field effects have their own native passes. |
+| GIF / VIF / VU | ✅ Matches the original | The paths that carry graphics data to the GS, and the VU1 vector unit that prepares it. The VU1 programs run natively, and VU1's memory equals PCSX2's in fight frames; the gate checks this. |
+| IPU / video | ✅ Matches the original | The PS2's video decoder. Both films are decoded by the game's own Sofdec video library, with PCSX2's arithmetic. |
+| Sound | 🟢 Tested | Music and voice streams (ADX) are mixed the way the game's CRI sound driver mixes them, and a native player plays the sound effects, at 48 kHz stereo ([plan](plans/sound/SOUND_OUTPUT_PLAN.md)). |
+| Input | 🟢 Tested | Keyboard, Xbox controllers (XInput), and the DualSense, DualShock 4 and generic gamepads (HID). Buttons can be changed in the launcher and in the in-game menu. |
+| Memory card | ✅ Matches the original | Each memory card is a folder on the PC. Saves are byte-identical to the original's ([plan](plans/memory-card/MEMORY_CARD_PLAN.md)). |
+| Disc and files | ✅ Matches the original | The game is read from your disc image. Its archive table and its `DBZP.BIN` file load byte-identical to the original. |
 
 ## Next
 
-1. **The open reports** above, as the player gives detail.
-2. **Picture and speed:** an edge filter, 60 fps load work, further responsiveness steps (waiting for the go-ahead).
-3. **Later:** textures the HD pack lacks, upscaled by the port ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)); a
-   battle sweep over every fighter and stage.
-4. **Decisions for the owner:** a matchmaking server and rollback for online.
+1. **The open reports** above, as players give more detail.
+2. **Picture and speed:** an edge filter, less processor and graphics load at 60 fps, and shorter input lag.
+   These wait for the go-ahead.
+3. **Later:** HD versions of the textures the HD pack lacks, upscaled by the port
+   ([plan](plans/graphics/TEXTURE_UPSCALING_PLAN.md)), and an automated run of every fighter on every stage.
+4. **Decisions for the project owner:** a matchmaking server and rollback for online play.
 
-[Active handoff](progress/ACTIVE_PASS.md) · [validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [runtime layout](guides/RUNTIME_LAYOUT.md) · [tools](guides/TOOLS.md)
+[Active handoff](progress/ACTIVE_PASS.md) · [Validation record](progress/VALIDATION.md) · [components.json](progress/components.json) · [Reference architecture](reference/REFERENCE_ARCHITECTURE.md) · [Runtime layout](guides/RUNTIME_LAYOUT.md) · [Tools](guides/TOOLS.md)
