@@ -81,7 +81,9 @@ Every difference is therefore the port's own, and each one found is either fixed
 | 23 KB of game globals | Same route difference; not explained one by one |
 | Sticks at rest `0x7F` (PCSX2) against `0x80` (port) | Each emulator's rest value; the fight is the same with either (1,427 frames compared) |
 
-### Not compared with PCSX2 yet
+### Not compared with PCSX2
+
+The comparison was closed on 2026-11-16 (the user's decision); these stay uncompared:
 
 - Whose rounding the console has: single draws (a modulated texture, an additive blend, a bilinear sprite) on both renderers.
 - Other screens' logic and pictures: menus, character select, the story map, towns.
@@ -134,6 +136,8 @@ Each ran to its budget with no stop and nothing interpreted.
 | Menus and a fight | Heard and confirmed | User | 2026-10-13 |
 | Channel balance | No 0.1-second stretch with one side far below the other (boot, menus, Ultimate Battle Z, story) | Ran | 2026-10-20 |
 | One-channel streams | Heard on both sides, left and right within 1% | Unit-tested, Ran | 2026-10-20 |
+| Stream levels | Each player's volume and pans applied as the original's CRI driver mixes them (read from the module); the films' volume 101 gives the level measured against PCSX2's recording | Unit-tested | 2026-11-16 |
+| Voices against music and effects | No longer too quiet; own volume setting | User | 2026-11-16 |
 
 ## Saves, launcher, online
 
@@ -143,6 +147,7 @@ Each ran to its budget with no stop and nothing interpreted.
 | The user's 100% save | Loads from a card folder | User | 2026-10-13 |
 | Launcher folders and screens | Folders made once and never emptied; discs and cards found; game and launcher start | Ran | 2026-10-19 |
 | Online between two homes | Connected without an open port and played | User | 2026-11-09 |
+| Several PCs | Played on several PCs besides the development machine | User | by 2026-11-16 |
 
 ## Measured performance
 
@@ -160,10 +165,12 @@ Each ran to its budget with no stop and nothing interpreted.
 - **Sound** (2026-10-13): menus and a fight.
 - **Saves** (2026-10-13): the user's 100% save loads.
 - **Online** (2026-11-09): played between two homes.
+- **Several PCs** (by 2026-11-16): played on several PCs besides the development machine.
+- **Voices** (2026-11-16): at the right level against music and effects after the stream mixing fix.
 
 ## Not validated yet
 
-- **Against PCSX2:** see "Not compared with PCSX2 yet" above.
+- **Against PCSX2:** see "Not compared with PCSX2" above.
 - **Coverage:** characters 11 to 99, variants 1 to 8, all character and stage pairings (the exhaustive battle sweep);
   screens beyond their first page; story parts after a lost battle; the chase itself; buying in the shop; Dragon
   Balls inside a fight; sagas unlocked by a fight's condition.

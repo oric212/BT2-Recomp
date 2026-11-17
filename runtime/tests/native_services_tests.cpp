@@ -141,79 +141,98 @@ int main() {
         stop.field();require(stop.played(1).empty(),"a stopped player reports nothing more");
         {
             // A start still queued when its player was destroyed (a skipped film) is dropped; a start
-            // for a player that never existed is refused. Paired sources are told from single ones.
-            CriAudioFlow gone;gone.sourceCreated(1,0x11,0x100);gone.sourceCreated(2,0x12,0x200);gone.sourceCreated(3,0x21,0x300);
-            gone.playerCreated(9,0x11,0x12);gone.playerCreated(8,0x21,0x22);gone.sourceCreated(4,0x22,0x400);
-            gone.dataWritten(1,0x1000,0x400,1);gone.dataWritten(2,0x2000,0x400,1);gone.dataWritten(3,0x3000,0x400,1);
-            require(gone.paired(1) && gone.paired(2) && !gone.paired(77),"two sources on one player given data are a pair");
-            // A one-channel stream: its partner source on the player's other buffer is never given data.
-            require(!gone.paired(3),"a source whose partner gets no data is one channel");
-            for(unsigned n=0;n<61;++n)gone.field();
-            require(!gone.paired(1),"a partner silent for a second is no longer a pair");
-            gone.playerDestroyed(9);gone.play(9,1);gone.play(9,0);
-            require(gone.commands_for_destroyed_players==2,"commands for a destroyed player are dropped");
+            // for a player that never existed is refused.
+            CriAudioFlow gone;gone.sourceCreated(1,0x11,0x100);gone.playerCreated(9,0x11,0x12);
+            gone.playerDestroyed(9);gone.play(9,1);gone.play(9,0);gone.volume(9,101);gone.pan(9,0,0xFFFFFFF1u);gone.channels(9,1);
+            require(gone.commands_for_destroyed_players==5,"commands for a destroyed player are dropped");
             bool never=false;try{gone.play(7,1);}catch(const std::runtime_error&){never=true;}
             require(never,"a start for a player that never existed is refused");
+            bool odd=false;try{gone.volume(7,1);}catch(const std::runtime_error&){odd=true;}
+            require(odd,"a volume for a player that never existed is refused");
         }
         {
-            // Sound output: played blocks are passed on with source, side and rate; what a stop only
-            // reports is not, and a destroyed player silences its sources.
+            // The channel gains of the original's player (CRI_ADXI's arithmetic): full volume at a side's
+            // end is unity, the centre is 180 of 255 on each side, the boot films' volume 101 at the
+            // ends gives 101, which is 0.395 of full scale (the level measured against PCSX2's recording).
+            require(CriAudioFlow::gains(255,-15)==std::array<unsigned,2>{255,0} && CriAudioFlow::gains(255,15)==std::array<unsigned,2>{0,255},"the ends");
+            require(CriAudioFlow::gains(255,0)==std::array<unsigned,2>{180,180},"the centre");
+            require(CriAudioFlow::gains(101,-15)==std::array<unsigned,2>{101,0} && CriAudioFlow::gains(101,0)==std::array<unsigned,2>{71,71},"volume 101");
+            require(CriAudioFlow::gains(255,5)==std::array<unsigned,2>{127,220} && CriAudioFlow::gains(0,0)==std::array<unsigned,2>{0,0},"a pan between; silence");
+        }
+        {
+            // Sound output: played blocks are passed on with source, gains and rate; what a stop only
+            // reports is not, and a destroyed player silences its sources. The stream commands set the
+            // volume (fourth word, clamped to 255), the pans (clamped to -15..15) and the channel count.
             CriAudioFlow heard;heard.sourceCreated(1,0x11,0x100);heard.sourceCreated(2,0x12,0x200);heard.playerCreated(9,0x11,0x12);heard.rate(9,24000);
-            struct Piece {std::uint32_t source;unsigned side;std::uint32_t hertz,address,bytes;};std::vector<Piece> pieces;std::vector<std::uint32_t> silenced;
-            heard.on_audible=[&](std::uint32_t source,unsigned side,std::uint32_t hertz,std::uint32_t address,std::uint32_t bytes){pieces.push_back({source,side,hertz,address,bytes});};
+            std::vector<CriAudioFlow::Heard> pieces;std::vector<std::uint32_t> silenced;
+            heard.on_audible=[&](const CriAudioFlow::Heard& h){pieces.push_back(h);};
             heard.on_silenced=[&](std::uint32_t source){silenced.push_back(source);};
+            std::vector<std::uint8_t> setup(cri_stream_size);
+            const std::uint32_t records[12]={5,9,0,101, 9,9,0,0xFFFFFFF1u, 9,9,1,15};
+            const std::uint32_t three=3;std::memcpy(setup.data(),&three,4);
+            for(unsigned r=0;r<3;++r)std::memcpy(setup.data()+0x10+r*0x10,records+r*4,16);
+            consumeCriStreamCommands(setup,&heard,0);
             heard.dataWritten(1,0x1000,0x1000,1);heard.dataWritten(2,0x3000,0x1000,1);heard.play(9,1);heard.field();
             const auto first=heard.played(1);
-            require(first.size()==2 && pieces.size()==2 && pieces[0].source==1 && pieces[0].side==0 && pieces[0].hertz==24000 && pieces[0].address==0x1000
-                && pieces[0].bytes==first[0].bytes && pieces[1].source==2 && pieces[1].side==1 && pieces[1].address==0x3000,"audible stretches");
+            require(first.size()==2 && pieces.size()==2 && pieces[0].source==1 && pieces[0].left==101 && pieces[0].right==0 && !pieces[0].speech && pieces[0].hertz==24000
+                && pieces[0].address==0x1000 && pieces[0].bytes==first[0].bytes && pieces[1].source==2 && pieces[1].left==0 && pieces[1].right==101 && pieces[1].address==0x3000,"audible stretches");
+            require(heard.mixes.size()==2 && heard.mixes.count({2,101,-15,24000}) && heard.mixes.count({2,101,15,24000}),"the mixes heard are recorded");
             heard.play(9,0);heard.field();
             require(heard.played(1).size()==2 && pieces.size()==2,"a stop's report is not heard");
-            // A one-channel stream on another player (its second source never given data) is heard in both ears.
+            // A one-channel stream (speech) on a new player: centred at its volume, marked as speech.
             heard.sourceCreated(5,0x31,0x500);heard.sourceCreated(6,0x32,0x600);heard.playerCreated(10,0x31,0x32);
+            heard.channels(10,1);heard.volume(10,256);
             heard.dataWritten(5,0x5000,0x400,1);heard.play(10,1);heard.field();(void)heard.played(1);
-            require(pieces.size()==3 && pieces[2].source==5 && pieces[2].side==2,"a one-channel stream is heard on both sides");
+            require(pieces.size()==3 && pieces[2].source==5 && pieces[2].left==180 && pieces[2].right==180 && pieces[2].speech,"a one-channel stream is heard in the centre");
+            heard.pan(10,0,20);heard.volume(10,0xFFFFFFFFu);heard.dataWritten(5,0x5400,0x400,1);heard.field();(void)heard.played(1);
+            require(pieces.size()==4 && pieces[3].left==0 && pieces[3].right==0,"pan and volume are clamped");
+            bool refused=false;try{heard.channels(10,3);}catch(const std::runtime_error&){refused=true;}
+            bool channel=false;try{heard.pan(10,2,0);}catch(const std::runtime_error&){channel=true;}
+            require(refused && channel,"three channels and a third channel's pan are refused");
             heard.play(9,1);heard.dataWritten(1,0x1000,0x400,1);heard.playerDestroyed(9);
             require(silenced==std::vector<std::uint32_t>{1,2},"a destroyed player silences its sources");
         }
         {
             // Mixer: a voice starts with one block of silence; 24 kHz is doubled with interpolation;
-            // sides are routed left and right; five fields give 4,004 samples; a dry voice counts
-            // its missing samples and starts over.
+            // each side has its gain; five fields give 4,004 samples; a dry voice counts its missing
+            // samples and starts over.
             AudioMixer mixer;
             std::vector<std::uint8_t> pcm(4000);
             for(std::size_t n=0;n<pcm.size();n+=2){const std::int16_t v=std::int16_t(1000+n);std::memcpy(pcm.data()+n,&v,2);}
-            mixer.push(7,0,48000,pcm);
+            mixer.push(7,101,0,false,48000,pcm);
             std::vector<std::uint8_t> slow(4);const std::int16_t pair[2]={200,400};std::memcpy(slow.data(),pair,4);
-            mixer.push(8,1,24000,slow);
+            mixer.push(8,0,255,false,24000,slow);
             const auto out=mixer.field();
-            require(out.size()==800*2 && out[0]==0 && out[511*2]==0 && out[512*2]==390 && out[513*2]==391,"left voice after its silent block, at the stream level");
-            require(out[511*2+1]==0 && out[512*2+1]==39 && out[513*2+1]==78 && out[514*2+1]==117 && out[515*2+1]==156 && out[516*2+1]==0,"right voice doubled with interpolation");
+            require(out.size()==800*2 && out[0]==0 && out[511*2]==0 && out[512*2]==1000*101/256 && out[513*2]==1002*101/256,"left voice after its silent block, at its gain");
+            require(out[511*2+1]==0 && out[512*2+1]==100 && out[513*2+1]==200 && out[514*2+1]==300 && out[515*2+1]==400 && out[516*2+1]==0,"right voice at unity, doubled with interpolation");
             require(mixer.underruns==800-516,"the short voice ran dry");
             std::size_t samples=out.size()/2;for(unsigned n=0;n<4;++n)samples+=mixer.field().size()/2;
             require(samples==4004,"five fields are 4,004 samples");
-            {
-                AudioMixer both;std::vector<std::uint8_t> one(2048,0);const std::int16_t v=6400;for(std::size_t n=0;n<one.size();n+=2)std::memcpy(one.data()+n,&v,2);
-                both.push(3,2,48000,one);const auto o=both.field();
-                require(o[600*2]==2500 && o[600*2+1]==2500,"a voice on both sides is heard equally in each");
-            }
+            require(AudioMixer::gained(-3,128)==-2 && AudioMixer::gained(-32768,255)==-32768 && AudioMixer::gained(1000,0)==0,"a gain shifts as the original does");
             std::vector<std::uint8_t> loud(2);const std::int16_t top=30000;std::memcpy(loud.data(),&top,2);
-            AudioMixer sum;sum.push(1,0,48000,loud);sum.push(2,0,48000,loud);
-            AudioMixer three;for(unsigned key=1;key<=3;++key)three.push(key,0,48000,loud);
-            require(sum.field()[512*2]==2*(30000*25/64) && three.field()[512*2]==32767,"voices on one side add and saturate");
-            bool refused=false;try{sum.push(3,0,44100,loud);}catch(const std::runtime_error&){refused=true;}
-            require(refused,"a rate that does not divide 48 kHz is refused");
+            AudioMixer sum;sum.push(1,101,0,false,48000,loud);sum.push(2,101,0,false,48000,loud);
+            AudioMixer three;for(unsigned key=1;key<=3;++key)three.push(key,255,0,false,48000,loud);
+            require(sum.field()[512*2]==2*(30000*101>>8) && three.field()[512*2]==0x7FFF,"voices add and the streams saturate at 0x7FFF");
+            bool refused=false;try{sum.push(3,255,0,false,44100,loud);}catch(const std::runtime_error&){refused=true;}
+            bool gain=false;try{sum.push(3,256,0,false,48000,loud);}catch(const std::runtime_error&){gain=true;}
+            require(refused && gain,"a rate that does not divide 48 kHz and a gain above unity are refused");
             sum.drop(1);
-            // Further sources are added before clamping.
-            AudioMixer plus;require(plus.field([](std::span<std::int32_t> mix){mix[0]=70000;mix[1]=-5;})[0]==32767,"extra sources join the mix");
-            // The player's volumes: streams, further sources and the whole mix, each in percent.
-            const auto level=[&](unsigned stream,unsigned extra,unsigned master) {
-                AudioMixer m;m.stream_percent=stream;m.extra_percent=extra;m.master_percent=master;
-                m.push(1,0,48000,loud);
+            // Further sources are added after the streams' clamp, before the output's.
+            AudioMixer plus;plus.push(1,255,0,false,48000,loud);plus.push(2,255,0,false,48000,loud);
+            require(plus.field([](std::span<std::int32_t> mix){mix[512*2]+=-2767;})[512*2]==30000,"extra sources join the clamped streams");
+            AudioMixer over;require(over.field([](std::span<std::int32_t> mix){mix[0]=70000;})[0]==32767,"the output saturates");
+            // The player's volumes: music, speech, further sources and the whole mix, each in percent.
+            std::vector<std::uint8_t> mid(2);const std::int16_t ten=10000;std::memcpy(mid.data(),&ten,2);
+            const auto level=[&](unsigned music,unsigned speech,unsigned extra,unsigned master) {
+                AudioMixer m;m.music_percent=music;m.speech_percent=speech;m.extra_percent=extra;m.master_percent=master;
+                m.push(1,255,0,false,48000,mid);m.push(2,180,0,true,48000,mid);
                 return m.field([](std::span<std::int32_t> mix){mix[512*2]+=1000;})[512*2];
             };
-            require(level(100,100,100)==30000*25/64+1000,"full volume is the measured level");
-            require(level(50,100,100)==30000*25/64/2+1000 && level(100,50,100)==30000*25/64+500,"streams and further sources separately");
-            require(level(100,100,50)==(30000*25/64+1000)/2 && level(0,0,100)==0,"the whole mix; silence at zero");
+            const int voice=10000*180>>8;
+            require(level(100,100,100,100)==10000+voice+1000,"full volumes: the original's level");
+            require(level(50,100,100,100)==5000+voice+1000 && level(100,0,100,100)==10000+1000,"music and speech separately");
+            require(level(0,100,50,100)==voice+500,"further sources separately");
+            require(level(0,100,100,50)==(voice+1000)/2 && level(0,0,0,100)==0,"the whole mix; silence at zero");
         }
         {
             // SPU2 ADPCM: shift and filter per block; the end flag stops, the repeat flag marks a loop.

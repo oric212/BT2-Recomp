@@ -1,184 +1,186 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="536" viewBox="0 0 960 536" role="img" aria-labelledby="title desc">
 <title id="title">BT2 port status</title>
-<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status. Verified scopes are bounded.</desc>
+<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status: matches the original (compared with PCSX2 for the scope noted), tested in play, or runs only.</desc>
 <rect x="1" y="1" width="958" height="534" rx="12" fill="#f8fafc" stroke="#dce3eb"/>
 <g font-family="Segoe UI,Arial,sans-serif">
 <text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>
 <text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">2026-11-16 · last measured checkpoint</text>
 <circle cx="29" cy="59" r="4" fill="#16835d"/>
-<text x="41" y="63" font-size="12" fill="#475569">Verified</text>
-<circle cx="199" cy="59" r="4" fill="#2b78b8"/>
-<text x="211" y="63" font-size="12" fill="#475569">Operational</text>
-<circle cx="369" cy="59" r="4" fill="#b77912"/>
-<text x="381" y="63" font-size="12" fill="#475569">Incomplete</text>
-<circle cx="539" cy="59" r="4" fill="#c2410c"/>
-<text x="551" y="63" font-size="12" fill="#475569">Blocking</text>
-<circle cx="709" cy="59" r="4" fill="#8793a5"/>
-<text x="721" y="63" font-size="12" fill="#475569">Not Reached</text>
+<text x="41" y="63" font-size="12" fill="#475569">Matches original</text>
+<circle cx="179" cy="59" r="4" fill="#65a30d"/>
+<text x="191" y="63" font-size="12" fill="#475569">Tested</text>
+<circle cx="329" cy="59" r="4" fill="#2b78b8"/>
+<text x="341" y="63" font-size="12" fill="#475569">Runs</text>
+<circle cx="479" cy="59" r="4" fill="#b77912"/>
+<text x="491" y="63" font-size="12" fill="#475569">Incomplete</text>
+<circle cx="629" cy="59" r="4" fill="#c2410c"/>
+<text x="641" y="63" font-size="12" fill="#475569">Blocking</text>
+<circle cx="779" cy="59" r="4" fill="#8793a5"/>
+<text x="791" y="63" font-size="12" fill="#475569">Not Reached</text>
 <text x="24" y="92" font-size="15" font-weight="600" fill="#334155">Game flow</text>
 <line x1="75.8" y1="128" x2="884.2" y2="128" stroke="#cbd5e1" stroke-width="2"/>
-<g><title>Startup: Verified. Boot to frame loop</title>
+<g><title>Startup: Matches original. Boot to frame loop</title>
 <rect x="24.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="75.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Startup</text>
 <text x="75.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Boot to frame loop</text>
 </g>
-<g><title>Pad &amp; card: Verified. Native checks</title>
+<g><title>Pad &amp; card: Matches original. Native checks</title>
 <rect x="139.5" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="191.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Pad &amp; card</text>
 <text x="191.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Native checks</text>
 </g>
-<g><title>Films: Operational. Decode as PCSX2</title>
-<rect x="255.0" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<g><title>Films: Matches original. Decoded as PCSX2</title>
+<rect x="255.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="306.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Films</text>
-<text x="306.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Decode as PCSX2</text>
+<text x="306.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Decoded as PCSX2</text>
 </g>
-<g><title>Title &amp; menus: Operational. 3 screens checked</title>
-<rect x="370.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="2"/>
+<g><title>Title &amp; menus: Matches original. 3 screens as PCSX2</title>
+<rect x="370.5" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="422.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Title &amp; menus</text>
-<text x="422.2" y="168" text-anchor="middle" font-size="11" fill="#2b78b8">3 screens checked</text>
+<text x="422.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">3 screens as PCSX2</text>
 </g>
-<g><title>Versus battle: Operational. Matches PCSX2</title>
-<rect x="486.0" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<g><title>Versus battle: Matches original. Frame by frame</title>
+<rect x="486.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="537.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Versus battle</text>
-<text x="537.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Matches PCSX2</text>
+<text x="537.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Frame by frame</text>
 </g>
-<g><title>Story mode: Operational. Partly played</title>
-<rect x="601.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<g><title>Story mode: Tested. Partly played</title>
+<rect x="601.5" y="106" width="103.5" height="44" rx="22" fill="#f7fee7" stroke="#65a30d" stroke-width="1.2"/>
 <text x="653.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Story mode</text>
 <text x="653.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Partly played</text>
 </g>
-<g><title>Saves: Verified. Same as original</title>
+<g><title>Saves: Matches original. Same as original</title>
 <rect x="717.0" y="106" width="103.5" height="44" rx="22" fill="#ecfdf5" stroke="#16835d" stroke-width="1.2"/>
 <text x="768.8" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Saves</text>
 <text x="768.8" y="168" text-anchor="middle" font-size="11" fill="#64748b">Same as original</text>
 </g>
-<g><title>Online battle: Operational. Works across homes</title>
-<rect x="832.5" y="106" width="103.5" height="44" rx="22" fill="#eff6ff" stroke="#2b78b8" stroke-width="1.2"/>
+<g><title>Online battle: Tested. Played, two homes</title>
+<rect x="832.5" y="106" width="103.5" height="44" rx="22" fill="#f7fee7" stroke="#65a30d" stroke-width="1.2"/>
 <text x="884.2" y="133" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e293b">Online battle</text>
-<text x="884.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Works across homes</text>
+<text x="884.2" y="168" text-anchor="middle" font-size="11" fill="#64748b">Played, two homes</text>
 </g>
 <text x="24.0" y="196" font-size="15" font-weight="600" fill="#334155">Core subsystems</text>
-<g><title>EE CPU and kernel: Operational. 11,633 functions native</title>
+<g><title>EE CPU and kernel: Tested. 11,633 functions native</title>
 <rect x="24.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41.0" cy="230" r="3.5" fill="#2b78b8"/>
+<rect x="24.0" y="219" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="41.0" cy="230" r="3.5" fill="#65a30d"/>
 <text x="52.0" y="234" font-size="13" font-weight="600" fill="#1e293b">EE CPU and kernel</text>
 <text x="37.0" y="252" font-size="11.5" fill="#64748b">11,633 functions native</text></g>
-<g><title>IOP services: Operational. Native; no IOP code runs</title>
+<g><title>IOP services: Matches original. Replies as PCSX2 to title</title>
 <rect x="24.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41.0" cy="292" r="3.5" fill="#2b78b8"/>
+<rect x="24.0" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="41.0" cy="292" r="3.5" fill="#16835d"/>
 <text x="52.0" y="296" font-size="13" font-weight="600" fill="#1e293b">IOP services</text>
-<text x="37.0" y="314" font-size="11.5" fill="#64748b">Native; no IOP code runs</text></g>
-<g><title>Disc / filesystem: Verified. Reads byte-identical</title>
+<text x="37.0" y="314" font-size="11.5" fill="#64748b">Replies as PCSX2 to title</text></g>
+<g><title>Disc / filesystem: Matches original. Reads byte-identical</title>
 <rect x="24.0" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24.0" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="41.0" cy="354" r="3.5" fill="#16835d"/>
 <text x="52.0" y="358" font-size="13" font-weight="600" fill="#1e293b">Disc / filesystem</text>
 <text x="37.0" y="376" font-size="11.5" fill="#64748b">Reads byte-identical</text></g>
-<g><title>Input: Operational. Xbox, PS4, PS5, generic pads</title>
+<g><title>Input: Tested. Xbox, PS4, PS5, generic pads</title>
 <rect x="24.0" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="24.0" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="41.0" cy="416" r="3.5" fill="#2b78b8"/>
+<rect x="24.0" y="405" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="41.0" cy="416" r="3.5" fill="#65a30d"/>
 <text x="52.0" y="420" font-size="13" font-weight="600" fill="#1e293b">Input</text>
 <text x="37.0" y="438" font-size="11.5" fill="#64748b">Xbox, PS4, PS5, generic pads</text></g>
-<g><title>Memory card: Verified. Saves byte-identical</title>
+<g><title>Memory card: Matches original. Saves byte-identical</title>
 <rect x="24.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="24.0" y="467" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="41.0" cy="478" r="3.5" fill="#16835d"/>
 <text x="52.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Memory card</text>
 <text x="37.0" y="500" font-size="11.5" fill="#64748b">Saves byte-identical</text></g>
 <text x="256.5" y="196" font-size="15" font-weight="600" fill="#334155">Graphics and sound</text>
-<g><title>GS and display: Operational. GPU renderer, own threads</title>
+<g><title>GS and display: Tested. GPU renderer, own threads</title>
 <rect x="256.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="256.5" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="273.5" cy="230" r="3.5" fill="#2b78b8"/>
+<rect x="256.5" y="219" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="273.5" cy="230" r="3.5" fill="#65a30d"/>
 <text x="284.5" y="234" font-size="13" font-weight="600" fill="#1e293b">GS and display</text>
 <text x="269.5" y="252" font-size="11.5" fill="#64748b">GPU renderer, own threads</text></g>
-<g><title>GIF / VIF / VU: Operational. Native VU1, checked in gate</title>
+<g><title>GIF / VIF / VU: Matches original. VU1 as PCSX2 in fights</title>
 <rect x="256.5" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="256.5" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="273.5" cy="292" r="3.5" fill="#2b78b8"/>
+<rect x="256.5" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="273.5" cy="292" r="3.5" fill="#16835d"/>
 <text x="284.5" y="296" font-size="13" font-weight="600" fill="#1e293b">GIF / VIF / VU</text>
-<text x="269.5" y="314" font-size="11.5" fill="#64748b">Native VU1, checked in gate</text></g>
-<g><title>IPU / video: Operational. Films decode as PCSX2</title>
+<text x="269.5" y="314" font-size="11.5" fill="#64748b">VU1 as PCSX2 in fights</text></g>
+<g><title>IPU / video: Matches original. Films decode as PCSX2</title>
 <rect x="256.5" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="256.5" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="273.5" cy="354" r="3.5" fill="#2b78b8"/>
+<rect x="256.5" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="273.5" cy="354" r="3.5" fill="#16835d"/>
 <text x="284.5" y="358" font-size="13" font-weight="600" fill="#1e293b">IPU / video</text>
 <text x="269.5" y="376" font-size="11.5" fill="#64748b">Films decode as PCSX2</text></g>
-<g><title>Audio: Operational. Music, voices, effects</title>
+<g><title>Audio: Tested. Mixed as original; heard</title>
 <rect x="256.5" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="256.5" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="273.5" cy="416" r="3.5" fill="#2b78b8"/>
+<rect x="256.5" y="405" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="273.5" cy="416" r="3.5" fill="#65a30d"/>
 <text x="284.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Audio</text>
-<text x="269.5" y="438" font-size="11.5" fill="#64748b">Music, voices, effects</text></g>
-<g><title>Launcher and menus: Operational. Settings, in-game menu</title>
+<text x="269.5" y="438" font-size="11.5" fill="#64748b">Mixed as original; heard</text></g>
+<g><title>Launcher and menus: Tested. Settings, in-game menu</title>
 <rect x="256.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="256.5" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="273.5" cy="478" r="3.5" fill="#2b78b8"/>
+<rect x="256.5" y="467" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="273.5" cy="478" r="3.5" fill="#65a30d"/>
 <text x="284.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Launcher and menus</text>
 <text x="269.5" y="500" font-size="11.5" fill="#64748b">Settings, in-game menu</text></g>
 <text x="489.0" y="196" font-size="15" font-weight="600" fill="#334155">Enhancements</text>
-<g><title>HD textures: Operational. Streamed, lit bodies</title>
+<g><title>HD textures: Tested. Streamed, lit bodies</title>
 <rect x="489.0" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="489.0" y="219" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="506.0" cy="230" r="3.5" fill="#2b78b8"/>
+<rect x="489.0" y="219" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="506.0" cy="230" r="3.5" fill="#65a30d"/>
 <text x="517.0" y="234" font-size="13" font-weight="600" fill="#1e293b">HD textures</text>
 <text x="502.0" y="252" font-size="11.5" fill="#64748b">Streamed, lit bodies</text></g>
-<g><title>Super-sampling: Operational. 2x to 16x at full speed</title>
+<g><title>Super-sampling: Tested. 2x to 16x at full speed</title>
 <rect x="489.0" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="489.0" y="281" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="506.0" cy="292" r="3.5" fill="#2b78b8"/>
+<rect x="489.0" y="281" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="506.0" cy="292" r="3.5" fill="#65a30d"/>
 <text x="517.0" y="296" font-size="13" font-weight="600" fill="#1e293b">Super-sampling</text>
 <text x="502.0" y="314" font-size="11.5" fill="#64748b">2x to 16x at full speed</text></g>
-<g><title>Widescreen: Operational. 16:9, gameplay unchanged</title>
+<g><title>Widescreen: Tested. 16:9, gameplay unchanged</title>
 <rect x="489.0" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="489.0" y="343" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="506.0" cy="354" r="3.5" fill="#2b78b8"/>
+<rect x="489.0" y="343" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="506.0" cy="354" r="3.5" fill="#65a30d"/>
 <text x="517.0" y="358" font-size="13" font-weight="600" fill="#1e293b">Widescreen</text>
 <text x="502.0" y="376" font-size="11.5" fill="#64748b">16:9, gameplay unchanged</text></g>
-<g><title>60 fps battles: Operational. Even on VRR, 7.5 ms to screen</title>
+<g><title>60 fps battles: Tested. Even on VRR, 7.5 ms to screen</title>
 <rect x="489.0" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="489.0" y="405" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="506.0" cy="416" r="3.5" fill="#2b78b8"/>
+<rect x="489.0" y="405" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="506.0" cy="416" r="3.5" fill="#65a30d"/>
 <text x="517.0" y="420" font-size="13" font-weight="600" fill="#1e293b">60 fps battles</text>
 <text x="502.0" y="438" font-size="11.5" fill="#64748b">Even on VRR, 7.5 ms to screen</text></g>
-<g><title>Online battle: Operational. Lockstep, connection codes</title>
+<g><title>Online battle: Tested. Lockstep, connection codes</title>
 <rect x="489.0" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="489.0" y="467" width="3" height="36" rx="1.5" fill="#2b78b8"/>
-<circle cx="506.0" cy="478" r="3.5" fill="#2b78b8"/>
+<rect x="489.0" y="467" width="3" height="36" rx="1.5" fill="#65a30d"/>
+<circle cx="506.0" cy="478" r="3.5" fill="#65a30d"/>
 <text x="517.0" y="482" font-size="13" font-weight="600" fill="#1e293b">Online battle</text>
 <text x="502.0" y="500" font-size="11.5" fill="#64748b">Lockstep, connection codes</text></g>
 <text x="721.5" y="196" font-size="15" font-weight="600" fill="#334155">Compared with PCSX2</text>
-<g><title>Fight logic: Verified. 300 frames, every step equal</title>
+<g><title>Fight logic: Matches original. 300 frames, every step equal</title>
 <rect x="721.5" y="210" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="721.5" y="219" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="738.5" cy="230" r="3.5" fill="#16835d"/>
 <text x="749.5" y="234" font-size="13" font-weight="600" fill="#1e293b">Fight logic</text>
 <text x="734.5" y="252" font-size="11.5" fill="#64748b">300 frames, every step equal</text></g>
-<g><title>VU1 and graphics: Verified. Fight frames; renderer rounding</title>
+<g><title>VU1 and graphics: Matches original. Fight frames; renderer rounding</title>
 <rect x="721.5" y="272" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="721.5" y="281" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="738.5" cy="292" r="3.5" fill="#16835d"/>
 <text x="749.5" y="296" font-size="13" font-weight="600" fill="#1e293b">VU1 and graphics</text>
 <text x="734.5" y="314" font-size="11.5" fill="#64748b">Fight frames; renderer rounding</text></g>
-<g><title>Loaded data: Verified. Fight start, all explained</title>
+<g><title>Loaded data: Matches original. Fight start, all explained</title>
 <rect x="721.5" y="334" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
 <rect x="721.5" y="343" width="3" height="36" rx="1.5" fill="#16835d"/>
 <circle cx="738.5" cy="354" r="3.5" fill="#16835d"/>
 <text x="749.5" y="358" font-size="13" font-weight="600" fill="#1e293b">Loaded data</text>
 <text x="734.5" y="376" font-size="11.5" fill="#64748b">Fight start, all explained</text></g>
-<g><title>Services: Incomplete. Boot to title demo equal</title>
+<g><title>Services: Matches original. Boot to title demo equal</title>
 <rect x="721.5" y="396" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="721.5" y="405" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="738.5" cy="416" r="3.5" fill="#b77912"/>
+<rect x="721.5" y="405" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="738.5" cy="416" r="3.5" fill="#16835d"/>
 <text x="749.5" y="420" font-size="13" font-weight="600" fill="#1e293b">Services</text>
 <text x="734.5" y="438" font-size="11.5" fill="#64748b">Boot to title demo equal</text></g>
-<g><title>Menus and screens: Incomplete. 3 screens equal, more left</title>
+<g><title>Menus: Matches original. 3 screens equal; closed</title>
 <rect x="721.5" y="458" width="214.5" height="54" rx="6" fill="#fff" stroke="#e2e8f0"/>
-<rect x="721.5" y="467" width="3" height="36" rx="1.5" fill="#b77912"/>
-<circle cx="738.5" cy="478" r="3.5" fill="#b77912"/>
-<text x="749.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Menus and screens</text>
-<text x="734.5" y="500" font-size="11.5" fill="#64748b">3 screens equal, more left</text></g>
+<rect x="721.5" y="467" width="3" height="36" rx="1.5" fill="#16835d"/>
+<circle cx="738.5" cy="478" r="3.5" fill="#16835d"/>
+<text x="749.5" y="482" font-size="13" font-weight="600" fill="#1e293b">Menus</text>
+<text x="734.5" y="500" font-size="11.5" fill="#64748b">3 screens equal; closed</text></g>
 </g></svg>

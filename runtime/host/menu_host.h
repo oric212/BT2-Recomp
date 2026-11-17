@@ -265,8 +265,9 @@ inline MenuScreen gameFiles(Settings& s,std::function<void()> changed,std::vecto
 inline MenuScreen sound(Settings& s,std::function<void()> changed) {
     MenuScreen screen;screen.title="Sound";
     screen.entries.push_back(number("Master volume",s.master_volume,0,100,5,"%",changed));
-    screen.entries.push_back(number("Music",s.music_volume,0,100,5,"%",changed,"The game's streamed sound: music and films."));
-    screen.entries.push_back(number("Effects and voices",s.effects_volume,0,100,5,"%",changed,"Sound effects and the characters' voices."));
+    screen.entries.push_back(number("Music",s.music_volume,0,100,5,"%",changed,"Music and the films' sound."));
+    screen.entries.push_back(number("Voices",s.voice_volume,0,100,5,"%",changed,"Spoken lines: the announcer and the characters' dialogue."));
+    screen.entries.push_back(number("Effects",s.effects_volume,0,100,5,"%",changed,"Sound effects."));
     return screen;
 }
 inline MenuScreen fastForward(MenuHost& host,Settings& s,std::function<void()> changed) {

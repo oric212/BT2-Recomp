@@ -7,9 +7,11 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STATES = {"verified": ("#16835d", "Verified"), "working": ("#2b78b8", "Operational"), "incomplete": ("#b77912", "Incomplete"),
-          "blocked": ("#c2410c", "Blocking"), "not_reached": ("#8793a5", "Not Reached")}
-FILLS = {"verified": "#ecfdf5", "working": "#eff6ff", "incomplete": "#fff7e6", "blocked": "#fff1eb", "not_reached": "#fff"}
+# Grades by evidence (docs/project/PROGRESS_TRACKING.md): compared with the original, tested by the user in play,
+# reached by automated runs only; then the states of work not done.
+STATES = {"verified": ("#16835d", "Matches original"), "working": ("#65a30d", "Tested"), "runs": ("#2b78b8", "Runs"),
+          "incomplete": ("#b77912", "Incomplete"), "blocked": ("#c2410c", "Blocking"), "not_reached": ("#8793a5", "Not Reached")}
+FILLS = {"verified": "#ecfdf5", "working": "#f7fee7", "runs": "#eff6ff", "incomplete": "#fff7e6", "blocked": "#fff1eb", "not_reached": "#fff"}
 
 
 FLOW_TOP = 84     # Game-flow track: how far the port gets through the game's own sequence.
@@ -51,13 +53,13 @@ def render(data):
     height = GROUPS_TOP + 14 + 5 * 62 + 16
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="960" height="{height}" viewBox="0 0 960 {height}" role="img" aria-labelledby="title desc">',
              '<title id="title">BT2 port status</title>',
-             '<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status. Verified scopes are bounded.</desc>',
+             '<desc id="desc">How far the port gets through the game, then foundation, runtime and game component status: matches the original (compared with PCSX2 for the scope noted), tested in play, or runs only.</desc>',
              f'<rect x="1" y="1" width="958" height="{height - 2}" rx="12" fill="#f8fafc" stroke="#dce3eb"/>',
              '<g font-family="Segoe UI,Arial,sans-serif">',
              '<text x="24" y="34" font-size="21" font-weight="600" fill="#1e293b">BT2 • Port status</text>',
              f'<text x="936" y="33" text-anchor="end" font-size="12" fill="#64748b">{esc(data["updated"])} · last measured checkpoint</text>']
     for i, (color, label) in enumerate(STATES.values()):
-        x = 24 + i * 170
+        x = 24 + i * 150
         parts += [f'<circle cx="{x+5}" cy="59" r="4" fill="{color}"/>',
                   f'<text x="{x+17}" y="63" font-size="12" fill="#475569">{label}</text>']
     parts += render_flow(data["flow"], esc)

@@ -1,4 +1,4 @@
-BT2 Recomp v0.1
+BT2 Recomp v0.2
 ===============
 
 A native Windows port of Dragon Ball Z: Budokai Tenkaichi 2 (PS2, USA, SLUS-21441).
@@ -29,8 +29,11 @@ Play
   controller plays 2P on the same PC.
 - In the game, Escape (or the PS button) opens the in-game menu.
 - Tab fast-forwards.
+- Sound: Settings, Sound has the master volume and separate volumes for
+  music, voices and effects.
 - Saves: memory cards are kept in the "saves" folder, one folder per card.
-  Keep this folder when you update to a newer version.
+  Keep this folder when you update to a newer version: copy it (and your
+  "data" folder) into the new version's folder.
 
 Optional extras (launcher, Settings)
 ------------------------------------
@@ -44,7 +47,8 @@ Optional extras (launcher, Settings)
 
 Known issues
 ------------
-This is a first version. Versus battles, the menus and saving are well tested;
+This is an early version. Versus battles, the menus and saving are well tested
+(compared with the original game running in PCSX2, and played on several PCs);
 the rest has had less play.
 
 - Story mode has been partly tested: report anything that goes wrong.

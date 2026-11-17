@@ -15,6 +15,17 @@
 ## Status vocabulary and verification gates
 
 - **Planned:** no implementation claim.
+**Grades in PROG.md, the README and the status map (2026-11-16, the user's decision): by evidence.**
+
+- **✅ Matches the original** (`verified`): compared with the original in PCSX2 (or byte for byte with what it writes) for the scope its note states.
+- **🟢 Tested** (`working`): played, watched or listened to by the user (on several PCs), not compared with the original.
+- **🔵 Runs** (`runs`): reached by automated runs only; nobody has played it.
+- **🔧 Incomplete**, **⛔ Blocking**, **⏳ Not reached**: work not done.
+
+A part takes the strongest grade its main behaviour has; a weaker grade for a part of it goes in the note.
+
+**States of a change during a pass:**
+
 - **Implemented, unverified:** local changes exist; required checks remain. List the exact missing checks in the active handoff.
 - **Verified in isolation:** a bounded test passed. Record its scope; this does not establish full startup coverage.
 - **Verified in startup:** the full native startup probe executed the behavior, with the applicable capture comparison and build/tests passing.

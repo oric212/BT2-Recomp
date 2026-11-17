@@ -4,7 +4,8 @@
 // (PCSX2 captures rpc-cri-stream-reply, 2026-10-11: commands 8 and 5 on one object; 2026-10-12: the
 // movie audio start, commands 8, 4 (48000 Hz) and 9 twice (per-channel pan), and on the second channel
 // the audio data command 0x100 ({object, IOP address, byte count}) once per audio channel, then command 2 ({object, 1}) on the first channel; the 24 kHz stream after the
-// movies adds command 3 ({object, 1, 0x65}; meaning unknown) and command 4 with rate 24000).
+// movies adds command 3 ({object, 1, 0x65}: one channel) and command 4 with rate 24000). What commands
+// 3, 5 and 9 set was read from CRI_ADXI's command handler (2026-11-16, cri_audio.h); 8 is recorded only.
 #pragma once
 #include "cri_audio.h"
 #include <cstdint>
@@ -16,8 +17,9 @@
 constexpr std::size_t cri_stream_size=0x880;
 
 // Validates the commands in a returned buffer and marks them consumed. Only the reached command codes
-// are accepted; any other stops with a named error. The audio flow receives the player start (2) and
-// the data announcements (0x100) of stream channel `channel`.
+// are accepted; any other stops with a named error. The audio flow receives the player start (2), the
+// rate (4), the channel count (3), the volume (5), the pans (9) and the data announcements (0x100) of
+// stream channel `channel`.
 inline unsigned consumeCriStreamCommands(std::span<std::uint8_t> buffer,CriAudioFlow* audio=nullptr,unsigned channel=0) {
     if(buffer.size()!=cri_stream_size)throw std::runtime_error("CRI stream buffer size");
     std::uint32_t count;std::memcpy(&count,buffer.data(),4);
@@ -39,6 +41,9 @@ inline unsigned consumeCriStreamCommands(std::span<std::uint8_t> buffer,CriAudio
         if(words[0]!=0x100)audio->note(words[0],words[2],words[3]);
         if(words[0]==2)audio->play(words[1],words[2]);
         else if(words[0]==4)audio->rate(words[1],words[2]);
+        else if(words[0]==3)audio->channels(words[1],words[2]);
+        else if(words[0]==5)audio->volume(words[1],words[3]);
+        else if(words[0]==9)audio->pan(words[1],words[2],words[3]);
         else if(words[0]==0x100)audio->dataWritten(words[1],words[2],words[3],channel);
     }
     std::memset(buffer.data(),0,4);

@@ -142,7 +142,7 @@ private:
     void apply() {
         window_.setScaling(settings.integer_scaling?ViewerWindow::Scaling::Integer:ViewerWindow::Scaling::Stretch);
         window_.setLayout(settings.window_scale,settings.fullscreen);
-        mixer_.master_percent=settings.master_volume;mixer_.stream_percent=settings.music_volume;mixer_.extra_percent=settings.effects_volume;
+        mixer_.master_percent=settings.master_volume;mixer_.music_percent=settings.music_volume;mixer_.speech_percent=settings.voice_volume;mixer_.extra_percent=settings.effects_volume;
         if(!settings.show_frame_rate && !fast_){frame_rate_.clear();window_.setStatus(statusLine());}
     }
     void setFast(bool on) {

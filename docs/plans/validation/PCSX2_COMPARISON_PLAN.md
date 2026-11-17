@@ -8,18 +8,27 @@ user's request; it is the "final validation" milestone's comparison half
 
 ## At a glance (2026-11-16)
 
-| Step | What is compared | Status | Result | Left |
-| --- | --- | --- | --- | --- |
-| 1. Harness | Sessions, checkpoints, replays | ✅ Done | Many sites per run; button scripts; sites in the overlay | — |
-| 2. Fight frame | The fight's logic and draw steps | ✅ Done | Every call equal, at every frame compared | — |
-| 3. Trajectories | 300 consecutive fight frames | ✅ Done | All 300 equal; a full versus battle to its K.O. | — |
-| 4. Other screens | The menus' own per-frame steps | 🔧 Partly | Main menu, Dueling, character selection: 27 calls, all equal | Character selection with input; story map; a town; Ultimate Battle Z; the tournament |
-| 5. Loaded data | All RAM at a fight's first frame | 🔧 Partly | Fighters and stage byte-equal; every other difference explained | Other moments (a story map shown, a menu entered) |
-| 6. VU1 | A frame's VU1 programs and memory | 🔧 Partly | Fight frames: VU1's memory equal after every chain | Other screens; the GIF packets themselves |
-| 7. GS and pictures | Graphics memory and the drawn frame | 🔧 Partly | Fight frames: textures and uploads exact; pictures within the renderers' rounding | Other screens |
-| 8. Services | Every request to the disc, sound, card and controller services | 🔧 Partly | Boot to the title demo: equal or explained | After the title demo |
-| 9. Input lag | The game's own delay; press to screen | 🔧 Partly | Delay equal; press to screen 104 ms (port) against 108 ms (PCSX2) | Fullscreen; press to sound (if wanted) |
-| 10. In the gate | Stored comparisons run in every gate | ⏳ Not started | — | All of it |
+**Closed on 2026-11-16 at the user's decision; the plan was wider than the port needs.** What it set out to show is
+shown: the fight plays as PCSX2's frame by frame, the menus reached so far step as PCSX2's, and what the game loads
+and asks of its services equals PCSX2's or is explained. The other screens' graphics and memory, services after the
+title demo, Ultimate Battle Z, the tournament and further lag measurements are dropped. Two small items stay,
+optional: the story map's and a town's per-frame logic, and the stored fight comparisons in the gate.
+
+| Step | What was compared | Status | Result |
+| --- | --- | --- | --- |
+| 1. Harness | Sessions, checkpoints, replays | ✅ Done | Many sites per run; button scripts; sites in the overlay |
+| 2. Fight frame | The fight's logic and draw steps | ✅ Done | Every call equal, at every frame compared |
+| 3. Trajectories | 300 consecutive fight frames | ✅ Done | All 300 equal; a full versus battle to its K.O. |
+| 4. Other screens | The menus' own per-frame steps | ✅ Done | Main menu, Dueling, character selection: 27 calls, all equal |
+| 5. Loaded data | All RAM at a fight's first frame | ✅ Done | Fighters and stage byte-equal; every other difference explained |
+| 6. VU1 | A fight frame's VU1 programs and memory | ✅ Done | VU1's memory equal after every chain |
+| 7. GS and pictures | Graphics memory and the drawn fight frame | ✅ Done | Textures and uploads exact; pictures within the renderers' rounding |
+| 8. Services | Every request to the disc, sound, card and controller services | ✅ Done | Boot to the title demo: equal or explained |
+| 9. Input lag | The game's own delay; press to screen | ✅ Done | Delay equal; press to screen 104 ms (port) against 108 ms (PCSX2) |
+| Optional | The story map's and a town's logic; the fight comparisons in the gate | ⏳ Not started | — |
+
+**Beyond PCSX2:** the port has also been played on several PCs besides the development machine, and online battles
+between two homes (the user's tests).
 
 ### Faults found and fixed
 
@@ -65,6 +74,9 @@ drift cannot enter, and every difference found is the port's.
   [TOOLS.md](../../guides/TOOLS.md), "PCSX2 comparison sessions", has the commands.
 
 ## Steps
+
+As planned on 2026-11-12. Closed on 2026-11-16 with steps 4 to 9 done on the screens and moments listed in
+"At a glance"; the wider scope below (other screens, step 10) is no longer planned.
 
 1. **The harness:** sessions, checkpoints, replays, comparisons.
 2. **The fight frame:** each call of the fight loop's logic and draw steps replayed at frames spread over a battle;
@@ -524,9 +536,8 @@ checkpointed in PCSX2 at the screen's frames 60 to 62:
 On the selection screen three steps wrote nothing in those frames on either side (no button pressed): equal, but
 little exercised; frames with the cursor moving are left to check.
 
-**Next:** the selection screen with the cursor moving and a fighter chosen; the story map and a town (their routes
-from the main menu's first entry); steps 6 and 7 on other screens; step 10. Press to sound and fullscreen when
-wanted.
+**Next:** none required; the plan was closed on 2026-11-16 (see "At a glance"). Optional: the story map's and a
+town's logic (their routes from the main menu's first entry) and the stored fight comparisons in the gate.
 
 ## Unknowns
 

@@ -3,19 +3,19 @@
   "flow": [
     {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
     {"name": "Pad & card", "status": "verified", "note": "Native checks"},
-    {"name": "Films", "status": "working", "note": "Decode as PCSX2"},
-    {"name": "Title & menus", "status": "working", "note": "3 screens checked", "current": true},
-    {"name": "Versus battle", "status": "working", "note": "Matches PCSX2"},
+    {"name": "Films", "status": "verified", "note": "Decoded as PCSX2"},
+    {"name": "Title & menus", "status": "verified", "note": "3 screens as PCSX2"},
+    {"name": "Versus battle", "status": "verified", "note": "Frame by frame"},
     {"name": "Story mode", "status": "working", "note": "Partly played"},
     {"name": "Saves", "status": "verified", "note": "Same as original"},
-    {"name": "Online battle", "status": "working", "note": "Works across homes"}
+    {"name": "Online battle", "status": "working", "note": "Played, two homes"}
   ],
   "groups": [
     {
       "name": "Core subsystems",
       "items": [
         {"name": "EE CPU and kernel", "status": "working", "note": "11,633 functions native"},
-        {"name": "IOP services", "status": "working", "note": "Native; no IOP code runs"},
+        {"name": "IOP services", "status": "verified", "note": "Replies as PCSX2 to title"},
         {"name": "Disc / filesystem", "status": "verified", "note": "Reads byte-identical"},
         {"name": "Input", "status": "working", "note": "Xbox, PS4, PS5, generic pads"},
         {"name": "Memory card", "status": "verified", "note": "Saves byte-identical"}
@@ -25,9 +25,9 @@
       "name": "Graphics and sound",
       "items": [
         {"name": "GS and display", "status": "working", "note": "GPU renderer, own threads"},
-        {"name": "GIF / VIF / VU", "status": "working", "note": "Native VU1, checked in gate"},
-        {"name": "IPU / video", "status": "working", "note": "Films decode as PCSX2"},
-        {"name": "Audio", "status": "working", "note": "Music, voices, effects"},
+        {"name": "GIF / VIF / VU", "status": "verified", "note": "VU1 as PCSX2 in fights"},
+        {"name": "IPU / video", "status": "verified", "note": "Films decode as PCSX2"},
+        {"name": "Audio", "status": "working", "note": "Mixed as original; heard"},
         {"name": "Launcher and menus", "status": "working", "note": "Settings, in-game menu"}
       ]
     },
@@ -47,8 +47,8 @@
         {"name": "Fight logic", "status": "verified", "note": "300 frames, every step equal"},
         {"name": "VU1 and graphics", "status": "verified", "note": "Fight frames; renderer rounding"},
         {"name": "Loaded data", "status": "verified", "note": "Fight start, all explained"},
-        {"name": "Services", "status": "incomplete", "note": "Boot to title demo equal"},
-        {"name": "Menus and screens", "status": "incomplete", "note": "3 screens equal, more left"}
+        {"name": "Services", "status": "verified", "note": "Boot to title demo equal"},
+        {"name": "Menus", "status": "verified", "note": "3 screens equal; closed"}
       ]
     }
   ]

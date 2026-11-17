@@ -17,35 +17,35 @@
 
 BT2 Recomp is a native Windows port of the PS2 game (North American release, **SLUS-21441**): its code is recompiled to C++ with PS2Recomp and runs on a small native layer, not an emulator.
 
-Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. The port is checked against PCSX2 running the original game, step by step: the fight, its graphics and the first menus match exactly so far ([comparison](docs/plans/validation/PCSX2_COMPARISON_PLAN.md)).
+Every mode runs. Versus battles play at the original's speed, the story and the other modes run through, saves match the original's byte for byte, and two players can fight online. The port was checked against PCSX2 running the original game, step by step: the fight, its graphics, the first menus and the services match ([comparison](docs/plans/validation/PCSX2_COMPARISON_PLAN.md)). It has been played on several PCs and online between two homes.
 
 Optional enhancements: HD textures, super-sampling, widescreen, 60 fps battles, fast loading and quick start. Controls: keyboard, Xbox controllers, DualSense, DualShock 4 and generic gamepads such as 8BitDo, with every button remappable.
 
-**Download:** [BT2 Recomp v0.1](https://github.com/oric212/BT2-Recomp/releases/tag/v0.1): unzip it, put your USA disc image (`.iso`) into its `data` folder, start `bt2-launcher.exe`. Its `README.txt` has the details and the known issues.
+**Download:** [BT2 Recomp v0.2](https://github.com/oric212/BT2-Recomp/releases/tag/v0.2): unzip it, put your USA disc image (`.iso`) into its `data` folder, start `bt2-launcher.exe`. Its `README.txt` has the details and the known issues.
 
 > **Game files are not included.** You need your own legally obtained copy. This repository holds only project code, tools and documentation.
 
 ## Progress
 <!-- progress-summary:start -->
-![BT2 port status](docs/progress/dashboard.svg?v=8989bf9b)
+![BT2 port status](docs/progress/dashboard.svg?v=fc124425)
 
 | Part of the game | Status | In short |
 | --- | --- | --- |
-| Startup | ✅ Verified | Boots to the game's frame loop; key states match the original |
-| Controller and card checks | ✅ Verified | Native services; the no-card prompt matches the original |
-| Films | 🟢 Operational | Logo and opening films with sound, decoded exactly as PCSX2 does |
-| Title and menus | 🟢 Operational | Every mode runs; main menu, Dueling and character selection match PCSX2 |
-| Versus battle | 🟢 Operational | Playable; all 130 fighters and 16 stages; the fight matches PCSX2 frame by frame |
-| Story mode | 🟢 Operational | All 200 parts and 73 towns run; partly played by hand |
-| Audio | 🟢 Operational | Music, voices and effects; confirmed by listening |
-| Saves | ✅ Verified | Byte-identical to the original's |
-| Enhancements | 🟢 Operational | HD textures, up to 16x super-sampling, widescreen, 60 fps battles, fast loading, quick start |
-| Online battle | 🟢 Operational | Lockstep over the internet with connection codes; played between two homes |
+| Startup | ✅ Matches the original | Boots to the game's frame loop; key states equal to PCSX2's |
+| Controller and card checks | ✅ Matches the original | Native services; the no-card prompt as the original's |
+| Films | ✅ Matches the original | Logo and opening films with sound, decoded exactly as PCSX2 does |
+| Title and menus | ✅ Matches the original | Main menu, Dueling and character selection equal to PCSX2; every mode played |
+| Versus battle | ✅ Matches the original | The fight equal to PCSX2 frame by frame; all 130 fighters and 16 stages run |
+| Story mode | 🟢 Tested | Partly played; all 200 parts and 73 towns run |
+| Audio | 🟢 Tested | Music, voices and effects mixed as the original's driver does; confirmed by listening |
+| Saves | ✅ Matches the original | Byte-identical to the original's |
+| Enhancements | 🟢 Tested | HD textures, up to 16x super-sampling, widescreen, 60 fps battles, fast loading, quick start |
+| Online battle | 🟢 Tested | Lockstep over the internet with connection codes; played between two homes |
 
 **Code:** 11,139 game functions plus 494 in the `DBZP.BIN` overlay, all compiled natively · **Checks:** every change passes the gate (unit tests, 31 startup comparisons with the original, a scripted fight against its recorded result).
 <!-- progress-summary:end -->
 
-Statuses: ✅ Verified (checked against the original) · 🟢 Operational (works, not fully checked) · 🔧 Incomplete · ⛔ Blocking · ⏳ Not Reached. [Full progress](docs/PROG.md) · [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
+Statuses, by evidence: ✅ Matches the original (compared with PCSX2 for the scope noted) · 🟢 Tested (played or listened to by the user, on several PCs; not compared) · 🔵 Runs (reached by automated runs only) · 🔧 Incomplete · ⛔ Blocking · ⏳ Not reached. [Full progress](docs/PROG.md) · [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) · [What has been checked](docs/progress/VALIDATION.md) · [History](docs/progress/2026-11.md)
 
 ## Enhancements
 
@@ -109,7 +109,7 @@ flowchart LR
 | --- | --- |
 | [Build and test](docs/guides/BUILDING.md) | Host build, game-file preparation, startup probe |
 | [Progress](docs/PROG.md) | Status, measurements, next steps |
-| [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) | What matches the original, what was fixed, what is left |
+| [Comparison with PCSX2](docs/plans/validation/PCSX2_COMPARISON_PLAN.md) | What matches the original and what was fixed |
 | [Implementation plan](docs/project/IMPLEMENTATION_PLAN.md) | Goals, direction and working rules |
 | [Runtime layout](docs/guides/RUNTIME_LAYOUT.md) · [Tools](docs/guides/TOOLS.md) | Where code lives; local tooling |
 | [Reference architecture](docs/reference/REFERENCE_ARCHITECTURE.md) | Reference projects and how they are used |
